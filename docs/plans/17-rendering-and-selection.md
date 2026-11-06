@@ -2,8 +2,9 @@
 
 Status: the map handoff is implemented at `e723ae6` and its focused functional
 validation passed. The owner reports much better pan/zoom. Preserve this handoff.
-The matched offscreen replay baseline is frozen at `b20b923`; the first narrow
-peer-snapshot correction awaits comparison. See the investigation record below.
+The matched offscreen replay baseline is frozen at `b20b923`. The first narrow
+peer-snapshot correction was rejected after comparison; production reconciliation
+is restored. A capture-only readiness observer defect is next. See the record below.
 The displayed-state and selection corrections below remain to be implemented;
 controlled performance acceptance remains unverified. Current behavior is owned
 by the contracts linked below.
@@ -45,6 +46,12 @@ work and border-gap investigation. Use tiny, softly glowing white location light
 on the dark theme and dark location lights on the light theme, with a subtle soft
 halo and no outlined rings. High Contrast uses system colors. Marker-layer caching
 remains deferred.
+
+Owner priority, 6 November 2026: make input and rendering fast before broader
+memory tuning. Keep memory as a regression guard and flag concrete, blatant
+waste. Private commitment, working set and settled retained memory are distinct;
+the benchmark peak does not establish a per-peer cost or explain the delta from
+an ordinary session. Dedicated memory attribution and tuning remain deferred.
 
 1. **Freeze the baseline.** With the harness owner, record the unchanged code's
    [controlled workload](#controlled-benchmark), source/binary identity, exact
@@ -644,12 +651,22 @@ thread-time/GC and allocation sampling. Both completed normally. The
 records a reproduced 603.6 ms marquee gap with table publication and blocking
 collections, and at least 62.8 MiB of unrelated peer-record snapshot copying in
 `Inspector.ApplyPeers` during aggregate readiness. Its narrow per-torrent
-snapshot correction passed focused independent source review and is unmeasured;
-no benefit is claimed yet. The review record is
-`V:/temp/plan17-peer-snapshot-review.md`.
-It does not account for the full marquee gap. Trace event loss and sampled wall
-time limits are preserved in the report. The next step is one reviewed build
-and the matched unprofiled comparison before retaining this correction.
+snapshot correction passed focused independent source review at
+`V:/temp/plan17-peer-snapshot-review.md` but failed the comparison gate. The
+[comparison record](../../artifacts/evidence/ui-benchmark-peer-snapshot-20261106-2beb6e7/README.md)
+preserves four completed profiles, the city/200 docked readiness failure and the
+unrun final profile. Some peaks and marquee gaps improved, while docked click
+and navigation observations worsened. The correction is rejected; its source
+operation does not account for the full marquee gap. Trace event loss and sampled
+wall-time limits are preserved in the report.
+
+The failed readiness run has all peers parsed and observes arcs, locations and
+moving dots. Its XAML callback stops while the independent map continues drawing,
+so it cannot establish a blank map: the ready timestamp currently depends on
+that callback. Next fix this capture-only observer, explicitly distinguish its
+new draw-observation endpoint, and establish a matched reference before another
+production comparison. Preserve the original freeze; no retry of the failed run
+or timeout extension is authorized by this finding.
 
 The new procedure measures command-to-render behavior and is not comparable to
 the old SendInput runs. Displayed/native-input acceptance, exact map-command
