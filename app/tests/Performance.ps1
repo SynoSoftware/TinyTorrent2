@@ -141,7 +141,8 @@ function Report {
             animation = if ($phase.name -match 'animation') {
                 Pacing @($timing.mapFrames | Where-Object { $_.phase -eq $phase.name -and $_.qpc -ge $phase.started -and $_.qpc -lt $phase.ended } | ForEach-Object qpc) $phase.started $phase.ended $frequency $period
             } else { $null };
-            firstRenderMs = if ($phase.firstPicture) { ($phase.firstPicture - $phase.started) * 1000 / $frequency } else { $null } }
+            firstRenderMs = if ($phase.firstPicture) { ($phase.firstPicture - $phase.started) * 1000 / $frequency } else { $null };
+            firstRenderEndpoint = if ($phase.firstPictureEndpoint) { $phase.firstPictureEndpoint } else { 'xaml-completion' } }
     })
     $clicks = @(foreach ($click in $timing.clicks) {
         [pscustomobject]@{ torrentId = $click.TorrentId; visit = $click.Visit; sent = $click.sent;
@@ -215,7 +216,7 @@ function Report {
         outcomes = $review.outcomes;
         limits = @('Displayed surfaces are measured separately, never summed.',
             'Navigation updates are changed views sampled after the map draw handler; they distinguish navigation stalls from animated dots.',
-            'First-render latency is an observed upper bound at XAML completion after a map picture is visible.',
+            'Map startup phases identify their timestamp endpoint: XAML completion or a UI poll observing the requested drawn map. Neither establishes displayed pixels; an idle XAML surface need not render when the independent map draws.',
             'Selection latency ends at the real selection event; render latency ends at XAML completion, before scanout.',
             $(if ($ready.replay) {
                 'Offscreen replay schedules application commands independently at 120 Hz. Selection uses the current first seven row slots. Commands bypass native delivery, hit-testing, gesture arbitration and pointer focus. Exact send timestamps correlate selection acknowledgements; queued commands are not skipped.'
@@ -276,7 +277,7 @@ function Report {
             $phase.name, $p.fps, $p.low1Percent, $p.frameMs.p95, $p.frameMs.worst, $p.missedRefreshes, $p.longHolds)) }
         if ($phase.animation) { $p = $phase.animation; $lines.Add(('| {0} | Map draws (before display) | {1:F1} | {2:F1} | {3:F1} | {4:F1} | {5} | — | {6} |' -f
             $phase.name, $p.fps, $p.low1Percent, $p.frameMs.p95, $p.frameMs.worst, $p.missedRefreshes, $p.longHolds)) }
-        if ($null -ne $phase.firstRenderMs) { $lines.Add(('| {0} | First render: {1:F1} ms; scenario ready: {2:F1} ms | | | | | | | |' -f $phase.name, $phase.firstRenderMs, $phase.durationMs)) }
+        if ($null -ne $phase.firstRenderMs) { $lines.Add(('| {0} | First map observation ({1}): {2:F1} ms; scenario ready: {3:F1} ms | | | | | | | |' -f $phase.name, $phase.firstRenderEndpoint, $phase.firstRenderMs, $phase.durationMs)) }
     }
     $lines.Add('')
     if ($source.Count) {

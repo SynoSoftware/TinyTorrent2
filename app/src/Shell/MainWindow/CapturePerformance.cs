@@ -79,10 +79,6 @@ public sealed partial class MainWindow
         var selecting = false;
         var firstPicture = 0L;
         var opening = 0L;
-        var awaitingConnections = false;
-        Torrent? connectionsTarget = null;
-        var connectionsPicture = 0L;
-        var connectionsCount = 0;
         var reorder = Torrents.CanReorder;
         using var feeding = new CancellationTokenSource();
         Task? feed = null;
@@ -153,11 +149,6 @@ public sealed partial class MainWindow
                     tables.Add(new { phase, qpc = now, table = "peers", subject = inspector.Target?.TorrentId ?? "all",
                         rows = VisibleRows(table).OfType<Peer>().Select(peer => new { key = peer.Key, rate = peer.DownloadRate }).ToArray() });
             }
-            if (awaitingConnections && connectionsPicture == 0 && inspector.Target == connectionsTarget
-                && InspectorContent.Content is InspectorPane pane
-                && Read<PeerMap?>(pane, "_peerMap") is { IsLoaded: true, Visibility: Visibility.Visible } peerMap
-                && Read<MapMotion?>(peerMap, "_motion") is { } motion && motion.Control.Opacity > 0
-                && motion.ShowsConnections(inspector.Map.Subject, connectionsCount)) connectionsPicture = now;
             if (opening != 0 && firstPicture == 0 && map?.MotionPictures > 0
                 && Read<MapMotion>(map, "_motion").Control.Opacity > 0) firstPicture = now;
             var offset = overlay?.RenderTransform as TranslateTransform;
@@ -225,10 +216,8 @@ public sealed partial class MainWindow
         }
         async Task Connections(string name, long started, int count)
         {
-            connectionsPicture = 0;
-            connectionsCount = count;
-            connectionsTarget = Model.Current;
-            awaitingConnections = true;
+            var target = Model.Current;
+            var observedAt = 0L;
             phaseStarted = started;
             Volatile.Write(ref phase, name);
             await Until(() => InspectorContent.Content is InspectorPane pane
@@ -237,9 +226,16 @@ public sealed partial class MainWindow
             Observe(Read<MapMotion>(map!, "_motion"));
             Root.InvalidateArrange();
             await CaptureLayout();
-            await Until(() => connectionsPicture != 0 && !inspector.IsLoading && !inspector.IsReplacing
-                && inspector.Peers?.Count == count && inspector.Map.Capture().Observations.Length == count,
-                "The docked Peers map did not visibly show its connections.");
+            await Until(() =>
+            {
+                if (observedAt == 0 && inspector.Target == target
+                    && InspectorContent.Content is InspectorPane pane
+                    && Read<PeerMap?>(pane, "_peerMap") is { IsLoaded: true, Visibility: Visibility.Visible } peerMap
+                    && Read<MapMotion?>(peerMap, "_motion") is { } motion && motion.Control.Opacity > 0
+                    && motion.ShowsConnections(inspector.Map.Subject, count)) observedAt = Stopwatch.GetTimestamp();
+                return observedAt != 0 && !inspector.IsLoading && !inspector.IsReplacing
+                    && inspector.Peers?.Count == count && inspector.Map.Capture().Observations.Length == count;
+            }, "The docked Peers map did not show the requested connections in its drawn picture.");
             await ViewDrawn();
             if (inspector.Map.Cities != cities || Read<int>(map!, "_arcLimit") != arcLimit)
                 throw new InvalidOperationException("The docked map did not use the requested detail and arc limit.");
@@ -247,12 +243,13 @@ public sealed partial class MainWindow
             var rows = Read<ListView>(peers, "_surface");
             await Until(() => ReferenceEquals(peers.ItemsSource, inspector.ShownPeers) && rows.Items.Count == count
                 && rows.ContainerFromIndex(0) is ListViewItem { IsLoaded: true, Content: Peer first }
-                && (connectionsTarget is null || first.TorrentId == connectionsTarget.TorrentId),
+                && (target is null || first.TorrentId == target.TorrentId),
                 "The peer table did not show the map's current connections.");
-            phases.Add(new { name, started, ended = Stopwatch.GetTimestamp(), firstPicture = connectionsPicture, peers = count });
-            outcomes.Add(new { journey = name, firstConnectionsMs = (connectionsPicture - started) * 1000d / Stopwatch.Frequency,
+            phases.Add(new { name, started, ended = Stopwatch.GetTimestamp(), firstPicture = observedAt,
+                firstPictureEndpoint = "map-draw-ui-poll", peers = count });
+            outcomes.Add(new { journey = name, firstConnectionsMs = (observedAt - started) * 1000d / Stopwatch.Frequency,
+                firstPictureEndpoint = "map-draw-ui-poll",
                 peers = count, state = map!.MotionState });
-            awaitingConnections = false;
             Volatile.Write(ref phase, string.Empty);
         }
         async Task Screenshot(string name)

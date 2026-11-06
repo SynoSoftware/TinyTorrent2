@@ -663,10 +663,14 @@ wall-time limits are preserved in the report.
 The failed readiness run has all peers parsed and observes arcs, locations and
 moving dots. Its XAML callback stops while the independent map continues drawing,
 so it cannot establish a blank map: the ready timestamp currently depends on
-that callback. Next fix this capture-only observer, explicitly distinguish its
-new draw-observation endpoint, and establish a matched reference before another
-production comparison. Preserve the original freeze; no retry of the failed run
-or timeout extension is authorized by this finding.
+that callback. The capture-only correction moves the same subject/count/map
+checks into the existing UI polling wait, removes callback-owned readiness state,
+and labels its endpoint `map-draw-ui-poll` in raw outcomes and reports. Focused
+independent source review passed at `V:/temp/plan17-readiness-review.md`; runtime
+behavior is unverified. Next establish a matched
+reference with this observer before another production comparison. Preserve the
+original freeze; no retry of the failed run or timeout extension is authorized
+by this finding.
 
 The new procedure measures command-to-render behavior and is not comparable to
 the old SendInput runs. Displayed/native-input acceptance, exact map-command

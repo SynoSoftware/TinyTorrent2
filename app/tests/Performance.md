@@ -156,6 +156,16 @@ The full journey stops if returning to the docked map leaves it blank. The focus
 mode measures a fresh docked view; retain the transition failure as a separate finding.
 Scenario-ready time includes current peer rows; first-render time separately
 records when the connections become visible.
+Docked-map startup records `map-draw-ui-poll`: the UI polls the last drawn
+picture's subject, complete peer inventory and retained routes while checking
+that the map is loaded, visible and has revealed its canvas. The independent
+map can draw
+without another XAML render callback. Earlier binaries sampled this endpoint
+only at XAML completion; those startup times require a matched reference before
+comparison with the corrected observer. Global startup retains its separately
+labelled `xaml-completion` observation. Both are diagnostic upper bounds after
+submitted drawing, not displayed-pixel timing. Click and marquee endpoints are
+unchanged.
 The report includes UI-process private bytes and working set, sampled externally
 throughout each case and click pass. It records baseline, peak, end and growth
 in MiB and saves raw `memory.json` samples. Private memory includes native and
