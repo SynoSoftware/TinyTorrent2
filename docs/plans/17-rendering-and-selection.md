@@ -2,8 +2,8 @@
 
 Status: the map handoff is implemented at `e723ae6` and its focused functional
 validation passed. The owner reports much better pan/zoom. Preserve this handoff.
-The matched offscreen replay baseline is frozen at `b20b923`; no production
-optimization has been applied. See the current investigation record below.
+The matched offscreen replay baseline is frozen at `b20b923`; the first narrow
+peer-snapshot correction awaits comparison. See the investigation record below.
 The displayed-state and selection corrections below remain to be implemented;
 controlled performance acceptance remains unverified. Current behavior is owned
 by the contracts linked below.
@@ -513,21 +513,19 @@ fixed transfer rates for the main comparison; update-driven changes also use the
 focused telemetry phase below. Record display refresh, DPI, configuration and
 source revision so baseline and changed code are comparable.
 
-Use the simulator's updated 50-torrent fixture: three with 3,000 leechers and
-6,000 seeds each, 40 spanning 50–1,000 leechers, and seven spanning 1,000–3,000.
-The current launcher gives every torrent twice as many seeds, totaling 130,650
-actual peer rows across the tables and map. Its first seven click targets have
-50, 100, 500, 1,000, 3,000, 3,000 and 3,000 leechers. `Capture.ps1` owns the exact
-counts in `fixture.json`; use that same manifest before and after. Match the
+Use the frozen 50-torrent fixture with 159,810 peer rows and descending speed
+sorting. `Capture.ps1` owns the exact counts in `fixture.json`; use that same
+manifest before and after. Match the
 harness guide's detail/location/arc profiles between revisions, including actual
 retained arcs; country/default-arc results are not comparable to city/high-arc
 results. That guide owns the current commands and profile values.
 
-Required fixture refinement before freezing: alternate queue participation by
-fixture index, starting with a participating row, with 25 in contiguous positions and
-25 outside the queue. Use Name ascending so the seven targets stay
-visible; record each torrent's participation and queue position with the fixture
-manifest. Hold this population and sort fixed for timed comparisons. Check the
+For the separate order-capability comparison, alternate queue participation by
+fixture index, starting with a participating row, with 25 in contiguous positions
+and 25 outside the queue. Use Name ascending so the seven targets stay visible;
+record participation and queue position in its manifest. Run that same focused
+variant before and after changing the path; it does not replace or modify the
+frozen speed-sorted reference. Hold its population and sort fixed. Check the
 cache's membership-change refresh separately under natural sort and ascending
 Queue, including changed membership with unchanged visible identities/order.
 Use disposable synthetic facts; do not depend on network or engine queue churn.
@@ -640,12 +638,24 @@ post-reboot foreground attempts remain in
 `artifacts/evidence/ui-benchmark-post-reboot-20261106-1b26388-baseline/matrix.json`;
 focus interruptions are not product performance failures.
 
+**First attribution:** two separate EventPipe probes used the preserved binary:
+thread-time/GC and allocation sampling. Both completed normally. The
+[profile report](../../artifacts/evidence/ui-profile-city1000-docked-20261106-b20b923/README.md)
+records a reproduced 603.6 ms marquee gap with table publication and blocking
+collections, and at least 62.8 MiB of unrelated peer-record snapshot copying in
+`Inspector.ApplyPeers` during aggregate readiness. Its narrow per-torrent
+snapshot correction passed focused independent source review and is unmeasured;
+no benefit is claimed yet. The review record is
+`V:/temp/plan17-peer-snapshot-review.md`.
+It does not account for the full marquee gap. Trace event loss and sampled wall
+time limits are preserved in the report. The next step is one reviewed build
+and the matched unprofiled comparison before retaining this correction.
+
 The new procedure measures command-to-render behavior and is not comparable to
 the old SendInput runs. Displayed/native-input acceptance, exact map-command
 correlation, per-click Inspector readiness, earlier transition findings and the
-separate queue-participation variant remain open. Next: profile the city/1,000
-docked marquee gap, attribute one source operation/thread, then make and compare
-its smallest correction. No production edits precede this freeze.
+separate queue-participation variant remain open. No production edits preceded
+the freeze.
 
 **Pre-reboot handoff:** the owner requested saving the current measurements and
 repeating them after reboot before accepting a baseline. The
