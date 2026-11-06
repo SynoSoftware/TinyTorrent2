@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using Microsoft.UI.Xaml.Data;
+using Microsoft.UI.Xaml.Interop;
 using Windows.Foundation.Collections;
 
 namespace Syno.TableView.Body;
@@ -12,7 +13,7 @@ namespace Syno.TableView.Body;
 /// the list's selection questions from the table's selection, so the list keeps none of its own:
 /// see <see cref="IsSelected"/>.
 /// </summary>
-internal sealed class View : Collection<object>, IObservableVector<object>, ISelectionInfo
+internal sealed class View : Collection<object>, IBindableObservableVector, ISelectionInfo
 {
     private readonly Func<object, bool> _isSelected;
 
@@ -22,7 +23,7 @@ internal sealed class View : Collection<object>, IObservableVector<object>, ISel
     }
 
     // Native vector events avoid marshaling a .NET collection event and its item lists per row.
-    public event VectorChangedEventHandler<object>? VectorChanged;
+    public event BindableVectorChangedEventHandler? VectorChanged;
 
     protected override void InsertItem(int index, object item)
     {

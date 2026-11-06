@@ -793,6 +793,23 @@ marquee worsened 269.40 → 355.59 ms. Peak/final private commitment changed
 establish a causal speed regression or improvement. No retry ran. Keep the narrow
 identity correction and continue attribution of the still-failing frame budgets.
 
+Next measured cause: the managed generic vector callback generates its sender's
+interface ID repeatedly. The original exact gap has 89.15 ms inclusive sampled
+elapsed in that getter under native publication; the separate allocation trace
+receives 3.353 MiB byte arrays and 3.862 MiB signature strings/type arrays through
+that path during the marquee. Those samples overlap other work and GC and are
+not exclusive CPU. Offline reinspection finds only 1.89 ms under native selected
+range queries over that marquee, which does not justify a range rewrite.
+The installed WinUI projection exposes public `IBindableObservableVector` over
+`IList` with a fixed interface ID. Replacing only the sender interface/delegate
+keeps the existing per-row args, native action/index sequence, quiet replacements,
+selection ownership and reconciliation. It avoids restoring the historically
+slower .NET collection-event/item-list path. Independent design review:
+`V:/temp/plan17-bindable-design-review.md`. Compare the candidate against preserved
+`3d2970a` on the same standard city/1,000 docked workload; the predicted local
+result is removal of generic sender-ID work, with native work and overall input
+stalls measured separately. No speed claim precedes that comparison.
+
 The failed readiness run has all peers parsed and observes arcs, locations and
 moving dots. Its XAML callback stops while the independent map continues drawing,
 so it cannot establish a blank map: the ready timestamp previously depended on

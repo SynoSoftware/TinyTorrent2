@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Reflection;
+using Microsoft.UI.Xaml.Interop;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Windows.Foundation.Collections;
 
@@ -197,7 +198,7 @@ public class ReconcileTests
         object view = NewView(rows);
         IList live = (IList)view;
 
-        VectorChangedEventHandler<object> check = (_, _) =>
+        BindableVectorChangedEventHandler check = (_, _) =>
         {
             HashSet<object> seen = new(ReferenceEqualityComparer.Instance);
             foreach (object row in live)
@@ -209,10 +210,10 @@ public class ReconcileTests
             }
         };
 
-        ((IObservableVector<object>)view).VectorChanged += check;
+        ((IBindableObservableVector)view).VectorChanged += check;
         object[] snapshot = order(rows);
         Reconcile(view, snapshot, realized);
-        ((IObservableVector<object>)view).VectorChanged -= check;
+        ((IBindableObservableVector)view).VectorChanged -= check;
 
         CollectionAssert.AreEqual(snapshot, Rows(view), "the view is the snapshot");
     }
@@ -278,7 +279,7 @@ public class ReconcileTests
         internal Watcher(object view)
         {
             _shadow = ((IList)view).Cast<object>().ToList();
-            ((IObservableVector<object>)view).VectorChanged += Apply;
+            ((IBindableObservableVector)view).VectorChanged += Apply;
         }
 
         internal int Notifications { get; private set; }
@@ -300,8 +301,9 @@ public class ReconcileTests
             }
         }
 
-        private void Apply(IObservableVector<object> sender, IVectorChangedEventArgs e)
+        private void Apply(IBindableObservableVector sender, object args)
         {
+            var e = (IVectorChangedEventArgs)args;
             Notifications++;
             int index = (int)e.Index;
 

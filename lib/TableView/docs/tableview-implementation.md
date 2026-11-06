@@ -67,10 +67,12 @@ instances and changes in visual order.
 Pointer, keyboard, menu, and automation paths must reach the same operations.
 Marquee and drag visuals do not decide which gesture is active.
 
-The private view sends native observable-vector insert, remove and replacement
-events. It avoids projecting .NET collection-event arguments and their item
-lists for every membership change, a measured cost on large Library searches.
-The reconciliation algorithm and the positions it announces remain unchanged.
+The private view sends native bindable-vector insert, remove and replacement
+events. The nongeneric sender uses a fixed interface ID instead of generating a
+generic vector ID for every callback. It also avoids projecting .NET
+collection-event arguments and their item lists for every membership change,
+a measured cost on large Library searches. The reconciliation algorithm and
+the positions it announces remain unchanged.
 
 The private view also implements `ISelectionInfo`, answering from the table's
 selection model. The list reads a row's selected state from it when it builds

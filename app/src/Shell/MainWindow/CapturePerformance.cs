@@ -7,6 +7,7 @@ using Microsoft.Graphics.Canvas.UI.Xaml;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Interop;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Windowing;
 using Syno.TinyTorrent.Shared;
@@ -96,7 +97,7 @@ public sealed partial class MainWindow
         void ObserveChanges(Syno.TableView.Table table, string name)
         {
             if (!traceChanges || changeObservers.ContainsKey(table)) return;
-            var vector = Read<IObservableVector<object>>(table, "_view");
+            var vector = Read<IBindableObservableVector>(table, "_view");
             var rows = (ICollection<object>)vector;
             var pending = false;
             var first = 0L;
@@ -118,10 +119,10 @@ public sealed partial class MainWindow
                     source, firstCompleted = first, lastCompleted = last,
                     before, after, inserted, removed, replaced, reset });
             }
-            VectorChangedEventHandler<object> changed = (_, args) =>
+            BindableVectorChangedEventHandler changed = (_, args) =>
             {
                 var now = Stopwatch.GetTimestamp();
-                var action = args.CollectionChange;
+                var action = ((IVectorChangedEventArgs)args).CollectionChange;
                 if (!pending)
                 {
                     pending = true;
