@@ -2,6 +2,8 @@
 
 Status: the map handoff is implemented at `e723ae6` and its focused functional
 validation passed. The owner reports much better pan/zoom. Preserve this handoff.
+The matched offscreen replay baseline is frozen at `b20b923`; no production
+optimization has been applied. See the current investigation record below.
 The displayed-state and selection corrections below remain to be implemented;
 controlled performance acceptance remains unverified. Current behavior is owned
 by the contracts linked below.
@@ -608,60 +610,42 @@ reported timings; their numerical limits have not been set by the owner.
 
 ### Baseline and coordination, 6 November 2026
 
-**Post-reboot procedure unresolved:** the preserved binary hashes match and the
-country/200 full-screen run completed, but the other matrix attempts lost
-foreground focus. These are incomplete measurements, not a frozen baseline.
-The owner stopped desktop automation and requested guidance from
-[Add map performance tests](codex://threads/01a1b075-4124-7fc3-b882-392b615c45fe)
-about the Intel measurement tool and a procedure that does not take over their
-desktop. No production optimization has been applied. Raw attempts are in
+**Frozen replay baseline:** six offscreen profiles completed normally at
+`b20b923`, with production behavior unchanged from `1b26388`. The
+[baseline report](../../artifacts/evidence/ui-benchmark-replay-baseline-20261106-b20b923/README.md)
+preserves the exact binary, identity, workload, commands, raw evidence and limits.
+Worst navigation draw gaps span 199.5-360.8 ms. Docked marquee worst gaps are
+256.4, 246.8 and 818.5 ms; observed selection XAML feedback reaches 301.5 ms.
+All 21 commands per docked run are selected with exact matches and valid sender
+cadence; 2/3/3 XAML endpoints are unobserved after supersession. Peak private
+memory is 964-1,436 MiB. Country/200 and city/200 selected-map baselines have no
+draw samples for a second; later visible-dot gaps reach 4.1/4.8/2.8 seconds.
+Their cause stays open, and absent samples establish no smoothness claim.
+
+The replay harness passed independent source review, recorded in
+`V:/temp/plan17-replay-review.md`, and the owner's overseeing review in
+`V:/temp/plan17-overseeing-review.md`, with no material findings. Its single
+Release build passed, reporting one nullable warning on an unchanged harness
+line. The country/200 docked trial passed the runtime gate and was reused as its
+baseline profile. The remaining five profiles each ran once. All runners,
+windows, fixture engines and external senders/sources exited normally.
+
+The owner prohibits desktop input, activation/focus stealing, screenshots/video,
+automatic capture retries, UAC, Windows elevation and permission changes. Use
+`-Replay -InputOnly` under the [harness guide](../../app/tests/Performance.md).
+PresentMon 2.3.1 is a passive ETW recorder, not a gesture generator; `-InputOnly`
+alone still runs the prohibited foreground SendInput journey. Keep its safety
+guard intact and do not rerun it or repeatedly restore focus. The interrupted
+post-reboot foreground attempts remain in
 `artifacts/evidence/ui-benchmark-post-reboot-20261106-1b26388-baseline/matrix.json`;
-the separately retried country docked run is
-`artifacts/evidence/Capture-performance-selection-1d5d47ab-679f-46f2-a67d-e77c17e4c66a`.
+focus interruptions are not product performance failures.
 
-The harness owner's read-only reply confirmed that the Intel tool is PresentMon
-2.3.1 at `artifacts/tools/PresentMon-2.3.1-x64.exe`. It records presentation events
-without generating gestures. `-InputOnly` disables this recorder but retains the
-foreground `SendInput` journey; the existing harness has no complete benchmark
-mode that avoids taking over the desktop. Do not rerun it, remove its foreground
-guard, restore focus repeatedly or retry interrupted runs automatically. Focus
-interruptions do not establish a product performance failure.
-
-Recorder-only passive measurement can run without desktop input, using existing
-ETW access only; no UAC, elevation or permission changes are authorized. Exact
-automatic stimuli without desktop input need an internal replay mode that does
-not yet exist. Such a mode measures command-to-render behavior, not native mouse
-delivery or physical input latency, and needs a matched baseline before production
-comparisons. Passive recording cannot supply the automatic stimulus either.
-The revised procedure remains to be settled; displayed-FPS and native-input
-acceptance remain unverified. Preserve the six profiles and original binary.
-
-**Replay preparation checkpoint:** the uncommitted harness-only change adds
-`-Replay -InputOnly` to the existing performance journeys. It uses an offscreen
-window, the existing external fixture/source, the same motion/click schedule and
-an internal command pipe. No production behavior has changed. The old binary is
-rejected before launch by a capture-build runtime capability marker. Review scope:
-`app/src/TinyTorrent.csproj`, `Shell/MainWindow/Capture.cs`, `CaptureInput.cs`,
-`CapturePerformance.cs`, `app/tests/Capture.ps1`, `Performance.ps1` and
-`Performance.md`. Compare the working diff against `1b26388`.
-
-The next stage is one focused review/build round, approximately half an hour plus
-the six baseline journeys. Before a build, independently review no-global-input,
-no-activation and no-image paths; external scheduling during UI stalls; selection
-correlation; cancellation and cleanup; and diagnostic-only reporting. A focused
-offscreen trial must settle whether WinUI keeps drawing and the existing owners
-accept replay commands; it cannot prove displayed or native-input acceptance.
-Do not start it before review, and do not make production corrections until the
-matched replay baseline is frozen. Retain failed trials as evidence.
-
-The independent source review completed all five passes with no material findings;
-its record is `V:/temp/plan17-replay-review.md`. A final source read removed the
-newly orphaned instance `Screen` and `RefreshHz` members; static screen/monitor
-queries remain unchanged. The owner's overseeing chat also completed source
-review with no material findings, recorded in
-`V:/temp/plan17-overseeing-review.md`, and cleared the one shared build and single
-country/200 docked offscreen trial. No build or trial has started. Both reviews
-leave the runtime gates and matched baseline open.
+The new procedure measures command-to-render behavior and is not comparable to
+the old SendInput runs. Displayed/native-input acceptance, exact map-command
+correlation, per-click Inspector readiness, earlier transition findings and the
+separate queue-participation variant remain open. Next: profile the city/1,000
+docked marquee gap, attribute one source operation/thread, then make and compare
+its smallest correction. No production edits precede this freeze.
 
 **Pre-reboot handoff:** the owner requested saving the current measurements and
 repeating them after reboot before accepting a baseline. The
