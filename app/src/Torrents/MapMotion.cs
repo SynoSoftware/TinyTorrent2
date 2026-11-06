@@ -44,6 +44,7 @@ internal sealed class MapMotion : IDisposable
     private bool _again;
     private MapRenderer.Highlight _highlight;
     private Dictionary<PeerPlace, int> _marks = [];
+    private HashSet<DestinationKey>? _selection;
     private TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Scene? _scene;
     private Picture? _pending;
@@ -389,8 +390,16 @@ internal sealed class MapMotion : IDisposable
             var marks = input.Model.Marks(input.Selection.Select(item => item.Location).ToArray());
             if (marks.Count != _marks.Count || marks.Any(mark => _marks.GetValueOrDefault(mark.Key) != mark.Value))
                 _marks = marks;
+            var marking = new MapRenderer.Highlight(null, _marks, null);
+            var selected = input.Selection.Length == 0 ? null : input.Model.Destinations
+                .Where(marking.IsSelected).Select(destination => destination.Key).ToHashSet();
+            if (selected is null || _selection is null || !_selection.SetEquals(selected))
+                _selection = selected;
         }
-        var highlight = new MapRenderer.Highlight(input.Chosen, _marks, input.Pointed);
+        var highlight = new MapRenderer.Highlight(input.Chosen, _marks, input.Pointed)
+        {
+            Selection = input.HighContrast ? null : _selection,
+        };
         var prepare = first || modelChanged || view.Size != previousView?.Size
             || input.Animation != previous?.Animation || input.DotTotal != previous?.DotTotal
             || input.ArcLimit != previous?.ArcLimit || input.Animates != previous?.Animates
@@ -550,7 +559,7 @@ internal sealed class MapMotion : IDisposable
         foreach (var route in traffic.Routes)
         {
             if (!_lanes.TryGetValue(route.Key, out var lane))
-                _lanes[route.Key] = lane = new Lane();
+                _lanes[route.Key] = lane = new Lane { Key = route.Key };
             lane.Path = route.Path;
             lane.Peer = route.Peer;
             present.Add(route.Key);
@@ -610,6 +619,7 @@ internal sealed class MapMotion : IDisposable
             if (Place(scene, view, dot, now) is not { } placed)
                 continue;
             var tint = dot.Upload ? scene.Upload : scene.Download;
+            tint = scene.Highlight.Colour(tint, dot.Route.Key);
             batch.Draw(
                 mark,
                 Matrix3x2.CreateTranslation(-Head)
@@ -749,7 +759,10 @@ internal sealed class MapMotion : IDisposable
         double OriginOpacity,
         Color Download,
         Color Upload
-    );
+    )
+    {
+        internal MapRenderer.Highlight Highlight { get; init; }
+    }
 
     /// <summary>
     /// The routes that carry dots and what sizes them. A new instance means
@@ -777,6 +790,7 @@ internal sealed class MapMotion : IDisposable
     /// <summary>A destination's route as the dots follow it; it keeps its carried bytes while it transfers.</summary>
     private sealed class Lane
     {
+        internal required DestinationKey Key { get; init; }
         internal MapRenderer.GreatCircle Path { get; set; }
         internal GeoPoint Peer { get; set; }
     }

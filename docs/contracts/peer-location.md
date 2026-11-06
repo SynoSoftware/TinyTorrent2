@@ -217,7 +217,7 @@ Land and boundaries use the platform's secondary control surface and strong
 control stroke. Transfer marks use the same accent text and upload brushes as
 the table and speed graph, without mixing in a separate map colour. Markers
 retain the brushes' full opacity so small destinations remain readable in Light
-and Dark; only activity arcs use the dimming treatment below.
+and Dark, except when a table selection mutes other connections.
 Country fills stay subdued.
 Countries have no hover or selection state; inspection targets location markers
 and arcs. Every selected table peer highlights where the map shows it. In
@@ -226,6 +226,13 @@ without coordinates, and every row in Countries detail, marks its country's
 estimated destinations by the same placement, with the selected rows as the
 connections, up to the destinations shown. This is a best guess, like the
 distribution itself.
+While the peers table has selected rows, their mapped connections keep their
+download/upload colours. Other arcs, glow, moving dots and location markers
+draw in grayscale at one quarter of their normal opacity. The existing shared
+location and estimated-placement rules decide which destinations represent the
+selected rows. Clearing the table selection restores normal colours and opacity,
+including cached glow. This changes appearance without restarting traffic or
+activity fades. High Contrast retains its solid, undimmed system ink.
 Choosing a location on the map, by clicking its marker or route or with the
 arrow keys, limits the peers table to that place's peers in every connection
 state: the whole country in Countries detail, one coordinate in Cities detail,
@@ -238,9 +245,10 @@ and the table takes them in a later dispatcher turn, never inside the click
 and without refreshing the rest of the inspector.
 Active country arcs keep visible endpoints; idle countries keep their markers.
 The composited arc layer uses the [dimming treatment](#arc-dimming);
-selected routes use the same transparency and fades, with highlight ink and a
-two-DIP stroke. Location marks remain outside it. Drawing stops when the map
-leaves the visible inspector.
+selected routes use the same transparency and fades with a two-DIP stroke.
+They retain transfer colours while table rows are selected; a map-chosen route
+uses highlight ink when no table rows are selected. Location marks remain
+outside it. Drawing stops when the map leaves the visible inspector.
 Redraws follow changed observations, view transforms, inspection or appearance.
 An unchanged, clamped pan or zoom does not request another frame. Navigation
 requests redraw directly through Win2D so dragging does not wait for the activity
@@ -361,13 +369,12 @@ Each published view or appearance carries a cancellation token. A newer UI
 request cancels the previous token without waiting; the game loop checks it
 between routes, countries and border pieces and before publishing a picture.
 An entered native call finishes, but obsolete pictures are discarded.
-Country tracing prepares every bounded border stroke before publishing the
-complete outline, so panning exposes cached geometry. Arcs create their first
-cached stroke before drawing. Retained strokes remain visible while the rebuild
-allowance replaces them for the current width and scale. Arc refinement keeps
-its brushes and complete cached strokes until replacements are ready.
-Raw geometry fallback would move repeated CPU tessellation into
-drawing-session completion and stall frames.
+Country tracing prepares border strokes inside the overscan window before
+publishing the complete outline. Other border pieces and arcs create cached
+strokes within the rebuild allowance; until then they draw their geometry with
+screen-space stroke widths. Retained strokes remain visible while the allowance
+replaces them for the current width and scale. Refining an arc replaces its
+cached strokes and brushes together, so they follow the new guide.
 Rate-strength transitions keep the current smooth fade. A new observation
 preserves the pending visible step's deadline, so frequent updates cannot keep
 postponing all visible progress.
@@ -394,11 +401,11 @@ Render in this order, so overlapping glow cannot defeat the opacity limit:
    Setting each individual line to 80% would still let overlaps approach full
    opacity. Neither operation dims the land or country activity shading.
 4. Draw location markers, the origin and marker selection rings separately.
-   They retain their visibility and hit targets. Selected route cores use
-   highlight ink inside the shared arc layer, retaining activity strength,
-   destination fade and origin dimming without an additional opaque stroke.
-   Highlight only the inspected connection/location; do not brighten the
-   entire network during inspection.
+   They retain their visibility and hit targets. Map-chosen route cores use
+   highlight ink when no table rows are selected; table-selected routes keep
+   their transfer colours. Both remain inside the shared arc layer, retaining
+   activity strength, destination fade and origin dimming without an additional
+   opaque stroke. Selection and inspection never brighten the entire network.
 
 Opacity means visible strength, not transparency: 80% opacity is 20%
 transparency. The 30% destination multiplier is applied before the layer cap;
