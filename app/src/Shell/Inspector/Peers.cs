@@ -337,6 +337,8 @@ public sealed partial class Inspector
         _peerCache.RemoveAll(entry => !prepared.Present.Contains(entry.TorrentId));
         if (!ReferenceEquals(current, prepared.Rows))
         {
+            if (current is not null)
+                _releaseBaseline ??= ShownPeers ?? [];
             Peers = prepared.Rows;
             if (prepared.Cached)
                 IsReplacing = false;

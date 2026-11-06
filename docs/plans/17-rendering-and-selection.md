@@ -741,15 +741,15 @@ original gap: independently recomputing that exact 603.6 ms interval gives
 and layout. The 766.7 ms figure covers the whole original marquee phase.
 Neither value is exclusive CPU, and the counter's omitted work remains open.
 
-One source-confirmed amplification is under investigation: aggregate selection
+One source-confirmed reconstruction is under investigation: aggregate selection
 changes call `RefreshScope`, whose `Clear` drops `Peers`. `ReadPeers` then seeds
 from the eight-torrent cache before sequential replies reconstruct the scope.
-Scopes larger than that cache can therefore remove and later reinsert peers
-shared by successive scopes. This is not yet quantified in the observed gap.
-If the counter confirms that churn, retain overlapping peers at the existing
-Inspector owner while preserving scope filtering, explicit release, readiness,
-cancellation and session invalidation; add no second cache or yielding native
-edit path.
+Scopes larger than that cache therefore reconstruct Peer objects shared by
+successive scopes. TableView can coalesce intermediate changes, so this does not
+by itself establish additional native notifications or explain the observed gap.
+Retain overlapping peers at the existing Inspector owner while preserving scope
+filtering, explicit release, readiness, cancellation and session invalidation;
+add no second cache or yielding native edit path.
 The smallest correction identified by source review replaces aggregate
 `RefreshScope.Clear` with `History = null`, and seeds `_releaseBaseline` at
 ReadPeers' existing scoped-list publication before assigning `Peers`. Retarget,
@@ -759,6 +759,20 @@ focused `peer-scope` variant (14 → 15 → 14 torrents) to establish common Pee
 identity loss and notification churn, then compare the same variant. It retains
 the frozen inventory/map profile but deliberately has no live churn or timed
 click/motion schedule, so it cannot stand in for standard-profile acceptance.
+
+The [focused reference](../../artifacts/evidence/ui-peer-scope-reference-20261106-7025057/README.md)
+at `7025057` completed normally with correct membership. Growing 14 → 15 torrents
+retained 51,000 of 73,950 shared Peer objects; shrinking back retained 42,000.
+Thus 22,950 and 31,950 shared objects were reconstructed respectively. Native
+notifications stayed near the required net size changes: grow inserted 1,789 and
+removed 4; shrink removed 1,785. Scope readiness was 3,203.91 and 2,205.81 ms;
+these elapsed endpoints include reads, map and table work, not exclusive CPU.
+Peak/final private commitment was 1,434.24/1,328.83 MiB. The reference binary,
+identities, raw data and counting script are preserved before production changes.
+The three-line correction has passed independent focused source review at
+`V:/temp/plan17-scope-retention-implementation-review.md`. Its remaining question
+is whether the same focused workload retains every shared identity with correct
+membership and normal completion; speed and memory observations remain separate.
 
 The failed readiness run has all peers parsed and observes arcs, locations and
 moving dots. Its XAML callback stops while the independent map continues drawing,

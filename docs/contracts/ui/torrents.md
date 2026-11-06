@@ -445,6 +445,10 @@ bitmap until the replacement has rendered.
 Peer batches retain the last published list when completion adds no membership
 or order change. Value-only updates do not rebuild an unsorted peer or tracker
 view. Unchanged peer, tracker and file replies do not request another sort pass.
+Changing an implicit aggregate selection retains its shared Peer instances.
+Scope pruning uses the existing explicit row-release path, and refreshed replies
+reconcile at the same peer owner. A true torrent retarget or engine session
+change still invalidates its previous detail.
 TableView owns collection reconciliation and row transitions, whether the source
 notifies changes or is replaced as a snapshot.
 

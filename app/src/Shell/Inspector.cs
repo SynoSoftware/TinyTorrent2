@@ -675,7 +675,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
     {
         PeerSubject = new();
         IsReplacing = IsVisible && HasContent;
-        Clear();
+        History = null;
         _readFailure = null;
         if (!CanShow(_section))
             _section = InspectorSection.Peers;
