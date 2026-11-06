@@ -349,6 +349,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
             return true;
         if (HasDraft || IsPending)
             return false;
+        PeerSubject = new();
         _readFailure = _editFailure = null;
         CancelDraft();
         IsReplacing =
@@ -665,6 +666,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
 
     internal void RefreshScope()
     {
+        PeerSubject = new();
         IsReplacing = IsVisible && HasContent;
         Clear();
         _readFailure = null;

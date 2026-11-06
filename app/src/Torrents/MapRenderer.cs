@@ -49,10 +49,6 @@ internal sealed class MapRenderer : IDisposable
     private GeoPoint? _arcOrigin;
     private double _originOpacity = 1;
     private CanvasRadialGradientBrush? _originMask;
-    private CanvasCachedGeometry? _ring;
-    private CanvasCachedGeometry? _wideRing;
-    private CanvasRenderTarget? _dot;
-    private CanvasRenderTarget? _activeDot;
     private CanvasCommandList? _glowLines;
     private GaussianBlurEffect? _glowBlur;
     private GlowInputs? _glowInputs;
@@ -62,17 +58,12 @@ internal sealed class MapRenderer : IDisposable
     private double _originStrength;
     // Miter joins spike past the line at sharp outline corners.
     private static readonly CanvasStrokeStyle Rounded = new() { LineJoin = CanvasLineJoin.Round };
-    private static readonly CanvasStrokeStyle FixedStroke = new()
-    {
-        LineJoin = CanvasLineJoin.Round,
-        TransformBehavior = CanvasStrokeTransformBehavior.Fixed,
-    };
     private readonly Dictionary<string, Fill> _fills = [];
     private Extent _window;
     private float _windowDetail;
     private long _rebuildUntil;
     private bool _rebuildPending;
-    // Border pieces the latest picture drew plainly or from another scale.
+    // Border pieces the latest picture drew from another scale.
     private readonly Queue<Piece> _staleBorders = new();
 
     private float _detail;
@@ -203,14 +194,6 @@ internal sealed class MapRenderer : IDisposable
         _traffic = null;
         _originMask?.Dispose();
         _originMask = null;
-        _ring?.Dispose();
-        _ring = null;
-        _wideRing?.Dispose();
-        _wideRing = null;
-        _dot?.Dispose();
-        _dot = null;
-        _activeDot?.Dispose();
-        _activeDot = null;
         ReleaseGlow();
         foreach (var fill in _fills.Values)
             fill.Geometry?.Dispose();
@@ -352,7 +335,7 @@ internal sealed class MapRenderer : IDisposable
                         Bounds = route.Bounds,
                     })
                     .ToArray(),
-                _viewport.Size.Width * _viewport.Size.Height,
+                _viewport.FrameSize.Width * _viewport.FrameSize.Height,
                 _model.Ceiling,
                 Animation switch
                 {
@@ -980,26 +963,13 @@ internal sealed class MapRenderer : IDisposable
                         cancellation.ThrowIfCancellationRequested();
                         if (!piece.Extent.Moved(360 * turn).Overlaps(visible))
                             continue;
-                        if (Stroked(piece) is { } stroke)
-                        {
-                            if (!IsCurrent(stroke.Scale, BorderTolerance))
-                                _staleBorders.Enqueue(piece);
-                            ApplyStroke(draw, stroke, transform, ref applied);
-                            // A stroke from another scale draws that much wider
-                            // or narrower; its ink changes inversely, so the
-                            // border keeps its weight until it is rebuilt.
-                            var widened = _viewport.AxisScale / stroke.Scale;
-                            draw.DrawCachedGeometry(
-                                stroke.Geometry,
-                                contrast ? ink : Alpha(border, 2 / (widened.X + widened.Y))
-                            );
-                        }
-                        else
-                        {
+                        var stroke = Stroked(piece);
+                        if (!IsCurrent(stroke.Scale, BorderTolerance))
                             _staleBorders.Enqueue(piece);
-                            ApplyStroke(draw, null, transform, ref applied);
-                            draw.DrawGeometry(piece.Line(_device), border, borderWidth, FixedStroke);
-                        }
+                        ApplyStroke(draw, stroke, transform, ref applied);
+                        var widened = _viewport.AxisScale / stroke.Scale;
+                        draw.DrawCachedGeometry(stroke.Geometry,
+                            contrast ? ink : Alpha(border, 2 / (widened.X + widened.Y)));
                     }
                 }
             }
@@ -1089,15 +1059,7 @@ internal sealed class MapRenderer : IDisposable
                                     brush.RadiusY = 30 / scale.Y;
                                     brush.Opacity = .5f * .35f * strength * strength;
                                     ApplyStroke(halo, glowStroke, transform, ref applied);
-                                    if (glowStroke is { } stroke)
-                                        halo.DrawCachedGeometry(stroke.Geometry, brush);
-                                    else
-                                        halo.DrawGeometry(
-                                            route.Arc,
-                                            brush,
-                                            2 + 3 * strength,
-                                            FixedStroke
-                                        );
+                                    halo.DrawCachedGeometry(glowStroke.Geometry, brush);
                                 }
                             }
                         }
@@ -1138,14 +1100,10 @@ internal sealed class MapRenderer : IDisposable
                             var paint = PaintOf(route, home);
                             var marked = highlight.IsMarked(route.Destination);
                             var line = paint.Line(marked ? 2 : Step(1 + strength, 4));
-                            var width = marked ? 2 : 1 + strength;
                             if (contrast)
                             {
                                 ApplyStroke(draw, line, transform, ref applied);
-                                if (line is { } stroke)
-                                    draw.DrawCachedGeometry(stroke.Geometry, ink);
-                                else
-                                    draw.DrawGeometry(route.Arc, ink, width, FixedStroke);
+                                draw.DrawCachedGeometry(line.Geometry, ink);
                                 continue;
                             }
                             var brush = paint.Core(
@@ -1155,73 +1113,16 @@ internal sealed class MapRenderer : IDisposable
                             );
                             brush.Opacity = .18f + .82f * strength;
                             ApplyStroke(draw, line, transform, ref applied);
-                            if (line is { } core)
-                                draw.DrawCachedGeometry(core.Geometry, brush);
-                            else
-                                draw.DrawGeometry(route.Arc, brush, width, FixedStroke);
+                            draw.DrawCachedGeometry(line.Geometry, brush);
                         }
                     }
                     draw.Transform = Matrix3x2.Identity;
                 }
-                draw.FillCircle(origin, 3, ink);
             }
         }
 #if CAPTURE
         Measure("arcs", ref measured);
 #endif
-        // Every mark is a tinted copy of one white dot, so one sprite batch
-        // submits them all; selection rings then draw above every mark.
-        List<(Vector2 Point, bool Wide, Color Colour)> rings = [];
-        using (var batch = draw.CreateSpriteBatch())
-        {
-            foreach (var route in _routes)
-            {
-                cancellation.ThrowIfCancellationRequested();
-                var group = route.Destination.Group;
-                var point = _viewport.Screen(route.Destination.Point);
-                // Marks and their selection ring stay within 16 DIPs of the point.
-                if (
-                    point.X < -16
-                    || point.Y < -16
-                    || point.X > _viewport.Size.Width + 16
-                    || point.Y > _viewport.Size.Height + 16
-                )
-                    continue;
-                var kinds =
-                    (group.Seeds > 0 ? 1 : 0)
-                    + (group.Leechers > 0 ? 1 : 0)
-                    + (group.Unknown > 0 ? 1 : 0);
-                var offset = -2.5f * (kinds - 1);
-                Mark(group.Seeds, down);
-                Mark(group.Leechers, up);
-                Mark(group.Unknown, ink);
-                if (highlight.IsMarked(route.Destination) || route.Destination.Key == highlight.Pointed)
-                    rings.Add((point, kinds > 1, contrast ? ink : highlight.Colour(ink, route.Destination.Key)));
-
-                void Mark(int count, Color colour)
-                {
-                    if (count == 0)
-                        return;
-                    var radius = group.Active > 0 ? 2.4f : 2;
-                    var dot = group.Active > 0
-                        ? Dot(ref _activeDot, radius)
-                        : Dot(ref _dot, radius);
-                    var tint = contrast ? ink : highlight.Colour(colour, route.Destination.Key);
-                    batch.Draw(
-                        dot,
-                        point + new Vector2(offset - radius - 1, -radius - 1),
-                        new Vector4(tint.R, tint.G, tint.B, tint.A) / 255
-                    );
-                    offset += 5;
-                }
-            }
-        }
-        foreach (var (point, wide, colour) in rings)
-            draw.DrawCachedGeometry(
-                wide ? Ring(ref _wideRing, 8) : Ring(ref _ring, 5),
-                point,
-                colour
-            );
         // Borders take what the arcs leave of the budget.
         StrokeStaleBorders(cancellation);
         if (_rebuildPending)
@@ -1240,12 +1141,12 @@ internal sealed class MapRenderer : IDisposable
             route.Reach.Grown(new Vector2(30) / scale).Moved(360 * turn).Overlaps(visible);
     }
 
-    // A modest overscan keeps cut edges off screen without tessellating a
-    // large coastline far outside the view. Longitude turns share the crop.
+    // Keep clipped fills across half a view of panning, so dragging does not
+    // repeatedly tessellate coastlines. Longitude turns share the crop.
     private void MoveWindow(Extent visible)
     {
         var span = visible.High - visible.Low;
-        var needed = visible.Grown(span / 8);
+        var needed = visible.Grown(span / 2);
         if (_windowDetail == _detail)
         {
             for (var turn = -1; turn <= 1; turn++)
@@ -1257,7 +1158,7 @@ internal sealed class MapRenderer : IDisposable
                 }
             }
         }
-        _window = visible.Grown(span / 4);
+        _window = visible.Grown(span);
         _windowDetail = _detail;
     }
 
@@ -1339,14 +1240,11 @@ internal sealed class MapRenderer : IDisposable
         return geometry;
     }
 
-    // A piece with no stroke draws plainly, which Direct2D tessellates on the
-    // CPU at every draw, so it gets one first. A piece keeps drawing its last
-    // stroke, made at another scale, until StrokeStaleBorders replaces it.
-    private Stroke? Stroked(Piece piece)
+    private Stroke Stroked(Piece piece)
     {
-        if (piece.Stroke is null && InBudget)
+        if (piece.Stroke is null)
             Restroke(piece);
-        return piece.Stroke;
+        return piece.Stroke!.Value;
     }
 
     /// <summary>Whether border strokes wait for <see cref="StrokeBorders()"/>.</summary>
@@ -1371,10 +1269,8 @@ internal sealed class MapRenderer : IDisposable
         }
     }
 
-    // A plain piece looks the same as a stroked one, and a stale stroke
-    // keeps the border's weight, so new strokes need no picture until all are
-    // made. A zoom then draws the map once for its borders rather than once
-    // per budget.
+    // Stale strokes keep drawing while replacements are prepared. A zoom
+    // redraws their picture once all replacements are ready.
     private void StrokeStaleBorders(CancellationToken cancellation)
     {
         if (_staleBorders.Count == 0)
@@ -1403,8 +1299,9 @@ internal sealed class MapRenderer : IDisposable
     // that grows with its size on screen, so zoomed arcs took most of a second.
     // A realization is tessellated once for a scale and then drawn by the GPU,
     // but making one is slow, and a scale change makes one for every visible
-    // border piece and arc. Each frame therefore rebuilds only until
-    // _rebuildUntil, allowing navigation between frames. Within 5% of its scale
+    // border piece and arc. Each worker pass replaces retained strokes only
+    // until _rebuildUntil. First strokes are prepared once before recording,
+    // so raw drawing never repeats their tessellation. Within 5% of its scale
     // a realization looks the same; one
     // further off, or made at another outline detail, still draws, a little too
     // wide, narrow or coarse, until its turn. A country's outline is traced
@@ -1519,56 +1416,31 @@ internal sealed class MapRenderer : IDisposable
         applied = scale;
     }
 
-    // A mark is this white dot, with a DIP of margin, multiplied by its theme
-    // colour in a sprite batch.
-    private CanvasRenderTarget Dot(ref CanvasRenderTarget? dot, float radius)
-    {
-        if (dot is null)
-        {
-            var size = 2 * (radius + 1);
-            dot = new CanvasRenderTarget(_device, size, size, _dpi);
-            using var session = dot.CreateDrawingSession();
-            session.Clear(Microsoft.UI.Colors.Transparent);
-            session.FillCircle(radius + 1, radius + 1, radius, Microsoft.UI.Colors.White);
-        }
-        return dot;
-    }
-
-    // Direct2D outlines a plain circle on the CPU at every draw. A selection
-    // ring has the same shape at every place, so one realization per radius
-    // draws them all.
-
-    private CanvasCachedGeometry Ring(
-        ref CanvasCachedGeometry? ring,
-        float radius
-    )
-    {
-        if (ring is null)
-        {
-            using var circle = CanvasGeometry.CreateCircle(_device, Vector2.Zero, radius);
-            ring = CanvasCachedGeometry.CreateStroke(
-                circle,
-                1.2f,
-                Rounded,
-                CanvasGeometry.ComputeFlatteningTolerance(_dpi, 1)
-            );
-        }
-        return ring;
-    }
-
     // Widths move in steps, so animated activity rebuilds an arc's
     // realization only when it reaches the next step.
     private static float Step(float width, float steps) => MathF.Round(width * steps) / steps;
 
-    internal Inspection Inspect(Presentation presentation)
+    internal Inspection Inspect(Presentation presentation, MapView? view = null)
     {
         var destinations = presentation.Destinations.ToDictionary(destination => destination.Key);
-        return new(_viewport.View, _routes.Select(route => new Inspection.Target(
-            destinations[route.Destination.Key], route.Reach, route.Segments)).ToArray());
+        return new(view ?? _viewport.View, _routes.Select(route => new Inspection.Target(
+            destinations[route.Destination.Key], route.Reach, route.Segments)).ToArray())
+        {
+            Highlight = _highlight,
+            Origin = _routes.Any(route => route.Arc is not null) ? presentation.Origin : null,
+            Subject = presentation.Subject,
+            Cities = presentation.Cities,
+            Destinations = presentation.Destinations,
+        };
     }
 
     internal sealed class Inspection(MapView view, Inspection.Target[] targets)
     {
+        internal Highlight Highlight { get; init; }
+        internal GeoPoint? Origin { get; init; }
+        internal object? Subject { get; init; }
+        internal bool Cities { get; init; }
+        internal IReadOnlyList<Destination> Destinations { get; init; } = [];
         internal sealed record Target(Destination Destination, Extent Reach, Vector2[] Segments);
 
         internal Destination? HitTest(Vector2 point, MapView? currentView = null)
@@ -1803,27 +1675,22 @@ internal sealed class MapRenderer : IDisposable
         private float _glowWidth;
         private float _lineWidth;
 
-        /// <summary>The halo's stroke for a width in DIPs on screen, or null before the first one is made.</summary>
-        internal Stroke? Glow(float width) => Realize(ref _glow, ref _glowWidth, width);
+        internal Stroke Glow(float width) => Realize(ref _glow, ref _glowWidth, width);
 
-        /// <summary>The core's stroke for a width in DIPs on screen, or null before the first one is made.</summary>
-        internal Stroke? Line(float width) => Realize(ref _line, ref _lineWidth, width);
+        internal Stroke Line(float width) => Realize(ref _line, ref _lineWidth, width);
 
-        private Stroke? Realize(
+        private Stroke Realize(
             ref Stroke? stroke,
             ref float made,
             float width
         )
         {
-            if (
-                (stroke is { } cached && made == width && map.IsCurrent(cached.Scale))
-                || !map.MayRebuild()
-            )
-                return stroke;
+            if (stroke is { } cached && (made == width && map.IsCurrent(cached.Scale) || !map.MayRebuild()))
+                return cached;
             stroke?.Geometry.Dispose();
             stroke = map.CreateStroke(_arc, width);
             made = width;
-            return stroke;
+            return stroke.Value;
         }
 
         internal CanvasRadialGradientBrush Halo(Color colour)

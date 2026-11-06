@@ -1,6 +1,6 @@
 param(
     [ValidateSet('1', 'smoke', 'shell', 'menus', 'menu-choices', 'update-check', 'location-warning', 'schedule', 'desktop', 'dialogs', 'recovery', 'details', 'details-files', 'file-controls', 'files', 'files-layout',
-        'search', 'library', 'library-files', 'traffic', 'peers', 'peer-switch', 'peer-preferences', 'map', 'map-performance', 'map-geography', 'map-arcs', 'map-composition', 'selection', 'selection-frame', 'connections', 'edits', 'add-layout', 'settings-layout', 'settings-prototype', 'subtitle-tasks', 'memory', 'footer', 'workspace')]
+        'search', 'library', 'library-files', 'traffic', 'peers', 'peer-switch', 'peer-preferences', 'map', 'map-performance', 'map-geography', 'map-arcs', 'map-composition', 'map-handoff', 'selection', 'selection-frame', 'connections', 'edits', 'add-layout', 'settings-layout', 'settings-prototype', 'subtitle-tasks', 'memory', 'footer', 'workspace')]
     [string] $Review = '1',
     [ValidateSet('en', 'es')]
     [string] $Language,
@@ -11,7 +11,8 @@ param(
     [int] $LibraryFiles = 0,
     [switch] $Transfer,
     [ValidateSet('light', 'dark')]
-    [string] $Theme
+    [string] $Theme,
+    [string] $BinaryDirectory
 )
 
 $ErrorActionPreference = 'Stop'
@@ -39,6 +40,7 @@ $properties = ([xml](Get-Content (Join-Path $repository 'Directory.Build.props')
 $engineName = $properties.EngineTargetName | Where-Object { $_ }
 $windowName = $properties.WindowTargetName | Where-Object { $_ }
 $output = Join-Path $ArtifactsPath "bin/TinyTorrent/$($Configuration.ToLowerInvariant())_win-x64_capture"
+if ($BinaryDirectory) { $output = [IO.Path]::GetFullPath($BinaryDirectory) }
 $executable = Join-Path $output "$engineName.exe"
 $window = Join-Path $output "$windowName.exe"
 if (-not (Test-Path -LiteralPath $window)) {
@@ -84,7 +86,7 @@ $run = Join-Path $ArtifactsPath "evidence/Capture-$Review-$([guid]::NewGuid())"
 $directory = Join-Path $run 'store'
 $payload = Join-Path $run 'payload'
 $captures = Join-Path $run 'captures'
-$null = New-Item -ItemType Directory -Path $directory, $payload
+$null = New-Item -ItemType Directory -Path $directory, $payload, $captures
 
 function Write-Json([string] $path, $value) {
     [IO.File]::WriteAllText($path, ($value | ConvertTo-Json -Depth 20), [Text.UTF8Encoding]::new($false))

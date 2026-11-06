@@ -394,9 +394,9 @@ replacement, background alpha and live pan/zoom. It checks that a marker from
 a prior picture disappears and translucent pixels match a fresh target.
 Navigation must draw new geometry while peer aggregation is deliberately
 blocked; table selection must also highlight its destination during that wait.
-It also supersedes native drawing after preparation and during initial route
-creation, checking cancellation, restored view/origin state and rejection of
-obsolete pictures.
+It holds the raster worker while checking continued navigation and moving dots,
+and supersedes incompatible origin work during initial route creation, checking
+cancellation and restored origin state.
 It measures rapid zoom changes and panning separately from saving full-content
 frames, so synchronous window capture does not distort navigation timings.
 Intervals between native picture publications expose pauses even when
@@ -404,6 +404,11 @@ intermediate requested views were superseded.
 It records those views
 with 200 active peers for visual inspection of missing geography, ghosting and
 the acrylic backdrop.
+Use `-Review map-handoff` for those functional checks without the navigation
+measurement journey. It also checks that tiny rate updates reuse the adopted
+bitmap, telemetry cannot cancel compatible replacement grouping, and worker
+retirement releases the returned buffers. It saves one full-content map image
+for checking the separated markers and backdrop.
 Use `TINYTORRENT_CAPTURE_REVIEW=add-layout` for the workspace headers and empty/long-link
 magnet Add dialog in English and Spanish, Light and Dark, at the three review sizes.
 It also captures the engine-stopped message bar with its Restart action and records

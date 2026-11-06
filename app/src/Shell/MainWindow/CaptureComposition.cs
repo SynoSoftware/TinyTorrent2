@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Numerics;
 using System.Reflection;
 using Microsoft.Graphics.Canvas;
+using Microsoft.Graphics.Canvas.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Torrents;
@@ -99,6 +100,7 @@ public sealed partial class MainWindow
         {
             motion.Dispose();
             Root.Children.Remove(surface);
+            await motion.Released.WaitAsync(TimeSpan.FromSeconds(10));
         }
         var model = new MapModel(Model.Inspector);
         var world = await Geography.Load();
@@ -123,6 +125,20 @@ public sealed partial class MainWindow
             var viewport = Read<MapViewport>(map, "_viewport");
             var layer = Read<MapMotion>(map, "_motion");
             await Until(() => layer.DrawnView is not null);
+            await Until(() => !Read<bool>(CaptureRenderer(map)!, "_interpolating"));
+            await layer.CaptureBarrier().WaitAsync(TimeSpan.FromSeconds(5));
+            await Until(() => CaptureMapIdle(map)
+                && ReferenceEquals(Read<object>(layer, "_shown"), Read<object>(layer, "_completed")));
+            var previousTraffic = Read<MapMotion.Scene>(layer, "_scene").Traffic;
+            var previousPicture = Read<object>(layer, "_shown");
+            var previousBitmap = previousPicture.GetType().GetProperty("Bitmap", flags)!.GetValue(previousPicture);
+            CaptureRates(peers[1], peers[1].DownloadRate + .0001);
+            model.Update(peers, origin, Model.Text);
+            await Until(() => !ReferenceEquals(Read<MapMotion.Scene>(layer, "_scene").Traffic, previousTraffic));
+            var updatedPicture = Read<object>(layer, "_shown");
+            if (!ReferenceEquals(previousBitmap, updatedPicture.GetType().GetProperty("Bitmap", flags)!.GetValue(updatedPicture)))
+                throw new InvalidOperationException("A sub-colour-level rate update rasterized an unchanged map.");
+            outcomes.Add(new { journey = "unchanged map traffic handoff", reusedBitmap = true, updatedTraffic = true });
             var drawing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             using (var releaseDrawing = new ManualResetEventSlim())
             {
@@ -145,19 +161,21 @@ public sealed partial class MainWindow
                 {
                     var original = viewport.View;
                     var traffic = CaptureRenderer(map)!.Scene?.Traffic;
+                    await Until(() => layer.Frames > 0);
+                    var beforeFrames = layer.Frames;
                     viewport.SetView(2, new Vector2(-30, -10), 1);
                     var obsolete = viewport.View;
                     await drawing.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                    await Until(() => layer.DrawnView == obsolete && layer.Frames > beforeFrames);
                     viewport.SetView(original.AxisScale.Y / viewport.Scale, original.Center,
                         original.AxisScale.X / original.AxisScale.Y);
+                    await Until(() => layer.DrawnView == viewport.View);
                     releaseDrawing.Set();
                     await Until(() => published.Contains(viewport.View) && layer.DrawnView == viewport.View);
-                    var actual = Read<MapViewport>(CaptureRenderer(map)!, "_viewport").View;
-                    if (!cancelled || published.Contains(obsolete) || actual != viewport.View
-                        || !ReferenceEquals(traffic, CaptureRenderer(map)!.Scene?.Traffic))
-                        throw new InvalidOperationException("A newer UI view did not cancel native drawing or an obsolete picture was published.");
-                    outcomes.Add(new { journey = "native drawing cancellation", cancelled = true, obsoletePictures = 0,
-                        uiThread = false, unchangedTraffic = true });
+                    if (cancelled || !ReferenceEquals(traffic, CaptureRenderer(map)!.Scene?.Traffic))
+                        throw new InvalidOperationException("Navigation cancelled compatible drawing or restarted unchanged traffic.");
+                    outcomes.Add(new { journey = "presentation during blocked rendering", navigation = true,
+                        dotsAdvanced = true, uiThread = false, unchangedTraffic = true });
                 }
                 finally
                 {
@@ -195,6 +213,7 @@ public sealed partial class MainWindow
                     model.Update(peers, moved, Model.Text);
                     await preparingRoutes.Task.WaitAsync(TimeSpan.FromSeconds(5));
                     model.Update(peers, origin, Model.Text);
+                    await Until(() => obsolete.IsCancellationRequested);
                     releaseRoutes.Set();
                     await map.Ready.WaitAsync(TimeSpan.FromSeconds(15));
                     if (!cancelled || obsoleteRoutes != 1 || renderer.Scene?.Origin != origin.Point)
@@ -208,6 +227,40 @@ public sealed partial class MainWindow
                 }
             }
             var worker = Read<MapWork>(map, "_work");
+            var changingDetail = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            using (var releaseDetail = new ManualResetEventSlim())
+            {
+                var blocked = 0;
+                worker.Started = () =>
+                {
+                    if (Interlocked.Exchange(ref blocked, 1) != 0)
+                        return;
+                    changingDetail.TrySetResult();
+                    if (!releaseDetail.Wait(TimeSpan.FromSeconds(5)))
+                        throw new TimeoutException("The map detail fixture did not release grouping.");
+                };
+                try
+                {
+                    model.Update(peers, origin, Model.Text, cities: false);
+                    await changingDetail.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                    var pending = Read<(MapWork.Input Input, CancellationTokenSource Cancellation)>(map, "_preparing");
+                    model.Update(peers, origin, Model.Text, cities: false);
+                    if (pending.Cancellation.IsCancellationRequested)
+                        throw new InvalidOperationException("Compatible telemetry cancelled the replacement detail's grouping.");
+                    releaseDetail.Set();
+                    await map.Ready.WaitAsync(TimeSpan.FromSeconds(15));
+                    if (Read<MapModel.Presentation>(map, "_presentation").Cities)
+                        throw new InvalidOperationException("The replacement map detail did not complete.");
+                    outcomes.Add(new { journey = "telemetry during replacement grouping", completed = true, cancelled = false });
+                }
+                finally
+                {
+                    releaseDetail.Set();
+                    worker.Started = null;
+                }
+            }
+            model.Update(peers, origin, Model.Text, cities: true);
+            await map.Ready.WaitAsync(TimeSpan.FromSeconds(15));
             var preparing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             using (var release = new ManualResetEventSlim())
             {
@@ -228,7 +281,11 @@ public sealed partial class MainWindow
                     while (!marked && selectionClock.Elapsed < TimeSpan.FromSeconds(2))
                     {
                         await layer.Control.RunOnGameLoopThreadAsync(() =>
-                            marked = Read<MapRenderer.Highlight>(layer, "_highlight").IsMarked(destination));
+                        {
+                            var shown = Read<object>(layer, "_shown");
+                            var highlight = (MapRenderer.Highlight)shown.GetType().GetProperty("Highlight", flags)!.GetValue(shown)!;
+                            marked = highlight.IsMarked(destination);
+                        });
                         if (!marked)
                             await Task.Delay(16);
                     }
@@ -249,6 +306,42 @@ public sealed partial class MainWindow
                     release.Set();
                     worker.Started = null;
                 }
+            }
+            if (ReviewMode == CaptureMode.MapHandoff)
+            {
+                viewport.Fit();
+                await map.Ready.WaitAsync(TimeSpan.FromSeconds(15));
+                var fitted = viewport.View;
+                var drewFittedPicture = false;
+                var presented = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                void RecordDrawing(ICanvasAnimatedControl sender, CanvasAnimatedDrawEventArgs args)
+                {
+                    var shown = Read<object>(layer, "_shown");
+                    drewFittedPicture = (MapView)shown.GetType().GetProperty("View", flags)!.GetValue(shown)! == fitted;
+                }
+                // Update follows presentation; DrawnView alone can describe
+                // an older raster's navigation preview.
+                void RecordPresentation(ICanvasAnimatedControl sender, CanvasAnimatedUpdateEventArgs args)
+                {
+                    if (drewFittedPicture)
+                        presented.TrySetResult();
+                }
+                layer.Control.Draw += RecordDrawing;
+                layer.Control.Update += RecordPresentation;
+                layer.Wake();
+                try
+                {
+                    await presented.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                }
+                finally
+                {
+                    layer.Control.Draw -= RecordDrawing;
+                    layer.Control.Update -= RecordPresentation;
+                }
+                var handle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+                using var recording = new MapRecording(Read<CanvasDevice>(map, "_device"), handle);
+                await recording.Save(Path.Combine(_captureDirectory!, "map-handoff.png"));
+                return;
             }
             viewport.Fit();
             await map.Ready.WaitAsync(TimeSpan.FromSeconds(15));
@@ -342,7 +435,10 @@ public sealed partial class MainWindow
         }
         finally
         {
+            var layer = Read<MapMotion?>(map, "_motion");
             Root.Children.Remove(map);
+            if (layer is not null)
+                await layer.Released.WaitAsync(TimeSpan.FromSeconds(10));
         }
     }
 

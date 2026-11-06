@@ -8,6 +8,7 @@ namespace Syno.TinyTorrent.Torrents;
 internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
 {
     private Observation[] _observations = [];
+    internal object Subject => owner.PeerSubject;
     internal Dictionary<string, Group> Countries { get; private set; } = [];
     internal List<Destination> Destinations { get; private set; } = [];
     internal Location? Origin { get; private set; }
@@ -65,6 +66,7 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
 
     internal sealed record Snapshot(Observation[] Observations, Location? Origin, Strings Text, bool Cities, double Ceiling)
     {
+        internal required object Subject { get; init; }
         internal bool Matches(Snapshot other) => Origin == other.Origin && Text.Language == other.Text.Language
             && Cities == other.Cities && Ceiling == other.Ceiling
             && (ReferenceEquals(Observations, other.Observations) || Observations.Length == other.Observations.Length
@@ -73,6 +75,7 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
 
     internal sealed record Presentation(Dictionary<string, Group> Countries, List<Destination> Destinations, GeoPoint? Origin, double Ceiling)
     {
+        internal required object Subject { get; init; }
         internal float Meridian => (float)(Origin?.Longitude ?? 0);
         internal bool Cities { get; init; }
 
@@ -100,7 +103,7 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
         }
     }
 
-    internal Snapshot Capture() => new(_observations, Origin, Text!, Cities, Ceiling);
+    internal Snapshot Capture() => new(_observations, Origin, Text!, Cities, Ceiling) { Subject = Subject };
 
     internal void Apply(Presentation presentation)
     {
@@ -112,6 +115,7 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
     internal sealed class Arrangement
     {
         private Observation[] _observations = [];
+        private object _subject = new();
         private (Group? Country, Group? Place)[]? _membership;
         private IReadOnlyDictionary<string, Geography.Country>? _world;
         private readonly Dictionary<PeerPlace, Group> _places = [];
@@ -128,6 +132,7 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
 
         internal void Update(Snapshot snapshot)
         {
+            _subject = snapshot.Subject;
             if (Cities != snapshot.Cities || Text?.Language != snapshot.Text.Language
                 || _observations.Length != snapshot.Observations.Length
                 || _observations.Where((observation, index) => observation.Location != snapshot.Observations[index].Location).Any())
@@ -144,7 +149,7 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
             var copies = Countries.Values.Concat(_places.Values).Distinct().ToDictionary(group => group, group => group.Copy());
             return new(Countries.ToDictionary(entry => entry.Key, entry => copies[entry.Value]),
                 Destinations.Select(destination => destination with { Group = copies[destination.Group] }).ToList(), OriginPoint, Ceiling)
-                { Cities = Cities };
+                { Cities = Cities, Subject = _subject };
         }
 
         internal void Clear()

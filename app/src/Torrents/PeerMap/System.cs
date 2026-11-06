@@ -31,7 +31,6 @@ public sealed partial class PeerMap
             {
                 if (IsLoaded)
                 {
-                    QueuePreparation();
                     Invalidate();
                     DotBytesChanged?.Invoke(this, EventArgs.Empty);
                 }

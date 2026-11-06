@@ -39,7 +39,7 @@ public sealed partial class MainWindow
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
         return typeof(PeerMap).GetField("_working", flags)!.GetValue(map) is null
             && ((MapMotion?)typeof(PeerMap).GetField("_motion", flags)!.GetValue(map))?.Ready.IsCompleted != false
-            && new[] { "_frameQueued", "_preparationQueued", "_drawQueued" }
+            && new[] { "_frameQueued", "_preparationQueued" }
                 .All(name => !(bool)typeof(PeerMap).GetField(name, flags)!.GetValue(map)!);
     }
 
@@ -550,6 +550,7 @@ public sealed partial class MainWindow
                         retiring.Started = null;
                     }
                     await stopped.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                    await motion.Released.WaitAsync(TimeSpan.FromSeconds(10));
                     await retiring.Released.WaitAsync(TimeSpan.FromSeconds(10));
                     foreach (var resource in resources.Distinct())
                     {
@@ -1863,6 +1864,7 @@ public sealed partial class MainWindow
             await CaptureLayout();
             await retiring.Released.WaitAsync(TimeSpan.FromSeconds(10));
             await stopped.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            await retiringMotion.Released.WaitAsync(TimeSpan.FromSeconds(10));
             if (CaptureRenderer(chooser) is not null || ((System.Collections.ICollection)routes.GetValue(activeRenderer)!).Count != 0)
                 throw new InvalidOperationException("Hiding the map retained native resources.");
             host.Content = chooser;

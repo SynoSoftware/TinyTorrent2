@@ -10,6 +10,7 @@ public sealed partial class Inspector
     private WindowPage? _workspace;
     private FrameCallback? _subjectFrame;
     private IReadOnlyList<Torrent> _selection = [];
+    internal object PeerSubject { get; private set; } = new();
 
     internal bool IsActive => _workspace is not null;
     internal Browser? Library => _workspace == WindowPage.Library ? _owner.Library : null;
@@ -105,9 +106,10 @@ public sealed partial class Inspector
         var selected = _owner.Selected;
         if (_target is not null && !_owner.Contains(_target))
             Show(null, allPeers: ShowsAllPeers, selection: PeerSelection);
-        if (!_selection.SequenceEqual(selected) && ChangesSubject(_selection, selected))
+        var changed = !_selection.SequenceEqual(selected);
+        if (changed && ChangesSubject(_selection, selected))
             Show(selected.Count == 1 ? selected[0] : null);
-        else if (_target is null && !HasPeerScope)
+        else if (changed && _target is null && !HasPeerScope)
             RefreshScope();
         _selection = selected;
         if (!HasContent)

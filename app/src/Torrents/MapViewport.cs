@@ -10,6 +10,7 @@ internal sealed class MapViewport
     private const float OverviewRatio = 1;
 
     internal Size Size { get; private set; }
+    internal Size FrameSize { get; private set; }
     internal float Scale { get; private set; }
     internal Vector2 Offset { get; private set; }
     internal float Meridian { get; set; }
@@ -32,6 +33,7 @@ internal sealed class MapViewport
     internal void Resize(Size size)
     {
         Size = size;
+        FrameSize = size;
         Scale = FitScale(size);
         Offset = new Vector2((float)size.Width / 2, (float)size.Height / 2);
         SetView(Zoom, Center, CalculateRatio(Zoom, Center.Y));
@@ -56,14 +58,17 @@ internal sealed class MapViewport
 
     internal Vector2 Screen(GeoPoint point) => View.Screen(point);
 
-    internal MapView View => new(Size, Meridian, Center, AxisScale, Transform);
+    internal MapView View => new(Size, Meridian, Center, AxisScale, Transform)
+        { FrameSize = FrameSize == Size ? null : FrameSize };
 
     internal static MapViewport From(MapView view)
     {
-        var scale = FitScale(view.Size);
+        var frame = view.FrameSize ?? view.Size;
+        var scale = FitScale(frame);
         return new()
         {
             Size = view.Size,
+            FrameSize = frame,
             Scale = scale,
             Offset = Vector2.Transform(view.Center, view.Transform),
             Meridian = view.Meridian,
@@ -145,6 +150,7 @@ internal sealed class MapViewport
 /// </summary>
 internal sealed record MapView(Size Size, float Meridian, Vector2 Center, Vector2 AxisScale, Matrix3x2 Transform)
 {
+    internal Size? FrameSize { get; init; }
     internal Rect Bounds
     {
         get

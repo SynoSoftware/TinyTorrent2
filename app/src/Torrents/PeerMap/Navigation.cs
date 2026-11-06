@@ -36,7 +36,7 @@ public sealed partial class PeerMap
 
     private void OnFit(object sender, RoutedEventArgs args) => Fit();
 
-    private Destination? Inspected => _pointed ?? _model.Destinations.FirstOrDefault(IsMarked);
+    private Destination? Inspected => CanInspect ? _pointed ?? _inspection!.Destinations.FirstOrDefault(IsMarked) : null;
 
     private void ZoomInspection(float factor)
     {
@@ -183,7 +183,7 @@ public sealed partial class PeerMap
                 !ReferenceEquals(args.OriginalSource, this)
                 && !ReferenceEquals(args.OriginalSource, FitButton)
             )
-            || _inspection is null
+            || !CanInspect
             || InputKeyboardSource
                 .GetKeyStateForCurrentThread(VirtualKey.Menu)
                 .HasFlag(CoreVirtualKeyStates.Down)
@@ -218,17 +218,22 @@ public sealed partial class PeerMap
             args.Key is VirtualKey.Left or VirtualKey.Up or VirtualKey.Right or VirtualKey.Down
         )
         {
-            if (_model.Destinations.Count == 0)
+            var destinations = _inspection!.Destinations;
+            if (destinations.Count == 0)
                 return;
             var step = args.Key is VirtualKey.Left or VirtualKey.Up ? -1 : 1;
-            var index = _pointed is null
-                ? _model.Destinations.FindIndex(IsMarked)
-                : _model.Destinations.IndexOf(_pointed);
+            var index = -1;
+            for (var candidate = 0; candidate < destinations.Count; candidate++)
+                if (_pointed is null ? IsMarked(destinations[candidate]) : destinations[candidate].Key == _pointed.Key)
+                {
+                    index = candidate;
+                    break;
+                }
             index =
                 index < 0
-                    ? (step > 0 ? 0 : _model.Destinations.Count - 1)
-                    : (index + step + _model.Destinations.Count) % _model.Destinations.Count;
-            _pointed = _model.Destinations[index];
+                    ? (step > 0 ? 0 : destinations.Count - 1)
+                    : (index + step + destinations.Count) % destinations.Count;
+            _pointed = destinations[index];
             SelectPeers([]);
             Choose(_pointed);
             _viewport.Reveal(_pointed.Point);
