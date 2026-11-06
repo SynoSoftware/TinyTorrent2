@@ -124,7 +124,7 @@ public sealed class Schema<TRow>
         _table.RequireSetup();
         column.CaptureSort = items =>
         {
-            var keys = new Dictionary<object, TKey>(ReferenceEqualityComparer.Instance);
+            var keys = new Dictionary<object, TKey>(items.Count, ReferenceEqualityComparer.Instance);
             foreach (var item in items)
                 keys[item] = key((TRow)item);
             var comparison = comparer ?? Comparer<TKey>.Default;

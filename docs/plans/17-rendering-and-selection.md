@@ -810,6 +810,31 @@ slower .NET collection-event/item-list path. Independent design review:
 result is removal of generic sender-ID work, with native work and overall input
 stalls measured separately. No speed claim precedes that comparison.
 
+The fixed-ID candidate at `222e88d` has passed its source review and one Release
+capture build. Its [completed attribution](../../artifacts/evidence/ui-profile-bindable-20261106-222e88d/README.md)
+observes the nongeneric bindable callback and no generic sender-ID/signature
+generation beneath publication. The intended local cost is removed. Remaining
+native callbacks, composed notifications, projection capture and layout are
+distinct costs. The [unprofiled matched run](../../artifacts/evidence/ui-benchmark-bindable-20261106-222e88d/README.md)
+against `3d2970a` completed normally, 1,467/1,467 commands applied and no unselected
+clicks. Worst navigation/marquee gaps changed 363.71/355.59 → 230.66/274.26 ms;
+worst observed click completion changed 365.06 → 485.12 ms, with four unobserved
+XAML completions. Peak/final private commitment changed 1,425.98/1,069.81 →
+1,402.68/1,110.56 MiB. Retain the demonstrated local correction without claiming
+an end-to-end speed result from these mixed single-run maxima.
+
+The new trace's exact worst marquee gap is 253.1878 ms. Projection capture
+accounts for 173.66 ms inclusive sampled elapsed, including 106.54 ms in native
+realized-child iterator creation and 58.10 ms in sort-key capture. A 54.04 ms
+UI-triggered large-allocation GC suspension overlaps dictionary resize; a second
+40.50 ms suspension is worker-triggered. The full trace has zero lost events.
+These are nested sampled/wait intervals, not exclusive dictionary or iterator CPU.
+The next narrow correction gives the existing sort-key dictionary its known
+`items.Count` capacity, removing repeated backing-array growth without adding
+state or changing key selection/comparison. Compare it against the preserved
+`222e88d` profiled workload. Leave the native iterator interval unresolved rather
+than assuming its method consumed that entire elapsed time.
+
 The failed readiness run has all peers parsed and observes arcs, locations and
 moving dots. Its XAML callback stops while the independent map continues drawing,
 so it cannot establish a blank map: the ready timestamp previously depended on
