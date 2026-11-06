@@ -2,9 +2,11 @@
 
 Status: the map handoff is implemented at `e723ae6` and its focused functional
 validation passed. The owner reports much better pan/zoom. Preserve this handoff.
-The matched offscreen replay baseline is frozen at `b20b923`. The first narrow
+The original offscreen reference is frozen at `b20b923`; the corrected-observer
+reference is frozen at `ba64259`, with production behavior unchanged. The first
 peer-snapshot correction was rejected after comparison; production reconciliation
-is restored. A capture-only readiness observer defect is next. See the record below.
+is restored. The capture-only observer is corrected and its six-profile reference
+completed normally. Measured UI publication stalls remain next.
 The displayed-state and selection corrections below remain to be implemented;
 controlled performance acceptance remains unverified. Current behavior is owned
 by the contracts linked below.
@@ -662,15 +664,27 @@ wall-time limits are preserved in the report.
 
 The failed readiness run has all peers parsed and observes arcs, locations and
 moving dots. Its XAML callback stops while the independent map continues drawing,
-so it cannot establish a blank map: the ready timestamp currently depends on
+so it cannot establish a blank map: the ready timestamp previously depended on
 that callback. The capture-only correction moves the same subject/count/map
 checks into the existing UI polling wait, removes callback-owned readiness state,
 and labels its endpoint `map-draw-ui-poll` in raw outcomes and reports. Focused
-independent source review passed at `V:/temp/plan17-readiness-review.md`; runtime
-behavior is unverified. Next establish a matched
-reference with this observer before another production comparison. Preserve the
-original freeze; no retry of the failed run or timeout extension is authorized
-by this finding.
+independent source review passed at `V:/temp/plan17-readiness-review.md` and
+`V:/temp/plan17-readiness-overseeing-review.md`.
+
+**Corrected-observer reference:** all six unchanged-production profiles at
+`ba64259` completed normally and are frozen with their exact binary in the
+[new reference](../../artifacts/evidence/ui-benchmark-draw-observer-baseline-20261106-ba64259/README.md).
+Every scheduled replay command was applied, cadence passed and all presses were
+acknowledged. Docked country/200, city/200 and city/1,000 have 8, 2 and 6 unobserved
+XAML completions respectively; physical display feedback remains unverified.
+Worst navigation draw gaps span 253.0–464.2 ms, docked click completion reaches
+1,108.4 ms and marquee gaps span 212.1–271.8 ms. Peak private commitment spans
+928–1,341 MiB; final samples are not settled retained memory. Missing selected-map
+draw/dot intervals remain. These unchanged-product worst-value differences do not
+prove that the rejected filter caused the earlier adverse observations.
+The original reference and failed run remain intact. No retry of that failed
+run or timeout extension ran. Next attribute the measured UI publication costs
+and compare one correction against this matched observer.
 
 The new procedure measures command-to-render behavior and is not comparable to
 the old SendInput runs. Displayed/native-input acceptance, exact map-command
