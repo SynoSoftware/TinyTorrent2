@@ -26,6 +26,17 @@ command-to-render behavior, not native click latency or foreground performance.
 The external one-second peer source, summaries, sorting and churn stay unchanged.
 No replay result establishes displayed FPS or physical next-frame acceptance.
 
+For notification attribution only, set `TINYTORRENT_PERFORMANCE_CHANGES=1` in
+the launching process before one `-Replay -InputOnly` run, then remove it.
+`timing.json` records `traceChanges` and aggregate `changes`: table, requested
+subject IDs, source-object identity, before/after counts, notification counts
+and first/last completed-notification QPC. These batches flush through the UI
+queue; they are not exact `ApplyProjection` boundaries or native CPU timings.
+They omit quiet replacements and the first notification's native work. The
+requested subject can differ from the retained rows being replaced. Counters
+add per-notification observation overhead, so use them for attribution, not an
+uninstrumented performance comparison. They are disabled by default.
+
 The native desktop-input procedure described below is retained for its existing
 evidence and safety guards. **Do not run it on the owner's desktop.** `-InputOnly`
 alone still sends global input. PresentMon 2.3.1 records ETW presentation events

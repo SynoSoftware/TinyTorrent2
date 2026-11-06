@@ -12,6 +12,7 @@ using Microsoft.UI.Windowing;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Torrents;
 using Windows.Foundation;
+using Windows.Foundation.Collections;
 
 namespace Syno.TinyTorrent.Shell;
 
@@ -85,6 +86,67 @@ public sealed partial class MainWindow
         var updates = new List<object>();
         var tables = new List<object>();
         var lastTableSample = 0L;
+        var traceChanges = Environment.GetEnvironmentVariable("TINYTORRENT_PERFORMANCE_CHANGES") == "1";
+        var changes = new List<object>();
+        var changeObservers = new Dictionary<Syno.TableView.Table, Action>();
+
+        void ObserveChanges(Syno.TableView.Table table, string name)
+        {
+            if (!traceChanges || changeObservers.ContainsKey(table)) return;
+            var vector = Read<IObservableVector<object>>(table, "_view");
+            var rows = (ICollection<object>)vector;
+            var pending = false;
+            var first = 0L;
+            var last = 0L;
+            var before = 0;
+            var after = 0;
+            var inserted = 0;
+            var removed = 0;
+            var replaced = 0;
+            var reset = 0;
+            var section = string.Empty;
+            string[] requested = [];
+            var source = 0;
+            void Flush()
+            {
+                if (!pending) return;
+                pending = false;
+                changes.Add(new { phase = section, table = name, requested,
+                    source, firstCompleted = first, lastCompleted = last,
+                    before, after, inserted, removed, replaced, reset });
+            }
+            VectorChangedEventHandler<object> changed = (_, args) =>
+            {
+                var now = Stopwatch.GetTimestamp();
+                var action = args.CollectionChange;
+                if (!pending)
+                {
+                    pending = true;
+                    first = now;
+                    before = rows.Count - (action == CollectionChange.ItemInserted ? 1
+                        : action == CollectionChange.ItemRemoved ? -1 : 0);
+                    inserted = removed = replaced = reset = 0;
+                    section = phase;
+                    requested = table == Torrents || inspector.ShowsAllPeers ? ["all"]
+                        : inspector.PeerSelection is { } selected ? selected.Select(torrent => torrent.TorrentId).ToArray()
+                        : inspector.Target is { } target ? [target.TorrentId] : [];
+                    source = table.ItemsSource is { } items
+                        ? System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(items) : 0;
+                    DispatcherQueue.TryEnqueue(Flush);
+                }
+                last = now;
+                after = rows.Count;
+                switch (action)
+                {
+                    case CollectionChange.ItemInserted: inserted++; break;
+                    case CollectionChange.ItemRemoved: removed++; break;
+                    case CollectionChange.ItemChanged: replaced++; break;
+                    case CollectionChange.Reset: reset++; break;
+                }
+            };
+            vector.VectorChanged += changed;
+            changeObservers.Add(table, () => { vector.VectorChanged -= changed; Flush(); });
+        }
 
         static object[] VisibleRows(Syno.TableView.Table table)
         {
@@ -146,8 +208,11 @@ public sealed partial class MainWindow
                 tables.Add(new { phase, qpc = now, table = "torrents", subject = "all",
                     rows = VisibleRows(Torrents).OfType<Torrent>().Select(torrent => new { key = torrent.TorrentId, rate = torrent.DownloadRate }).ToArray() });
                 if (InspectorContent.Content is InspectorPane current && current.FindName("Peers") is Syno.TableView.Table table)
+                {
+                    ObserveChanges(table, "peers");
                     tables.Add(new { phase, qpc = now, table = "peers", subject = inspector.Target?.TorrentId ?? "all",
                         rows = VisibleRows(table).OfType<Peer>().Select(peer => new { key = peer.Key, rate = peer.DownloadRate }).ToArray() });
+                }
             }
             if (opening != 0 && firstPicture == 0 && map?.MotionPictures > 0
                 && Read<MapMotion>(map, "_motion").Control.Opacity > 0) firstPicture = now;
@@ -240,6 +305,7 @@ public sealed partial class MainWindow
             if (inspector.Map.Cities != cities || Read<int>(map!, "_arcLimit") != arcLimit)
                 throw new InvalidOperationException("The docked map did not use the requested detail and arc limit.");
             var peers = (Syno.TableView.Table)((InspectorPane)InspectorContent.Content).FindName("Peers");
+            ObserveChanges(peers, "peers");
             var rows = Read<ListView>(peers, "_surface");
             await Until(() => ReferenceEquals(peers.ItemsSource, inspector.ShownPeers) && rows.Items.Count == count
                 && rows.ContainerFromIndex(0) is ListViewItem { IsLoaded: true, Content: Peer first }
@@ -405,6 +471,7 @@ public sealed partial class MainWindow
         CompositionTarget.Rendered += Rendered;
         try
         {
+            ObserveChanges(Torrents, "torrents");
             await File.WriteAllTextAsync(Path.Combine(directory, "source.json.tmp"), JsonSerializer.Serialize(data.Source));
             File.Move(Path.Combine(directory, "source.json.tmp"), Path.Combine(directory, "source.json"), true);
             await Until(() => File.Exists(Path.Combine(directory, "source-ready")), "The external peer source did not start.");
@@ -599,6 +666,7 @@ public sealed partial class MainWindow
             Torrents.RemoveHandler(UIElement.PointerPressedEvent, pressed);
             Application.Current.UnhandledException -= unhandled;
             CompositionTarget.Rendered -= Rendered;
+            foreach (var detach in changeObservers.Values) detach();
             foreach (var (motion, drawn) in motions)
             {
                 motion.Control.Draw -= drawn;
@@ -610,7 +678,7 @@ public sealed partial class MainWindow
             Torrents.CanReorder = reorder;
             Model.PauseCaptureSnapshots(false);
             await File.WriteAllTextAsync(Path.Combine(directory, "timing.json"), JsonSerializer.Serialize(new {
-                phases, samples, updates, tables, feedFailure = feedFailure?.ToString(), pictures = pictures.ToArray(), mapFrames = mapFrames.ToArray(), work = work.ToArray(),
+                phases, samples, updates, tables, traceChanges, changes, feedFailure = feedFailure?.ToString(), pictures = pictures.ToArray(), mapFrames = mapFrames.ToArray(), work = work.ToArray(),
                 received = received.ToArray(), replay, dispatched,
                 fixture = new { detail = cities ? "cities" : "countries", expected = data.PeerCount, summaries = targets.Sum(torrent => torrent.PeerCount),
                     parsed = inspector.Peers?.Count, observations = inspector.Map.Capture().Observations.Length,

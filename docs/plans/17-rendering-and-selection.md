@@ -710,6 +710,35 @@ WinUI notification consumer before choosing a publication correction; neither
 the managed wrapper's sampled wall time nor this isolated allocation result
 establishes the native cause of the stall.
 
+**Native source checkpoint:** the
+[source-backed record](../../artifacts/evidence/ui-native-publication-20261106/README.md)
+follows the synchronous vector notification through `ItemCollection`, native
+selection and the modern panel, including the composed override round trip.
+It records per-item count/cache/transition bookkeeping, positive interop
+allocation samples and native reentrancy guards. It establishes no full-source
+scan or graphics wait. The local WinUI revision differs from the preserved
+projection's version identity; exact native binary/source correspondence is
+unverified. Read-only independent review is at
+`V:/temp/plan17-native-publication-review.md`.
+The next bounded check enables capture-only aggregate notification counting for
+one city/1,000 docked replay. Correlate its completed-notification intervals,
+counts and requested subject with existing input/marquee QPC. Large repeated
+bursts lead to their source/view triggers; small or brief batches leave the
+unobserved publication/GC/queue interval unresolved. This observer adds no per-row log records
+or production table hooks, does not time quiet replacements or all of
+`ApplyProjection`, and supplies no new uninstrumented reference.
+Observer source review passed at `V:/temp/plan17-change-observer-review.md`.
+
+One source-confirmed amplification is under investigation: aggregate selection
+changes call `RefreshScope`, whose `Clear` drops `Peers`. `ReadPeers` then seeds
+from the eight-torrent cache before sequential replies reconstruct the scope.
+Scopes larger than that cache can therefore remove and later reinsert peers
+shared by successive scopes. This is not yet quantified in the observed gap.
+If the counter confirms that churn, retain overlapping peers at the existing
+Inspector owner while preserving scope filtering, explicit release, readiness,
+cancellation and session invalidation; add no second cache or yielding native
+edit path.
+
 The failed readiness run has all peers parsed and observes arcs, locations and
 moving dots. Its XAML callback stops while the independent map continues drawing,
 so it cannot establish a blank map: the ready timestamp previously depended on
