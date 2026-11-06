@@ -6,8 +6,10 @@ The original offscreen reference is frozen at `b20b923`; the corrected-observer
 reference is frozen at `ba64259`, with production behavior unchanged. The narrow
 peer-snapshot correction is reinstated after correcting its retention reasoning:
 it removes unrelated copying; the mixed single-run maxima establish neither a
-causal regression nor a marquee fix. The capture-only observer is corrected and
-its six-profile reference completed normally. Measured UI publication stalls remain next.
+causal regression nor a marquee fix. Aggregate scope changes now retain shared
+Peer identities, demonstrated by the matched focused comparison at `3d2970a`.
+The capture-only observer is corrected and its six-profile reference completed
+normally. Measured UI publication stalls remain next.
 The displayed-state and selection corrections below remain to be implemented;
 controlled performance acceptance remains unverified. Current behavior is owned
 by the contracts linked below.
@@ -773,6 +775,23 @@ The three-line correction has passed independent focused source review at
 `V:/temp/plan17-scope-retention-implementation-review.md`. Its remaining question
 is whether the same focused workload retains every shared identity with correct
 membership and normal completion; speed and memory observations remain separate.
+
+The [candidate comparison](../../artifacts/evidence/ui-peer-scope-candidate-20261106-3d2970a/README.md)
+at `3d2970a` retained all 73,950 shared identities at every step, with no missing
+or outside rows and normal exit. Native changes match the required size deltas.
+Grow/shrink readiness changed to 1,966.44/1,888.40 ms, while initial large-scope
+shrink worsened to 11,400.07 ms; preserve that adverse observation. Peak/final
+private commitment changed to 1,354.68/1,159.37 MiB. The identity correction is
+demonstrated; the whole-phase timing changes do not isolate its CPU benefit.
+
+One [standard city/1,000 docked comparison](../../artifacts/evidence/ui-benchmark-scope-retention-20261106-3d2970a/README.md)
+also completed normally: 1,467/1,467 commands applied, no unselected clicks, two
+unobserved XAML click completions. Against corrected-observer `ba64259`, worst
+navigation/observed click completion changed 464.24/495.04 → 363.71/365.06 ms;
+marquee worsened 269.40 → 355.59 ms. Peak/final private commitment changed
+1,340.47/1,145.14 → 1,425.98/1,069.81 MiB. These mixed single-run maxima do not
+establish a causal speed regression or improvement. No retry ran. Keep the narrow
+identity correction and continue attribution of the still-failing frame budgets.
 
 The failed readiness run has all peers parsed and observes arcs, locations and
 moving dots. Its XAML callback stops while the independent map continues drawing,
