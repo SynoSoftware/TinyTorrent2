@@ -185,6 +185,11 @@ Deleting a test because it is red is the failure mode, not this.
 
 ## Windows evidence
 
+The [UI performance benchmark](../../app/tests/Performance.md) owns the eight
+controlled 1080p motion and selection journeys, their recorder and measurement
+limits. Use it for measured feedback and frame-pacing questions; the other
+capture modes below establish different behavior.
+
 `Capture.ps1 -Review selection` verifies that TableView preparation runs on a
 worker and a new selection cancels it without waiting. It then switches the real
 torrent table twenty times in each of General, Files, Trackers, Pieces, Speed and

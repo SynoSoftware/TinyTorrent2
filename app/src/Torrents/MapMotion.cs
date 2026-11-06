@@ -72,9 +72,7 @@ internal sealed class MapMotion : IDisposable
     private (Traffic? Traffic, MapView? View, bool Visible) _visibility;
     private CanvasRenderTarget? _mark;
     private CanvasRenderTarget? _dot;
-    private CanvasRenderTarget? _activeDot;
     private CanvasCachedGeometry? _ring;
-    private CanvasCachedGeometry? _wideRing;
     private CanvasDevice? _markDevice;
     private float _markDpi;
     private MapView? _displayedView;
@@ -86,10 +84,24 @@ internal sealed class MapMotion : IDisposable
     private int _pictures;
     private long _cycles;
     private MapView? _drawnView;
+    private Completed? _drawnPicture;
     private int _captureRedraw;
     private readonly ConcurrentQueue<Action> _captures = new();
 
     internal MapView? DrawnView => Volatile.Read(ref _drawnView);
+    internal int DrawnRoutes => Volatile.Read(ref _drawnPicture)?.Scene?.Traffic.Routes.Count ?? 0;
+    internal int DrawnVisibleRoutes { get; private set; }
+    internal int KnownLocations => Volatile.Read(ref _drawnPicture)?.Input?.Model.Destinations.Count ?? 0;
+    internal int DrawnLocations { get; private set; }
+    internal (int Count, DestinationKey? Route, bool Upload, long Start, double Progress) DrawnDots { get; private set; }
+
+    internal bool ShowsConnections(object subject, int peers)
+    {
+        var picture = Volatile.Read(ref _drawnPicture);
+        return picture?.Input?.Model is { } model && ReferenceEquals(model.Subject, subject)
+            && model.Countries.Values.Sum(group => group.Count) == peers
+            && picture?.Scene?.Traffic.Routes.Count > 0;
+    }
 
     /// <summary>
     /// The CPU cycles the game loop thread had used at its latest update,
@@ -211,7 +223,7 @@ internal sealed class MapMotion : IDisposable
                 var surface = _surface!;
                 _device = surface.Device;
                 _dpi = surface.Dpi;
-                Draw(view, background, draw);
+                Draw(view, background, (map, _) => draw(map));
                 ready.TrySetResult();
             }
             catch (Exception error)
@@ -229,7 +241,7 @@ internal sealed class MapMotion : IDisposable
     /// Replaces a cached picture on the render worker; transparent pixels
     /// replace the old content instead of accumulating over it.
     /// </summary>
-    private void Draw(MapView view, Color background, Func<CanvasDrawingSession, bool> draw, Request? request = null)
+    private void Draw(MapView view, Color background, Func<CanvasDrawingSession, CanvasDrawingSession, bool> draw, Request? request = null)
     {
         if (_disposed || _device is not { } device)
             return;
@@ -239,10 +251,12 @@ internal sealed class MapMotion : IDisposable
             picture = Lease(device, view);
             bool drawn;
             using (var session = picture.Bitmap.CreateDrawingSession())
+            using (var arcs = picture.Arcs.CreateDrawingSession())
             {
                 // Targets retain their previous pixels until explicitly cleared.
                 session.Clear(Microsoft.UI.Colors.Transparent);
-                drawn = draw(session);
+                arcs.Clear(Microsoft.UI.Colors.Transparent);
+                drawn = draw(session, arcs);
             }
             request?.Cancellation.ThrowIfCancellationRequested();
             if (drawn)
@@ -294,16 +308,15 @@ internal sealed class MapMotion : IDisposable
                 _free.TryDequeue(out picture);
             if (picture is not null)
             {
-                var bitmap = picture.Bitmap;
                 if (ReferenceEquals(picture.Device, device) && picture.Dpi == _dpi && picture.Size == view.Size)
                 {
                     picture.Retain();
                     return picture;
                 }
-                bitmap.Dispose();
+                picture.Dispose();
                 continue;
             }
-            return new(device, view, new CanvasRenderTarget(device, (float)view.Size.Width, (float)view.Size.Height, _dpi));
+            return new(device, view, _dpi);
         }
     }
 
@@ -453,7 +466,7 @@ internal sealed class MapMotion : IDisposable
             if (Interlocked.Exchange(ref _pending, null) is { } pending)
                 Return(pending.Picture);
             while (_free.TryDequeue(out var picture))
-                picture.Bitmap.Dispose();
+                picture.Dispose();
             _changed.Dispose();
             _shutdown.Dispose();
         }
@@ -641,7 +654,7 @@ internal sealed class MapMotion : IDisposable
         {
             _again = false;
             _highlight = highlight;
-            Draw(raster, input.Background, session => renderer.Draw(session, input.Palette, highlight, cancellation), request);
+            Draw(raster, input.Background, (geography, arcs) => renderer.Draw(geography, arcs, input.Palette, highlight, cancellation), request);
         }
         else if (renderer.HasStaleBorders)
             renderer.StrokeBorders(cancellation);
@@ -802,6 +815,10 @@ internal sealed class MapMotion : IDisposable
 
     private void OnDraw(ICanvasAnimatedControl sender, CanvasAnimatedDrawEventArgs args)
     {
+#if CAPTURE
+        DrawnDots = default;
+        DrawnLocations = 0;
+#endif
         // A picture from a lost device waits for the one the new device draws.
         if (_shown is not { } picture || !ReferenceEquals(picture.Device, sender.Device))
             return;
@@ -817,17 +834,15 @@ internal sealed class MapMotion : IDisposable
         var rectangle = new Rect(left, 0, Math.Max(0, right - left), source.Size.Height);
         using (draw.CreateLayer(1, view.Bounds))
         {
-            for (var turn = -1; turn <= 1; turn++)
-            {
-                draw.Transform = inverse * Matrix3x2.CreateTranslation(360 * turn, 0) * view.Transform;
-                draw.DrawImage(picture.Bitmap, new Vector2((float)left, 0), rectangle);
-            }
-            draw.Transform = Matrix3x2.Identity;
+            DrawLayer(picture.Bitmap);
+            DrawMarks(draw, picture, view, sender);
+            DrawLayer(picture.Arcs);
         }
         Volatile.Write(ref _displayedView, view);
-        DrawMarks(draw, picture, view, sender);
 #if CAPTURE
         Volatile.Write(ref _drawnView, view);
+        Volatile.Write(ref _drawnPicture, picture);
+        DrawnVisibleRoutes = picture.Scene?.Traffic.Routes.Count(route => view.Shows(route.Bounds, 13)) ?? 0;
 #endif
         if (Volatile.Read(ref _scene) is not { } scene || _dots.Flying.Count == 0)
             return;
@@ -839,10 +854,18 @@ internal sealed class MapMotion : IDisposable
         // Fades go into the tint and the angle into the transform, so every
         // dot stays in one batch.
         using var batch = draw.CreateSpriteBatch();
+#if CAPTURE
+        var visibleDots = 0;
+        MapDots<Lane>.Dot? firstDot = null;
+#endif
         foreach (var dot in _dots.Flying)
         {
             if (Place(scene, view, dot, now) is not { } placed)
                 continue;
+#if CAPTURE
+            visibleDots++;
+            firstDot ??= dot;
+#endif
             var tint = dot.Upload ? scene.Upload : scene.Download;
             tint = scene.Highlight.Colour(tint, dot.Route.Key);
             batch.Draw(
@@ -852,6 +875,20 @@ internal sealed class MapMotion : IDisposable
                     * Matrix3x2.CreateTranslation(placed.Point),
                 new Vector4(tint.R, tint.G, tint.B, tint.A) / 255 * placed.Strength
             );
+        }
+#if CAPTURE
+        if (firstDot is { } first)
+            DrawnDots = (visibleDots, first.Route.Key, first.Upload, first.Start, first.Progress(now));
+#endif
+
+        void DrawLayer(CanvasRenderTarget bitmap)
+        {
+            for (var turn = -1; turn <= 1; turn++)
+            {
+                draw.Transform = inverse * Matrix3x2.CreateTranslation(360 * turn, 0) * view.Transform;
+                draw.DrawImage(bitmap, new Vector2((float)left, 0), rectangle);
+            }
+            draw.Transform = Matrix3x2.Identity;
         }
     }
 
@@ -885,23 +922,21 @@ internal sealed class MapMotion : IDisposable
                 var point = view.Screen(destination.Point);
                 if (point.X < -16 || point.Y < -16 || point.X > view.Size.Width + 16 || point.Y > view.Size.Height + 16)
                     continue;
-                var group = destination.Group;
-                var kinds = (group.Seeds > 0 ? 1 : 0) + (group.Leechers > 0 ? 1 : 0) + (group.Unknown > 0 ? 1 : 0);
-                var offset = -2.5f * (kinds - 1);
-                Mark(group.Seeds, palette.Download);
-                Mark(group.Leechers, palette.Upload);
-                Mark(group.Unknown, palette.Ink);
-                void Mark(int count, Color colour)
+                const float radius = 2.4f;
+                var dot = Dot(ref _dot, radius);
+                if (!input.HighContrast)
                 {
-                    if (count == 0)
-                        return;
-                    var radius = group.Active > 0 ? 2.4f : 2;
-                    var dot = group.Active > 0 ? Dot(ref _activeDot, radius) : Dot(ref _dot, radius);
-                    var tint = input.HighContrast ? palette.Ink : highlight.Colour(colour, destination.Key);
-                    batch.Draw(dot, point + new Vector2(offset - radius - 1, -radius - 1),
-                        new Vector4(tint.R, tint.G, tint.B, tint.A) / 255);
-                    offset += 5;
+                    var edge = highlight.Colour(palette.Ink, destination.Key);
+                    var scale = (radius + .75f) / radius;
+                    batch.Draw(dot, Matrix3x2.CreateScale(scale)
+                        * Matrix3x2.CreateTranslation(point - new Vector2((radius + 1) * scale)),
+                        new Vector4(edge.R, edge.G, edge.B, edge.A) / 255);
                 }
+                var tint = input.HighContrast ? palette.Ink : highlight.Colour(Microsoft.UI.Colors.White, destination.Key);
+                batch.Draw(dot, point - new Vector2(radius + 1), new Vector4(tint.R, tint.G, tint.B, tint.A) / 255);
+#if CAPTURE
+                DrawnLocations++;
+#endif
             }
         }
         foreach (var destination in input.Model.Destinations)
@@ -911,9 +946,7 @@ internal sealed class MapMotion : IDisposable
             var point = view.Screen(destination.Point);
             if (point.X < -16 || point.Y < -16 || point.X > view.Size.Width + 16 || point.Y > view.Size.Height + 16)
                 continue;
-            var group = destination.Group;
-            var kinds = (group.Seeds > 0 ? 1 : 0) + (group.Leechers > 0 ? 1 : 0) + (group.Unknown > 0 ? 1 : 0);
-            draw.DrawCachedGeometry(kinds > 1 ? Ring(ref _wideRing, 8) : Ring(ref _ring, 5), point,
+            draw.DrawCachedGeometry(Ring(ref _ring, 5), point,
                 input.HighContrast ? palette.Ink : highlight.Colour(palette.Ink, destination.Key));
         }
     }
@@ -946,12 +979,8 @@ internal sealed class MapMotion : IDisposable
     {
         _dot?.Dispose();
         _dot = null;
-        _activeDot?.Dispose();
-        _activeDot = null;
         _ring?.Dispose();
         _ring = null;
-        _wideRing?.Dispose();
-        _wideRing = null;
     }
 
     /// <summary>
@@ -1062,24 +1091,32 @@ internal sealed class MapMotion : IDisposable
     /// Rate-only completions share frozen pixels. A buffer returns to the
     /// worker after its cached, pending and shown references have retired.
     /// </summary>
-    private sealed class Picture(CanvasDevice device, MapView view, CanvasRenderTarget bitmap)
+    private sealed class Picture(CanvasDevice device, MapView view, float dpi) : IDisposable
     {
         private int _references = 1;
         internal CanvasDevice Device => device;
-        internal float Dpi { get; } = bitmap.Dpi;
+        internal float Dpi => Bitmap.Dpi;
 
         /// <summary>The size in DIPs it was made for, which its pixels round.</summary>
         internal Size Size { get; } = view.Size;
 
-        internal CanvasRenderTarget Bitmap => bitmap;
+        internal CanvasRenderTarget Bitmap { get; } = new(device, (float)view.Size.Width, (float)view.Size.Height, dpi);
+        internal CanvasRenderTarget Arcs { get; } = new(device, (float)view.Size.Width, (float)view.Size.Height, dpi);
         internal void Retain() => Interlocked.Increment(ref _references);
         internal bool Release() => Interlocked.Decrement(ref _references) == 0;
+
+        public void Dispose()
+        {
+            Bitmap.Dispose();
+            Arcs.Dispose();
+        }
     }
 
     private sealed record Completed
     {
         internal required Picture Picture { get; init; }
         internal CanvasRenderTarget Bitmap => Picture.Bitmap;
+        internal CanvasRenderTarget Arcs => Picture.Arcs;
         internal CanvasDevice Device => Picture.Device;
         internal required MapView View { get; init; }
         internal required MapView RasterView { get; init; }

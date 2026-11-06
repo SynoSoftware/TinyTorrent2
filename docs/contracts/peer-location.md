@@ -200,12 +200,12 @@ using each estimated destination's allocated share. Equal speeds keep destinatio
 order. Only retained arcs carry moving dots. All peers, location markers, table
 rows, country shading and aggregate speed values remain available. This choice
 is saved with the peer view and never changes the engine's network connections.
-Seed markers use the download colour, leecher markers use the upload colour, and unclassified
-addresses use neutral ink. The snapshot identifies retained confirmed seeds;
-other disconnected addresses remain unclassified. Live connections identify
-leechers after the handshake. A shared location shows one small marker per role,
-and its accessible description gives the counts, so colour is not the only
-explanation.
+Every location has one white marker, combining peers at the same location
+regardless of role or connection state. Markers sit above geography and below
+the arcs; moving transfer dots remain above the arcs. A thin foreground edge keeps the white
+fill visible on light land and sea. High Contrast uses system foreground ink.
+The place description supplies seed, leecher and connection counts. The arc
+limit never removes location markers, including locations with only known peers.
 The map opens no tooltip, because one over the map hides the routes around
 the pointer. The line under the
 [Speed readout](ui/torrents.md#peers-and-connections-map)'s totals describes
@@ -218,10 +218,9 @@ dragged. An estimated
 destination shows the totals of the peers that choosing it shows, not its
 estimated share.
 Land and boundaries use the platform's secondary control surface and strong
-control stroke. Transfer marks use the same accent text and upload brushes as
-the table and speed graph, without mixing in a separate map colour. Markers
-retain the brushes' full opacity so small destinations remain readable in Light
-and Dark, except when a table selection mutes other connections.
+control stroke. Arcs and moving transfer dots use the same accent text and
+upload brushes as the table and speed graph. Location markers retain their
+white fill, except when a table selection mutes other connections.
 Country fills stay subdued.
 Countries have no hover or selection state; inspection targets location markers
 and arcs. Every selected table peer highlights where the map shows it. In
@@ -335,16 +334,17 @@ drawn under it does not show. Each frame therefore starts with the colour
 of every background between the backdrop and the map, composed as XAML draws
 them, so the map matches the peers table beside it in every theme.
 
-One dedicated render worker clears each leased offscreen bitmap to transparent before
-drawing the current map, so old coastlines and opacity never
+One dedicated render worker clears each leased picture's geography and arc bitmaps
+to transparent before drawing the current map, so old coastlines and opacity never
 accumulate. The presentation frame applies the composed background tint once,
 separately from the map image, preserving the acrylic through transparent areas.
 Navigation publishes an immutable view immediately. The presenter transforms
 the latest completed image into that view while the worker draws its exact
 replacement from vector geometry, independently of peer aggregation. Pictures
 include one eighth of a viewport of extra geography at each edge; wrapped
-copies meet at the world boundary. Location markers, rings and moving packets
-draw separately in the current view at their normal DIP sizes. Lines, glow and
+copies meet at the world boundary. Geography draws first, then location markers
+and rings, then arcs, then moving packets. Markers, rings and packets draw in the
+current view at their normal DIP sizes. Lines, glow and
 their masks temporarily scale with the retained image until its replacement
 arrives. Backdrop tint never takes that transform. Hit testing uses the displayed
 view and its detached targets. View-only input neither prepares routes again

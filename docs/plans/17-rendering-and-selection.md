@@ -596,6 +596,19 @@ reported timings; their numerical limits have not been set by the owner.
 
 ### Baseline and coordination, 6 November 2026
 
+**Pre-reboot handoff:** the owner requested saving the current measurements and
+repeating them after reboot before accepting a baseline. The
+[provisional report](../../artifacts/evidence/ui-benchmark-pre-reboot-20261106-2c398e6f/README.md)
+preserves the exact binary, source identity, commands and raw evidence. The live
+fixture now has 50 torrents, 159,810 known peers and 5,000 connection slots, with
+seeded speed sorting and 250 connection swaps per second. The
+[harness guide](../../app/tests/Performance.md) owns this newer workload; the
+fixed-sort and older row counts below describe earlier proposals or recordings.
+Five focused runs completed; the country docked run completed clicks, marquee
+and navigation before external focus interrupted its final churn interval.
+Displayed FPS, the separate queue-membership variant and post-reboot acceptance
+remain unverified. No performance improvement or regression is claimed.
+
 At this review, a complete accepted baseline had not been handed off. The harness
 had moved to the heavier 50-torrent/130,650-row manifest and independent timed
 input, with mixed queue participation still to be set and recorded. The earlier

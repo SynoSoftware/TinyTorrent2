@@ -88,6 +88,9 @@ public sealed partial class PeerMap
         var point = args.GetCurrentPoint(Drawing);
         if (point.Properties.IsHorizontalMouseWheel)
             return;
+#if CAPTURE
+        CaptureInput?.Invoke("wheel", point.Properties.MouseWheelDelta);
+#endif
         ZoomAt(
             (float)Math.Pow(1.25, point.Properties.MouseWheelDelta / 120.0),
             new Vector2((float)point.Position.X, (float)point.Position.Y)
@@ -118,6 +121,9 @@ public sealed partial class PeerMap
     {
         if (_drag is not { } drag || drag.PointerId != args.Pointer.PointerId)
             return false;
+#if CAPTURE
+        CaptureInput?.Invoke("pan", 0);
+#endif
         var point = args.GetCurrentPoint(Drawing);
         if (!point.Properties.IsLeftButtonPressed)
         {

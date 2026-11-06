@@ -1048,10 +1048,27 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
+#if CAPTURE
+    private bool _captureSnapshotsPaused;
+
+    internal void PauseCaptureSnapshots(bool paused)
+    {
+        lock (_snapshotGate)
+        {
+            _captureSnapshotsPaused = paused;
+            _latest = null;
+        }
+    }
+#endif
+
     private void QueueSnapshot(JsonElement snapshot)
     {
         lock (_snapshotGate)
         {
+#if CAPTURE
+            if (_captureSnapshotsPaused)
+                return;
+#endif
             _latest = snapshot;
             if (_applyQueued)
                 return;

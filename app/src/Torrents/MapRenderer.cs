@@ -812,11 +812,11 @@ internal sealed class MapRenderer : IDisposable
         };
 
     /// <returns>Whether it drew the map, which it does once prepared and sized.</returns>
-    internal bool Draw(CanvasDrawingSession draw, Palette palette, Highlight highlight, CancellationToken cancellation = default)
+    internal bool Draw(CanvasDrawingSession draw, CanvasDrawingSession arcDrawing, Palette palette, Highlight highlight, CancellationToken cancellation = default)
     {
         if (!_prepared || _viewport.ViewScale <= 0)
             return false;
-        DrawScene(draw, palette, highlight, cancellation);
+        DrawScene(draw, arcDrawing, palette, highlight, cancellation);
         _dotColours = (palette.Download, palette.Upload);
         _highlight = highlight;
         ShowDots();
@@ -833,7 +833,7 @@ internal sealed class MapRenderer : IDisposable
                     { Highlight = _highlight }
                 : null;
 
-    private void DrawScene(CanvasDrawingSession draw, Palette palette, Highlight highlight, CancellationToken cancellation)
+    private void DrawScene(CanvasDrawingSession draw, CanvasDrawingSession arcDrawing, Palette palette, Highlight highlight, CancellationToken cancellation)
     {
 #if CAPTURE
         var measured = Stopwatch.GetTimestamp();
@@ -916,6 +916,7 @@ internal sealed class MapRenderer : IDisposable
                 + (_countryTargets[group.Code] - _countryStarts[group.Code]) * (float)progress;
         var bounds = _viewport.View.Bounds;
         using (draw.CreateLayer(1, bounds))
+        using (arcDrawing.CreateLayer(1, bounds))
         {
 #if CAPTURE
             Measure("setup", ref measured);
@@ -1014,7 +1015,7 @@ internal sealed class MapRenderer : IDisposable
                 }
                 _originMask.Center = origin;
                 _originMask.Opacity = contrast ? 1 : .8f;
-                using (draw.CreateLayer(_originMask))
+                using (arcDrawing.CreateLayer(_originMask))
                 {
                     // The blurred glow is kept while its inputs stay the same.
                     // Animation changes it at every step. A glow that kept a
@@ -1083,7 +1084,7 @@ internal sealed class MapRenderer : IDisposable
                         _rebuildPending |= pending;
                     }
                     if (!contrast && _glowBlur is not null)
-                        draw.DrawImage(_glowBlur);
+                        arcDrawing.DrawImage(_glowBlur);
 #if CAPTURE
                     Measure("glow", ref measured);
 #endif
@@ -1102,8 +1103,8 @@ internal sealed class MapRenderer : IDisposable
                             var line = paint.Line(marked ? 2 : Step(1 + strength, 4));
                             if (contrast)
                             {
-                                ApplyStroke(draw, line, transform, ref applied);
-                                draw.DrawCachedGeometry(line.Geometry, ink);
+                                ApplyStroke(arcDrawing, line, transform, ref applied);
+                                arcDrawing.DrawCachedGeometry(line.Geometry, ink);
                                 continue;
                             }
                             var brush = paint.Core(
@@ -1112,11 +1113,11 @@ internal sealed class MapRenderer : IDisposable
                                     route.Destination.Key)
                             );
                             brush.Opacity = .18f + .82f * strength;
-                            ApplyStroke(draw, line, transform, ref applied);
-                            draw.DrawCachedGeometry(line.Geometry, brush);
+                            ApplyStroke(arcDrawing, line, transform, ref applied);
+                            arcDrawing.DrawCachedGeometry(line.Geometry, brush);
                         }
                     }
-                    draw.Transform = Matrix3x2.Identity;
+                    arcDrawing.Transform = Matrix3x2.Identity;
                 }
             }
         }

@@ -11,6 +11,9 @@ public sealed partial class Inspector
 {
 #if CAPTURE
     internal Action? PreparingPeers { get; set; }
+    internal Func<Torrent, Task<JsonElement>>? CapturePeers { get; set; }
+    internal Func<string, Location?>? CaptureLocation { get; set; }
+    internal Location? CaptureOrigin { get; set; }
 #endif
     private int _locationVersion;
     private HashSet<Peer> _located = [];
@@ -123,7 +126,11 @@ public sealed partial class Inspector
         _peersReady!.TrySetResult();
     }
 
-    internal bool HasCities => _owner.Geolocation.Installed is not null;
+    internal bool HasCities =>
+#if CAPTURE
+        CaptureLocation is not null ||
+#endif
+        _owner.Geolocation.Installed is not null;
 
     internal bool ShowsAllPeers { get; private set; }
     internal IReadOnlyList<Torrent>? PeerSelection { get; private set; }
@@ -175,6 +182,10 @@ public sealed partial class Inspector
     {
         get
         {
+#if CAPTURE
+            if (CaptureOrigin is { } origin)
+                return origin;
+#endif
             var key = (_owner.PublicAddress, _owner.Geolocation.Version);
             if (_originKey != key)
                 _ = LocatePeers();
@@ -431,7 +442,13 @@ public sealed partial class Inspector
                     received.Add(before.Peer);
                 }
                 else
-                    received.Add(new Peer(text, torrentId, endpoint, null, parsed));
+                {
+                    Location? location = null;
+#if CAPTURE
+                    location = CaptureLocation?.Invoke(endpoint);
+#endif
+                    received.Add(new Peer(text, torrentId, endpoint, location, parsed));
+                }
             }
             var complete = received.ToArray();
             IReadOnlyList<Peer> next = current;

@@ -50,6 +50,8 @@ public sealed partial class PeerMap : UserControl
     internal Action<double>? PreparationMeasured { get; set; }
     internal Action<string, double>? WorkMeasured { get; set; }
 
+    internal Action<string, int>? CaptureInput { get; set; }
+
     /// <summary>The frames the moving dots' layer has drawn.</summary>
     internal int MotionFrames => _motion?.Frames ?? 0;
 

@@ -10,7 +10,7 @@ public sealed partial class PeerMap
     private void WatchSettings()
     {
         _windowHandle = Microsoft.UI.Win32Interop.GetWindowFromWindowId(XamlRoot.ContentIslandEnvironment.AppWindowId);
-        _procedure = OnMessage;
+        _procedure ??= OnMessage;
         if (!SetWindowSubclass(_windowHandle, _procedure, 0, 0))
             throw new InvalidOperationException();
     }

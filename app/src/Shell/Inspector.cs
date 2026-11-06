@@ -554,6 +554,13 @@ public sealed partial class Inspector : INotifyPropertyChanged
         Func<JsonElement, Task> apply
     )
     {
+#if CAPTURE
+        if (section == InspectorSection.Peers && CapturePeers is { } peers)
+        {
+            await apply(await peers(torrent));
+            return;
+        }
+#endif
         var cancellation = _reading.Token;
         var completion = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously

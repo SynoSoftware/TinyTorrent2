@@ -65,6 +65,9 @@ public sealed partial class MainWindow
         "map-handoff" => CaptureMode.MapHandoff,
         "selection" => CaptureMode.Selection,
         "selection-frame" => CaptureMode.SelectionFrame,
+        "performance" => CaptureMode.Performance,
+        "performance-map" => CaptureMode.PerformanceMap,
+        "performance-selection" => CaptureMode.PerformanceSelection,
         "connections" => CaptureMode.Connections,
         "edits" => CaptureMode.Edits,
         "add-layout" => CaptureMode.AddLayout,
@@ -81,6 +84,14 @@ public sealed partial class MainWindow
 
     internal void ShowCaptureReview()
     {
+        if (IsPerformanceReview)
+        {
+            ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).SetBorderAndTitleBar(false, false);
+            AppWindow.Move(new PointInt32(0, 0));
+            AppWindow.ResizeClient(new SizeInt32(1920, 1080));
+            Activate();
+            return;
+        }
         AppWindow.IsShownInSwitchers = false;
         AppWindow.Move(new PointInt32(-10000, -10000));
         AppWindow.Show(false);
@@ -2365,6 +2376,11 @@ public sealed partial class MainWindow
                 await CaptureMemory(outcomes);
                 return;
             }
+            if (IsPerformanceReview)
+            {
+                await CapturePerformance(outcomes);
+                return;
+            }
             if (ReviewMode == CaptureMode.Map)
             {
                 await CaptureMap(outcomes);
@@ -3373,7 +3389,9 @@ public sealed partial class MainWindow
                             outcomes,
                             milliseconds = clock.ElapsedMilliseconds,
                             failure = failure?.ToString(),
-                            scope = "Real XAML views and bounded review journeys in a disposable store; no desktop input or capture",
+                            scope = IsPerformanceReview
+                                ? "Visible 1080p UI benchmark with synthetic peers and real desktop input; render completion is distinct from display"
+                                : "Real XAML views and bounded review journeys in a disposable store; no desktop input or capture",
                         }
                     )
                 );

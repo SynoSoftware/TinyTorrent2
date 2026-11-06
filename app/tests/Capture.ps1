@@ -1,6 +1,6 @@
 param(
     [ValidateSet('1', 'smoke', 'shell', 'menus', 'menu-choices', 'update-check', 'location-warning', 'schedule', 'desktop', 'dialogs', 'recovery', 'details', 'details-files', 'file-controls', 'files', 'files-layout',
-        'search', 'library', 'library-files', 'traffic', 'peers', 'peer-switch', 'peer-preferences', 'map', 'map-performance', 'map-geography', 'map-arcs', 'map-composition', 'map-handoff', 'selection', 'selection-frame', 'connections', 'edits', 'add-layout', 'settings-layout', 'settings-prototype', 'subtitle-tasks', 'memory', 'footer', 'workspace')]
+        'search', 'library', 'library-files', 'traffic', 'peers', 'peer-switch', 'peer-preferences', 'map', 'map-performance', 'map-geography', 'map-arcs', 'map-composition', 'map-handoff', 'selection', 'selection-frame', 'performance', 'performance-map', 'performance-selection', 'connections', 'edits', 'add-layout', 'settings-layout', 'settings-prototype', 'subtitle-tasks', 'memory', 'footer', 'workspace')]
     [string] $Review = '1',
     [ValidateSet('en', 'es')]
     [string] $Language,
@@ -12,10 +12,20 @@ param(
     [switch] $Transfer,
     [ValidateSet('light', 'dark')]
     [string] $Theme,
-    [string] $BinaryDirectory
+    [string] $BinaryDirectory,
+    [string] $PresentMonPath,
+    [ValidateSet('countries', 'cities')]
+    [string] $MapDetail = 'cities',
+    [ValidateSet(200, 1000)]
+    [int] $ArcLimit = 200,
+    [switch] $ElevatedRecorder,
+    [switch] $InputOnly
 )
 
 $ErrorActionPreference = 'Stop'
+$performance = $Review -in 'performance', 'performance-map', 'performance-selection'
+if ($performance -and $Configuration -ne 'Release') { throw 'Performance measurements require -Configuration Release.' }
+if ($InputOnly -and -not $performance) { throw '-InputOnly belongs to the performance journey.' }
 if ($LibraryFiles -and $Review -ne 'library-files') {
     throw 'Library timing uses the library-files capture mode.'
 }
@@ -135,7 +145,7 @@ function Test-Idle($torrents) {
     return -not ($torrents | Where-Object { -not $_.paused -or $_.peer_count -or $_.download_rate -or $_.upload_rate })
 }
 
-if ($Review -in 'files', 'files-layout', 'library', 'library-files', 'traffic', 'workspace', 'selection', 'selection-frame', 'dialogs', 'recovery') {
+if ($Review -in 'files', 'files-layout', 'library', 'library-files', 'traffic', 'workspace', 'selection', 'selection-frame', 'performance', 'performance-map', 'performance-selection', 'dialogs', 'recovery') {
     $document = @{ format = 1; torrents = @(); settings = @{ language = 'en'; theme = 'light'; port_mapping = $false;
         check_for_updates = $false; show_splash = $false; notifications_enabled = $false; prevent_sleep = $false } }
 } else {
@@ -152,7 +162,7 @@ if ($Review -eq 'recovery') {
     $document.settings.unfinished_tasks = 'continue'
 }
 $document.settings.all_paused = $Review -notin 'add-layout', 'traffic', 'library-files', 'selection'
-if ($Review -in 'workspace', 'selection', 'selection-frame', 'dialogs', 'recovery') {
+if ($Review -in 'workspace', 'selection', 'selection-frame', 'performance', 'performance-map', 'performance-selection', 'dialogs', 'recovery') {
     $document.settings.dht = $false
     $document.settings.pex = $false
     $document.settings.lsd = $false
@@ -190,6 +200,19 @@ foreach ($name in 'TINYTORRENT_CAPTURE_DIRECTORY', 'TINYTORRENT_CAPTURE_REVIEW',
 try {
     $null = Start-Engine
     switch ($Review) {
+        { $performance } {
+            $leechers = @(50, 100, 500, 1000, 3000, 3000, 3000)
+            $leechers += @(for ($index = 0; $index -lt 7; $index++) { 1000 + [int](2000 * $index / 6) })
+            $leechers += @(for ($index = 0; $index -lt 36; $index++) { 595 + [int](400 * $index / 35) })
+            Write-Json (Join-Path $captures 'fixture.json') @{
+                leechers = $leechers; cities = $MapDetail -eq 'cities'; locations = 1000; arcLimit = $ArcLimit;
+                connections = 5000; swapsPerSecond = 250
+            }
+            $members = for ($index = 1; $index -le $leechers.Count; $index++) {
+                $name = 'UI benchmark {0:00}.bin' -f $index
+                Add-Torrent (New-Torrent $name @(@{ path = $name; bytes = [Text.Encoding]::ASCII.GetBytes($name) })) $payload
+            }
+        }
         'recovery' {
             $absent = '\\127.0.0.1\TinyTorrent-absent-' + [guid]::NewGuid()
             $members = foreach ($name in 'Recovery fixture one.bin', 'Recovery fixture two.bin') {
@@ -375,7 +398,10 @@ try {
     $env:TINYTORRENT_CAPTURE_DIRECTORY = $captures
     $env:TINYTORRENT_CAPTURE_REVIEW = $Review
     $env:TINYTORRENT_CAPTURE_STORE = $directory
-    $ui = Start-Process -FilePath $window -WindowStyle Hidden -PassThru
+    if ($performance) {
+        $ui = & (Join-Path $PSScriptRoot 'Performance.ps1') -WindowPath $window -Directory $captures -PresentMonPath $PresentMonPath -ElevatedRecorder:$ElevatedRecorder -InputOnly:$InputOnly
+    }
+    else { $ui = Start-Process -FilePath $window -WindowStyle Hidden -PassThru }
     $deadline = [DateTime]::UtcNow.AddMinutes(10)
     # The desktop journey writes 'restart' to this file to have its engine
     # stopped, then 'disconnected' once it shows that state, to have the engine
