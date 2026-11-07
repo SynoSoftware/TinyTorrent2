@@ -924,6 +924,9 @@ internal sealed class MapRenderer : IDisposable
             // A ring moved to within a turn of the centre can reach past 180°,
             // so each country tests every turn. It traces and realizes, and so
             // spends rebuild budget, only where it shows.
+            // Adjacent antialiased fills add their edge coverage without a seam.
+            var blend = draw.Blend;
+            draw.Blend = CanvasBlend.Add;
             for (var turn = -1; turn <= 1; turn++)
             {
                 draw.Transform = Turned(turn);
@@ -946,6 +949,7 @@ internal sealed class MapRenderer : IDisposable
                         draw.DrawCachedGeometry(cached, fill);
                 }
             }
+            draw.Blend = blend;
 #if CAPTURE
             Measure("fills", ref measured);
 #endif

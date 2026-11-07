@@ -196,6 +196,10 @@ DIP or more at the current zoom. A border two countries share is stored once
 and drawn once, by one of them, so it is a single line at every zoom; the 180°
 cut in the data is never drawn.
 
+Country fills add their antialiased coverage on the transparent geography
+surface, so adjacent shaded countries meet without a source-over blending seam.
+Borders and routes retain their normal blending.
+
 Outline tracing yields at bounded source-point, ring and border-piece
 checkpoints, checking the renderer's rebuild budget before continuing. A complete
 old outline stays visible until its replacement is complete; nearby strokes are
