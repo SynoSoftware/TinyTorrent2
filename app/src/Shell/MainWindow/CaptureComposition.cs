@@ -114,7 +114,7 @@ public sealed partial class MainWindow
                 new Location(code, new Place(code, null), null, point), ConnectedPeer(index));
         }).ToArray();
         var origin = new Location("GB", new Place("GB", null), null, new GeoPoint(0, 51.5));
-        model.Update(peers, origin, Model.Text);
+        model.Update(CapturePopulation(model, peers), origin, Model.Text);
         var map = new PeerMap(model) { Width = 900, Height = 500 };
         Grid.SetRow(map, 1);
         Root.Children.Add(map);
@@ -133,7 +133,7 @@ public sealed partial class MainWindow
             var previousPicture = Read<object>(layer, "_shown");
             var previousBitmap = previousPicture.GetType().GetProperty("Bitmap", flags)!.GetValue(previousPicture);
             CaptureRates(peers[1], peers[1].DownloadRate + .0001);
-            model.Update(peers, origin, Model.Text);
+            model.Update(CapturePopulation(model, peers), origin, Model.Text);
             await Until(() => !ReferenceEquals(Read<MapMotion.Scene>(layer, "_scene").Traffic, previousTraffic));
             var updatedPicture = Read<object>(layer, "_shown");
             if (!ReferenceEquals(previousBitmap, updatedPicture.GetType().GetProperty("Bitmap", flags)!.GetValue(updatedPicture)))
@@ -210,9 +210,9 @@ public sealed partial class MainWindow
                 try
                 {
                     var moved = new Location("GB", new Place("GB", null), null, new GeoPoint(0, -20));
-                    model.Update(peers, moved, Model.Text);
+                    model.Update(CapturePopulation(model, peers), moved, Model.Text);
                     await preparingRoutes.Task.WaitAsync(TimeSpan.FromSeconds(5));
-                    model.Update(peers, origin, Model.Text);
+                    model.Update(CapturePopulation(model, peers), origin, Model.Text);
                     await Until(() => obsolete.IsCancellationRequested);
                     releaseRoutes.Set();
                     await map.Ready.WaitAsync(TimeSpan.FromSeconds(15));
@@ -241,10 +241,10 @@ public sealed partial class MainWindow
                 };
                 try
                 {
-                    model.Update(peers, origin, Model.Text, cities: false);
+                    model.Update(CapturePopulation(model, peers), origin, Model.Text, cities: false);
                     await changingDetail.Task.WaitAsync(TimeSpan.FromSeconds(5));
                     var pending = Read<(MapWork.Input Input, CancellationTokenSource Cancellation)>(map, "_preparing");
-                    model.Update(peers, origin, Model.Text, cities: false);
+                    model.Update(CapturePopulation(model, peers), origin, Model.Text, cities: false);
                     if (pending.Cancellation.IsCancellationRequested)
                         throw new InvalidOperationException("Compatible telemetry cancelled the replacement detail's grouping.");
                     releaseDetail.Set();
@@ -259,7 +259,7 @@ public sealed partial class MainWindow
                     worker.Started = null;
                 }
             }
-            model.Update(peers, origin, Model.Text, cities: true);
+            model.Update(CapturePopulation(model, peers), origin, Model.Text, cities: true);
             await map.Ready.WaitAsync(TimeSpan.FromSeconds(15));
             var preparing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             using (var release = new ManualResetEventSlim())
@@ -272,7 +272,7 @@ public sealed partial class MainWindow
                 };
                 try
                 {
-                    model.Update(peers, origin, Model.Text);
+                    model.Update(CapturePopulation(model, peers), origin, Model.Text);
                     await preparing.Task.WaitAsync(TimeSpan.FromSeconds(5));
                     var destination = model.Destinations.First(destination => destination.Point == peers[2].Location!.Point);
                     map.Select([peers[2]]);

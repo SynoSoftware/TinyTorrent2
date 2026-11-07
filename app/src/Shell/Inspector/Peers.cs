@@ -27,6 +27,7 @@ public sealed partial class Inspector
     private TaskCompletionSource? _peersReady;
     private IReadOnlyList<Peer>? _releaseBaseline;
     private (int Connected, int Active) _peerCounts;
+    private MapModel.Population? _mapPopulation;
 
     internal event EventHandler<IReadOnlyList<Peer>>? PeersReleased;
 
@@ -36,7 +37,8 @@ public sealed partial class Inspector
     {
         // Decimal Mbit/s: 125,000 bytes per second each.
         Map.Update(
-            IsAvailable ? Peers : null,
+            IsAvailable && _mapPopulation is { } population && ReferenceEquals(population.Subject, PeerSubject)
+                ? population : new(PeerSubject, []),
             Origin,
             Text,
             cities,
@@ -74,11 +76,15 @@ public sealed partial class Inspector
     public IReadOnlyList<Peer>? ShownPeers { get; private set; }
     internal Task PeersReady => _peersReady?.Task ?? Task.CompletedTask;
 
-    private sealed record PeerRows(IReadOnlyList<Peer>? Shown, IReadOnlyList<Peer> Released, int Connected, int Active);
+    private sealed record PeerRows(IReadOnlyList<Peer>? Shown, IReadOnlyList<Peer> Released, int Connected, int Active)
+    {
+        internal required MapModel.Population Population { get; init; }
+    }
 
     private async void Filter()
     {
         var version = ++_filterVersion;
+        var subject = PeerSubject;
         if (_peersReady?.Task.IsCompleted != false)
             _peersReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
         var peers = _peers;
@@ -104,10 +110,15 @@ public sealed partial class Inspector
                 ? release.Except(shown ?? []).Concat((shown ?? []).Except(release)).ToArray() : [];
             return new PeerRows(shown, released,
                 captured.Count(row => row.Record.State != PeerState.Known),
-                captured.Count(row => row.Record.State == PeerState.Connected && row.Record.DownloadRate + row.Record.UploadRate > 0));
+                captured.Count(row => row.Record.State == PeerState.Connected && row.Record.DownloadRate + row.Record.UploadRate > 0))
+            {
+                Population = new(subject, captured.Select(row => new MapModel.Observation(row.Peer, row.Record, row.Location)).ToArray()),
+            };
         });
-        if (version != _filterVersion)
+        if (version != _filterVersion || !ReferenceEquals(subject, PeerSubject))
             return;
+        _mapPopulation = prepared.Population;
+        UpdateMap(Map.Cities);
         _releaseBaseline = null;
         if (prepared.Released.Count > 0)
             PeersReleased?.Invoke(this, prepared.Released);
@@ -344,6 +355,8 @@ public sealed partial class Inspector
                 IsReplacing = false;
             Refresh();
         }
+        else if (!ReferenceEquals(_mapPopulation?.Subject, PeerSubject))
+            Filter();
         // Returning to Peers resumes lookups abandoned while it was hidden.
         _ = LocatePeers();
         // One torrent at a time, so Inspector demands never overlap.

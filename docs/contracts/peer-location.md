@@ -78,8 +78,12 @@ text block uses the font; the name beside it stays in the app's font.
 
 ## Map
 
-`Inspector.Place` is the chosen filter for both views. `MapModel` captures peer
-facts on the UI thread; prepared presentations carry detached geographic facts. One
+`Inspector.Place` is the chosen filter for both views. Inspector captures peer
+identity, location and immutable records once on the UI thread for filtering.
+That worker also builds the full subject's map observations, independently of
+place-filtered rows. Only a still-current filter version and subject may publish
+them; map settings reuse the accepted snapshot. `MapModel` takes this detached
+population without enumerating peers or relabelling an old subject. One
 serialized `MapWork` worker owns grouping and estimated distribution. It
 publishes detached group copies that nobody subsequently mutates. The UI
 captures size, appearance and selection; `MapMotion`'s dedicated render worker
@@ -91,6 +95,12 @@ so the next map frame can highlight them while peer preparation is pending.
 Hit testing reads detached line segments from the same sampled arcs that draw;
 it neither creates nor releases native geometry on the UI thread.
 `MapViewport` supplies detached transforms for preparation and inspection.
+After drawing succeeds, the game loop publishes one detached inspection, view
+and surface identity, including frames without moving dots. Each interaction
+captures that value once and resolves current intent within its destinations;
+subject, detail, surface and lifetime guards exclude stale content. UI
+notifications refresh descriptions from the current display without installing
+captured targets. New grouping never replaces the person's interaction intent.
 Drawing and pan alone do not regroup peers. Equivalent visible facts retain the
 presentation and picture when peer instances change within one accepted subject.
 A different subject or map detail cancels pending aggregation; compatible
@@ -98,8 +108,18 @@ telemetry coalesces its next pass. Navigation, hover and selection publish
 independently of aggregation.
 Unload cancels without waiting and retires the worker when its current
 preparation ends. The render worker releases geometry when its native work ends
-and retires returned pictures after the game loop stops. The game loop releases
-its marker resources when it stops. Inspector retains plain map state.
+and retires returned pictures after the game loop stops. Each picture owns its
+prepared marker/dot textures and ring geometry for its device and DPI; the render
+worker creates and destroys them through the same cached, pending and shown
+reference accounting. The stopped callback returns ownership and signals
+completion without native destruction. Inspector retains plain map state.
+
+The render worker prepares route membership, rates, trips and dot-size inputs
+once per traffic revision. The game loop first advances the old rates to the
+adoption time, then updates surviving lanes in place, preserving carried bytes
+and flight state. It owns simulation, departure timing and size hysteresis.
+Visible marker and ring drawing still traverses the destinations; no marker
+layer cache is retained.
 
 Rate-only observations retain peer membership, groups and unchanged destinations.
 The model still rebuilds counts and rates through one aggregation rule; changed

@@ -13,7 +13,7 @@ namespace Syno.TinyTorrent.Torrents;
 /// <typeparam name="TRoute">The drawing's route, which a dot follows.</typeparam>
 /// <param name="smallest">The smallest dot size in bytes, a power of two.</param>
 internal sealed class MapDots<TRoute>(long smallest)
-    where TRoute : class
+    where TRoute : notnull
 {
     // These values are judgement, checked on the running map.
     private const double Speed = 160;
@@ -28,7 +28,7 @@ internal sealed class MapDots<TRoute>(long smallest)
     private const double Margin = .8;
 
     // A route keeps its lane while it carries dots, so its bytes carry over.
-    private Dictionary<TRoute, Lane> _lanes = [];
+    private readonly Dictionary<TRoute, Lane> _lanes = [];
     private readonly List<Dot> _flying = [];
     private int _maximum = 1;
     private double _area;
@@ -55,44 +55,30 @@ internal sealed class MapDots<TRoute>(long smallest)
     /// Counts the bytes until <paramref name="now"/> at the previous rates,
     /// then takes the new rates. Routes left out lose their dots.
     /// </summary>
-    /// <param name="area">The canvas area in DIP².</param>
-    /// <param name="ceiling">The connection capacity in bytes per second; above zero.</param>
-    /// <param name="speed">How fast dots travel, as a multiple of <see cref="Speed"/>.</param>
-    /// <param name="total">How many dots fly at most, as a multiple of the normal maximum.</param>
-    internal void Update(
-        IEnumerable<Traffic> routes,
-        double area,
-        double ceiling,
-        double speed,
-        double total,
-        long now
-    )
+    internal void Update(Input input, long now)
     {
         Advance(now);
-        Dictionary<TRoute, Lane> lanes = [];
-        foreach (var traffic in routes)
+        foreach (var traffic in input.Routes.Values)
         {
-            // A dot on a short route would never leave the fades at its ends.
-            if (traffic.Length < ShortRoute)
-                continue;
-            var lane = _lanes.GetValueOrDefault(traffic.Route) ?? new Lane();
+            if (!_lanes.TryGetValue(traffic.Route, out var lane))
+                _lanes[traffic.Route] = lane = new Lane();
             lane.Down = traffic.Down;
             lane.Up = traffic.Up;
-            lane.Trip = Math.Clamp(traffic.Length / Speed, ShortestTrip, LongestTrip) / speed;
-            lane.Length = traffic.Length;
-            lanes[traffic.Route] = lane;
+            lane.Trip = traffic.Trip;
         }
-        _lanes = lanes;
-        _flying.RemoveAll(dot => !lanes.ContainsKey(dot.Route));
-        Total = lanes.Values.Sum(lane => lane.Down + lane.Up);
-        var reshaped = area != _area || speed != _speed || total != _total;
-        _area = area;
-        _speed = speed;
-        _total = total;
-        _maximum = Math.Max(1, (int)(area * total / AreaPerDot));
+        foreach (var route in _lanes.Keys)
+            if (!input.Routes.ContainsKey(route))
+                _lanes.Remove(route);
+        _flying.RemoveAll(dot => !input.Routes.ContainsKey(dot.Route));
+        Total = input.Rate;
+        var reshaped = input.Area != _area || input.Speed != _speed || input.Total != _total;
+        _area = input.Area;
+        _speed = input.Speed;
+        _total = input.Total;
+        _maximum = input.Maximum;
         // Without traffic the size stays, so the legend keeps the last one.
         if (Total > 0)
-            _target = Fit(ceiling);
+            _target = Fit(input.Needed);
         Settle(now, reshaped);
     }
 
@@ -179,15 +165,8 @@ internal sealed class MapDots<TRoute>(long smallest)
     // within the target, and the dots of each direction of each route at
     // least Spacing apart. Steps of ×1.5 and ×1.33 keep the count within a
     // third of the target; powers of two would let a 4% rise in speed halve it.
-    private long Fit(double ceiling)
+    private long Fit(double needed)
     {
-        // People judge how crowded the view looks rather than count dots, and
-        // the cube root spreads the count evenly from a trickle to the
-        // connection capacity.
-        var wanted = Math.Max(1, _maximum * Math.Min(1, Math.Cbrt(Total / ceiling)));
-        var needed = _lanes.Values.Sum(lane => (lane.Down + lane.Up) * lane.Trip) / (Margin * wanted);
-        foreach (var lane in _lanes.Values)
-            needed = Math.Max(needed, Math.Max(lane.Down, lane.Up) * lane.Trip * Spacing / lane.Length);
         var size = smallest;
         while (size < needed)
             size = BitOperations.IsPow2(size) ? size / 2 * 3 : size / 3 * 4;
@@ -216,7 +195,48 @@ internal sealed class MapDots<TRoute>(long smallest)
     }
 
     /// <summary>A route's rates in bytes per second and its length in DIPs on the fitted overview.</summary>
-    internal readonly record struct Traffic(TRoute Route, double Down, double Up, double Length);
+    internal readonly record struct Traffic(TRoute Route, double Down, double Up, double Length)
+    {
+        internal double Trip { get; init; }
+    }
+
+    internal sealed class Input
+    {
+        internal Input(IEnumerable<Traffic> routes, double area, double ceiling, double speed, double total)
+        {
+            Dictionary<TRoute, Traffic> rates = [];
+            foreach (var traffic in routes)
+            {
+                // A dot on a short route would never leave the fades at its ends.
+                if (traffic.Length >= ShortRoute)
+                    rates[traffic.Route] = traffic with
+                    {
+                        Trip = Math.Clamp(traffic.Length / MapDots<TRoute>.Speed, ShortestTrip, LongestTrip) / speed,
+                    };
+            }
+            Routes = rates;
+            Area = area;
+            Speed = speed;
+            Total = total;
+            Rate = rates.Values.Sum(traffic => traffic.Down + traffic.Up);
+            Maximum = Math.Max(1, (int)(area * total / AreaPerDot));
+            // People judge how crowded the view looks rather than count dots, and
+            // the cube root spreads the count evenly from a trickle to capacity.
+            var wanted = Math.Max(1, Maximum * Math.Min(1, Math.Cbrt(Rate / ceiling)));
+            var needed = rates.Values.Sum(traffic => (traffic.Down + traffic.Up) * traffic.Trip) / (Margin * wanted);
+            foreach (var traffic in rates.Values)
+                needed = Math.Max(needed, Math.Max(traffic.Down, traffic.Up) * traffic.Trip * Spacing / traffic.Length);
+            Needed = needed;
+        }
+
+        internal IReadOnlyDictionary<TRoute, Traffic> Routes { get; }
+        internal double Area { get; }
+        internal double Speed { get; }
+        internal double Total { get; }
+        internal double Rate { get; }
+        internal int Maximum { get; }
+        internal double Needed { get; }
+    }
 
     /// <summary>A dot in flight: one <see cref="Bytes"/> of a route's download or upload.</summary>
     /// <param name="Trip">The seconds its route takes from end to end.</param>
@@ -232,7 +252,6 @@ internal sealed class MapDots<TRoute>(long smallest)
         internal double Down { get; set; }
         internal double Up { get; set; }
         internal double Trip { get; set; }
-        internal double Length { get; set; }
         internal double Downloaded { get; set; }
         internal double Uploaded { get; set; }
     }

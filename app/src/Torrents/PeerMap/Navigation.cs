@@ -36,11 +36,12 @@ public sealed partial class PeerMap
 
     private void OnFit(object sender, RoutedEventArgs args) => Fit();
 
-    private Destination? Inspected => CanInspect ? _pointed ?? _inspection!.Destinations.FirstOrDefault(IsMarked) : null;
+    private Destination? Inspected(MapMotion.Displayed? displayed) => displayed is null ? null
+        : Resolve(displayed, _pointed) ?? displayed.Inspection.Destinations.FirstOrDefault(Highlight(displayed).IsMarked);
 
-    private void ZoomInspection(float factor)
+    private void ZoomInspection(float factor, MapMotion.Displayed displayed)
     {
-        var destination = Inspected;
+        var destination = Inspected(displayed);
         if (destination is not null)
             _viewport.Reveal(destination.Point);
         ZoomAt(factor, destination is null ? _viewport.Offset : _viewport.Screen(destination.Point));
@@ -159,12 +160,14 @@ public sealed partial class PeerMap
             _viewport.Hold(_viewport.Zoom, drag.Grip, new Vector2((float)point.X, (float)point.Y));
         }
         EndDrag(false);
-        OnPointer(sender, args);
-        if (!moved)
+        var displayed = Displayed;
+        if (displayed is not null)
+            PointAt(args, displayed);
+        if (!moved && displayed is not null)
         {
             SelectPeers([]);
-            Choose(_pointed);
-            Describe();
+            Choose(_pointed, displayed);
+            Describe(displayed);
             Invalidate();
         }
         args.Handled = true;
@@ -189,7 +192,7 @@ public sealed partial class PeerMap
                 !ReferenceEquals(args.OriginalSource, this)
                 && !ReferenceEquals(args.OriginalSource, FitButton)
             )
-            || !CanInspect
+            || Displayed is not { } displayed
             || InputKeyboardSource
                 .GetKeyStateForCurrentThread(VirtualKey.Menu)
                 .HasFlag(CoreVirtualKeyStates.Down)
@@ -201,7 +204,7 @@ public sealed partial class PeerMap
         if (args.Key == VirtualKey.Escape && _drag is not null)
             EndDrag(true);
         else if (args.Key is VirtualKey.Add or Plus or VirtualKey.Subtract or Minus)
-            ZoomInspection(args.Key is VirtualKey.Add or Plus ? 1.25f : .8f);
+            ZoomInspection(args.Key is VirtualKey.Add or Plus ? 1.25f : .8f, displayed);
         else if (control && args.Key is VirtualKey.Number0 or VirtualKey.NumberPad0)
             Fit();
         else if (
@@ -224,13 +227,14 @@ public sealed partial class PeerMap
             args.Key is VirtualKey.Left or VirtualKey.Up or VirtualKey.Right or VirtualKey.Down
         )
         {
-            var destinations = _inspection!.Destinations;
+            var destinations = displayed.Inspection.Destinations;
             if (destinations.Count == 0)
                 return;
             var step = args.Key is VirtualKey.Left or VirtualKey.Up ? -1 : 1;
             var index = -1;
+            var highlight = Highlight(displayed);
             for (var candidate = 0; candidate < destinations.Count; candidate++)
-                if (_pointed is null ? IsMarked(destinations[candidate]) : destinations[candidate].Key == _pointed.Key)
+                if (_pointed is null ? highlight.IsMarked(destinations[candidate]) : destinations[candidate].Key == _pointed.Key)
                 {
                     index = candidate;
                     break;
@@ -241,17 +245,17 @@ public sealed partial class PeerMap
                     : (index + step + destinations.Count) % destinations.Count;
             _pointed = destinations[index];
             SelectPeers([]);
-            Choose(_pointed);
+            Choose(_pointed, displayed);
             _viewport.Reveal(_pointed.Point);
-            Describe();
+            Describe(displayed);
             Invalidate();
         }
         else if (args.Key == VirtualKey.Escape)
         {
             SelectPeers([]);
-            Choose(null);
+            Choose(null, displayed);
             _pointed = null;
-            Describe();
+            Describe(displayed);
             Invalidate();
         }
         else

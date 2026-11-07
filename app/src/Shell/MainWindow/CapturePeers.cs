@@ -21,6 +21,12 @@ namespace Syno.TinyTorrent.Shell;
 
 public sealed partial class MainWindow
 {
+    private static MapModel.Population CapturePopulation(MapModel model, IEnumerable<Peer> peers) =>
+        new(model.Subject, peers.Select(peer => new MapModel.Observation(peer, peer.Capture(), peer.Location)).ToArray());
+
+    private static MapMotion.Displayed? CaptureDisplay(PeerMap map) =>
+        (MapMotion.Displayed?)typeof(PeerMap).GetProperty("Displayed", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(map);
+
     private static void CaptureRates(Peer peer, double download, double? upload = null)
     {
         var before = peer.Capture();
@@ -101,7 +107,7 @@ public sealed partial class MainWindow
             }));
         var model = new MapModel(Model.Inspector);
         var peers = Enumerable.Range(0, 128).Select(index => MakePeer(index, 65536)).ToArray();
-        model.Update(peers, origin, Model.Text, cities: true);
+        model.Update(CapturePopulation(model, peers), origin, Model.Text, cities: true);
         var map = new PeerMap(model) { Width = 1000, Height = 650 };
         Grid.SetRow(map, 1);
         Root.Children.Add(map);
@@ -136,7 +142,7 @@ public sealed partial class MainWindow
                 work.Clear();
                 var source = new GeoPoint(0, 10);
                 origin = origin with { Point = source };
-                model.Update(peers, origin, Model.Text, cities: true);
+                model.Update(CapturePopulation(model, peers), origin, Model.Text, cities: true);
                 await Settle();
                 outcomes.Add(new { journey = "map overview arc construction", routes = 128,
                     phases = work.ToDictionary(pair => pair.Key, pair => Summary(pair.Value)) });
@@ -146,7 +152,7 @@ public sealed partial class MainWindow
                     var circle = new MapRenderer.GreatCircle(source, destination);
                     var crest = circle.At(.5);
                     viewport.Fit();
-                    model.Update([MakePeer(0, 1048576, 0, destination)], origin, Model.Text, cities: true);
+                    model.Update(CapturePopulation(model, [MakePeer(0, 1048576, 0, destination)]), origin, Model.Text, cities: true);
                     await Settle();
                     var route = Read<System.Collections.IEnumerable>(renderer, "_routes").Cast<object>().Single();
                     T Property<T>(string name) => (T)route.GetType().GetProperty(name, Flags)!.GetValue(route)!;
@@ -242,8 +248,8 @@ public sealed partial class MainWindow
             await Draw();
             GeoPoint[] places = [new(-118, 34), new(151, -33), new(139, 35), new(13, 52),
                 new(77, 28), new(-43, -22), new(-74, 40), new(28, -26), new(37, 56), new(-79, 9)];
-            model.Update(places.Select((point, index) => MakePeer(index, index % 2 == 0 ? 131072 : 16384,
-                index % 2 == 0 ? 16384 : 131072, point)).ToArray(), origin, Model.Text, cities: true);
+            model.Update(CapturePopulation(model, places.Select((point, index) => MakePeer(index, index % 2 == 0 ? 131072 : 16384,
+                index % 2 == 0 ? 16384 : 131072, point)).ToArray()), origin, Model.Text, cities: true);
             model.ResetPeak();
             map.SetAnimation(MapAnimation.Fast, MapDotTotal.High);
             await Settle();
@@ -254,7 +260,7 @@ public sealed partial class MainWindow
             if (ReviewMode == CaptureMode.MapGeography)
                 return;
             var crowded = Enumerable.Range(0, 300).Select(index => MakePeer(index, (index + 1) * 1024)).ToArray();
-            model.Update(crowded, origin, Model.Text, cities: true);
+            model.Update(CapturePopulation(model, crowded), origin, Model.Text, cities: true);
             map.SetArcLimit(25);
             await Settle();
             MapModel.Destination[] Shown() => Read<System.Collections.IEnumerable>(renderer, "_routes")
@@ -266,7 +272,7 @@ public sealed partial class MainWindow
                 || Read<MapMotion.Traffic>(renderer, "_traffic").Routes.Count != 25)
                 throw new InvalidOperationException("The arc cap lost markers or failed to retain the fastest routes and matching dots.");
             crowded[0].Update(MakePeer(0, 0, 1048576));
-            model.Update(crowded, origin, Model.Text, cities: true);
+            model.Update(CapturePopulation(model, crowded), origin, Model.Text, cities: true);
             await Settle();
             if (!Shown().Any(destination => destination.Group.Up == 1048576)
                 || Shown().Where(destination => destination.Group.Down > 0).Min(destination => destination.Group.Down) != 277 * 1024)
@@ -287,20 +293,20 @@ public sealed partial class MainWindow
             foreach (var count in new[] { 1000, 10000 })
             {
                 var population = Enumerable.Range(0, count).Select(index => MakePeer(index, 65536)).ToArray();
-                model.Update(population, null, Model.Text, cities: true);
+                model.Update(CapturePopulation(model, population), null, Model.Text, cities: true);
                 await Settle();
                 work.Clear();
                 for (var sample = 0; sample < 8; sample++)
                 {
                     for (var index = 0; index < population.Length; index++)
                         population[index].Update(MakePeer(index, 65536 + sample * 1024));
-                    model.Update(population, null, Model.Text, cities: true);
+                    model.Update(CapturePopulation(model, population), null, Model.Text, cities: true);
                     await Settle();
                 }
                 outcomes.Add(new { journey = "map rate preparation", count,
                     phases = work.ToDictionary(pair => pair.Key, pair => Summary(pair.Value)) });
             }
-            model.Update(peers, origin, Model.Text, cities: true);
+            model.Update(CapturePopulation(model, peers), origin, Model.Text, cities: true);
             model.ResetPeak();
             map.SetAnimation(MapAnimation.Fast, MapDotTotal.High);
             await Settle();
@@ -343,14 +349,14 @@ public sealed partial class MainWindow
             throw new InvalidOperationException("Analytical polar motion escaped the sampled route bounds.");
         var hidden = new MapDots<object>(1024);
         var hiddenRoute = new object();
-        hidden.Update([new(hiddenRoute, 1048576, 0, 320)], 400000, 1048576, .5, 1, 0);
-        hidden.Update([new(hiddenRoute, 1, 0, 320)], 400000, 1048576, .5, 1, Stopwatch.Frequency);
+        hidden.Update(new([new(hiddenRoute, 1048576, 0, 320)], 400000, 1048576, .5, 1), 0);
+        hidden.Update(new([new(hiddenRoute, 1, 0, 320)], 400000, 1048576, .5, 1), Stopwatch.Frequency);
         if (hidden.Wait(departures: false) != TimeSpan.FromSeconds(10))
             throw new InvalidOperationException("Hidden traffic lost the size-change deadline.");
         hidden.Advance(20 * Stopwatch.Frequency);
         if (hidden.Bytes != 1024 || hidden.Flying.Count != 0 || hidden.Wait(departures: false) is not null)
             throw new InvalidOperationException("Hidden traffic did not settle its size or replayed expired dots.");
-        hidden.Update([new(hiddenRoute, 1048576, 1048576, 320)], 10000, 1048576, .5, 1, 20 * Stopwatch.Frequency);
+        hidden.Update(new([new(hiddenRoute, 1048576, 1048576, 320)], 10000, 1048576, .5, 1), 20 * Stopwatch.Frequency);
         hidden.Advance(80 * Stopwatch.Frequency);
         if (hidden.Flying.Count > 1 || hidden.Flying.Any(dot => dot.Progress(80 * Stopwatch.Frequency) >= 1))
             throw new InvalidOperationException("A batched hidden interval exceeded the cap or replayed an expired dot.");
@@ -358,13 +364,13 @@ public sealed partial class MainWindow
 
         var route = new object();
         var dots = new MapDots<object>(1024);
-        dots.Update([new(route, 65536, 0, 320)], 400000, 1048576, .5, 1, 0);
+        dots.Update(new([new(route, 65536, 0, 320)], 400000, 1048576, .5, 1), 0);
         dots.Advance(Stopwatch.Frequency / 2);
         if (dots.Flying.Count == 0)
             throw new InvalidOperationException("The suspension fixture did not start download dots.");
         var bytes = dots.Bytes;
         dots.Clear();
-        dots.Update([new(route, 0, 65536, 320)], 400000, 1048576, .5, 1, 20 * Stopwatch.Frequency);
+        dots.Update(new([new(route, 0, 65536, 320)], 400000, 1048576, .5, 1), 20 * Stopwatch.Frequency);
         if (dots.Flying.Count != 0 || dots.Bytes != bytes)
             throw new InvalidOperationException("Resuming counted disabled traffic or lost the last dot size.");
         dots.Advance(21 * Stopwatch.Frequency);
@@ -406,7 +412,7 @@ public sealed partial class MainWindow
                 owner.Place = null;
                 var model = new MapModel(owner);
                 var peer = MakePeer(65536);
-                model.Update([peer], origin, Model.Text, cities: false);
+                model.Update(CapturePopulation(model, [peer]), origin, Model.Text, cities: false);
                 var map = new PeerMap(model) { Width = 640, Height = 400 };
                 Grid.SetRow(map, 1);
                 Root.Children.Add(map);
@@ -419,22 +425,22 @@ public sealed partial class MainWindow
                     await Until(() => CaptureMapIdle(map) && Read<object?>(motion, "_pending") is null
                         && !Read<bool>(renderer, "_interpolating"), "The initial map did not settle.");
                     var pictures = map.MotionPictures;
-                    model.Update([MakePeer(65536, torrent: "map-replacement")], origin, Model.Text, cities: false);
+                    model.Update(CapturePopulation(model, [MakePeer(65536, torrent: "map-replacement")]), origin, Model.Text, cities: false);
                     await Until(() => CaptureMapIdle(map), "An equivalent torrent switch did not prepare.");
                     if (map.MotionPictures != pictures || Read<object?>(motion, "_pending") is not null)
                         throw new InvalidOperationException("Equivalent peer facts redrew the same map.");
-                    model.Update([peer], origin, Model.Text, cities: false);
+                    model.Update(CapturePopulation(model, [peer]), origin, Model.Text, cities: false);
                     await Until(() => CaptureMapIdle(map), "The original observations did not prepare.");
                     outcomes.Add(new { journey = "map equivalent torrent switch", redrawn = false });
                     if (!paused)
                     {
                         var chosen = model.Destinations[0];
                         map.PlaceChanged += (_, place) => owner.Place = place;
-                        typeof(PeerMap).GetMethod("Choose", Flags)!.Invoke(map, [chosen]);
+                        typeof(PeerMap).GetMethod("Choose", Flags)!.Invoke(map, [chosen, CaptureDisplay(map)]);
                         var viewport = Read<MapViewport>(map, "_viewport");
                         viewport.SetView(8, new Vector2(10, -50), 1);
                         peer.Update(MakePeer(2097152));
-                        model.Update([peer], origin, Model.Text, cities: false);
+                        model.Update(CapturePopulation(model, [peer]), origin, Model.Text, cities: false);
                         await Until(() => CaptureMapIdle(map) && !Read<bool>(renderer, "_interpolating"),
                             "The map's first offscreen activity fade did not settle.");
                         if (map.Described is not { } described || described.Key != chosen.Key
@@ -443,7 +449,7 @@ public sealed partial class MainWindow
                         if (chosen.Group.Down != 65536)
                             throw new InvalidOperationException("Worker aggregation mutated a published inspection snapshot.");
                         peer.Update(MakePeer(2097153));
-                        model.Update([peer], origin, Model.Text, cities: false);
+                        model.Update(CapturePopulation(model, [peer]), origin, Model.Text, cities: false);
                         await Until(() => CaptureMapIdle(map), "The unchanged map preparation did not finish.");
                         if (Read<bool>(renderer, "_interpolating"))
                             throw new InvalidOperationException("An offscreen country's old strength restarted an activity fade.");
@@ -472,7 +478,7 @@ public sealed partial class MainWindow
                         var retainedRoute = Read<System.Collections.IEnumerable>(renderer, "_routes").Cast<object>().Single();
                         var arrangement = Read<int>(renderer, "_arrangement");
                         peer.Update(MakePeer(0, "leecher", 65536));
-                        model.Update([peer], origin, Model.Text, cities: false);
+                        model.Update(CapturePopulation(model, [peer]), origin, Model.Text, cities: false);
                         await Until(() => CaptureMapIdle(map), "The role and direction update did not prepare.");
                         var updated = Read<MapModel.Presentation>(renderer, "_model").Destinations[0];
                         if (updated.Key != retained.Key || retained.Group.Down != retainedRate
@@ -481,7 +487,7 @@ public sealed partial class MainWindow
                             || Read<int>(renderer, "_arrangement") == arrangement)
                             throw new InvalidOperationException("Retained membership lost a role, rate or direction change.");
                         peer.Update(MakePeer(65536));
-                        model.Update([peer], origin, Model.Text, cities: false);
+                        model.Update(CapturePopulation(model, [peer]), origin, Model.Text, cities: false);
                         await Until(() => CaptureMapIdle(map) && !Read<bool>(renderer, "_interpolating"),
                             "The fade fixture did not settle.");
                         var strengths = Read<Dictionary<MapModel.DestinationKey, float>>(renderer, "_displayed");
@@ -489,7 +495,7 @@ public sealed partial class MainWindow
                         for (var sample = 1; sample <= 4; sample++)
                         {
                             peer.Update(MakePeer(65536 + sample * 2500));
-                            model.Update([peer], origin, Model.Text, cities: false);
+                            model.Update(CapturePopulation(model, [peer]), origin, Model.Text, cities: false);
                             await Task.Delay(400);
                         }
                         if (strengths[retained.Key] <= before)
@@ -518,12 +524,16 @@ public sealed partial class MainWindow
                     List<CanvasRenderTarget> resources = [];
                     await motion.Control.RunOnGameLoopThreadAsync(() =>
                     {
+                        void Track(object picture)
+                        {
+                            foreach (var name in new[] { "Bitmap", "Arcs", "Mark", "Dot" })
+                                resources.Add((CanvasRenderTarget)picture.GetType().GetProperty(name, Flags)!.GetValue(picture)!);
+                        }
                         foreach (var name in new[] { "_shown", "_pending" })
                             if (Read<object?>(motion, name) is { } picture)
-                                resources.Add((CanvasRenderTarget)picture.GetType().GetProperty("Bitmap", Flags)!.GetValue(picture)!);
+                                Track(picture.GetType().GetProperty("Picture", Flags)!.GetValue(picture)!);
                         foreach (var picture in Read<System.Collections.IEnumerable>(motion, "_free"))
-                            resources.Add((CanvasRenderTarget)picture.GetType().GetProperty("Bitmap", Flags)!.GetValue(picture)!);
-                        resources.Add(Read<CanvasRenderTarget>(motion, "_mark"));
+                            Track(picture);
                     });
                     var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                     motion.Control.GameLoopStopped += (_, _) => stopped.TrySetResult();
@@ -540,7 +550,7 @@ public sealed partial class MainWindow
                     };
                     try
                     {
-                        model.Update([MakePeer(1048576)], origin, Model.Text, cities: false);
+                        model.Update(CapturePopulation(model, [MakePeer(1048576)]), origin, Model.Text, cities: false);
                         await preparing.Task.WaitAsync(TimeSpan.FromSeconds(5));
                         Root.Children.Remove(map);
                     }
@@ -1295,7 +1305,7 @@ public sealed partial class MainWindow
                                     "The peer view menu did not apply its choice."
                                 );
                             var map = CaptureElements(pane).OfType<PeerMap>().SingleOrDefault();
-                            inspector.Map.Update(peers, origin, Model.Text);
+                            inspector.Map.Update(CapturePopulation(inspector.Map, peers), origin, Model.Text);
                             var name =
                                 $"peers-{theme}-{precision}-{(portrait ? "portrait" : "landscape")}-{layout}";
                             await CaptureUi(name);
@@ -1321,7 +1331,7 @@ public sealed partial class MainWindow
                                     throw new InvalidOperationException(
                                         "The peer splitter must resize without changing orientation."
                                     );
-                                inspector.Map.Update(peers, origin, Model.Text);
+                                inspector.Map.Update(CapturePopulation(inspector.Map, peers), origin, Model.Text);
                                 await CaptureUi(name + "-resized");
                                 completed.Add(name + "-resized");
                                 if (precision == "countries")
@@ -1365,7 +1375,7 @@ public sealed partial class MainWindow
                 View = pane.Layout.View with { Layout = PeerLayout.Both, Stacked = .5 },
             };
             await CaptureLayout();
-            inspector.Map.Update(peers, null, Model.Text);
+            inspector.Map.Update(CapturePopulation(inspector.Map, peers), null, Model.Text);
             await CaptureUi("peers-small-unknown-origin");
             completed.Add("peers-small-unknown-origin");
             var estimated = peers[14];
@@ -1470,7 +1480,7 @@ public sealed partial class MainWindow
                 var meridian = (float)(
                     home.Point?.Longitude ?? countries[home.Code].Anchor.Longitude
                 );
-                inspector.Map.Update(peers, home, Model.Text);
+                inspector.Map.Update(CapturePopulation(inspector.Map, peers), home, Model.Text);
                 View(1f, Vector2.Zero);
                 await CaptureUi($"peers-meridian-{place}");
                 completed.Add($"peers-meridian-{place}");
@@ -1507,7 +1517,7 @@ public sealed partial class MainWindow
                 "_detail",
                 BindingFlags.Instance | BindingFlags.NonPublic
             )!;
-            inspector.Map.Update(peers, homes[0].Origin, Model.Text);
+            inspector.Map.Update(CapturePopulation(inspector.Map, peers), homes[0].Origin, Model.Text);
             View(1f, Vector2.Zero);
             await CaptureUi("peers-detail-fitted");
             var fitted = (float)detail.GetValue(renderer)!;
@@ -1650,7 +1660,7 @@ public sealed partial class MainWindow
                     {
                         for (var index = 0; index < peers.Length; index++)
                             CaptureRates(peers[index], rates[index] * (step % 12 == 0 ? 1.1 : 1));
-                        inspector.Map.Update(peers, homes[0].Origin, Model.Text);
+                        inspector.Map.Update(CapturePopulation(inspector.Map, peers), homes[0].Origin, Model.Text);
                     }
                     viewport.Hold(8f, focus, offset + new Vector2(step * 4, step));
                     submissions.Add(Stopwatch.GetElapsedTime(started).TotalMilliseconds);
@@ -1669,7 +1679,7 @@ public sealed partial class MainWindow
                 });
                 for (var index = 0; index < peers.Length; index++)
                     CaptureRates(peers[index], rates[index]);
-                inspector.Map.Update(peers, homes[0].Origin, Model.Text);
+                inspector.Map.Update(CapturePopulation(inspector.Map, peers), homes[0].Origin, Model.Text);
             }
             View(1f, Vector2.Zero);
             await CaptureLayout();
@@ -1688,7 +1698,7 @@ public sealed partial class MainWindow
             )!;
             var choices = inspector.Map.Destinations.ToArray();
             var chosen = choices.First(choice => choice.Key.Code == "JP");
-            choose.Invoke(chooser, [chosen]);
+            choose.Invoke(chooser, [chosen, CaptureDisplay(chooser)]);
             await CaptureUi("peers-place-japan");
             completed.Add("peers-place-japan");
             var japan = inspector.Place
@@ -1713,14 +1723,14 @@ public sealed partial class MainWindow
                 tableCleared = inspector.Place is null && ReferenceEquals(table.ItemsSource, inspector.Peers),
                 mapCleared = selectedField.GetValue(chooser) is null,
             });
-            choose.Invoke(chooser, [chosen]);
+            choose.Invoke(chooser, [chosen, CaptureDisplay(chooser)]);
             var sameCountry = choices.Where(choice => choice.Key.Code == "US").Take(2).ToArray();
             if (sameCountry.Length == 2)
             {
-                choose.Invoke(chooser, [sameCountry[0]]);
+                choose.Invoke(chooser, [sameCountry[0], CaptureDisplay(chooser)]);
                 var first = selectedField.GetValue(chooser);
                 var place = inspector.Place;
-                choose.Invoke(chooser, [sameCountry[1]]);
+                choose.Invoke(chooser, [sameCountry[1], CaptureDisplay(chooser)]);
                 var second = selectedField.GetValue(chooser);
                 await inspector.PeersReady;
                 var row = inspector.ShownPeers!.First();
@@ -1730,7 +1740,7 @@ public sealed partial class MainWindow
                     throw new InvalidOperationException("Estimated destinations or table selection changed the country filter.");
                 outcomes.Add(new { journey = "two destinations share one place", distinct = !Equals(first, second), preserved = inspector.Place == place });
             }
-            choose.Invoke(chooser, [null]);
+            choose.Invoke(chooser, [null, CaptureDisplay(chooser)]);
             await CaptureUi("peers-place-cleared");
             completed.Add("peers-place-cleared");
             if (inspector.Place is not null || !ReferenceEquals(table.ItemsSource, inspector.Peers))
@@ -1839,7 +1849,7 @@ public sealed partial class MainWindow
             owner.PropertyChanged -= changed;
             if (notifications != 0 || !destinations.SequenceEqual(owner.Destinations))
                 throw new InvalidOperationException("Drawing changed map presentation data.");
-            choose.Invoke(chooser, [owner.Destinations.First(destination => destination.Key.Code == "JP")]);
+            choose.Invoke(chooser, [owner.Destinations.First(destination => destination.Key.Code == "JP"), CaptureDisplay(chooser)]);
             var retainedPlace = inspector.Place;
             var retainedChoice = selectedField.GetValue(chooser);
             typeof(Inspector).GetProperty(nameof(Inspector.Peers))!.SetValue(
@@ -1925,7 +1935,7 @@ public sealed partial class MainWindow
                 await CaptureLayout();
                 List<double> frames = [];
                 drawing.FrameMeasured = frames.Add;
-                inspector.Map.Update(known, null, Model.Text);
+                inspector.Map.Update(CapturePopulation(inspector.Map, known), null, Model.Text);
                 await CaptureUi($"peers-known-{count}");
                 var rendered = inspector.Map.Destinations.Count;
                 if (!ReferenceEquals(inspector.Peers, known))
@@ -1943,7 +1953,7 @@ public sealed partial class MainWindow
                 {
                     started = Stopwatch.GetTimestamp();
                     await (Task<bool>)apply.Invoke(inspector, [target.TorrentId, rows, context])!;
-                    inspector.Map.Update(known, null, Model.Text);
+                    inspector.Map.Update(CapturePopulation(inspector.Map, known), null, Model.Text);
                     unchanged.Add(Stopwatch.GetElapsedTime(started).TotalMilliseconds);
                 }
                 drawing.FrameMeasured = null;
@@ -1979,7 +1989,7 @@ public sealed partial class MainWindow
                 }
                 // Arcs and dots need the user's location, which the map timing
                 // above leaves out.
-                inspector.Map.Update(known, (Location?)originField.GetValue(inspector), Model.Text);
+                inspector.Map.Update(CapturePopulation(inspector.Map, known), (Location?)originField.GetValue(inspector), Model.Text);
                 var firstDot = Stopwatch.GetTimestamp();
                 var idleFrames = drawing.MotionFrames;
                 while (drawing.MotionFrames == idleFrames && Stopwatch.GetElapsedTime(firstDot) < TimeSpan.FromSeconds(15))
@@ -2001,7 +2011,7 @@ public sealed partial class MainWindow
                         var framesBefore = drawing.MotionFrames;
                         var pausedBefore = drawing.MotionPaused;
                         var clicked = Stopwatch.GetTimestamp();
-                        choose.Invoke(drawing, [choice]);
+                        choose.Invoke(drawing, [choice, CaptureDisplay(drawing)]);
                         var clickMs = Stopwatch.GetElapsedTime(clicked).TotalMilliseconds;
                         await inspector.PeersReady;
                         var assigned = Stopwatch.GetTimestamp();
@@ -2077,10 +2087,11 @@ public sealed partial class MainWindow
                             stamps.Clear();
                             var clickedAt = Stopwatch.GetTimestamp();
                             var clickStart = CaptureCycles.Current();
-                            var hit = ((MapRenderer.Inspection)typeof(PeerMap).GetField("_inspection", nonPublic)!.GetValue(drawing)!).HitTest(point);
+                            var displayed = CaptureDisplay(drawing)!;
+                            var hit = displayed.Inspection.HitTest(point, displayed.View);
                             selectPeers.Invoke(drawing, [Array.Empty<Peer>()]);
-                            choose.Invoke(drawing, [hit]);
-                            describe.Invoke(drawing, null);
+                            choose.Invoke(drawing, [hit, displayed]);
+                            describe.Invoke(drawing, [displayed]);
                             redraw.Invoke(drawing, null);
                             var clickCycles = CaptureCycles.Current() - clickStart;
                             while (

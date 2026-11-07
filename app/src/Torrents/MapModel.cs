@@ -7,7 +7,7 @@ namespace Syno.TinyTorrent.Torrents;
 
 internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
 {
-    private Observation[] _observations = [];
+    private Population _population = new(owner.PeerSubject, []);
     internal object Subject => owner.PeerSubject;
     internal Dictionary<string, Group> Countries { get; private set; } = [];
     internal List<Destination> Destinations { get; private set; } = [];
@@ -47,22 +47,22 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
 
     /// <param name="capacity">The connection capacity, download plus upload, in bytes per second, or null when unknown.</param>
     internal void Update(
-        IReadOnlyList<Peer>? peers,
+        Population population,
         Location? origin,
         Strings text,
         bool cities = true,
         double? capacity = null
     )
     {
-        peers ??= [];
-        _observations = peers.Select(peer =>
-            new Observation(peer, peer.DownloadRate, peer.UploadRate, peer.Location)).ToArray();
+        _population = population;
         Origin = origin;
         Text = text;
         Cities = cities;
         _capacity = capacity;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(null));
     }
+
+    internal sealed record Population(object Subject, Observation[] Observations);
 
     internal sealed record Snapshot(Observation[] Observations, Location? Origin, Strings Text, bool Cities, double Ceiling)
     {
@@ -103,7 +103,7 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
         }
     }
 
-    internal Snapshot Capture() => new(_observations, Origin, Text!, Cities, Ceiling) { Subject = Subject };
+    internal Snapshot Capture() => new(_population.Observations, Origin, Text!, Cities, Ceiling) { Subject = _population.Subject };
 
     internal void Apply(Presentation presentation)
     {
@@ -471,10 +471,12 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
         internal int Rank { get; init; }
     }
 
-    internal sealed record Observation(Peer Peer, double Down, double Up, Location? Location)
+    internal sealed record Observation(Peer Peer, Peer.Record Record, Location? Location)
     {
-        internal PeerRole Role { get; } = Peer.Role;
-        internal PeerState State { get; } = Peer.State;
+        internal double Down => Record.DownloadRate;
+        internal double Up => Record.UploadRate;
+        internal PeerRole Role => Record.Role;
+        internal PeerState State => Record.State;
 
         internal bool Matches(Observation other) => Down == other.Down && Up == other.Up
             && Location == other.Location && Role == other.Role && State == other.State;

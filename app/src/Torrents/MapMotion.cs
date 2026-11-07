@@ -30,6 +30,7 @@ internal sealed class MapMotion : IDisposable
 
     /// <summary>The smallest dot size, which the legend shows before the first traffic.</summary>
     internal const long SmallestDot = 1024;
+    private const float MarkerRadius = 2.4f;
 
     private readonly DispatcherQueue _dispatcher;
     private readonly DispatcherQueueTimer _wake;
@@ -64,19 +65,12 @@ internal sealed class MapMotion : IDisposable
     private float _dpi;
     private Completed? _completed;
 
-    // Game loop thread only, apart from the lost-device flag.
-    private readonly MapDots<Lane> _dots = new(SmallestDot);
-    private readonly Dictionary<DestinationKey, Lane> _lanes = [];
+    // The game loop owns simulation and publishes detached display state.
+    private readonly MapDots<DestinationKey> _dots = new(SmallestDot);
     private Completed? _shown;
     private Traffic? _applied;
     private (Traffic? Traffic, MapView? View, bool Visible) _visibility;
-    private CanvasRenderTarget? _mark;
-    private CanvasRenderTarget? _dot;
-    private CanvasCachedGeometry? _ring;
-    private CanvasDevice? _markDevice;
-    private float _markDpi;
-    private MapView? _displayedView;
-    private volatile bool _markLost;
+    private Displayed? _displayed;
     private int _drawn;
     private (long? Bytes, double Total) _reported;
 #if CAPTURE
@@ -143,7 +137,6 @@ internal sealed class MapMotion : IDisposable
         // Raised for each new device or DPI, which makes a new surface.
         Control.CreateResources += (_, _) =>
         {
-            _markLost = true;
             _dispatcher.TryEnqueue(NewSurface);
         };
         Control.Update += OnUpdate;
@@ -168,11 +161,14 @@ internal sealed class MapMotion : IDisposable
     /// </summary>
     internal event Action<long?, double>? Measured;
 
-    internal event Action<MapRenderer.Inspection>? Inspected;
+    internal event Action? DisplayChanged;
 
     internal Task Ready => _ready.Task;
     internal Task Released => _rendering;
-    internal MapView? DisplayedView => Volatile.Read(ref _displayedView);
+    internal Displayed? Display => !_disposed && Volatile.Read(ref _displayed) is { } displayed
+        && ReferenceEquals(displayed.Surface, Volatile.Read(ref _surface)) ? displayed : null;
+
+    internal sealed record Displayed(MapRenderer.Inspection Inspection, MapView View, object Surface);
 
     internal sealed record Input
     {
@@ -181,6 +177,7 @@ internal sealed class MapMotion : IDisposable
         internal required (Peer Peer, Location? Location)[] Selection { get; init; }
         internal DestinationKey? Chosen { get; init; }
         internal DestinationKey? Pointed { get; init; }
+        internal PeerPlace? Place { get; init; }
         internal required Color Background { get; init; }
         internal MapAnimation Animation { get; init; }
         internal MapDotTotal DotTotal { get; init; }
@@ -271,6 +268,7 @@ internal sealed class MapMotion : IDisposable
                     Scene = request is null ? null : _renderer!.Scene,
                     Highlight = _highlight,
                     Inspection = request is null ? null : _renderer!.Inspect(request.Input.Model, request.View),
+                    Surface = request?.Surface ?? Volatile.Read(ref _surface),
                 };
                 picture = null;
                 Publish(completed, request?.Cancellation ?? _shutdown.Token);
@@ -514,14 +512,11 @@ internal sealed class MapMotion : IDisposable
 
     private void OnStopped(ICanvasAnimatedControl sender, object args)
     {
-        // Win2D stops the game loop before raising Unloaded, so no draw can
-        // still be using a picture or the mark while they are released here.
+        // Win2D stops the game loop before raising Unloaded, so releasing the
+        // shown reference lets the worker retire its native resources safely.
         if (_shown is { } shown)
             Return(shown.Picture);
         _shown = null;
-        _mark?.Dispose();
-        _mark = null;
-        ReleaseMarks();
         _scene = null;
         _stopped.TrySetResult();
     }
@@ -619,7 +614,10 @@ internal sealed class MapMotion : IDisposable
             if (selected is null || _selection is null || !_selection.SetEquals(selected))
                 _selection = selected;
         }
-        var highlight = new MapRenderer.Highlight(input.Chosen, _marks, input.Pointed)
+        var chosen = input.Model.Destinations.FirstOrDefault(destination => destination.Key == input.Chosen
+                && destination.Group.Place == input.Place)
+            ?? input.Model.Destinations.FirstOrDefault(destination => destination.Group.Place == input.Place);
+        var highlight = new MapRenderer.Highlight(chosen?.Key, _marks, input.Pointed)
         {
             Selection = input.HighContrast ? null : _selection,
         };
@@ -717,37 +715,26 @@ internal sealed class MapMotion : IDisposable
         }
         var device = sender.Device;
         var dpi = sender.Dpi;
-        lock (_gate)
+        if (Interlocked.Exchange(ref _pending, null) is { } picture)
         {
-            if (Interlocked.Exchange(ref _pending, null) is { } picture)
+            var input = Volatile.Read(ref _input);
+            if (ReferenceEquals(picture.Device, device) && picture.Picture.Dpi == dpi && Matches(picture, input))
             {
-                var input = Volatile.Read(ref _input);
-                if (ReferenceEquals(picture.Device, device) && picture.Picture.Dpi == dpi && Matches(picture, input))
+                if (_shown?.Input?.Model.Subject != picture.Input?.Model.Subject)
                 {
-                    if (_shown?.Input?.Model.Subject != picture.Input?.Model.Subject)
-                    {
-                        _dots.Clear();
-                        _lanes.Clear();
-                        _applied = null;
-                    }
-                    if (_shown is { } previous)
-                        Return(previous.Picture);
-                    Volatile.Write(ref _shown, picture);
-                    _scene = picture.Scene;
-                    if (picture.Inspection is { } inspection)
-                        _dispatcher.TryEnqueue(() =>
-                        {
-                            if (!_disposed && ReferenceEquals(picture, Volatile.Read(ref _shown))
-                                && Matches(picture, Volatile.Read(ref _input)))
-                                Inspected?.Invoke(inspection);
-                        });
-#if CAPTURE
-                    Interlocked.Increment(ref _pictures);
-#endif
+                    _dots.Clear();
+                    _applied = null;
                 }
-                else
-                    Return(picture.Picture);
+                if (_shown is { } previous)
+                    Return(previous.Picture);
+                Volatile.Write(ref _shown, picture);
+                _scene = picture.Scene;
+#if CAPTURE
+                Interlocked.Increment(ref _pictures);
+#endif
             }
+            else
+                Return(picture.Picture);
         }
         var now = Stopwatch.GetTimestamp();
         var scene = Volatile.Read(ref _scene);
@@ -766,7 +753,7 @@ internal sealed class MapMotion : IDisposable
         var view = CurrentView;
         if (!ReferenceEquals(_visibility.Traffic, scene?.Traffic) || _visibility.View != view)
             _visibility = (scene?.Traffic, view, scene is not null && view is { } current
-                && scene.Traffic.Routes.Any(route => route.Length >= MapDots<Lane>.ShortRoute && current.Shows(route.Bounds, 13)));
+                && scene.Traffic.Routes.Any(route => route.Length >= MapDots<DestinationKey>.ShortRoute && current.Shows(route.Bounds, 13)));
         var visible = _visibility.Visible;
         _idle = _dots.Flying.Count == 0 || !visible;
         if (!_idle || _drawn < 2)
@@ -778,25 +765,7 @@ internal sealed class MapMotion : IDisposable
 
     private void Apply(Traffic traffic, long now)
     {
-        var present = new HashSet<DestinationKey>();
-        foreach (var route in traffic.Routes)
-        {
-            if (!_lanes.TryGetValue(route.Key, out var lane))
-                _lanes[route.Key] = lane = new Lane { Key = route.Key };
-            lane.Path = route.Path;
-            lane.Peer = route.Peer;
-            present.Add(route.Key);
-        }
-        foreach (var key in _lanes.Keys.Where(key => !present.Contains(key)).ToArray())
-            _lanes.Remove(key);
-        _dots.Update(
-            traffic.Routes.Select(route =>
-                new MapDots<Lane>.Traffic(_lanes[route.Key], route.Down, route.Up, route.Length)),
-            traffic.Area,
-            traffic.Ceiling,
-            traffic.Speed,
-            traffic.Total,
-            now);
+        _dots.Update(traffic.Dots, now);
         _applied = traffic;
     }
 
@@ -835,51 +804,30 @@ internal sealed class MapMotion : IDisposable
         using (draw.CreateLayer(1, view.Bounds))
         {
             DrawLayer(picture.Bitmap);
-            DrawMarks(draw, picture, view, sender);
+            DrawMarks(draw, picture, view);
             DrawLayer(picture.Arcs);
         }
-        Volatile.Write(ref _displayedView, view);
+        DrawDots(draw, picture, view);
 #if CAPTURE
         Volatile.Write(ref _drawnView, view);
         Volatile.Write(ref _drawnPicture, picture);
         DrawnVisibleRoutes = picture.Scene?.Traffic.Routes.Count(route => view.Shows(route.Bounds, 13)) ?? 0;
 #endif
-        if (Volatile.Read(ref _scene) is not { } scene || _dots.Flying.Count == 0)
-            return;
-#if CAPTURE
-        Interlocked.Increment(ref _frames);
-#endif
-        var now = Stopwatch.GetTimestamp();
-        var mark = Mark(sender);
-        // Fades go into the tint and the angle into the transform, so every
-        // dot stays in one batch.
-        using var batch = draw.CreateSpriteBatch();
-#if CAPTURE
-        var visibleDots = 0;
-        MapDots<Lane>.Dot? firstDot = null;
-#endif
-        foreach (var dot in _dots.Flying)
+        var previous = Volatile.Read(ref _displayed);
+        if (picture.Inspection is { } inspection && picture.Surface is { } surface)
         {
-            if (Place(scene, view, dot, now) is not { } placed)
-                continue;
-#if CAPTURE
-            visibleDots++;
-            firstDot ??= dot;
-#endif
-            var tint = dot.Upload ? scene.Upload : scene.Download;
-            tint = scene.Highlight.Colour(tint, dot.Route.Key);
-            batch.Draw(
-                mark,
-                Matrix3x2.CreateTranslation(-Head)
-                    * Matrix3x2.CreateRotation(placed.Angle)
-                    * Matrix3x2.CreateTranslation(placed.Point),
-                new Vector4(tint.R, tint.G, tint.B, tint.A) / 255 * placed.Strength
-            );
+            var displayed = previous is { } current && ReferenceEquals(current.Inspection, inspection) && current.View == view
+                && ReferenceEquals(current.Surface, surface) ? current : new Displayed(inspection, view, surface);
+            Volatile.Write(ref _displayed, displayed);
+            if (!ReferenceEquals(previous?.Inspection, inspection) || !ReferenceEquals(previous?.Surface, surface))
+                _dispatcher.TryEnqueue(() =>
+                {
+                    if (!_disposed)
+                        DisplayChanged?.Invoke();
+                });
         }
-#if CAPTURE
-        if (firstDot is { } first)
-            DrawnDots = (visibleDots, first.Route.Key, first.Upload, first.Start, first.Progress(now));
-#endif
+        else
+            Volatile.Write(ref _displayed, null);
 
         void DrawLayer(CanvasRenderTarget bitmap)
         {
@@ -892,25 +840,59 @@ internal sealed class MapMotion : IDisposable
         }
     }
 
+    private void DrawDots(CanvasDrawingSession draw, Completed picture, MapView view)
+    {
+        if (Volatile.Read(ref _scene) is not { } scene || _dots.Flying.Count == 0)
+            return;
+#if CAPTURE
+        Interlocked.Increment(ref _frames);
+#endif
+        var now = Stopwatch.GetTimestamp();
+        var mark = picture.Picture.Mark;
+        // Fades go into the tint and the angle into the transform, so every
+        // dot stays in one batch.
+        using var batch = draw.CreateSpriteBatch();
+#if CAPTURE
+        var visibleDots = 0;
+        MapDots<DestinationKey>.Dot? firstDot = null;
+#endif
+        foreach (var dot in _dots.Flying)
+        {
+            if (Place(scene, view, dot, now) is not { } placed)
+                continue;
+#if CAPTURE
+            visibleDots++;
+            firstDot ??= dot;
+#endif
+            var tint = dot.Upload ? scene.Upload : scene.Download;
+            tint = scene.Highlight.Colour(tint, dot.Route);
+            batch.Draw(
+                mark,
+                Matrix3x2.CreateTranslation(-Head)
+                    * Matrix3x2.CreateRotation(placed.Angle)
+                    * Matrix3x2.CreateTranslation(placed.Point),
+                new Vector4(tint.R, tint.G, tint.B, tint.A) / 255 * placed.Strength
+            );
+        }
+#if CAPTURE
+        if (firstDot is { } first)
+            DrawnDots = (visibleDots, first.Route, first.Upload, first.Start, first.Progress(now));
+#endif
+    }
+
     private MapView? CurrentView => _shown is { } shown && Volatile.Read(ref _view) is { } view
         && view.Meridian == shown.View.Meridian ? view : _shown?.View;
 
     private bool Matches(Completed completed, Input? input) => Volatile.Read(ref _surface) is { } surface
-        && ReferenceEquals(completed.Device, surface.Device) && completed.Picture.Dpi == surface.Dpi
+        && ReferenceEquals(completed.Surface, surface)
         && (completed.Input is not { } previous || input is not null && previous.Model.Subject == input.Model.Subject
             && previous.Model.Cities == input.Model.Cities && previous.Model.Origin == input.Model.Origin
             && completed.View.Meridian == input.Model.Meridian);
 
-    private void DrawMarks(CanvasDrawingSession draw, Completed picture, MapView view, ICanvasAnimatedControl canvas)
+    private void DrawMarks(CanvasDrawingSession draw, Completed picture, MapView view)
     {
         if (picture.Input is not { } input)
             return;
-        if (!ReferenceEquals(_markDevice, canvas.Device) || _markDpi != canvas.Dpi)
-        {
-            ReleaseMarks();
-            _markDevice = canvas.Device;
-            _markDpi = canvas.Dpi;
-        }
         var palette = input.Palette;
         var highlight = picture.Highlight;
         if (picture.Inspection?.Origin is { } origin)
@@ -922,8 +904,8 @@ internal sealed class MapMotion : IDisposable
                 var point = view.Screen(destination.Point);
                 if (point.X < -16 || point.Y < -16 || point.X > view.Size.Width + 16 || point.Y > view.Size.Height + 16)
                     continue;
-                const float radius = 2.4f;
-                var dot = Dot(ref _dot, radius);
+                const float radius = MarkerRadius;
+                var dot = picture.Picture.Dot;
                 if (!input.HighContrast)
                 {
                     var edge = highlight.Colour(palette.Ink, destination.Key);
@@ -946,41 +928,25 @@ internal sealed class MapMotion : IDisposable
             var point = view.Screen(destination.Point);
             if (point.X < -16 || point.Y < -16 || point.X > view.Size.Width + 16 || point.Y > view.Size.Height + 16)
                 continue;
-            draw.DrawCachedGeometry(Ring(ref _ring, 5), point,
+            draw.DrawCachedGeometry(picture.Picture.Ring, point,
                 input.HighContrast ? palette.Ink : highlight.Colour(palette.Ink, destination.Key));
         }
     }
 
-    private CanvasRenderTarget Dot(ref CanvasRenderTarget? dot, float radius)
+    private static void DrawDot(CanvasRenderTarget dot)
     {
-        if (dot is null)
-        {
-            dot = new CanvasRenderTarget(_markDevice!, 2 * (radius + 1), 2 * (radius + 1), _markDpi);
-            using var session = dot.CreateDrawingSession();
-            session.Clear(Microsoft.UI.Colors.Transparent);
-            session.FillCircle(radius + 1, radius + 1, radius, Microsoft.UI.Colors.White);
-        }
-        return dot;
+        const float radius = MarkerRadius;
+        using var session = dot.CreateDrawingSession();
+        session.Clear(Microsoft.UI.Colors.Transparent);
+        session.FillCircle(radius + 1, radius + 1, radius, Microsoft.UI.Colors.White);
     }
 
-    private CanvasCachedGeometry Ring(ref CanvasCachedGeometry? ring, float radius)
+    private static CanvasCachedGeometry CreateRing(CanvasDevice device, float dpi)
     {
-        if (ring is null)
-        {
-            using var circle = CanvasGeometry.CreateCircle(_markDevice!, Vector2.Zero, radius);
-            using var style = new CanvasStrokeStyle { LineJoin = CanvasLineJoin.Round };
-            ring = CanvasCachedGeometry.CreateStroke(circle, 1.2f, style,
-                CanvasGeometry.ComputeFlatteningTolerance(_markDpi, 1));
-        }
-        return ring;
-    }
-
-    private void ReleaseMarks()
-    {
-        _dot?.Dispose();
-        _dot = null;
-        _ring?.Dispose();
-        _ring = null;
+        using var circle = CanvasGeometry.CreateCircle(device, Vector2.Zero, 5);
+        using var style = new CanvasStrokeStyle { LineJoin = CanvasLineJoin.Round };
+        return CanvasCachedGeometry.CreateStroke(circle, 1.2f, style,
+            CanvasGeometry.ComputeFlatteningTolerance(dpi, 1));
     }
 
     /// <summary>
@@ -990,14 +956,14 @@ internal sealed class MapMotion : IDisposable
     private static (Vector2 Point, float Angle, float Strength)? Place(
         Scene scene,
         MapView view,
-        MapDots<Lane>.Dot dot,
+        MapDots<DestinationKey>.Dot dot,
         long now
     )
     {
         var progress = dot.Progress(now);
         if (progress >= 1)
             return null;
-        var lane = dot.Route;
+        var lane = scene.Traffic.Membership[dot.Route];
         // Upload dots move from the user's location toward the peer.
         var along = dot.Upload ? progress : 1 - progress;
         var here = lane.Path.At(along);
@@ -1045,23 +1011,18 @@ internal sealed class MapMotion : IDisposable
     // DIPs behind it. Dots of one direction on a route sit at least 15 DIPs
     // apart, so a longer tail would join them into a line. The mark is made
     // again on a new device or DPI.
-    private CanvasRenderTarget Mark(ICanvasAnimatedControl canvas)
+    private static void DrawMark(CanvasRenderTarget mark, CanvasDevice device)
     {
-        if (_mark is not null && !_markLost && _mark.Dpi == canvas.Dpi)
-            return _mark;
-        _markLost = false;
-        _mark?.Dispose();
         var white = Microsoft.UI.Colors.White;
-        _mark = new CanvasRenderTarget(canvas, 13, 8, canvas.Dpi);
-        using var session = _mark.CreateDrawingSession();
+        using var session = mark.CreateDrawingSession();
         session.Clear(Microsoft.UI.Colors.Transparent);
-        using var tail = new CanvasLinearGradientBrush(canvas, MapRenderer.Alpha(white, .6), MapRenderer.Alpha(white, 0))
+        using var tail = new CanvasLinearGradientBrush(device, MapRenderer.Alpha(white, .6), MapRenderer.Alpha(white, 0))
         {
             StartPoint = Head,
             EndPoint = Head with { X = Head.X - 8 },
         };
         using var shape = CanvasGeometry.CreatePolygon(
-            canvas,
+            device,
             [
                 Head with { Y = Head.Y - 1.2f },
                 Head with { Y = Head.Y + 1.2f },
@@ -1070,7 +1031,7 @@ internal sealed class MapMotion : IDisposable
         );
         session.FillGeometry(shape, tail);
         using var head = new CanvasRadialGradientBrush(
-            canvas,
+            device,
             [
                 new CanvasGradientStop { Position = 0, Color = white },
                 new CanvasGradientStop { Position = 1.75f / 3.5f, Color = white },
@@ -1084,31 +1045,58 @@ internal sealed class MapMotion : IDisposable
             RadiusY = 3.5f,
         };
         session.FillCircle(Head, 3.5f, head);
-        return _mark;
     }
 
     /// <summary>
     /// Rate-only completions share frozen pixels. A buffer returns to the
     /// worker after its cached, pending and shown references have retired.
     /// </summary>
-    private sealed class Picture(CanvasDevice device, MapView view, float dpi) : IDisposable
+    private sealed class Picture : IDisposable
     {
         private int _references = 1;
-        internal CanvasDevice Device => device;
-        internal float Dpi => Bitmap.Dpi;
+        internal CanvasDevice Device { get; }
+        internal float Dpi { get; }
+
+        internal Picture(CanvasDevice device, MapView view, float dpi)
+        {
+            Device = device;
+            Dpi = dpi;
+            Size = view.Size;
+            Bitmap = new(device, (float)view.Size.Width, (float)view.Size.Height, dpi);
+            try
+            {
+                Arcs = new(device, (float)view.Size.Width, (float)view.Size.Height, dpi);
+                Mark = new(device, 13, 8, dpi);
+                DrawMark(Mark, device);
+                Dot = new(device, 2 * (MarkerRadius + 1), 2 * (MarkerRadius + 1), dpi);
+                DrawDot(Dot);
+                Ring = CreateRing(device, dpi);
+            }
+            catch
+            {
+                Dispose();
+                throw;
+            }
+        }
 
         /// <summary>The size in DIPs it was made for, which its pixels round.</summary>
-        internal Size Size { get; } = view.Size;
+        internal Size Size { get; }
 
-        internal CanvasRenderTarget Bitmap { get; } = new(device, (float)view.Size.Width, (float)view.Size.Height, dpi);
-        internal CanvasRenderTarget Arcs { get; } = new(device, (float)view.Size.Width, (float)view.Size.Height, dpi);
+        internal CanvasRenderTarget Bitmap { get; }
+        internal CanvasRenderTarget Arcs { get; }
+        internal CanvasRenderTarget Mark { get; }
+        internal CanvasRenderTarget Dot { get; }
+        internal CanvasCachedGeometry Ring { get; }
         internal void Retain() => Interlocked.Increment(ref _references);
         internal bool Release() => Interlocked.Decrement(ref _references) == 0;
 
         public void Dispose()
         {
             Bitmap.Dispose();
-            Arcs.Dispose();
+            Arcs?.Dispose();
+            Mark?.Dispose();
+            Dot?.Dispose();
+            Ring?.Dispose();
         }
     }
 
@@ -1125,6 +1113,7 @@ internal sealed class MapMotion : IDisposable
         internal Scene? Scene { get; init; }
         internal MapRenderer.Highlight Highlight { get; init; }
         internal MapRenderer.Inspection? Inspection { get; init; }
+        internal Surface? Surface { get; init; }
     }
 
     /// <summary>What the dots draw: the traffic, where the user is and the transfer colours.</summary>
@@ -1148,7 +1137,13 @@ internal sealed class MapMotion : IDisposable
     /// <param name="Ceiling">The connection capacity in bytes per second.</param>
     /// <param name="Speed">How fast dots travel, as a multiple of the full speed, which Fast uses.</param>
     /// <param name="Total">How many dots fly at most, as a multiple of the normal maximum.</param>
-    internal sealed record Traffic(IReadOnlyList<Route> Routes, double Area, double Ceiling, double Speed, double Total);
+    internal sealed record Traffic(IReadOnlyList<Route> Routes, double Area, double Ceiling, double Speed, double Total)
+    {
+        internal IReadOnlyDictionary<DestinationKey, Route> Membership { get; } = Routes.ToDictionary(route => route.Key);
+        internal MapDots<DestinationKey>.Input Dots { get; } = new(
+            Routes.Select(route => new MapDots<DestinationKey>.Traffic(route.Key, route.Down, route.Up, route.Length)),
+            Area, Ceiling, Speed, Total);
+    }
 
     /// <summary>A route's arc, its peer's end, its rates in bytes per second and its length in DIPs on the fitted overview.</summary>
     internal readonly record struct Route(
@@ -1161,13 +1156,5 @@ internal sealed class MapMotion : IDisposable
     )
     {
         internal Rect Bounds { get; init; }
-    }
-
-    /// <summary>A destination's route as the dots follow it; it keeps its carried bytes while it transfers.</summary>
-    private sealed class Lane
-    {
-        internal required DestinationKey Key { get; init; }
-        internal MapRenderer.GreatCircle Path { get; set; }
-        internal GeoPoint Peer { get; set; }
     }
 }
