@@ -62,6 +62,12 @@
   <ItemGroup Condition="'$(EnableCapture)' == 'true'">
     <RuntimeHostConfigurationOption Include="TinyTorrent.PerformanceReplay" Value="true" />
   </ItemGroup>
+  <ItemGroup Condition="'$(Configuration)' == 'Release'">
+    <!-- .NET 10.0.12 grows duplicate COM-wrapper debugger records.
+         Remove this workaround when the runtime includes
+         https://github.com/dotnet/runtime/pull/133260. -->
+    <RuntimeHostConfigurationOption Include="System.Diagnostics.Debugger.IsSupported" Value="false" />
+  </ItemGroup>
   <ItemGroup Condition="'$(EnableCapture)' != 'true'">
     <Compile Remove="Shell\MainWindow\Capture*.cs" />
   </ItemGroup>
