@@ -282,9 +282,7 @@ public sealed partial class MainWindow
                     {
                         await layer.Control.RunOnGameLoopThreadAsync(() =>
                         {
-                            var shown = Read<object>(layer, "_shown");
-                            var highlight = (MapRenderer.Highlight)shown.GetType().GetProperty("Highlight", flags)!.GetValue(shown)!;
-                            marked = highlight.IsMarked(destination);
+                            marked = layer.Display?.Inspection.Highlight.IsMarked(destination) == true;
                         });
                         if (!marked)
                             await Task.Delay(16);

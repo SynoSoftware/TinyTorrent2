@@ -178,10 +178,11 @@ internal sealed record MapView(Size Size, float Meridian, Vector2 Center, Vector
         return false;
     }
 
+    internal Vector2 Screen(GeoPoint point) => Screen(Coordinates(point));
+
     // A location shows once, in the turn of longitude around the view centre.
-    internal Vector2 Screen(GeoPoint point)
+    internal Vector2 Screen(Vector2 mapped)
     {
-        var mapped = Coordinates(point);
         mapped.X = MapViewport.Wrap(mapped.X, Center.X);
         return Vector2.Transform(mapped, Transform);
     }

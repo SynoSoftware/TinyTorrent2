@@ -364,8 +364,11 @@ replacement from vector geometry, independently of peer aggregation. Pictures
 include one eighth of a viewport of extra geography at each edge; wrapped
 copies meet at the world boundary. Geography draws first, then location markers
 and rings, then arcs, then moving packets. Markers, rings and packets draw in the
-current view at their normal DIP sizes. Lines, glow and
-their masks temporarily scale with the retained image until its replacement
+current view at their normal DIP sizes. The render worker prepares marker map
+coordinates, fill and edge tints, and the selected or pointed ring subset with
+each completion, reusing unchanged values. Each frame wraps and transforms these
+coordinates in the current view, culls them and submits their native draws.
+Lines, glow and their masks temporarily scale with the retained image until its replacement
 arrives. Backdrop tint never takes that transform. Hit testing uses the displayed
 view and its detached targets. View-only input neither prepares routes again
 nor restarts activity fades.

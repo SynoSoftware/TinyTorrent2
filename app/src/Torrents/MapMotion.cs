@@ -258,6 +258,7 @@ internal sealed class MapMotion : IDisposable
             request?.Cancellation.ThrowIfCancellationRequested();
             if (drawn)
             {
+                var inspection = request is null ? null : _renderer!.Inspect(request.Input.Model, request.View);
                 var completed = new Completed
                 {
                     Picture = picture,
@@ -266,8 +267,8 @@ internal sealed class MapMotion : IDisposable
                     Background = background,
                     Input = request?.Input,
                     Scene = request is null ? null : _renderer!.Scene,
-                    Highlight = _highlight,
-                    Inspection = request is null ? null : _renderer!.Inspect(request.Input.Model, request.View),
+                    Inspection = inspection,
+                    Markers = request is null ? null : PrepareMarkers(request.Input, request.View, inspection!),
                     Surface = request?.Surface ?? Volatile.Read(ref _surface),
                 };
                 picture = null;
@@ -659,13 +660,15 @@ internal sealed class MapMotion : IDisposable
         if (!draw && _completed is { } completed
             && (!ReferenceEquals(renderer.Scene, completed.Scene) || !ReferenceEquals(input.Model, completed.Input?.Model)))
         {
+            var inspection = renderer.Inspect(input.Model, view);
+            var markers = PrepareMarkers(input, view, inspection);
             completed.Picture.Retain();
             Publish(completed with
             {
                 Input = input,
                 Scene = renderer.Scene,
-                Highlight = highlight,
-                Inspection = renderer.Inspect(input.Model, view),
+                Inspection = inspection,
+                Markers = markers,
             }, cancellation);
         }
         cancellation.ThrowIfCancellationRequested();
@@ -891,46 +894,78 @@ internal sealed class MapMotion : IDisposable
 
     private void DrawMarks(CanvasDrawingSession draw, Completed picture, MapView view)
     {
-        if (picture.Input is not { } input)
+        if (picture.Markers is not { } markers)
             return;
-        var palette = input.Palette;
-        var highlight = picture.Highlight;
-        if (picture.Inspection?.Origin is { } origin)
-            draw.FillCircle(view.Screen(origin), 3, palette.Ink);
+        if (markers.Origin is { } origin)
+            draw.FillCircle(view.Screen(origin), 3, markers.Ink);
         using (var batch = draw.CreateSpriteBatch())
         {
-            foreach (var destination in input.Model.Destinations)
+            foreach (var marker in markers.Locations)
             {
-                var point = view.Screen(destination.Point);
+                var point = view.Screen(marker.Point);
                 if (point.X < -16 || point.Y < -16 || point.X > view.Size.Width + 16 || point.Y > view.Size.Height + 16)
                     continue;
                 const float radius = MarkerRadius;
                 var dot = picture.Picture.Dot;
-                if (!input.HighContrast)
+                if (!markers.HighContrast)
                 {
-                    var edge = highlight.Colour(palette.Ink, destination.Key);
                     var scale = (radius + .75f) / radius;
                     batch.Draw(dot, Matrix3x2.CreateScale(scale)
                         * Matrix3x2.CreateTranslation(point - new Vector2((radius + 1) * scale)),
-                        new Vector4(edge.R, edge.G, edge.B, edge.A) / 255);
+                        marker.Edge);
                 }
-                var tint = input.HighContrast ? palette.Ink : highlight.Colour(Microsoft.UI.Colors.White, destination.Key);
-                batch.Draw(dot, point - new Vector2(radius + 1), new Vector4(tint.R, tint.G, tint.B, tint.A) / 255);
+                batch.Draw(dot, point - new Vector2(radius + 1), marker.Fill);
 #if CAPTURE
                 DrawnLocations++;
 #endif
             }
         }
-        foreach (var destination in input.Model.Destinations)
+        foreach (var ring in markers.Rings)
         {
-            if (!highlight.IsMarked(destination) && destination.Key != highlight.Pointed)
-                continue;
-            var point = view.Screen(destination.Point);
+            var point = view.Screen(ring.Point);
             if (point.X < -16 || point.Y < -16 || point.X > view.Size.Width + 16 || point.Y > view.Size.Height + 16)
                 continue;
-            draw.DrawCachedGeometry(picture.Picture.Ring, point,
-                input.HighContrast ? palette.Ink : highlight.Colour(palette.Ink, destination.Key));
+            draw.DrawCachedGeometry(picture.Picture.Ring, point, ring.Colour);
         }
+    }
+
+    private Markers PrepareMarkers(Input input, MapView view, MapRenderer.Inspection inspection)
+    {
+        var previous = _completed;
+        if (previous?.Markers is { } retained && previous.Input is { } earlier
+            && ReferenceEquals(input.Model.Destinations, earlier.Model.Destinations)
+            && view.Meridian == previous.View.Meridian && input.Palette == earlier.Palette
+            && input.HighContrast == earlier.HighContrast && inspection.Highlight == previous.Inspection?.Highlight
+            && inspection.Origin == previous.Inspection?.Origin)
+            return retained;
+
+        var ink = input.Palette.Ink;
+        var highlight = inspection.Highlight;
+        Vector2? origin = inspection.Origin is { } location ? view.Coordinates(location) : null;
+        var locations = input.Model.Destinations.Select(destination =>
+        {
+            var fill = input.HighContrast ? ink : highlight.Colour(Microsoft.UI.Colors.White, destination.Key);
+            var edge = input.HighContrast ? ink : highlight.Colour(ink, destination.Key);
+            return new Marker(view.Coordinates(destination.Point),
+                new Vector4(fill.R, fill.G, fill.B, fill.A) / 255,
+                new Vector4(edge.R, edge.G, edge.B, edge.A) / 255);
+        });
+        var rings = input.Model.Destinations
+            .Where(destination => highlight.IsMarked(destination) || destination.Key == highlight.Pointed)
+            .Select(destination => new Ring(view.Coordinates(destination.Point),
+                input.HighContrast ? ink : highlight.Colour(ink, destination.Key)));
+        if (previous?.Markers is { } cached && cached.Origin == origin && cached.Ink == ink
+            && cached.HighContrast == input.HighContrast && locations.SequenceEqual(cached.Locations)
+            && rings.SequenceEqual(cached.Rings))
+            return cached;
+        return new Markers
+        {
+            Origin = origin,
+            Ink = ink,
+            HighContrast = input.HighContrast,
+            Locations = locations.ToArray(),
+            Rings = rings.ToArray(),
+        };
     }
 
     private static void DrawDot(CanvasRenderTarget dot)
@@ -1111,10 +1146,22 @@ internal sealed class MapMotion : IDisposable
         internal Color Background { get; init; }
         internal Input? Input { get; init; }
         internal Scene? Scene { get; init; }
-        internal MapRenderer.Highlight Highlight { get; init; }
         internal MapRenderer.Inspection? Inspection { get; init; }
+        internal Markers? Markers { get; init; }
         internal Surface? Surface { get; init; }
     }
+
+    private sealed record Markers
+    {
+        internal Vector2? Origin { get; init; }
+        internal Color Ink { get; init; }
+        internal bool HighContrast { get; init; }
+        internal required Marker[] Locations { get; init; }
+        internal required Ring[] Rings { get; init; }
+    }
+
+    private readonly record struct Marker(Vector2 Point, Vector4 Fill, Vector4 Edge);
+    private readonly record struct Ring(Vector2 Point, Color Colour);
 
     /// <summary>What the dots draw: the traffic, where the user is and the transfer colours.</summary>
     /// <param name="OriginOpacity">The origin mask's strength at its centre.</param>
