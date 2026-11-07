@@ -111,7 +111,7 @@ independently of aggregation.
 Unload cancels without waiting and retires the worker when its current
 preparation ends. The render worker releases geometry when its native work ends
 and retires returned pictures after the game loop stops. Each picture owns its
-prepared marker/dot textures and ring geometry for its device and DPI; the render
+prepared marker, halo and moving-dot textures for its device and DPI; the render
 worker creates and destroys them through the same cached, pending and shown
 reference accounting. The stopped callback returns ownership and signals
 completion without native destruction. Inspector retains plain map state.
@@ -120,7 +120,7 @@ The render worker prepares route membership, rates, trips and dot-size inputs
 once per traffic revision. The game loop first advances the old rates to the
 adoption time, then updates surviving lanes in place, preserving carried bytes
 and flight state. It owns simulation, departure timing and size hysteresis.
-Visible marker and ring drawing still traverses the destinations; no marker
+Visible marker drawing still traverses the destinations; no marker
 layer cache is retained.
 
 Rate-only observations retain peer membership, groups and unchanged destinations.
@@ -222,10 +222,13 @@ using each estimated destination's allocated share. Equal speeds keep destinatio
 order. Only retained arcs carry moving dots. All peers, location markers, table
 rows, country shading and aggregate speed values remain available. This choice
 is saved with the peer view and never changes the engine's network connections.
-Every location has one white marker, combining peers at the same location
+Every location has one small light, combining peers at the same location
 regardless of role or connection state. Markers sit above geography and below
-the arcs; moving transfer dots remain above the arcs. A thin foreground edge keeps the white
-fill visible on light land and sea. High Contrast uses system foreground ink.
+the arcs; moving transfer dots remain above the arcs. A 3-DIP solid core has a
+subtle soft halo, white in Dark and black in Light, using the theme's foreground
+ink. Chosen, selected and pointed locations enlarge by half without outlined
+rings. High Contrast uses solid system foreground ink with no halo. Hit targets
+retain their existing size.
 The place description supplies seed, leecher and connection counts. The arc
 limit never removes location markers, including locations with only known peers.
 The map opens no tooltip, because one over the map hides the routes around
@@ -241,8 +244,8 @@ destination shows the totals of the peers that choosing it shows, not its
 estimated share.
 Land and boundaries use the platform's secondary control surface and strong
 control stroke. Arcs and moving transfer dots use the same accent text and
-upload brushes as the table and speed graph. Location markers retain their
-white fill, except when a table selection mutes other connections.
+upload brushes as the table and speed graph. Location lights retain their
+theme's foreground ink, except when a table selection mutes other connections.
 Country fills stay subdued.
 Countries have no hover or selection state; inspection targets location markers
 and arcs. Every selected table peer highlights where the map shows it. In
@@ -364,10 +367,10 @@ Navigation publishes an immutable view immediately. The presenter transforms
 the latest completed image into that view while the worker draws its exact
 replacement from vector geometry, independently of peer aggregation. Pictures
 include one eighth of a viewport of extra geography at each edge; wrapped
-copies meet at the world boundary. Geography draws first, then location markers
-and rings, then arcs, then moving packets. Markers, rings and packets draw in the
-current view at their normal DIP sizes. The render worker prepares marker map
-coordinates, fill and edge tints, and the selected or pointed ring subset with
+copies meet at the world boundary. Geography draws first, then location lights,
+then arcs, then moving packets. Markers and packets draw in the current view at
+their normal DIP sizes. The render worker prepares marker map
+coordinates, theme tints and emphasis sizes with
 each completion, reusing unchanged values. Each frame wraps and transforms these
 coordinates in the current view, culls them and submits their native draws.
 Lines, glow and their masks temporarily scale with the retained image until its replacement
@@ -455,7 +458,7 @@ Render in this order, so overlapping glow cannot defeat the opacity limit:
    origin mask to that combined result and cap the layer at 80% opacity.
    Setting each individual line to 80% would still let overlaps approach full
    opacity. Neither operation dims the land or country activity shading.
-4. Draw location markers, the origin and marker selection rings separately.
+4. Draw location lights and the origin separately.
    They retain their visibility and hit targets. Map-chosen route cores use
    highlight ink when no table rows are selected; table-selected routes keep
    their transfer colours. Both remain inside the shared arc layer, retaining

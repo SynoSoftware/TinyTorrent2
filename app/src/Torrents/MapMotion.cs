@@ -30,7 +30,8 @@ internal sealed class MapMotion : IDisposable
 
     /// <summary>The smallest dot size, which the legend shows before the first traffic.</summary>
     internal const long SmallestDot = 1024;
-    private const float MarkerRadius = 2.4f;
+    private const float MarkerRadius = 1.5f;
+    private const float HaloRadius = 4;
 
     private readonly DispatcherQueue _dispatcher;
     private readonly DispatcherQueueTimer _wake;
@@ -898,6 +899,8 @@ internal sealed class MapMotion : IDisposable
             return;
         if (markers.Origin is { } origin)
             draw.FillCircle(view.Screen(origin), 3, markers.Ink);
+        var dot = markers.HighContrast ? picture.Picture.Dot : picture.Picture.Halo;
+        var radius = markers.HighContrast ? MarkerRadius : HaloRadius;
         using (var batch = draw.CreateSpriteBatch())
         {
             foreach (var marker in markers.Locations)
@@ -905,27 +908,13 @@ internal sealed class MapMotion : IDisposable
                 var point = view.Screen(marker.Point);
                 if (point.X < -16 || point.Y < -16 || point.X > view.Size.Width + 16 || point.Y > view.Size.Height + 16)
                     continue;
-                const float radius = MarkerRadius;
-                var dot = picture.Picture.Dot;
-                if (!markers.HighContrast)
-                {
-                    var scale = (radius + .75f) / radius;
-                    batch.Draw(dot, Matrix3x2.CreateScale(scale)
-                        * Matrix3x2.CreateTranslation(point - new Vector2((radius + 1) * scale)),
-                        marker.Edge);
-                }
-                batch.Draw(dot, point - new Vector2(radius + 1), marker.Fill);
+                var transform = Matrix3x2.CreateScale(marker.Scale) * Matrix3x2.CreateTranslation(point);
+                batch.Draw(dot,
+                    Matrix3x2.CreateTranslation(new Vector2(-radius - 1)) * transform, marker.Tint);
 #if CAPTURE
                 DrawnLocations++;
 #endif
             }
-        }
-        foreach (var ring in markers.Rings)
-        {
-            var point = view.Screen(ring.Point);
-            if (point.X < -16 || point.Y < -16 || point.X > view.Size.Width + 16 || point.Y > view.Size.Height + 16)
-                continue;
-            draw.DrawCachedGeometry(picture.Picture.Ring, point, ring.Colour);
         }
     }
 
@@ -944,19 +933,13 @@ internal sealed class MapMotion : IDisposable
         Vector2? origin = inspection.Origin is { } location ? view.Coordinates(location) : null;
         var locations = input.Model.Destinations.Select(destination =>
         {
-            var fill = input.HighContrast ? ink : highlight.Colour(Microsoft.UI.Colors.White, destination.Key);
-            var edge = input.HighContrast ? ink : highlight.Colour(ink, destination.Key);
+            var colour = input.HighContrast ? ink : highlight.Colour(ink, destination.Key);
             return new Marker(view.Coordinates(destination.Point),
-                new Vector4(fill.R, fill.G, fill.B, fill.A) / 255,
-                new Vector4(edge.R, edge.G, edge.B, edge.A) / 255);
+                new Vector4(colour.R, colour.G, colour.B, colour.A) / 255,
+                highlight.IsMarked(destination) || destination.Key == highlight.Pointed ? 1.5f : 1);
         });
-        var rings = input.Model.Destinations
-            .Where(destination => highlight.IsMarked(destination) || destination.Key == highlight.Pointed)
-            .Select(destination => new Ring(view.Coordinates(destination.Point),
-                input.HighContrast ? ink : highlight.Colour(ink, destination.Key)));
         if (previous?.Markers is { } cached && cached.Origin == origin && cached.Ink == ink
-            && cached.HighContrast == input.HighContrast && locations.SequenceEqual(cached.Locations)
-            && rings.SequenceEqual(cached.Rings))
+            && cached.HighContrast == input.HighContrast && locations.SequenceEqual(cached.Locations))
             return cached;
         return new Markers
         {
@@ -964,7 +947,6 @@ internal sealed class MapMotion : IDisposable
             Ink = ink,
             HighContrast = input.HighContrast,
             Locations = locations.ToArray(),
-            Rings = rings.ToArray(),
         };
     }
 
@@ -976,12 +958,25 @@ internal sealed class MapMotion : IDisposable
         session.FillCircle(radius + 1, radius + 1, radius, Microsoft.UI.Colors.White);
     }
 
-    private static CanvasCachedGeometry CreateRing(CanvasDevice device, float dpi)
+    private static void DrawHalo(CanvasRenderTarget halo, CanvasDevice device)
     {
-        using var circle = CanvasGeometry.CreateCircle(device, Vector2.Zero, 5);
-        using var style = new CanvasStrokeStyle { LineJoin = CanvasLineJoin.Round };
-        return CanvasCachedGeometry.CreateStroke(circle, 1.2f, style,
-            CanvasGeometry.ComputeFlatteningTolerance(dpi, 1));
+        var centre = new Vector2(HaloRadius + 1);
+        var white = Microsoft.UI.Colors.White;
+        using var session = halo.CreateDrawingSession();
+        session.Clear(Microsoft.UI.Colors.Transparent);
+        using var brush = new CanvasRadialGradientBrush(device,
+            [
+                new CanvasGradientStop { Position = 0, Color = MapRenderer.Alpha(white, .3) },
+                new CanvasGradientStop { Position = .4f, Color = MapRenderer.Alpha(white, .12) },
+                new CanvasGradientStop { Position = 1, Color = MapRenderer.Alpha(white, 0) },
+            ])
+        {
+            Center = centre,
+            RadiusX = HaloRadius,
+            RadiusY = HaloRadius,
+        };
+        session.FillCircle(centre, HaloRadius, brush);
+        session.FillCircle(centre, MarkerRadius, white);
     }
 
     /// <summary>
@@ -1105,7 +1100,8 @@ internal sealed class MapMotion : IDisposable
                 DrawMark(Mark, device);
                 Dot = new(device, 2 * (MarkerRadius + 1), 2 * (MarkerRadius + 1), dpi);
                 DrawDot(Dot);
-                Ring = CreateRing(device, dpi);
+                Halo = new(device, 2 * (HaloRadius + 1), 2 * (HaloRadius + 1), dpi);
+                DrawHalo(Halo, device);
             }
             catch
             {
@@ -1121,7 +1117,7 @@ internal sealed class MapMotion : IDisposable
         internal CanvasRenderTarget Arcs { get; }
         internal CanvasRenderTarget Mark { get; }
         internal CanvasRenderTarget Dot { get; }
-        internal CanvasCachedGeometry Ring { get; }
+        internal CanvasRenderTarget Halo { get; }
         internal void Retain() => Interlocked.Increment(ref _references);
         internal bool Release() => Interlocked.Decrement(ref _references) == 0;
 
@@ -1131,7 +1127,7 @@ internal sealed class MapMotion : IDisposable
             Arcs?.Dispose();
             Mark?.Dispose();
             Dot?.Dispose();
-            Ring?.Dispose();
+            Halo?.Dispose();
         }
     }
 
@@ -1157,11 +1153,9 @@ internal sealed class MapMotion : IDisposable
         internal Color Ink { get; init; }
         internal bool HighContrast { get; init; }
         internal required Marker[] Locations { get; init; }
-        internal required Ring[] Rings { get; init; }
     }
 
-    private readonly record struct Marker(Vector2 Point, Vector4 Fill, Vector4 Edge);
-    private readonly record struct Ring(Vector2 Point, Color Colour);
+    private readonly record struct Marker(Vector2 Point, Vector4 Tint, float Scale);
 
     /// <summary>What the dots draw: the traffic, where the user is and the transfer colours.</summary>
     /// <param name="OriginOpacity">The origin mask's strength at its centre.</param>
