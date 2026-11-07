@@ -78,12 +78,14 @@ text block uses the font; the name beside it stays in the app's font.
 
 ## Map
 
-`Inspector.Place` is the chosen filter for both views. Inspector captures peer
-identity, location and immutable records once on the UI thread for filtering.
-That worker also builds the full subject's map observations, independently of
-place-filtered rows. Only a still-current filter version and subject may publish
-them; map settings reuse the accepted snapshot. `MapModel` takes this detached
-population without enumerating peers or relabelling an old subject. One
+`Inspector.Place` is the chosen filter for both views. Inspector captures the
+immutable peer-list reference and filter intent on the UI thread. Its existing
+workers capture published immutable records and locations, reconcile updates and
+build one flat array of map facts for the full subject, independently of
+place-filtered rows. Record and location replacement invalidates the filter
+generation before notifications; only a still-current generation and subject may
+publish prepared facts. Map settings reuse the accepted snapshot. `MapModel`
+takes this detached population without enumerating peers or relabelling an old subject. One
 serialized `MapWork` worker owns grouping and estimated distribution. It
 publishes detached group copies that nobody subsequently mutates. The UI
 captures size, appearance and selection; `MapMotion`'s dedicated render worker

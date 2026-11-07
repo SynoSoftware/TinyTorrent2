@@ -22,7 +22,7 @@ namespace Syno.TinyTorrent.Shell;
 public sealed partial class MainWindow
 {
     private static MapModel.Population CapturePopulation(MapModel model, IEnumerable<Peer> peers) =>
-        new(model.Subject, peers.Select(peer => new MapModel.Observation(peer, peer.Capture(), peer.Location)).ToArray());
+        new(model.Subject, peers.Select(peer => new MapModel.Observation(peer.Capture(), peer.Location)).ToArray());
 
     private static MapMotion.Displayed? CaptureDisplay(PeerMap map) =>
         (MapMotion.Displayed?)typeof(PeerMap).GetProperty("Displayed", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(map);

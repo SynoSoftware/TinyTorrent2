@@ -10,6 +10,7 @@ public sealed class Peer : INotifyPropertyChanged
 {
     private readonly Strings _text;
     private Record _record;
+    private Location? _location;
 
     public string Endpoint { get; }
     public string Address { get; }
@@ -47,12 +48,12 @@ public sealed class Peer : INotifyPropertyChanged
 
     internal Location? Location
     {
-        get;
+        get => Volatile.Read(ref _location);
         set
         {
-            if (field == value)
+            if (_location == value)
                 return;
-            field = value;
+            Volatile.Write(ref _location, value);
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CountryCode)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CountryText)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CityText)));
@@ -269,7 +270,7 @@ public sealed class Peer : INotifyPropertyChanged
 
     internal sealed record Change(Record Record, IReadOnlyList<string> Properties);
 
-    internal Record Capture() => _record;
+    internal Record Capture() => Volatile.Read(ref _record);
 
     internal bool Update(Peer data) => Apply(Prepare(_record, data._record));
 
@@ -277,7 +278,7 @@ public sealed class Peer : INotifyPropertyChanged
     {
         if (change is null)
             return false;
-        _record = change.Record;
+        Volatile.Write(ref _record, change.Record);
         if (PropertyChanged is not null)
             foreach (var name in change.Properties)
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));

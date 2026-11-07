@@ -471,12 +471,10 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
         internal int Rank { get; init; }
     }
 
-    internal sealed record Observation(Peer Peer, Peer.Record Record, Location? Location)
+    internal readonly record struct Observation(Location? Location, double Down, double Up, PeerRole Role, PeerState State)
     {
-        internal double Down => Record.DownloadRate;
-        internal double Up => Record.UploadRate;
-        internal PeerRole Role => Record.Role;
-        internal PeerState State => Record.State;
+        internal Observation(Peer.Record record, Location? location)
+            : this(location, record.DownloadRate, record.UploadRate, record.Role, record.State) { }
 
         internal bool Matches(Observation other) => Down == other.Down && Up == other.Up
             && Location == other.Location && Role == other.Role && State == other.State;

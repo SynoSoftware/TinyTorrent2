@@ -35,11 +35,12 @@ public sealed partial class Inspector
 
     internal void UpdateMap(bool cities)
     {
+        var origin = Origin;
         // Decimal Mbit/s: 125,000 bytes per second each.
         Map.Update(
             IsAvailable && _mapPopulation is { } population && ReferenceEquals(population.Subject, PeerSubject)
                 ? population : new(PeerSubject, []),
-            Origin,
+            origin,
             Text,
             cities,
             _owner.Settings.Capacity is (var download, var upload) ? (download + upload) * 125_000 : null
@@ -85,6 +86,7 @@ public sealed partial class Inspector
     {
         var version = ++_filterVersion;
         var subject = PeerSubject;
+        bool IsCurrent() => version == _filterVersion && ReferenceEquals(subject, PeerSubject);
         if (_peersReady?.Task.IsCompleted != false)
             _peersReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
         var peers = _peers;
@@ -99,33 +101,47 @@ public sealed partial class Inspector
             if (!ReferenceEquals(previous, peers))
                 NotifyShownPeers();
         }
-        var captured = (peers ?? []).Select(peer => (Peer: peer, peer.Location, Record: peer.Capture())).ToArray();
         var prepared = await Task.Run(() =>
         {
+            var source = peers ?? [];
+            var captured = new MapModel.Observation[source.Count];
+            for (var index = 0; index < source.Count; index++)
+            {
+                var peer = source[index];
+                captured[index] = new(peer.Capture(), peer.Location);
+            }
             IReadOnlyList<Peer>? shown = place is null || peers is null ? peers
-                : captured.Where(row => place.Value.Contains(row.Location)).Select(row => row.Peer).ToArray();
+                : peers.Where((_, index) => place.Value.Contains(captured[index].Location)).ToArray();
             if (place is not null && previous is not null && shown is not null && previous.SequenceEqual(shown))
                 shown = previous;
             var released = release is not null
                 ? release.Except(shown ?? []).Concat((shown ?? []).Except(release)).ToArray() : [];
             return new PeerRows(shown, released,
-                captured.Count(row => row.Record.State != PeerState.Known),
-                captured.Count(row => row.Record.State == PeerState.Connected && row.Record.DownloadRate + row.Record.UploadRate > 0))
+                captured.Count(row => row.State != PeerState.Known),
+                captured.Count(row => row.State == PeerState.Connected && row.Down + row.Up > 0))
             {
-                Population = new(subject, captured.Select(row => new MapModel.Observation(row.Peer, row.Record, row.Location)).ToArray()),
+                Population = new(subject, captured),
             };
         });
-        if (version != _filterVersion || !ReferenceEquals(subject, PeerSubject))
+        if (!IsCurrent())
             return;
         _mapPopulation = prepared.Population;
         UpdateMap(Map.Cities);
+        if (!IsCurrent())
+            return;
         _releaseBaseline = null;
         if (prepared.Released.Count > 0)
+        {
             PeersReleased?.Invoke(this, prepared.Released);
+            if (!IsCurrent())
+                return;
+        }
         if (!ReferenceEquals(ShownPeers, prepared.Shown))
         {
             ShownPeers = prepared.Shown;
             NotifyShownPeers();
+            if (!IsCurrent())
+                return;
         }
         var counts = (prepared.Connected, prepared.Active);
         if (_peerCounts != counts)
@@ -134,7 +150,8 @@ public sealed partial class Inspector
             if (!_owner.IsClosed && IsVisible)
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PeerSummary)));
         }
-        _peersReady!.TrySetResult();
+        if (IsCurrent())
+            _peersReady!.TrySetResult();
     }
 
     internal bool HasCities =>
@@ -290,6 +307,8 @@ public sealed partial class Inspector
                 if (_owner.Geolocation.Version != key.Version)
                     continue;
                 _located = prepared.Located;
+                if (prepared.Locations.Count > 0)
+                    ++_filterVersion;
                 foreach (var location in prepared.Locations)
                     location.Peer.Location = location.Location;
                 var changed = prepared.Locations.Count > 0;
@@ -432,13 +451,13 @@ public sealed partial class Inspector
         var cancellation = _reading.Token;
         var text = Text;
         var current = Peers ?? [];
-        var captured = current.Where(peer => peer.TorrentId == torrentId)
-            .Select(peer => (Peer: peer, Record: peer.Capture())).ToArray();
         var preparation = Task.Run(() =>
         {
 #if CAPTURE
             PreparingPeers?.Invoke();
 #endif
+            var captured = current.Where(peer => peer.TorrentId == torrentId)
+                .Select(peer => (Peer: peer, Record: peer.Capture())).ToArray();
             var previous = captured.ToDictionary(row => row.Peer.Endpoint);
             HashSet<string> endpoints = [];
             List<Peer> received = [];
@@ -482,6 +501,8 @@ public sealed partial class Inspector
         if (!IsCurrent(context) || preparation.IsCanceled)
             return false;
         var prepared = await preparation;
+        if (prepared.Changes.Count > 0)
+            ++_filterVersion;
         foreach (var (peer, change) in prepared.Changes)
             peer.Apply(change);
         _peerCache.RemoveAll(entry => entry.TorrentId == torrentId);
