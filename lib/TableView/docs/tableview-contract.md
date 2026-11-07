@@ -1345,12 +1345,11 @@ be held open across a change while the list collapsed underneath it, and turning
 three columns on cost three trips back through the submenu. It is also what the
 reference does.
 
-No item closes the menu. Every one of them is repeated by nature — showing and
-hiding columns, nudging a column left until it sits where it belongs, fitting one
-and then another — or is immediately worth undoing, which amounts to the same
-thing. Because the menu stays open, every item MUST re-ask its own label, icon
-and enabled state after each invocation rather than merely be correct when the
-menu was built: hiding a column can leave another as the last visible one and
+**Fit column**, **Fit columns** and **Fit width** close the menu after invocation.
+Visibility and ordering items keep it open for repeated changes. Every item that
+keeps the menu open MUST re-ask its own label, icon and enabled state after each
+invocation rather than merely be correct when the menu was built: hiding a column
+can leave another as the last visible one and
 disable its entry, moving a column to an edge disables the command that moved it
 there, and hiding the column the menu was opened on turns that item into the one
 that shows it back. No item may be left saying something that has stopped being
@@ -1369,9 +1368,9 @@ icon inherits the text foreground and is monochrome by design, so a coloured one
 reads as status rather than as category; High Contrast overrides icon colour
 outright, which would take the distinction from the readers who most need it;
 and section 19 does not allow colour to be the only carrier. They differ in
-scope rather than in instrument — a measurement of one width against arrows
-spreading outward — because they do the same thing to a different number of
-columns.
+scope using horizontal width arrows: one column outline for **Fit column**,
+several column outlines for **Fit columns**, and the table's outer width stops
+for **Fit width**. They contain no height or diagonal resizing arrows.
 
 Double-clicking a mouse/pen resizer fits one column. The fit commands provide the
 keyboard and touch path for column sizing; move commands provide the equivalent

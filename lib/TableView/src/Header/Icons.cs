@@ -1,4 +1,6 @@
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+using Windows.Foundation;
 
 namespace Syno.TableView.Header;
 
@@ -6,35 +8,35 @@ namespace Syno.TableView.Header;
 /// The icons the control draws in the menu it generates.
 /// </summary>
 /// <remarks>
-/// Windows' icon font, referenced through Glyphs rather than taken from the host, so the generated
-/// menu looks right in any application. The glyph for each idea is named once here,
-/// so nothing else in the control carries a second opinion about which glyph means what.
+/// Native glyphs and horizontal sizing diagrams belong to the control rather
+/// than its host, so every table uses the same icon for each operation.
 /// </remarks>
 internal static class Icons
 {
-    /// <summary>Fitting one column to what it holds: a measurement of this width.</summary>
-    internal static IconElement FitColumn() => Glyph(Segoe.RulerDimensionLine);
+    internal static IconElement FitColumn() => Shape(
+        [new(3, 3), new(17, 3), new(17, 17), new(3, 17)],
+        [new(4, 4), new(4, 16), new(16, 16), new(16, 4)],
+        [new(5, 10), new(8, 7), new(9, 8), new(7.5, 9.5), new(12.5, 9.5), new(11, 8), new(12, 7),
+            new(15, 10), new(12, 13), new(11, 12), new(12.5, 10.5), new(7.5, 10.5), new(9, 12), new(8, 13)]
+    );
 
-    /// <summary>
-    /// Fitting every visible column: the same action at a wider scope, so the glyph differs in
-    /// scope rather than in tool — arrows spreading outward, not a second instrument.
-    /// </summary>
-    /// <remarks>
-    /// The owner asked whether these two should instead be told apart by colour. They should not. A
-    /// menu icon inherits the text foreground and is monochrome by design, so a coloured one reads
-    /// as status rather than as category; High Contrast overrides icon colours outright, which
-    /// would take the distinction away from the readers who most need it; and section 19 does not
-    /// allow colour to be the only carrier. A different instrument — a drafting glyph, say — would
-    /// be worse still, because it would claim the two commands do different things when they do the
-    /// same thing to a different number of columns. The labels name the scope too, so this glyph
-    /// reinforces rather than carries.
-    /// </remarks>
-    internal static IconElement FitColumns() => Glyph(Segoe.UnfoldHorizontal);
+    internal static IconElement FitColumns() => Shape(
+        [new(1, 3), new(9, 3), new(9, 17), new(1, 17)],
+        [new(2, 4), new(2, 16), new(8, 16), new(8, 4)],
+        [new(2, 10), new(4, 8), new(4.75, 8.75), new(4, 9.5), new(6, 9.5), new(5.25, 8.75), new(6, 8),
+            new(8, 10), new(6, 12), new(5.25, 11.25), new(6, 10.5), new(4, 10.5), new(4.75, 11.25), new(4, 12)],
+        [new(11, 3), new(19, 3), new(19, 17), new(11, 17)],
+        [new(12, 4), new(12, 16), new(18, 16), new(18, 4)],
+        [new(12, 10), new(14, 8), new(14.75, 8.75), new(14, 9.5), new(16, 9.5), new(15.25, 8.75), new(16, 8),
+            new(18, 10), new(16, 12), new(15.25, 11.25), new(16, 10.5), new(14, 10.5), new(14.75, 11.25), new(14, 12)]
+    );
 
-    /// <summary>
-    /// Fitting the visible columns to the table's width: content pushed out to both edges.
-    /// </summary>
-    internal static IconElement FitWidth() => Glyph(Segoe.AlignHorizontalSpaceBetween);
+    internal static IconElement FitWidth() => Shape(
+        [new(0, 4), new(1.5, 4), new(1.5, 16), new(0, 16)],
+        [new(18.5, 4), new(20, 4), new(20, 16), new(18.5, 16)],
+        [new(2, 10), new(5.5, 6.5), new(6.5, 7.5), new(4.75, 9.25), new(15.25, 9.25), new(13.5, 7.5), new(14.5, 6.5),
+            new(18, 10), new(14.5, 13.5), new(13.5, 12.5), new(15.25, 10.75), new(4.75, 10.75), new(6.5, 12.5), new(5.5, 13.5)]
+    );
 
     internal static IconElement HideColumn() => Glyph(Segoe.EyeOff);
 
@@ -55,6 +57,25 @@ internal static class Icons
     internal static IconElement MoveLeft() => Glyph(Segoe.ArrowLeft);
 
     internal static IconElement MoveRight() => Glyph(Segoe.ArrowRight);
+
+    private static IconElement Shape(params Point[][] contours)
+    {
+        // Opposite contour windings leave the column interiors open.
+        var geometry = new PathGeometry { FillRule = FillRule.Nonzero };
+        foreach (var contour in contours)
+        {
+            var points = new PointCollection();
+            foreach (var point in contour.AsSpan(1))
+                points.Add(point);
+            geometry.Figures.Add(new PathFigure
+            {
+                StartPoint = contour[0],
+                IsClosed = true,
+                Segments = { new PolyLineSegment { Points = points } },
+            });
+        }
+        return new PathIcon { Data = geometry, Width = 20, Height = 20 };
+    }
 
     /// <summary>
     /// A new element per call. An icon is a <c>UIElement</c> and accepts exactly one parent, so a

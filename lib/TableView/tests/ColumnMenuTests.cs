@@ -57,14 +57,18 @@ public class ColumnMenuTests
             Assert.AreEqual(150d, TableHarness.EffectiveWidth(table, "a"), 0d, "and only b");
             Assert.AreEqual(150d, TableHarness.EffectiveWidth(table, "c"), 0d);
             AssertReported(reported, LayoutChange.Fit);
+            Assert.AreEqual(0, OpenPopups(table).Count, "fitting one column closes the menu");
 
+            await OpenMenuAsync(table, visibleIndex: 1);
             await InvokeAsync(table, FitVisible);
 
             Assert.IsTrue(TableHarness.EffectiveWidth(table, "a") < 150, "a was fitted");
             Assert.IsTrue(TableHarness.EffectiveWidth(table, "c") < 150, "and c");
             Assert.IsTrue(TableHarness.TotalWidth(table) < edge - 1, "a fit leaves the edge empty");
             AssertReported(reported, LayoutChange.Fit);
+            Assert.AreEqual(0, OpenPopups(table).Count, "fitting the columns closes the menu");
 
+            await OpenMenuAsync(table, visibleIndex: 1);
             await InvokeAsync(table, FitWidth);
 
             Assert.AreEqual(
@@ -74,7 +78,9 @@ public class ColumnMenuTests
                 "a fill takes the columns to the edge"
             );
             AssertReported(reported, LayoutChange.Fit);
+            Assert.AreEqual(0, OpenPopups(table).Count, "fitting the table width closes the menu");
 
+            await OpenMenuAsync(table, visibleIndex: 1);
             await InvokeAsync(table, MoveLeft);
 
             CollectionAssert.AreEqual(new[] { "b", "a", "c" }, TableHarness.Order(table));
@@ -286,10 +292,6 @@ public class ColumnMenuTests
                 "the item ran the operation"
             );
 
-            // Nothing in this menu closes it. Every item is repeated by nature — nudging a column
-            // left until it sits where it should, showing one column and then another — or is
-            // immediately worth undoing, which comes to the same thing. Closing after each one made
-            // three columns cost three trips back through the header.
             Assert.AreEqual(1, OpenPopups(table).Count, "and the flyout stayed open behind it");
 
             // Which is why the item cannot be left saying what it said before it ran: "b" is now

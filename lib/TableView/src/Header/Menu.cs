@@ -21,17 +21,20 @@ internal static class Menu
     {
         MenuFlyout menu = new();
 
-        // Nothing in this menu closes it. Every item is repeated by nature — showing and hiding
-        // columns, nudging one left until it sits where you want it, fitting one and then another —
-        // or is immediately worth undoing, which amounts to the same thing. WinUI has no stay-open
-        // switch on MenuFlyout or on any of its items, but the close itself can be refused, so the
-        // flag below refuses every attempt an invocation produces and is dropped on the next turn
-        // of the dispatcher once those attempts are done. A click outside still dismisses it.
+        // Column visibility and ordering stay open for repeated changes. WinUI has
+        // no stay-open switch, so refuse the invocation's close until the next
+        // dispatcher turn. Sizing commands and outside clicks close normally.
         bool holdOpen = false;
         menu.Closing += (_, closing) => closing.Cancel = holdOpen;
 
-        // And because it stays open, every item has to be right again afterwards rather than merely
-        // right when it was built. Hiding a column can leave another as the last visible one and
+        Action Close(Action invoke) => () =>
+        {
+            holdOpen = false;
+            invoke();
+        };
+
+        // Items that stay open must be right after invocation, not just when built.
+        // Hiding a column can leave another as the last visible one and
         // disable its entry; moving a column to an edge disables the command that moved it there;
         // hiding the column the menu was opened on turns that item into the one that shows it back.
         // So an item declares its label, its icon and whether it is enabled as questions about the
@@ -66,9 +69,11 @@ internal static class Menu
                 holdOpen = true;
                 invoke();
 
-                Refresh(owner, EventArgs.Empty);
-
-                menu.DispatcherQueue.TryEnqueue(() => holdOpen = false);
+                if (holdOpen)
+                {
+                    Refresh(owner, EventArgs.Empty);
+                    menu.DispatcherQueue.TryEnqueue(() => holdOpen = false);
+                }
             };
 
             refresh.Add(Update);
@@ -99,7 +104,7 @@ internal static class Menu
                     () => owner.Strings.FitColumn(active.Column.DisplayName),
                     Icons.FitColumn,
                     () => owner.CanFitColumn(active),
-                    () => owner.Fit(active)
+                    Close(() => owner.Fit(active))
                 )
             );
 
@@ -131,7 +136,7 @@ internal static class Menu
                 () => owner.Strings.FitColumns,
                 Icons.FitColumns,
                 () => owner.CanFitColumns,
-                owner.FitColumns
+                Close(owner.FitColumns)
             )
         );
         menu.Items.Add(
@@ -139,7 +144,7 @@ internal static class Menu
                 () => owner.Strings.FitWidth,
                 Icons.FitWidth,
                 () => owner.CanFitColumns,
-                owner.FitWidth
+                Close(owner.FitWidth)
             )
         );
 
