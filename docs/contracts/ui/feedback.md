@@ -85,7 +85,9 @@ a transfer is slow. Disconnection shows `Last known · 84 torrents`, `—` for
 rates, and suppresses stale restrictions and healthy connection icons.
 
 While torrents move, the move's copy rate follows the upload rate with the
-rows' Moving folder icon, such as `1,233.4 MiB/s`. It belongs with the rates,
+rows' Move to folder icon, also used by the Move files command, such as
+`1,233.4 MiB/s`. Hovering its icon or rate shows the localized moving-files
+description and current rate. It belongs with the rates,
 not with background work, because a move happens to torrents and its progress
 stays in their rows. It reads in KiB/s, or MiB/s from 1 MiB/s, never GiB/s,
 counts the bytes written to the destination only, because a rename moves none

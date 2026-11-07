@@ -1249,6 +1249,7 @@
         </StackPanel>
         <StackPanel
           x:Name="MoveRate"
+          Background="Transparent"
           Orientation="Horizontal"
           Spacing="6"
           VerticalAlignment="Center"
@@ -1256,7 +1257,7 @@
           <FontIcon
             Style="{StaticResource TinyTorrentStatusIconStyle}"
             FontFamily="{x:Bind icons:Segoe.Font}"
-            Glyph="{x:Bind icons:Segoe.Folder}"
+            Glyph="{x:Bind icons:Segoe.FolderInput}"
             AutomationProperties.AccessibilityView="Raw"
           />
           <TextBlock

@@ -135,7 +135,7 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
             TorrentState.AllPaused => Syno.Segoe.Pause,
             TorrentState.Completed => Syno.Segoe.CircleCheck,
             TorrentState.Checking => Syno.Segoe.RefreshCw,
-            TorrentState.Moving => Syno.Segoe.Folder,
+            TorrentState.Moving => Syno.Segoe.FolderInput,
             TorrentState.Queued
             or TorrentState.WaitingCheck
             or TorrentState.WaitingMove

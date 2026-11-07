@@ -104,7 +104,7 @@ public sealed partial class MainWindow
                 : Model.UploadStatus,
             uploadTip
         );
-        SetStatus(MoveLabel, Model.MoveSpeed, Model.MoveTip);
+        SetStatus(MoveLabel, Model.MoveSpeed, Model.MoveTip, MoveRate);
         SetStatus(CheckLabel, Model.CheckSpeed, Model.CheckTip);
         SetStatus(
             TransferLabel,
@@ -295,15 +295,16 @@ public sealed partial class MainWindow
     private static void ShowStatus(FrameworkElement control, bool visible) =>
         control.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
 
-    private static void SetStatus(TextBlock label, string text, string? description = null)
+    private static void SetStatus(TextBlock label, string text, string? description = null, FrameworkElement? tip = null)
     {
         if (label.Text != text)
             label.Text = text;
         description ??= text;
         if (AutomationProperties.GetName(label) != description)
             AutomationProperties.SetName(label, description);
-        if (!Equals(ToolTipService.GetToolTip(label), description))
-            ToolTipService.SetToolTip(label, description);
+        tip ??= label;
+        if (!Equals(ToolTipService.GetToolTip(tip), description))
+            ToolTipService.SetToolTip(tip, description);
     }
 
     private void ReserveDigits(StackPanel panel, TextBlock label)
