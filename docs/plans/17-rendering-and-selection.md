@@ -9,19 +9,36 @@ it removes unrelated copying; the mixed single-run maxima establish neither a
 causal regression nor a marquee fix. Aggregate scope changes now retain shared
 Peer identities, demonstrated by the matched focused comparison at `3d2970a`.
 Nongeneric native notifications remove repeated sender-ID work at `222e88d`;
-sort-key preallocation removes dictionary growth at `78fb43f`. Large GC,
-publication and layout stalls remain under investigation.
+sort-key preallocation removes dictionary growth at `78fb43f`. Those results remain
+historical evidence; the active correction is now map work on the UI and animation
+threads, as specified under [remaining map thread work](#remaining-map-thread-work).
 The capture-only observer is corrected and its six-profile reference completed
-normally. Measured UI publication stalls remain next.
-The displayed-state and selection corrections below remain to be implemented;
-controlled performance acceptance remains unverified. Current behavior is owned
+normally. Do not reopen TableView's publication design; its narrow exception below
+permits only work that can and should move off the UI thread.
+The map thread-work and displayed-state correction is committed at `fc0916d4`.
+Source review, one collected build and one matched city/1,000 docked offscreen run
+passed; intended work relocation is demonstrated, but responsiveness remains mixed.
+See the [recorded result](../../artifacts/evidence/ui-profile-map-thread-work-20261106-fc0916d4/README.md).
+Marker preparation is implemented and measured at `555bd62`; its adverse run is
+preserved and is not an accepted performance result. The runtime bookkeeping
+correction is implemented at `75af850`; its single matched comparison completed
+with mixed results, preserved under [the current review checkpoint](#result-at-75af850-owner-review-required).
+The owner requested concrete solutions after that review. The next proposed
+implementation is [peer capture and map facts](#next-correction-peer-capture-and-map-facts),
+derived from the current source. Review its implementation before another build/run.
+Controlled performance acceptance remains unverified. Current behavior is owned
 by the contracts linked below.
 
 Purpose: faster input response and smooth animation, supported by comparable
-before/after evidence. Scope: map rendering and interaction, selection and
-TableView publication, Inspector peer refresh/filtering, host sort triggers and
-torrent binding notifications. Communication's paused subscription redesign
-remains outside this work.
+before/after evidence. Active scope: map rendering, interaction and map preparation
+on the UI and animation threads. Inspector changes are limited to supplying the
+map's detached facts. Earlier table/selection investigations below are retained
+for continuity, not instructions to implement them in this round. Owner correction:
+TableView work is eligible only if the reviewer or implementer identifies an
+operation that **can and should** move off the UI thread: detached inputs, a concrete
+blocking cost removed, and simpler or equally clear ownership. Existing native
+WinUI updates and UI-affine selectors stay on their owner. This does not authorize
+a publication redesign or broad table investigation. Communication remains outside scope.
 
 Owner baseline: the current version is usable and worth preserving. Use this
 checkout and its current benchmark work as the starting point; earlier Git
@@ -37,6 +54,10 @@ fixture setup, recording and measurement endpoints. Use one builder/capture owne
 at a time. The [harness guide](../../app/tests/Performance.md) is the measurement
 entry point; this plan owns the design and acceptance, and the
 [visual review](17-rendering-and-selection-review.html) summarizes it.
+Owner direction, 7 November 2026: stop contacting the former reviewing chat.
+The implementer presents the review-ready result to the owner and waits for the
+owner's review before any further performance change, build or run. Silence is
+not approval. The current comparison is complete and ready for that review.
 
 ## Execution
 
@@ -61,6 +82,35 @@ waste. Private commitment, working set and settled retained memory are distinct;
 the benchmark peak does not establish a per-peer cost or explain the delta from
 an ordinary session. Dedicated memory attribution and tuning remain deferred.
 
+Independent owner follow-up reported by the implementer, 6 November 2026: correct
+the moving-files status icon and make its tooltip reachable. Source-complete at
+`406fcc8`, independently reviewed against the four-file commit: the existing Move
+files glyph is shared by the status and Moving rows; the existing translated
+description belongs to the whole icon/rate item, with the label's accessible name
+preserved. No new strings, handlers or tests. No build or actual hover check ran;
+source review found no remaining question requiring one. This does not change the
+frozen `555bd62` performance evidence or close performance acceptance.
+
+Next independent owner follow-up reported by the implementer: in the torrent
+column menu, ensure the label is Fit width; give Fit columns, Fit width and Fit
+column distinct, appropriate width-only icons; close the menu after precisely
+those three sizing commands. The later Fit column request extends the original
+two-command request. Preserve other menu behavior and all shipped translations.
+The implementer reports that all six catalogues already contain Fit width, from
+`d1130dc`; the older screenshot's wording origin remains unverified, so do not
+rewrite correct translations. Existing owners/history are being traced; estimate
+20–40 minutes. Committed at `67cebc6`. Independent source/contour review of the four-file candidate passed
+with no material finding: `Header/Icons.cs` blob `02172dd`, `Header/Menu.cs`
+`68d25da`, contract `603bfd5`, existing operation test `5c2a92b`. The reviewer
+confirmed that native invocation raises Click before closing, the three wrappers
+release the close veto, other actions retain it, and Strip's focus return stays
+intact. The generated contour preview shows distinct horizontal icons. Three
+closure assertions and reopening steps extend the existing operation test; no
+test method was added. No native menu invocation or test-host launch ran. This
+source-reviewed correction joins the collected runtime-option build released
+below; it does not authorize a separate build or desktop check. This does not
+reopen TableView's performance/publication design.
+
 1. **Freeze the baseline.** With the harness owner, record the unchanged code's
    [controlled workload](#controlled-benchmark), source/binary identity, exact
    command, display/DPI, detail/location/arc profile, actual input cadence and raw
@@ -68,42 +118,29 @@ an ordinary session. Dedicated memory attribution and tuning remain deferred.
    production edits. **Done:** the workload and procedure repeat, failures and
    missing endpoints are recorded under [measurement handoff](#measurement-handoff).
    A failing product result is a baseline; a changing measurement procedure is not.
-2. **Remove one demonstrated stall.** Use existing records from one failing
-   journey, then only the [phase probes](#first-performance-work-after-baseline-attribute-the-stalls)
-   needed to locate its longest stall. Make the smallest correction at its owner
-   in a focused, independently removable commit. Compare under the
-   [measurement rules](#measurement-handoff), including memory.
-   **Done per correction:** record the source operation, measured blocking/delay,
-   correction and comparable result, with diagnostic and visible endpoints
-   distinguished. Drop performance-only changes with negligible benefit that add
-   state or complexity. Once the cause is measurable, correct it before adding
-   probes; missing final display correlation belongs to step 5 and does not block
-   that correction. Use the smallest existing check for the changed path under
-   the testing policy. Repeat for measured stalls that remain.
-3. **Correct displayed state and selection.** Follow [map state](#requested-state-and-displayed-state)
-   and [selection publication](#selection-publication) at their existing owners.
-   **Done:** same-subject adoption/draw/notification interleavings target drawn
-   content; subject/detail invalidation and draws without dots remain safe;
-   accepted current-view actions supersede pending intent, same-version callback
-   corrections commit before readiness, and source-changing callbacks retain
-   future requests. Preserve native gestures, focus, identity and draft protection.
-   These are correctness results, independent of speed claims.
-4. **Bound order-capability queries.** Implement the [single cached capability](#narrow-order-capability-cache)
-   required by TableView's existing scrolling/visibility work bound. This is a
-   contract repair, not an optional performance-only optimization. **Done:** row
-   visual/cursor queries enumerate no host collection, participation refresh is
-   reliable, active/completed drag validation remains complete, and capability
-   refresh adds no projection of its own. Measure its speed benefit separately.
+2. **Complete the map handoff.** Retain the runtime bookkeeping correction and
+   follow [peer capture and map facts](#next-correction-peer-capture-and-map-facts),
+   preserving the renderer and presenter. The implementer owns production edits.
+   The next diff must demonstrate its publication rules and removed work before
+   one collected build/run is released; the earlier mixed result remains evidence.
+3. **Correct displayed map state.** Follow [map state](#requested-state-and-displayed-state).
+   Adoption, drawing and delayed notification must target the drawn content,
+   including frames without dots and subject/detail changes. Keep native table
+   gestures and selection behavior unchanged.
+4. **Validate the implemented correction.** Use the existing focused workload
+   after implementation, distinguishing UI, animation and render-worker time.
+   First remove non-GC blocking; consider GC only if it remains a major contributor.
+   Do not start another allocation investigation or broad profiling matrix first.
 5. **Close acceptance.** Have the harness owner complete the missing endpoints
    needed for each claim; compare the frozen profiles before/after. **Done:**
    every click meets the displayed-frame requirement, navigation, stationary dots
    and marquee meet their independent pacing requirements, first/repeat content
-   and Inspector readiness are accounted for, and peak/retained memory is explained
-   and bounded.
+   and Inspector readiness are accounted for, with peak/retained memory checked
+   as a regression guard. Broader memory attribution remains deferred.
    Failed or unverified acceptance stays open even when individual corrections
    demonstrate improvement.
 
-The candidate list is closed. Further work follows remaining measured stalls.
+No host-sort, binding or TableView redesign project is part of this map round.
 Use shared outputs and [testing](../agents/testing.md); compile when source review
 cannot answer a remaining question. Current behavior remains owned by
 [architecture](../contracts/architecture.md), [peer location](../contracts/peer-location.md),
@@ -224,7 +261,395 @@ keeps mutable native resources on one worker; their leverage is that every
 gesture uses the same presenter. A generic scheduler or adapter adds no depth.
 The [peer-location contract](../contracts/peer-location.md) owns the implemented
 rendering, cancellation and retirement rules; this plan adds the remaining
-displayed-state correction rather than prescribing a second implementation.
+thread-work and displayed-state corrections within the same implementation.
+
+### Remaining map thread work
+
+Owner clarification, 6 November 2026: map work comes first; the narrow TableView
+exception above applies only to work that can and should move. These are confirmed
+source paths, not proof that any one explains the entire stall. GC suspension
+overlaps sampled wall time; 500 ms minus 99 ms is not an exclusive CPU attribution.
+
+The following three corrections and the displayed-state correction are implemented
+at `fc0916d4`; retain their requirements rather than implementing another version.
+
+1. **Remove the duplicate map capture from the UI.** `InspectorPane.RefreshMap`
+   queues a UI callback; `Inspector.UpdateMap` then calls `MapModel.Update`, which
+   reads every peer and constructs `Observation[]` before grouping starts. Reuse
+   the immutable `(Peer identity, Location, Peer.Record)` facts already captured
+   by `Inspector.Filter`. Build observations in that existing worker pass from
+   the full subject, not the place-filtered rows. Publish them only with the
+   accepted subject/version and notify the map on arrival. `MapModel.Update`
+   accepts the completed snapshot reference plus small UI-owned settings; it
+   never enumerates peers. Settings-only changes reuse those observations.
+   Initial load, telemetry, location resolution and scope clearing use this one
+   path; adapt capture fixtures to the same input contract. Keep input immediate
+   and compatible old content available. Never label an old snapshot with a new
+   subject. This removes the duplicate map scan, not the existing Inspector
+   capture. Do not read live Peer getters on workers or add a mutable peer store.
+2. **Move native preparation and retirement to the render worker.** `MapMotion`
+   creates render targets, brushes and geometry lazily in `Mark`, `Dot` and `Ring`
+   during drawing, and disposes these resources in `OnStopped`. Prepare these
+   existing small resources on the render worker for its device/DPI and carry
+   immutable references with compatible completed content. Retire them through
+   the existing worker return path only after every pending/shown user releases
+   them, including device replacement and shutdown. The stopped callback releases
+   ownership and signals completion; native destruction runs on the worker.
+   Move device/DPI native queries outside the handoff lock. The lock protects
+   reference exchange only; no UI or animation callback waits for the worker.
+   Add no marker-layer cache, resource framework or second rendering path.
+3. **Remove repeated preparation from presentation.** `MapMotion.Apply(Traffic)`
+   constructs a membership set and LINQ arrays; `MapDots.Update` rebuilds a lane
+   dictionary on the animation thread. Prepare immutable route membership and
+   rate inputs with `Traffic` on the existing render worker. Adopt those facts
+   once per traffic revision, retaining surviving lanes and flight state instead
+   of rebuilding their collections. Preserve `Advance(now)` before changing rates,
+   so elapsed traffic is counted at its previous rates. Mutable phase and carried bytes remain owned
+   solely by the game loop; workers must never mutate its simulation. Per-frame
+   work remains advancement and drawing within the existing arc/dot limits.
+   `PeerMap.CaptureSelection` must also reuse its captured selection until selection
+   or its locations change, instead of copying it again on preparation completion.
+   Report `DrawMarks`' remaining destination traversals explicitly: visible marker
+   drawing remains presentation work. Preserve marker/ring layer order; do not
+   drop markers, claim constant-time drawing or add a cache to hide this work.
+   No additional scheduler or generic change framework.
+
+One focused implementation/review/build/profile round completed. Resource lifetime
+and stale subject publication received source review; the ordinary replay did not
+force every device/DPI or stale-result interleaving. Borders and light styling remain
+queued in their recorded order. The unbuilt TableView capacity candidate remains
+deferred. The later blocking-GC evidence selects the narrow runtime correction below.
+
+**Review before building:** the implementer reports changed files and, for every
+operation above, the calling thread, immutable inputs, publication owner and
+retirement owner. Name remaining population-sized loops and waits. The reviewer
+traces callers through the first await/dispatch and checks disposal; `Task.Run`
+alone does not establish separation. Review the focused diff before the one
+collected build. Update the peer-location contract to the implemented ownership.
+
+**Validate after implementation:** reuse focused existing checks for stale subject
+publication, selection freshness, device/DPI changes and unload with work pending.
+Add only a missing regression tripwire for stale publication or early disposal;
+no timing unit tests, allocation microbenchmarks or coverage matrix. Then use one
+existing failing map journey to establish whether UI/animation gaps fell and what
+still blocks them. Current desktop/capture restrictions remain. Source review
+establishes ownership; runtime evidence establishes speed. GC tuning follows only
+if GC is a major residual cause. Moving work off-thread does not itself guarantee
+presentation deadlines or eliminate shared graphics contention.
+
+### Result at fc0916d4
+
+One matched Replay/InputOnly city/1,000 docked run applied all 1,467 commands and
+acknowledged all 21 presses, with no unselected click and three unobserved XAML
+completions. Received sampled inclusive UI `MapModel.Update` time changed
+1,509.91 → 5.90 ms; game-loop traffic adoption changed 1,029.23 → 127.25 ms.
+These journey totals corroborate relocation, not exclusive CPU savings.
+Navigation/marquee diagnostic maxima improved, but click completion, delivery
+delay, first map observations and worst stationary dot gap worsened. Peak private
+commitment fell 1,369.47 → 1,245.14 MiB. Keep all adverse results in the linked
+report; one mixed run establishes neither overall success nor causal regression.
+
+The trace lost 248 events. The reported 374.54 ms marquee maximum is the last
+geometry-to-phase-end tail; the largest interior geometry gap is 211.54 ms.
+Native table publication, layout and marquee `TransformToVisual` remain costly,
+but those calls require the UI owner; moving them to a worker is not a valid fix.
+No new TableView change is selected. Displayed-frame acceptance and forced
+device/DPI/retirement cases remain unverified. The capacity experiment remains
+preserved in stash `920418455bfcdd201bc1b6393b1436b13eeebc61`.
+
+### Implemented correction: marker preparation
+
+The focused implementation passed source review with no material finding and was
+committed at `555bd62`. Review record: `V:/temp/plan17-marker-preparation-reviewed.md`.
+One build and matched permitted run completed; the adverse result is recorded
+below. The following requirements describe that implementation, not a new task.
+
+Before this correction, `DrawMarks` received about 31.7 seconds of sampled inclusive
+time across each journey. Source tracing identified work that need not run per frame:
+destination coordinates relative to the completion's meridian, selection/hover
+classification, highlight colors and conversion to sprite tint vectors. Existing
+trace stacks also contain sprite-call interop and unmanaged time; this correction
+does not claim to remove the whole drawing cost.
+
+Prepare one immutable set of marker draw values on the existing render worker,
+carried by `Completed` alongside its inspection. Each location needs its projected
+map coordinate and prepared fill/edge colors; retain the marked/pointed subset
+in original order for the later ring pass. Use the existing `Highlight` rules
+once here. No second classification rule or new module is needed. Refresh these
+values when destinations, meridian, palette, High Contrast or highlight changes;
+reuse them for view-only movement, fade refinement and unchanged marker facts.
+Both fresh drawing and the rate-only `completed with` publication must carry
+values matching that completion's input and inspection, independent of bitmap reuse.
+
+The game loop only wraps the prepared coordinate around the current view centre,
+applies the current transform, culls and submits the existing native draws. Keep
+fixed DIP sizes and the current origin → all markers → rings → arcs → moving dots
+order. Never store screen positions that become stale while panning. A completion
+with no map input has no markers. Keep prepared data bounded by the existing
+completion lifetime; add no marker-layer bitmap/command-list cache, queue, spatial
+index or generic caching framework. Native draws and their visible-marker loop
+remain presentation work and must stay explicit in the ownership report.
+
+This is one focused implementation/review/build round, estimated 1–2 hours.
+Send the diff and ownership report before building. Review wraparound, High
+Contrast, selection clearing and rate-only publication from source; no new test
+matrix. After implementation, one matched existing workload answers whether this
+removed work improves pacing without regression. No new profile before coding.
+If native marker submission remains dominant, report that limit rather than
+claiming that this preparation change solved it; marker-layer caching still needs
+the owner's deferred decision. Broader memory tuning remains deferred; the
+specific blocking collection below now meets the owner's major-source condition.
+
+### Result at 555bd62 and current diagnosis
+
+The [preserved comparison](../../artifacts/evidence/ui-profile-marker-preparation-20261106-555bd62/README.md)
+contains the one matched city/1,000 docked Replay/InputOnly run. All 1,467 commands
+and 21 selection acknowledgments completed; nine XAML completions were unobserved.
+Compared with `fc0916d4`, navigation maximum increased 252.84 → 627.54 ms, click
+completion 206.80 → 452.81 ms and stationary-dot p95 27.85 → 90.95 ms. Worker
+marker preparation received 139.58 ms across the journey, but sampled inclusive
+marker drawing increased 31,683.52 → 34,323.32 ms. Relocation is established;
+overall improvement is not. Do not claim success, automatically revert or retry
+for a favorable result. The trace lost 540 events; attribution is incomplete.
+
+The current worst marquee interval is an interior geometry pair of 610.5884 ms,
+not the earlier run's phase-end tail. A received induced generation-2,
+nonconcurrent GC-associated Suspend→Restart span overlaps 539.4337 ms of that
+gap; its trigger is UI thread 17020. This now satisfies the owner's condition for
+investigating GC as a major remaining source. In the same interval, the render
+worker waits on its semaphore. The game thread's sampled COM-wrapper monitor wait
+and the finalizer's native release overlap the collection: they do not establish
+additional independent stalls or a lock owner. Do not add those durations.
+
+Source tracing identifies a plausible framework trigger. Local WinUI
+`CCoreServices::TrackMemory` runs during a render walk, periodically checks process
+working set through `CWindowsServices::GetMemoryCount`, and requests collection
+after growth above its 50 MiB threshold. `JoltHelper_TriggerGCCollect` forwards to
+`ReferenceTrackerManager::TriggerCollection`, then the runtime tracker host. The
+[.NET 10.0.12 tracker host](https://github.com/dotnet/runtime/blob/v10.0.12/src/libraries/System.Private.CoreLib/src/System/Runtime/InteropServices/ReferenceTrackerHost.cs#L21-L35)
+calls `GC.Collect()` for that default request. A subsequent read of the preserved
+raw trace resolves the managed caller: `GC/Triggered` at 47,143.9884 ms, UI thread
+17020, carries `ReferenceTrackerHost.IReferenceTrackerHost_DisconnectUnusedReferenceSources`
+under `Microsoft.UI.Xaml.Application.Start`. This confirms the tracker-host
+collection, rather than an explicit app collection. Native frames do not identify
+which WinUI caller entered it; the working-set heuristic remains a candidate.
+`Runtime/Start` identifies the loaded runtime as .NET 10.0.12. GC 163 reports
+200,468 objects promoted for finalization and 1,105,232 handles; those counts do
+not identify their individual owners or establish that all are unnecessary.
+
+### Next correction: runtime wrapper bookkeeping
+
+The reviewer found a concrete runtime defect, independently of whether it explains
+the whole pause. The installed .NET 10.0.12 `System.Private.CoreLib.dll` was read
+with ILSpy: `ComWrappers.RegisterManagedObjectWrapperForDiagnostics` unconditionally
+appends the same holder again on every COM-interface lookup, including cache hits.
+The list lives as long as its managed key. The preserved `78fb43f` allocation trace
+contains this path, with 84.94 MiB of received allocation-tick amounts, including
+39.50 MiB of holder arrays. These are sampled churn, not exact retained bytes.
+The defect and repair are recorded in [runtime issue 129191](https://github.com/dotnet/runtime/issues/129191)
+and [fix 133260](https://github.com/dotnet/runtime/pull/133260). The installed binary,
+not the merged upstream fix, decides applicability: its duplicate check is absent.
+
+Implement one Release-only `RuntimeHostConfigurationOption` in
+`app/src/TinyTorrent.csproj`: `System.Diagnostics.Debugger.IsSupported=false`.
+Use the existing runtime-option pattern, not a startup hook or runtime patch.
+The installed `Debugger.InitializeIsSupported` reads this AppContext switch;
+the wrapper-registration method then returns before the faulty diagnostic table.
+Its normal identity cache, reference-counted handles and WinUI lifetime tracker
+remain active. Debug builds retain the default. The tradeoff is reduced COM-wrapper
+inspection for debuggers in Release; do not disable EventPipe or use the broader
+`DOTNET_EnableDiagnostics` switch, change trimming, or change GC policy.
+Add a brief reason and upstream reference at the option; no abstraction or test.
+
+Review gate, 6 November 2026: the actual six-line project diff, blob prefix
+`9163ba0`, passed independent source review with no finding. Release and
+Release/Capture include the option, Debug excludes it, and the existing replay
+option remains unchanged. **One collected `Build.ps1 -App -Capture -Release`
+and one matched city/1,000 docked Replay/InputOnly CPU+GC run with a 16 MiB buffer
+are released to the implementer.** Inspect and preserve the generated runtimeconfig
+before the run: this switch must be false and the existing replay option true.
+Include the reviewed UI commits `406fcc8` and `67cebc6`; record them as additional
+source differences against frozen `555bd62`. No separate native UI test/window,
+capture, favorable-result retry or additional workload is released. Report the
+build and comparison results here before another change or run. That source
+review alone does not close performance acceptance; the completed result follows.
+
+Build/preflight update: the exact project change is committed at `75af850`.
+The [preserved build report](../../artifacts/evidence/ui-build-runtime-bookkeeping-20261106-75af850/README.md)
+records a successful collected build with only the existing CapturePerformance.cs
+CS8602 warning. The reviewer read the preserved runtimeconfig and verified the
+false debugger switch and true replay option. Initial preflight found the installed
+TinyTorrent outside this checkout; Capture.ps1 refused that instance because it
+owned the same logon pipe. That interruption created no measured trial or retry.
+On 7 November the implementer reported the owner's explicit authorization to close
+the installed UI and engine, closure of the verified processes, and continuation
+with the one released comparison from the preserved `75af850` binary. The original
+unused destination was `ui-profile-runtime-bookkeeping-20261106-75af850`.
+The comparison has now completed there; its preserved results follow. No rebuild
+or extra workload is released. Owner review is required before further work.
+
+This is one small implementation/review/build/comparison round, estimated 30–60
+minutes including the existing comparison. The implementer owns the project
+option and any necessary contract note; the former reviewer owned this plan and
+HTML during that round. The owner now reviews the preserved result. Source review must verify Release/Capture inclusion,
+Debug exclusion and unchanged lifetime/diagnostic collection paths. Then collect
+the pending approved edits into one build, inspect the generated runtimeconfig,
+and run one existing matched offscreen workload against preserved `555bd62`.
+Open runtime question: does removing this known growth reduce pauses/memory without
+losing behavior or trace evidence? An adverse result keeps performance acceptance
+open; no favorable-result retry or automatic revert. Keep all raw results and
+record other source differences in the candidate. Do not claim this disables
+framework-induced collections or guarantees a shorter pause.
+
+No TableView publication redesign, manual collection, lifetime bypass or new cache
+is authorized. Moving allocations to another managed thread does not isolate its
+heap from GC. Border gaps and themed location lights retain their queue order.
+
+### Result at 75af850: owner review required
+
+The single released city/1,000 docked Replay/InputOnly CPU+GC comparison completed
+on 7 November 2026. The owner explicitly authorized closing the installed UI and
+engine; only those verified installed processes were stopped. All five preserved
+binary/configuration hashes matched before launch. Replay and tracer exited 0;
+no task-owned TinyTorrent or tracer remained. There was no desktop input,
+activation, screen capture, UAC, rebuild or retry. The full rerunnable build stays
+at its existing checkpoint. The [result and raw evidence index](../../artifacts/evidence/ui-profile-runtime-bookkeeping-20261106-75af850/README.md)
+freeze this comparison against `555bd62`, including the two reviewed UI commits
+as additional source differences.
+
+The normalized workload matched and all 1,467 commands were delivered. No click
+selection was unacknowledged; XAML feedback was unobserved for 6 clicks versus 9
+in the reference. Navigation draw worst improved from 627.5408 to 469.2882 ms,
+marquee sample worst from 610.5884 to 282.0767 ms, and command-delivery worst from
+676.8588 to 408.64 ms. Peak private commitment fell from 1286.14 to 1206.40 MiB.
+Other results worsened: click-to-XAML worst 452.8081 to 501.6855 ms, first aggregate
+connections 8189.5807 to 9053.9777 ms, first selected connections 462.6479 to
+1266.3375 ms, and stationary dot draw worst 310.0855 to 381.2777 ms. Post-click map
+settlement improved from 3348.1284 to 1477.8854 ms. These are mixed single-run
+measurements, not a causal regression finding or performance acceptance.
+
+The largest interior marquee gap is 282.0767 ms, with 30.36 ms of received
+GC-associated suspension overlap, 81.285 ms inclusive sampled layout and an
+unresolved 130.442 ms native interval. Do not add overlapping intervals. The
+trace lost 1,126 events, so attribution is incomplete. Stationary no-selection
+dots were visible in 112/112 sampled draws with 108 advancing same-dot pairs and
+zero frozen pairs. Draw timing and XAML completion do not establish displayed
+FPS, physical-input latency or next-displayed-frame selection. Final private
+memory is not settled retained memory.
+
+**Stop for owner review here.** No next performance correction or additional run
+is selected or released. Keep the preserved evidence and runtime correction;
+do not retry for favorable maxima or automatically revert a mixed result.
+Country borders and themed lights retain their queue order after performance.
+
+Review requested by the owner, 7 November: **retain the runtime correction;
+do not accept overall responsiveness yet.** It removes source-confirmed duplicate
+bookkeeping with one project option. The lower observed memory and several better
+maxima support retaining it, but do not establish a general speedup or causally
+attribute the adverse endpoints to this option.
+
+The reviewer checked the preserved raw timing and GC events. The 381.2777 ms
+stationary-animation gap overlaps 373.5200 ms of an induced generation-2 suspension
+triggered on the UI thread. Its sampled native drawing stack therefore cannot be
+read as 381 ms of drawing cost. Six induced nonconcurrent generation-2 starts are
+received across the candidate journey versus seven before; their largest paired
+suspension is 373.52 ms. GC remains a major animation blocker, even though only
+30.36 ms overlaps the worst marquee gap. Across the entire marquee, received
+GC-associated overlap is 534.49 ms of 2,003.85 ms. Event loss still limits attribution.
+
+Click maxima also have different observed populations: candidate click 16 supplies
+501.69 ms but had no baseline XAML endpoint. Of the 11 click ordinals observed in
+both runs, worst completion is still 452.81 → 482.94 ms. Thus differing observations
+do not erase the adverse result, and one run does not establish its cause.
+
+That review did not release another run. The owner's subsequent request for
+solutions selects the source-backed proposal below. Do not reopen marker
+preparation or TableView publication on the strength of inclusive native samples
+alone. Review record: `V:/temp/plan17-75af850-checkpoint-review.md`.
+
+Read-only follow-up: [preserved delay attribution](../../artifacts/evidence/ui-profile-runtime-bookkeeping-20261106-75af850/plan17-reviewed-delay-findings.md)
+separates delivery, selection and XAML completion. Candidate click 21 totals
+482.9419 ms with 13.8477 ms received GC overlap; selection itself is 1.7166 ms.
+Its delivery interval includes fixture summary/row-binding notifications, while
+post-selection samples include publication, layout and unresolved native time.
+These inclusive samples do not select an avoidable operation. Aggregate
+first-content timing overlaps 2456.2640 ms of received GC suspension out of
+9053.9777 ms. Current allocation ownership remains unproved. No production edit,
+build, app launch, new trace or workload accompanied this analysis; the owner's
+review gate remains in force.
+
+### Next correction: peer capture and map facts
+
+**Problem and mechanism.** `Inspector.Filter` builds its complete peer tuple array
+on the UI thread before `Task.Run`, then the worker builds a second array and one
+`MapModel.Observation` object per peer. `ApplyPeers` also filters the complete
+current peer list and captures the matching torrent's records before its worker.
+These traversals require no WinUI access. At the controlled aggregate size,
+each Filter creates 159,810 individual Observation objects in addition to both
+full-size arrays. `Observation.Peer` is never read by the map. Remove this work
+and allocation directly; no new profiling run is needed to establish that it exists.
+
+**Implementation, one owner for each fact.**
+
+1. In `app/src/Shell/Inspector/Peers.cs`, the UI side of Filter takes only the
+   existing peer-list reference, previous/release-list references, place, subject
+   and generation. Preserve its immediate unfiltered ShownPeers notification.
+   Move the peer traversal and fact capture inside its existing Task.Run.
+   Move ApplyPeers' `current.Where(...).Select(...).ToArray()` into that method's
+   existing worker as well. Keep parsing/reconciliation there and notifications
+   on the UI thread. No extra task, scheduler, timer or delayed batch publication.
+2. In `app/src/Torrents/MapModel.cs`, replace the reference-record Observation
+   with a readonly record struct containing only Location, Down, Up, Role and
+   State. One constructor from the captured immutable Peer.Record and Location
+   owns extraction of these values. Remove Peer and Record storage from the
+   observation. The worker fills one exact-size Observation array, uses the same
+   observations and the corresponding immutable peer-list entries for place
+   filtering/counts, and returns that very array in Population. Do not retain a
+   temporary tuple array or convert one whole-population array into another.
+   Existing map consumers keep their current value properties and grouping rules.
+   Update `CapturePeers.cs`'s existing population helper for the constructor;
+   no capture-only alternative implementation or new harness.
+3. In `app/src/Torrents/Peer.cs`, publish replacement Record and Location
+   references with Volatile.Write, and use Volatile.Read in the worker-facing
+   capture/location reads. Keep property notifications and other UI getters on
+   their present owner. Workers may read immutable facts and stable identity;
+   they must not read display formatting, Strings state or WinUI controls.
+
+**Coherence before publication.** Peer membership is already published as lists
+that are never modified in place; reconciliation creates a replacement. Retain
+that rule. Record updates occur in ApplyPeers' UI continuation; location updates
+occur in LocatePeers' UI continuation. Invalidate the existing filter generation
+before each nonempty mutation batch, before any PropertyChanged callback can run,
+then retain the existing Filter call after the completed batch. A worker can see
+old/new immutable references while that batch runs, but its obsolete result must
+never be accepted. Keep the generation and subject checks immediately before all
+Filter result application, and the existing context/cancellation checks before
+ApplyPeers application. Subject or place changes still invalidate old work.
+Preserve PeersReady completion for the latest request and peer-release semantics.
+
+Review these orderings explicitly: result accepted before a mutation; mutation
+before queued acceptance; mutation during capture; a new place/subject while
+capture runs; and clearing/closing the Inspector. In every case, either the
+accepted facts belong to the still-current request or the result is discarded.
+Do not move a live mutable collection to a worker or read several live Peer
+properties as a substitute for capturing its immutable Record once.
+
+**Scope and proof.** This is a single focused implementation/review round,
+estimated 1–2 hours before the collected build/comparison. It touches the above
+four source files and their existing contract text only. No TableView change,
+GC policy, object pool, generic cache, new rendering path or new test suite.
+Before building, the diff must show both scans below Task.Run, no per-peer
+Observation allocation and no second full-population array. Source review covers
+publication races and existing capture consumers. Use an existing stale-subject
+tripwire if it needs adjustment; add no timing/allocation coverage matrix.
+
+The theoretical guarantee is removal of these synchronous UI traversals and
+per-peer map snapshot objects. It reduces a concrete source of allocation pressure;
+it does not guarantee that WinUI stops requesting collections or that all pauses
+disappear. After the complete diff passes review, one matched comparison against
+preserved `75af850` can assess responsiveness and memory. Do not run another
+exploratory profile first. Native UI notifications remain UI work, and their
+remaining cost must not be described as removed by this correction.
 
 ```mermaid
 flowchart LR
@@ -373,6 +798,9 @@ possibilities until evidence identifies a failure.
 
 ## Selection publication
 
+Historical cross-cutting work, outside this map round. Preserve these
+requirements for their existing owner; do not change TableView for them here.
+
 These are correctness corrections. Verify their selection semantics separately;
 use the benchmark to determine whether they also affect response or frame pacing.
 
@@ -449,6 +877,10 @@ Queue membership changes also need a focused refresh check; do not
 change the timed workload's membership between comparison runs.
 
 ## TableView publication
+
+Historical investigation, outside this map round. The phase questions below
+are not a new profiling or implementation assignment. No reset, chunking or
+publication redesign is authorized by the current execution steps.
 
 Keep source enumeration, keys, mutable selectors and hierarchy capture on their
 documented UI owner, then prepare from detached values. Keep the current coherent
@@ -854,6 +1286,24 @@ short sampling-profiler suspensions are excluded. Both traces report zero lost
 events. The next selected question is the current allocation owner feeding those
 collections, using one allocation trace after the retained local corrections.
 This targets measured GC stalls; broader memory tuning remains deferred.
+
+The [current allocation trace](../../artifacts/evidence/ui-profile-alloc-current-20261106-78fb43f/README.md)
+uses the preserved `78fb43f` production binary with `gc-verbose` and a 64 MiB
+buffer. It completed normally with zero lost events, receiving 112.61 MiB of
+allocation-tick amounts during its marquee (17.18 MiB on UI thread 3284).
+These are sampled cumulative amounts, not retained bytes or exact per-owner
+allocation censuses. Fixture reads and peer reconciliation/parsing are major
+contributors. Filter capture/worker amounts are only 1.25/1.40 MiB; this does not
+support choosing superseded filtering as the next cause.
+Worker projection receives 15.85 MiB and UI projection capture 6.54 MiB in that
+interval. Their entry arrays identify more repeated growth at existing owners:
+the UI identity map, worker uniqueness set and worker position map start at zero
+despite available counts. The deferred three-line candidate supplies `rows.Count`,
+the validated source/node count and `order.Count` respectively, preserving all
+collection contents, comparers, validation and reconciliation. The identity
+map can still grow for extra displayed/released rows; no count is guessed by
+an extra traversal. Compare against this frozen allocation trace with the same
+diagnostics. Native iteration, wire reads and other map/peer costs remain separate.
 
 The failed readiness run has all peers parsed and observes arcs, locations and
 moving dots. Its XAML callback stops while the independent map continues drawing,
