@@ -333,7 +333,10 @@ whose job waits only for busy files. While the engine still looks up the
 drives of the folder, `waiting_drive` names the folder's drive letter or
 server and `waiting_torrent_id` is empty. A waiting move whose drives are free carries `waiting_files`, the name
 of the torrent whose file work it waits for; it is empty on every other row. A move that continues after a restart shows `waiting_move` while it
-waits. A check or a move whose drive stops responding shows the error `drive_stalled`.
+waits. A waiting check or move that the last exit left unfinished waits for
+the person to continue or abandon it: its row carries `waiting_answer` true and
+empty `waiting_drive`, `waiting_torrent_id` and `waiting_files`.
+`waiting_answer` is false on every other row. A check or a move whose drive stops responding shows the error `drive_stalled`.
 A check that waits because a stalled check's reads block every check names
 that stalled check and its drive. A `move` that waits for the metadata of a
 torrent whose save folder overlaps its destination also replies at once, and
@@ -429,7 +432,8 @@ notifications are `{type:"activate"}`, `{type:"close"}`, `{type:"confirm_exit"}`
 `{type:"settings",setting}` opens Settings at that card of the General page and
 highlights it, as search does. The pipe
 also sends `{type:"torrent",torrent_id}` to select and reveal a notification's
-torrent, clearing torrent filters through the existing reveal owner. A pending
+torrent through the existing reveal owner, which clears the torrent filter
+only when it hides that torrent. A pending
 destination waits for the window's ready handshake when the window starts.
 The pipe
 passes the engine each request's connection beside the request, so no request field
@@ -761,7 +765,11 @@ saved. It may carry `loaded`, an array of at most 10,000 folder paths: the
 folders the browser holds that the choice changes. `folders` holds one object
 with `path` and the folder values for each loaded folder that exists. An edit of a torrent replies
 once libtorrent has applied the choices, or once they are saved while its
-files are busy or while it waits for its add. A trackers-only edit replies with
+files are busy or while it waits for its add. A newer file choice replaces one
+that libtorrent still applies, and the earlier edit then replies, because its
+choice was saved. A failure of the replaced job's disk work then answers the
+newer edit with `torrent_error`, because libtorrent does not say which job
+failed. A trackers-only edit replies with
 no data. A `tree` request for a preview or torrent with an `edit` in flight
 replies after that edit, so it lists the edit's choices.
 
@@ -770,8 +778,7 @@ preview, or `query` beside `files` or `folders`; with `invalid_priorities`
 for a priority outside 0, 1, 4 and 7, an index named twice, or an index or path
 that names no file or folder; with `invalid_trackers` for an invalid tracker
 list; with `metadata_unavailable` for file choices before the metadata
-arrives; with `overloaded` while a torrent's earlier file choice still waits
-for libtorrent, or when the engine's worker has too much waiting; and with
+arrives; with `overloaded` when the engine's worker has too much waiting; and with
 `preview_expired`, `torrent_removed` or `alias_conflict` as `tree` does.
 All identities are strings. Settings are intended changes rather than replacement
 snapshots. `reset_settings` saves every setting at the default a new

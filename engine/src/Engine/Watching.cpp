@@ -7,49 +7,45 @@ namespace tt
 void Engine::State::WatchFolder()
 {
     auto now = std::chrono::steady_clock::now();
+    // The person hears once that watching waits for a share that does not
+    // answer; the next scan that succeeds ends the episode.
+    if (settings.watches && !watchFailed && RootHangs(settings.watchPath, now))
+    {
+        Notify(ToastKind::AddFailed, settings.watchPath, {}, {},
+            Problem{ProblemKind::DownloadPathUnavailable}.Code());
+        watchFailed = true;
+    }
     if (!settings.watches || watchPhase != WatchPhase::Idle ||
         now - watchAt < std::chrono::seconds(5))
+        return;
+    // A share that has not answered its probe would only hold the scan, so
+    // watching waits until it answers again.
+    if (ProbePending(settings.watchPath))
         return;
     watchAt = now;
     watchPhase = WatchPhase::Scanning;
     auto found = std::make_shared<std::map<std::string, std::string, PathLess>>();
     auto folder = settings.watchPath;
-    auto recursive = settings.watchesRecursively;
     // A result applies only to the watch that produced it.
-    auto isCurrent = [this, folder, recursive]
+    auto isCurrent = [this, folder]
     {
-        return !IsShuttingDown() && settings.watches && settings.watchPath == folder &&
-            settings.watchesRecursively == recursive;
+        return !IsShuttingDown() && settings.watches && settings.watchPath == folder;
     };
-    sources.Run([found, folder, recursive]
+    // Only the folder itself is scanned, never its subfolders; see the watched
+    // folder in the addition contract.
+    watching.Run([found, folder]
     {
-        auto inspect = [found](std::filesystem::directory_entry const& entry)
+        for (auto const& entry : std::filesystem::directory_iterator(Wide(folder)))
         {
             if (!entry.is_regular_file() || entry.is_symlink() ||
                 CompareStringOrdinal(entry.path().extension().c_str(), -1, L".torrent", -1, TRUE) != CSTR_EQUAL)
-                return;
+                continue;
             auto path = FullPath(entry.path());
             auto stamp = std::to_string(entry.file_size()) + ":" +
                 std::to_string(entry.last_write_time().time_since_epoch().count());
             found->emplace(Utf8(path.wstring()), std::move(stamp));
-        };
-        if (recursive)
-        {
-            for (auto const& entry : std::filesystem::recursive_directory_iterator(Wide(folder)))
-            {
-                inspect(entry);
-                if (found->size() > torrentLimit)
-                    break;
-            }
-        }
-        else
-        {
-            for (auto const& entry : std::filesystem::directory_iterator(Wide(folder)))
-            {
-                inspect(entry);
-                if (found->size() > torrentLimit)
-                    break;
-            }
+            if (found->size() > torrentLimit)
+                break;
         }
     }, [this, found, folder, isCurrent](StorageOutcome outcome)
     {

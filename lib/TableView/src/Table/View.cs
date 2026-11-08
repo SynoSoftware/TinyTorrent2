@@ -365,24 +365,6 @@ public sealed partial class Table
         var displayed = _displayed;
         var hierarchy = _hierarchy is null ? null : CaptureHierarchy(source);
         var previous = _hierarchy?.Captured;
-        var rows = hierarchy is null ? source : hierarchy.Nodes.Keys.ToArray();
-        var identity = _identity;
-        if (ItemKey is { } key)
-        {
-            var keys = new Dictionary<object, object>(ReferenceEqualityComparer.Instance);
-            var all = rows.Concat(displayed)
-                .Concat(previous?.Nodes.Keys ?? Enumerable.Empty<object>()).Concat(_released.Keys)
-                .Concat(_releases.SelectMany(release => release.Items.Concat(release.Source).Concat(release.Displayed)));
-            foreach (var item in all)
-            {
-                if (keys.ContainsKey(item))
-                    continue;
-                if (_rowType is not null && !_rowType.IsInstanceOfType(item))
-                    throw ConfigurationError($"The source contains a row outside {_rowType}.");
-                keys[item] = key(item);
-            }
-            identity = new ItemIdentity { KeySelector = item => keys[item], KeyComparer = KeyComparer };
-        }
         var expanded = hierarchy?.Nodes.Values.Where(node => _hierarchy!.IsExpanded(node.Item))
             .Select(node => node.Item).ToHashSet(ReferenceEqualityComparer.Instance)
             ?? new HashSet<object>(ReferenceEqualityComparer.Instance);
@@ -391,7 +373,7 @@ public sealed partial class Table
             {
                 Source = source,
                 Displayed = displayed,
-                Identity = identity,
+                Identity = _identity,
                 RowType = _rowType,
                 Hierarchy = hierarchy,
                 PreviousHierarchy = previous,
@@ -402,7 +384,8 @@ public sealed partial class Table
             },
             new Body.Projection.Ordering
             {
-                Comparer = SortsLocally ? _preparedSort ?? _sortColumn!.Column.CaptureSort!(rows) : null,
+                Comparer = _preparedSort,
+                Capture = SortsLocally ? _sortColumn!.Column.CaptureSort : null,
                 Direction = _sortDirection,
                 Local = SortsLocally,
                 Reorders = Reorders,

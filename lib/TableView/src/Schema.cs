@@ -63,7 +63,10 @@ public sealed class Schema<TRow>
 
     /// <summary>
     /// A stable, non-null, unique key per row, used to reconcile selection, current item, anchor
-    /// and focus across a source change. Without one, identity is object reference.
+    /// and focus across a source change. Without one, identity is object reference. The selector
+    /// runs on the preparation worker for each row of a projection and on the UI thread for
+    /// selection and hierarchy, so it must read only state the host publishes safely, never UI
+    /// objects.
     /// </summary>
     public Schema<TRow> Key<TKey>(Func<TRow, TKey> key)
         where TKey : notnull
@@ -110,8 +113,10 @@ public sealed class Schema<TRow>
     }
 
     /// <summary>
-    /// Make this column sortable. Keys are captured on the UI thread; comparisons run on a
-    /// worker, so keys must remain stable and the comparer must not access UI state.
+    /// Make this column sortable. A sort request reads its keys once on the UI thread, so a
+    /// failing selector rejects the request; every later projection reads them once per row on
+    /// the preparation worker and compares there. The selector therefore reads only state the
+    /// host publishes safely, keys stay stable and the comparer does not access UI state.
     /// </summary>
     public Schema<TRow> SortKey<TKey>(
         Column column,

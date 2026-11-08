@@ -228,7 +228,9 @@ observed defaults. Query the effective defaults through the supported
 [Windows defaults platform](https://learn.microsoft.com/en-us/windows/apps/develop/windows-integration/default-apps-platform)
 and report the name of each kind's app. A remembered class without an open
 command is not a default. Keep this small query at the registration owner, and
-build no application chooser.
+build no application chooser. Registration requests and the start's check for
+missing programs run on their own worker, because a handler lookup can wait
+for a drive, and the engine answers other requests meanwhile.
 
 Observation also reports every `.torrent` or `magnet:` handler that starts a
 missing executable, whichever application registered it, because choosing it

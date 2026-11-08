@@ -556,6 +556,27 @@ void Engine::State::CheckFinalFolder(Attempt const& attempt)
     });
 }
 
+void Engine::State::EachUnlistedWork(
+    std::function<void(std::string const& folder, std::string const& torrentId)> const& visit) const
+{
+    for (auto const& [id, removal] : removed)
+    {
+        visit(removal.torrent.facts.savePath, id);
+    }
+    for (auto const& [root, rename] : renames)
+    {
+        auto const* current = FindWorking(rename.owners.at(rename.current).torrentId);
+        if (!current)
+        {
+            continue;
+        }
+        for (auto const& owner : rename.owners)
+        {
+            visit(current->facts.savePath, owner.torrentId);
+        }
+    }
+}
+
 void Engine::State::ProbeRoots()
 {
     auto now = std::chrono::steady_clock::now();
@@ -577,11 +598,13 @@ void Engine::State::ProbeRoots()
         }
         wanted.insert(RootKey(Wide(NoticeRootOf(torrent))));
     }
-    // A removed torrent waits for its own file work, which can hang there.
-    for (auto const& [id, removal] : removed)
+    EachUnlistedWork([this, &wanted](std::string const& folder, std::string const&)
     {
-        wanted.insert(NoticeKey(removal.torrent.facts.savePath));
-    }
+        wanted.insert(NoticeKey(folder));
+    });
+    // Watching waits while the watched folder's root does not answer.
+    if (settings.watches && !settings.watchPath.empty())
+        wanted.insert(NoticeKey(settings.watchPath));
     // File work whose root did not answer waits for that root's probe. The
     // roots of other file work are probed too, because a job that hangs
     // there never returns to say so, also when no listed torrent uses the

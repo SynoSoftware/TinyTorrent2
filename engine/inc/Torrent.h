@@ -169,6 +169,8 @@ struct DriveWait
     std::string drive;
     std::string holderId;
     std::string files;
+    // The work waits for the person to continue or abandon it, not for a drive.
+    bool answer = false;
 };
 
 // A running job's progress at the last drive pass, and when the pass saw it

@@ -156,7 +156,11 @@ internal sealed class Supplier(ISupplier supplier, RequestPolicy policy)
             return new([]);
         if (!supplier.Codes.TryGetValue(lookup.Language, out var code))
             throw new SubtitleException(SubtitleFailure.Unavailable);
-        var operation = new Operation(http, account, lookup.Validate) { Fresh = lookup.Fresh };
+        var operation = new Operation(http, account, lookup.Validate)
+        {
+            Fresh = lookup.Fresh,
+            GivesWay = lookup.GivesWay,
+        };
         var query = new SubtitleQuery(release, lookup.FileName, lookup.Language, code)
         {
             Hash = SupportsHash ? lookup.Hash : null,
@@ -254,6 +258,10 @@ internal sealed class Supplier(ISupplier supplier, RequestPolicy policy)
             for (var redirect = 0; ; redirect++)
             {
                 cancellation.ThrowIfCancellationRequested();
+                // A redirect belongs to a request already sent, so only the
+                // first request gives way.
+                if (redirect == 0 && operation.GivesWay?.Invoke() == true)
+                    throw new StepYieldedException();
                 await operation.Validate(cancellation).ConfigureAwait(false);
                 cancellation.ThrowIfCancellationRequested();
                 var call = Call(operation, message, kind);
@@ -379,6 +387,7 @@ internal sealed class Supplier(ISupplier supplier, RequestPolicy policy)
     {
         internal string Purpose { get; init; } = "search";
         internal FreshRequest? Fresh { get; init; }
+        internal Func<bool>? GivesWay { get; init; }
     }
 
     // Whether a subtitle can serve the file. A supplier reports a season
@@ -544,6 +553,9 @@ internal sealed record SubtitleLookup(
 )
 {
     internal FreshRequest? Fresh { get; init; }
+    // Whether the search should stop before its next request, which then
+    // throws StepYieldedException. Only the worker's searches give way.
+    internal Func<bool>? GivesWay { get; init; }
     internal SubtitleStage Stage { get; init; }
     internal string? Hash { get; init; }
     internal long Size { get; init; }

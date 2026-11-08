@@ -75,7 +75,6 @@ public sealed partial class Editor : INotifyPropertyChanged
     public Setting SeedRule { get; }
     public Setting Watch { get; }
     public Setting WatchPath { get; }
-    public Setting WatchRecursive { get; }
     public Setting WatchDestination { get; }
     public Setting RecheckFinished { get; }
     public Setting ShowSplash { get; }
@@ -286,16 +285,9 @@ public sealed partial class Editor : INotifyPropertyChanged
             ? Text.Format("settings", "incoming_summary", port, mapping ? OnText : OffText)
         : "—";
     public string WatchedSummary =>
-        Watch.ConfirmedOn is { } watch
-        && WatchPath.ConfirmedText is { } path
-        && WatchRecursive.ConfirmedOn is { } recursive
+        Watch.ConfirmedOn is { } watch && WatchPath.ConfirmedText is { } path
             ? watch
                 ? path
-                    + (
-                        recursive
-                            ? " · " + Text.Get("settings", "watch_children_summary")
-                            : string.Empty
-                    )
                 : Text.Get("settings", "watch_off_summary")
             : "—";
     public string CheckingSummary =>
@@ -312,7 +304,6 @@ public sealed partial class Editor : INotifyPropertyChanged
     public string SeedingSleepHint => DependentHint(SeedingSleep, null, "enable_sleep_prevention");
     public string IncompleteFolderHint =>
         DependentHint(IncompleteFolder, null, "enable_incomplete_folder");
-    public string WatchRecursiveHint => DependentHint(WatchRecursive, null, "enable_watching");
     public string WatchDestinationHint =>
         DependentHint(WatchDestination, "watch_destination_hint", "enable_watching");
     public string SeedRuleHint => DependentHint(SeedRule, "seed_rule_hint", "enable_seed_rule");
@@ -618,12 +609,6 @@ public sealed partial class Editor : INotifyPropertyChanged
         Watch = Add(new(Engine, Text, "watch", SettingKind.Boolean, SettingsCategory.Transfers));
         WatchPath = Add(
             new(Engine, Text, "watch_path", SettingKind.Text, SettingsCategory.Transfers)
-        );
-        WatchRecursive = Add(
-            new(Engine, Text, "watch_recursive", SettingKind.Boolean, SettingsCategory.Transfers)
-            {
-                Condition = () => Watch.IsOn,
-            }
         );
         WatchDestination = Add(
             new(Engine, Text, "watch_destination", SettingKind.Text, SettingsCategory.Transfers)

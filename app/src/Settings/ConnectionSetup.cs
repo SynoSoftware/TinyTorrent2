@@ -205,12 +205,11 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
             : Percent(_alternativeShare);
     public string StandardRates => Rates(_standardShare);
     public string AlternativeRates => Rates(_alternativeShare);
+    // Until the slider moves, what matters is that the saved limits stay.
     public string StandardHint =>
-        Text.Get("connection_setup", "standard_hint")
-        + (StandardFollows ? string.Empty : " " + Text.Get("connection_setup", "kept_hint"));
-    public string AlternativeHint =>
-        Text.Get("connection_setup", "alternative_hint")
-        + (AlternativeFollows ? string.Empty : " " + Text.Get("connection_setup", "kept_hint"));
+        Text.Get("connection_setup", StandardFollows ? "standard_hint" : "kept_hint");
+    public string? AlternativeHint =>
+        AlternativeFollows ? null : Text.Get("connection_setup", "kept_hint");
     public string StandardUse => InUse(_main.HasStandardLimits);
     public string AlternativeUse => InUse(_main.HasAlternativeLimits);
     public event PropertyChangedEventHandler? PropertyChanged;

@@ -14,7 +14,7 @@ for this documentation review.
 | Public control, template lifetime, composition | [Table](../src/Table.cs) and its parts in [Table/](../src/Table/). |
 | Source subscription and coherent source capture | [Body.Source](../src/Body/Source.cs). |
 | Optional child membership and subscriptions | [Hierarchy](../src/Hierarchy.cs), configured by `Schema<TRow>.Hierarchy`. |
-| Worker ordering, holds, hierarchy projection and position indices | [Body.Projection](../src/Body/Projection.cs), from values captured by [Table/View](../src/Table/View.cs). |
+| Worker key and sort-key capture, ordering, holds, hierarchy projection and position indices | [Body.Projection](../src/Body/Projection.cs), from the source snapshot and UI state captured by [Table/View](../src/Table/View.cs). |
 | Worker collection-edit planning | [Body.Changes](../src/Body/Changes.cs). |
 | Displayed sequence, applying prepared edits and the selected state the list reads | [Body.View](../src/Body/View.cs). |
 | Effective layout | [EffectiveLayout](../src/EffectiveLayout.cs). |

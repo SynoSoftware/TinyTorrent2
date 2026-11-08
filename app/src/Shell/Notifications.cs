@@ -775,8 +775,10 @@ public abstract class Toast : INotifyPropertyChanged
             Reveal = new RelayCommand(
                 () =>
                 {
+                    // A torrent removed since the failure is left out, so
+                    // the ones still listed are shown.
                     if (Failure.Recovery is { } recovery)
-                        owner.Reveal(recovery.TorrentIds);
+                        owner.Reveal([.. recovery.TorrentIds.Where(id => owner.Find(id) is not null)]);
                     else if (Listed is { } torrent)
                         owner.Reveal([torrent.TorrentId]);
                 },

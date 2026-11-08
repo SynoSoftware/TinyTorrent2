@@ -396,12 +396,11 @@ void Engine::State::UpdateProblems()
                     use.torrentId);
         }
     });
-    for (auto const& [id, removal] : removed)
+    EachUnlistedWork([this, &locate, &hung](std::string const& folder, std::string const& id)
     {
-        auto const& folder = removal.torrent.facts.savePath;
         if (auto key = NoticeKey(folder); hung.contains(key))
             locate(key, NoticeRoot(folder).value_or(folder), Problem{ProblemKind::DownloadPathUnavailable}, id);
-    }
+    });
     // A removed torrent's give-back has no row, so its failure waits for the
     // Retry of the stopped notice.
     for (auto const& running : returning)
@@ -588,6 +587,9 @@ void Engine::State::On(lt::file_error_alert const& alert)
         torrent->diskError = alert.error;
         Steer(*torrent, Control::Failed{Problem::From(alert.error), Retryable(alert.error)});
         // A failed file priority job raises this instead of file_prio_alert.
+        // The alert does not name its job, so when a newer choice replaced a
+        // running job, that job's failure answers the newer edit; libtorrent
+        // still applies the newer choice.
         AwaitQueueStatus(*torrent);
         if (torrent->priorityCompletion)
         {
@@ -634,7 +636,10 @@ void Engine::State::On(lt::alerts_dropped_alert const& alert)
         }
         if (alert.dropped_alerts[lt::torrent_paused_alert::alert_type] && torrent.checkReads != CheckReads::None)
             AwaitCheckReads(torrent);
-        if (torrent.priorityCompletion)
+        // A lost file_error_alert may have been a priority job's failure, which
+        // no query reveals. Any other loss leaves the edit to the new query of
+        // its priorities, which confirms it.
+        if (alert.dropped_alerts[lt::file_error_alert::alert_type] && torrent.priorityCompletion)
         {
             std::exchange(torrent.priorityCompletion, nullptr)({ErrorCode::RecoveryRequired});
         }

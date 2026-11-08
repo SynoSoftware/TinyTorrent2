@@ -2,6 +2,7 @@
 #include "Owned.h"
 #include "Pipe.h"
 #include "Registration.h"
+#include "Store.h"
 #include "Strings.h"
 #include "Desktop/Instance.h"
 #include "Desktop/Toasts.h"
@@ -83,6 +84,10 @@ private:
     // toasts, the tray and the windows that they use.
     OwnedHandle ownership_;
     OwnedWindow owner_;
+    // Runs every use of registration_, because its handler lookups can wait
+    // for a drive, and the owner thread keeps answering requests meanwhile.
+    // Its completions run on the owner thread.
+    Store registrations_;
     OwnedWindow broadcast_;
     OwnedIcon errorIcon_;
     std::unique_ptr<Tray> tray_;

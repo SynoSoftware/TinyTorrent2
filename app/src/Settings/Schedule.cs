@@ -42,9 +42,7 @@ public sealed class Schedule : INotifyPropertyChanged
 
     public bool FollowsSchedule => FixedMode is null;
     public string TimelineHint =>
-        FixedMode is { } mode
-            ? Text.Format("settings", "fixed_schedule_hint", FormatFixedLimits(mode))
-            : Text.Get("settings", "timeline_hint");
+        Text.Get("settings", FixedMode is null ? "timeline_hint" : "fixed_schedule_hint");
     public bool CanSchedule => CanEdit && !IsPending && FollowsSchedule;
     public bool IsOpen => _open is not null;
     public bool HasAlternative => Periods.Any(period => period.Mode == ScheduleMode.Alternative);

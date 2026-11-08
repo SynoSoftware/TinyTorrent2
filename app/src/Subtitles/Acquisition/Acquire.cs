@@ -26,6 +26,20 @@ internal sealed partial class Acquisition
                 or SubtitleFailure.Unconfigured
                 or SubtitleFailure.Unavailable;
 
+    private void ReportWorkWaiting()
+    {
+        lock (_requestSync)
+        {
+            foreach (var run in new[] { _manualWork, _automaticWork })
+            {
+                if (run is not null)
+                {
+                    run.Report(run.Observation.Progress, new WorkExecution.Waiting());
+                }
+            }
+        }
+    }
+
     private void Wake()
     {
         if (!_disposed && _signal.CurrentCount == 0)
@@ -178,13 +192,17 @@ internal sealed partial class Acquisition
                         break;
                     }
                 }
+                catch (StepYieldedException)
+                {
+                    // The step runs again as soon as the person's operation,
+                    // which waits ahead of it for _operation, ends.
+                    ReportWorkWaiting();
+                    delay = TimeSpan.Zero;
+                }
                 catch (OperationCanceledException)
                 {
                     System.Diagnostics.Debug.WriteLine("Subtitle acquisition cancelled.");
-                    lock (_requestSync)
-                        foreach (var run in new[] { _manualWork, _automaticWork })
-                            if (run is not null)
-                                run.Report(run.Observation.Progress, new WorkExecution.Waiting());
+                    ReportWorkWaiting();
                 }
                 catch (SqliteException error)
                 {
@@ -360,6 +378,7 @@ internal sealed partial class Acquisition
                 Guesses = target.Guesses,
                 Stage = stage,
                 Fresh = Fresh(target),
+                GivesWay = () => PersonWaits,
             };
             var matches = await Lookup(lookup, cancellation).ConfigureAwait(false);
             await ValidateLookup(cancellation).ConfigureAwait(false);
@@ -821,7 +840,7 @@ internal sealed partial class Acquisition
     {
         if (!CanFind)
             return;
-        await _operation.WaitAsync(_lifetime.Token).ConfigureAwait(false);
+        await TakeForPerson(_lifetime.Token).ConfigureAwait(false);
         try
         {
             if (!CanFind)

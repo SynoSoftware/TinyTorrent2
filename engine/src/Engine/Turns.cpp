@@ -525,6 +525,10 @@ bool Engine::State::DrivesFree(std::vector<std::string> const& ids, std::string 
 
 DriveWait Engine::State::WaitOf(Torrent const& torrent, Status status, Claims const& inUse) const
 {
+    // Only the asked work waits for the answer: a move the person started
+    // waits for its drives, also while an earlier check stays asked.
+    if (torrent.unfinished == (status == Status::WaitingCheck ? TaskKind::Check : TaskKind::Move))
+        return DriveWait{.answer = true};
     auto rootName = [this](std::string const& folder)
         { return Utf8(std::filesystem::path(Wide(RealPath(folder))).root_name().wstring()); };
     std::vector<std::string> ids{torrent.torrentId};

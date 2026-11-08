@@ -176,7 +176,6 @@ public:
         SeedRule seedRule = SeedRule::Any;
         bool watches = false;
         std::string watchPath;
-        bool watchesRecursively = false;
         std::string watchDestination;
         bool rechecksFinished = false;
         std::string language;
@@ -533,6 +532,9 @@ public:
     // cover, so a scan of every path of a large torrent never holds up the
     // engine thread or waits behind a preview source on a slow share.
     Store trees;
+    // Lists the watched folder, which can wait for a share that does not
+    // answer, so that wait holds up nothing else.
+    Store watching;
     // Serializes route cancellation with nonblocking proxy connect/send calls.
     std::mutex checkGate;
     // Ends proxy checks when their route changes or the engine closes.
@@ -1429,6 +1431,13 @@ public:
     // of the folders of file work that runs, and each root that file work
     // waits for, and keeps the roots whose probe has not returned.
     void ProbeRoots();
+    // Visits the folder and torrent of each piece of file work that FileWork
+    // does not list but that can hang on its root: a removed torrent's
+    // folder, and every torrent a rename renames, at the folder of the file
+    // it renames now. The root probes and the location notices read them
+    // here, so both cover the same work.
+    void EachUnlistedWork(std::function<void(std::string const& folder, std::string const& torrentId)> const& visit)
+        const;
     void Reload(Torrent& torrent, std::shared_ptr<Control::Job const> job);
     // Drops the pieces of `files` from the resume data, so the torrent
     // downloads those files again without checking the others.

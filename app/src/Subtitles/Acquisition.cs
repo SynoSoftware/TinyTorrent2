@@ -17,6 +17,9 @@ internal sealed partial class Acquisition(
     internal const int MaximumExtras = 3;
 
     private readonly SemaphoreSlim _operation = new(1);
+    // The operations that wait for _operation through TakeForPerson. The
+    // worker's step gives way to them before its next search request.
+    private int _personWaiting;
     private readonly CancellationTokenSource _lifetime = new();
     private Task _saves = Task.CompletedTask;
     private readonly object _requestSync = new();
@@ -566,7 +569,7 @@ internal sealed partial class Acquisition(
             _lifetime.Token,
             cancellation
         );
-        await _operation.WaitAsync(pending.Token).ConfigureAwait(false);
+        await TakeForPerson(pending.Token).ConfigureAwait(false);
         try
         {
             await RequireSupplier(account.SupplierId)
@@ -617,6 +620,23 @@ internal sealed partial class Acquisition(
             }
         }
     }
+
+    // Waits for _operation as the person's own operation, which the worker's
+    // step gives way to before its next search request.
+    private async Task TakeForPerson(CancellationToken cancellation)
+    {
+        Interlocked.Increment(ref _personWaiting);
+        try
+        {
+            await _operation.WaitAsync(cancellation).ConfigureAwait(false);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _personWaiting);
+        }
+    }
+
+    private bool PersonWaits => Volatile.Read(ref _personWaiting) > 0;
 
     private void Invalidate()
     {
@@ -760,3 +780,10 @@ internal sealed class SubtitleException(SubtitleFailure reason, DateTimeOffset? 
     internal SubtitleFailure Reason { get; } = reason;
     internal DateTimeOffset? RetryAt { get; } = retryAt;
 }
+
+/// <summary>
+/// The worker's step stopped before a search request so the person's own
+/// operation runs first. Its job stays due as it was: no attempt counts and
+/// no retry delay starts.
+/// </summary>
+internal sealed class StepYieldedException() : Exception("The subtitle step gave way to the person.");

@@ -78,12 +78,7 @@ public sealed partial class MainWindow
                 is not { } torrent
             )
                 return;
-            if (!await Model.Navigation.Open(WindowPage.Torrents))
-                return;
-            if (!Model.VisibleTorrents.Contains(torrent))
-                await Model.ClearFinding();
-            Torrents.FocusRows(FocusState.Programmatic);
-            if (!await SelectTorrent(new Syno.TableView.Selection([torrent], torrent)))
+            if (!await RevealTorrents([torrent], keepsBack: true))
                 return;
             Model.OpenInspector();
             (InspectorContent.Content as InspectorPane)?.RevealFile(origin.FileIndex);

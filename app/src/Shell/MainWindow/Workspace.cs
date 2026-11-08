@@ -37,11 +37,36 @@ public sealed partial class MainWindow
         return false;
     }
 
-    private async Task<bool> ShowTorrents()
+    // With keepsBack, Back returns to the page the person came from, such as
+    // the Library.
+    private async Task<bool> ShowTorrents(bool keepsBack = false)
     {
-        if (!await Model.Navigation.Navigate(WindowPage.Torrents))
+        var shown = keepsBack
+            ? await Model.Navigation.Open(WindowPage.Torrents)
+            : await Model.Navigation.Navigate(WindowPage.Torrents);
+        if (!shown)
             return false;
         Torrents.FocusRows(FocusState.Programmatic);
+        return true;
+    }
+
+    // Shows the torrents page with these torrents selected and in view, once
+    // any open dialog completes. They are the person's, so they show now, not
+    // at the sort settle, and a search that hides one is cleared.
+    private async Task<bool> RevealTorrents(Torrent[] torrents, bool keepsBack)
+    {
+        if (_interaction is { } interaction)
+            await interaction.Completion.Task;
+        if (!await ShowTorrents(keepsBack))
+            return false;
+        if (!torrents.All(torrent => Model.VisibleTorrents.Contains(torrent)))
+            await Model.ClearFinding();
+        Torrents.Release(torrents);
+        // A refused selection, such as a kept Inspector draft, keeps the
+        // earlier selection and scroll position.
+        if (!await SelectTorrent(new Syno.TableView.Selection(torrents, torrents[^1])))
+            return false;
+        Torrents.ScrollIntoView(torrents[^1], torrents);
         return true;
     }
 

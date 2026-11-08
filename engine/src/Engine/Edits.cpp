@@ -343,11 +343,6 @@ void Engine::State::CommitEdit(std::string const& id, std::vector<ResolvedChoice
         completion({ErrorCode::AliasConflict, torrent.conflict});
         return;
     }
-    if (!choices.empty() && torrent.priorityCompletion)
-    {
-        completion({ErrorCode::Overloaded});
-        return;
-    }
     auto facts = torrent.facts;
     if (!choices.empty())
     {
@@ -399,6 +394,13 @@ void Engine::State::CommitEdit(std::string const& id, std::vector<ResolvedChoice
         if (hasTrackers)
         {
             torrent.handle.replace_trackers(*torrent.facts.trackers);
+        }
+        // The latest choice wins. The one libtorrent still applies was saved,
+        // so its edit is answered now rather than waiting for a confirmation
+        // the newer choice replaces.
+        if (hasPriorities && torrent.priorityCompletion)
+        {
+            std::exchange(torrent.priorityCompletion, nullptr)({});
         }
         // Changing which files download can move data between files, so it
         // waits for the torrent's busy files; the choice is already saved.

@@ -202,7 +202,6 @@ public sealed partial class MainViewModel
     {
         if (!_byId.TryGetValue(torrentId, out var torrent))
             return Task.CompletedTask;
-        ClearFinding();
         RevealRequested?.Invoke(this, [torrent]);
         return Task.CompletedTask;
     }

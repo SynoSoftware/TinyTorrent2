@@ -1357,16 +1357,6 @@
                           </Grid>
                         </controls:SettingsRow>
                         <controls:SettingsRow
-                          Setting="{x:Bind Model.WatchRecursive}"
-                          Description="{x:Bind Model.WatchRecursiveHint, Mode=OneWay}"
-                          StateText="{x:Bind controls:SettingsRow.State(Model.WatchRecursive.IsOn, Model.OnText, Model.OffText), Mode=OneWay}"
-                        >
-                          <ToggleSwitch
-                            IsOn="{x:Bind Model.WatchRecursive.IsOn, Mode=OneWay}"
-                            AutomationProperties.AutomationId="WatchRecursive"
-                          />
-                        </controls:SettingsRow>
-                        <controls:SettingsRow
                           Setting="{x:Bind Model.WatchDestination}"
                           Description="{x:Bind Model.WatchDestinationHint, Mode=OneWay}"
                         >

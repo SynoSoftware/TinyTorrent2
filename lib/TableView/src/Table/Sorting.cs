@@ -169,11 +169,16 @@ public sealed partial class Table
         }
     }
 
+    /// <summary>
+    /// Reads the requested column's sort keys on the UI thread, so a request whose selector
+    /// fails throws here and leaves the table unchanged. Later projections read them on the
+    /// worker.
+    /// </summary>
     private IComparer<object>? CaptureSort(EffectiveColumn? column)
     {
         if (_sortMode == SortMode.External || column is null)
             return null;
-        var rows = _hierarchy is null ? _source.Snapshot : CaptureHierarchy(_source.Snapshot).Nodes.Keys.ToArray();
+        IReadOnlyCollection<object> rows = _hierarchy is null ? _source.Snapshot : CaptureHierarchy(_source.Snapshot).Nodes.Keys;
         return column.Column.CaptureSort!(rows);
     }
 

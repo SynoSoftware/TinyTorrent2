@@ -1351,7 +1351,7 @@ Json Torrent::Row(bool sessionPaused, int queue, std::optional<double> moveProgr
         {"completed", saved ? std::int64_t(double(*saved) * double(status.total_wanted)) : status.total_wanted_done},
         {"progress", moveProgress.value_or(saved.value_or(status.progress))}, {"status", ToString(Classify(sessionPaused))},
         {"waiting_drive", wait.drive}, {"waiting_torrent_id", wait.holderId},
-        {"waiting_files", wait.files},
+        {"waiting_files", wait.files}, {"waiting_answer", wait.answer},
         {"download_rate", status.download_payload_rate}, {"upload_rate", status.upload_payload_rate},
         {"error", !problem ? "" : problem->Code()},
         {"detail", problem ? problem->detail : ""}, {"retry", retry},

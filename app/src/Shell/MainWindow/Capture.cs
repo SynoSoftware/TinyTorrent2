@@ -2602,24 +2602,51 @@ public sealed partial class MainWindow
                             if (
                                 !HasEditorFocus()
                                 || ToastStack.Visibility != Visibility.Collapsed
-                                || Completions().Length == 0
+                                || Completions().Length != 0
                             )
                                 throw new InvalidOperationException(
-                                    "Editing search did not postpone completion feedback."
+                                    "Editing search did not retire the shown completion toasts."
+                                );
+                            var waiting = finished[^1];
+                            Model.Notifications.Receive(
+                                JsonSerializer.SerializeToElement(
+                                    new
+                                    {
+                                        type = "toast",
+                                        kind = "completed",
+                                        @switch = "finished",
+                                        torrent_id = waiting.TorrentId,
+                                        name = waiting.Name,
+                                        detail = string.Empty,
+                                        count = 1,
+                                    }
+                                )
+                            );
+                            await CaptureLayout();
+                            if (
+                                ToastStack.Visibility != Visibility.Collapsed
+                                || Completions().Length != 1
+                            )
+                                throw new InvalidOperationException(
+                                    "A completion received while editing did not wait."
                                 );
                             Torrents.FocusRows(FocusState.Programmatic);
                             await CaptureLayout();
-                            if (ToastStack.Visibility != Visibility.Visible)
+                            if (
+                                ToastStack.Visibility != Visibility.Visible
+                                || Completions().Length != 1
+                            )
                                 throw new InvalidOperationException(
-                                    "Completion feedback did not return after editing."
+                                    "The waiting completion did not show after editing."
                                 );
                             await CaptureReady(Model, () => Completions().Length == 0);
                             outcomes.Add(
                                 new
                                 {
                                     journey = "completion lifetime",
-                                    postponedWhileEditing = true,
-                                    resumedAfterEditing = true,
+                                    retiredWhileEditing = true,
+                                    waitedWhileEditing = true,
+                                    shownAfterEditing = true,
                                     dismissedAfterTimeout = true,
                                 }
                             );

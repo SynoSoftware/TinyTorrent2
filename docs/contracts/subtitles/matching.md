@@ -79,6 +79,14 @@ and downloads without searching again. Find and automatic acceptance create
 only first-subtitle jobs, while recorded extra files still follow their movie
 when it moves.
 
+The person's own subtitle work goes first: the Download Subtitle dialog's
+search and download, Find, Scan torrent folders and the account Check. When
+one waits for a worker's job, that job stops before its next search request,
+and its job stays due with no attempt counted and no retry delay, so it runs
+again right after. A request already sent finishes, and a download always
+finishes, because its link request has already used the supplier's download
+allowance.
+
 ### Choosing a subtitle
 
 The person can also choose a subtitle on request. Download Subtitle, in the Library menu, the row's context menu and the Inspector's

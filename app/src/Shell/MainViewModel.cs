@@ -1304,7 +1304,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         if (torrentIds.Length == 0)
             return;
-        Filter = TorrentFilter.All;
         _revealIds = torrentIds;
         RevealPending();
     }

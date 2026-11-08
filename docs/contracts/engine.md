@@ -222,7 +222,8 @@ state and operation failure; do not promise rollback.
 
 Priority edits and first/last-piece adjustments share the inspector's asynchronous
 priority query. An edit succeeds only when the returned effective priorities match
-the accepted choice. A disk-priority acknowledgement invalidates older samples,
+the accepted choice, or when a newer choice replaces it, because its choice was
+saved. A disk-priority acknowledgement invalidates older samples,
 so an answer sampled before that work cannot settle the edit. No confirmation
 blocks the engine thread; maintenance only retries a still-pending observation.
 

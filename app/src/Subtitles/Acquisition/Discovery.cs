@@ -140,7 +140,7 @@ internal sealed partial class Acquisition
         var entered = false;
         try
         {
-            await _operation.WaitAsync(cancellation).ConfigureAwait(false);
+            await TakeForPerson(cancellation).ConfigureAwait(false);
             entered = true;
             run.Report(new WorkProgress.Unknown(), new WorkExecution.Running());
             var paths = await Run(

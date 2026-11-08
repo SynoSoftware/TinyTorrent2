@@ -414,11 +414,13 @@ The control deliberately has two extension mechanisms, with no overlap:
 | `LayoutChanged` | host event | debounce a persisted layout snapshot | write settings on every pointer movement |
 | `RealizedItemsChanged` | host event | load data only for the rows on screen | treat the list as the visible rows alone |
 
-Policy callbacks are called on the UI thread and MUST be pure, synchronous, and
-cheap. The table never calls them per render frame. Identity and sort keys are
-captured before worker preparation; a sort key is read once per row in a capture.
-Comparisons run on the worker and must not access UI state; captured key values
-must remain stable. `Comparer<TKey>.Default` supplies normal .NET ordering, including enums
+Policy callbacks MUST be pure, synchronous, and cheap. The table never calls
+them per render frame. A sort or layout request reads its sort keys once on the
+UI thread, so a request whose selector fails throws there and changes nothing.
+Every projection reads identity and sort keys on the worker at the start of
+preparation, once per row, from the source snapshot the UI captured; selection
+and hierarchy capture still read identity on the UI thread. Key and sort-key
+selectors and comparisons therefore must not access UI state; captured key values must remain stable. `Comparer<TKey>.Default` supplies normal .NET ordering, including enums
 and nullable keys; default nulls come first ascending. An optional comparer
 expresses domain ordering, such as unknown values last or ordinal text. Preserve
 the host's intended ordering when removing sentinel values. Unsupported key types
@@ -503,10 +505,17 @@ background data marshals a completed update to that queue before changing its
 source. The table does not dispatch, serialize, cancel, or order external
 updates.
 
-Source capture and host selectors stay on the UI thread because the host's rows
-and collections may be UI-owned. TableView then prepares validation, sorting,
-membership holds, pinning, hierarchy projection, position indices and collection
-edits on a worker. One preparation runs per table and later requests coalesce to
+Source capture, hierarchy capture and the policy selectors other than key and
+sort-key selectors stay on the UI thread because the host's collections may be
+UI-owned. TableView then reads identity
+and sort keys once per row and prepares validation, sorting, membership holds,
+pinning, hierarchy projection, position indices and collection edits on a
+worker. Key and sort-key selectors run on that worker for every projection, and
+on the UI thread for the read that validates a sort or layout request and for
+selection and hierarchy identity: they read only state the host publishes
+safely, such as immutable fields, snapshots or volatile values, and never UI
+objects, because reading every row on the UI thread blocks input for the whole
+population on every capture. One preparation runs per table and later requests coalesce to
 the latest source and sort. An obsolete result cannot publish. A change in which
 positions have native containers causes preparation again for those positions,
 so an edit sequence never targets containers different from the ones it captured.

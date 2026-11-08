@@ -64,12 +64,21 @@ Watched paths use the engine's Windows path comparison and retain their original
 spelling for messages; comparison does not rewrite the person's path.
 A successful complete scan forgets sources no longer in that scope; placing a
 source back or selecting a different folder permits admission again. Failed or
-incomplete scans retain the records. The 10,000-source bound applies to files
+incomplete scans retain the records.
+**Owner ruling:** the watched folder is scanned without its subfolders. A
+person can choose a folder as large as `C:\`, and a walk of its subfolders
+would take minutes on every scan, repeat while watching is on, and hold up the
+worker that reads the sources of new additions. A saved choice to include
+subfolders from an earlier version is ignored. A watched folder on a drive or
+share that stops answering holds up nothing else: watching pauses while its
+root does not answer the [root probe](notifications.md), and resumes when it
+answers. After two minutes without an answer, the watch failure notice says
+once that the drive or network share is not responding. The 10,000-source bound applies to files
 currently in that scope, not lifetime imports; exceeding it reports a failure
 and resumes scanning when the folder is reduced. Unrelated files do not consume
 the source limit.
 Scan and save failures are reported once until a successful scan or save. A
-change to the watched folder, its recursive scope or whether watching is on
+change to the watched folder or whether watching is on
 starts a new failure episode, so an earlier folder's failure cannot silence it.
 
 Keep full v1/v2 info hashes and discovered hybrid aliases for content and

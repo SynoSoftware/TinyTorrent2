@@ -53,7 +53,9 @@ public class SortingTests
             SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2 }, configure: table =>
                 table.Schema<SortRow>().SortKey(table.Columns[0], row =>
                 {
-                    Assert.AreEqual(ui, Environment.CurrentManagedThreadId, "Host values must be captured on their owning thread.");
+                    // The request's own projection uses the keys read here. The test
+                    // clears the sort before a later projection could read them on the worker.
+                    Assert.AreEqual(ui, Environment.CurrentManagedThreadId, "A sort request reads its keys on the UI thread.");
                     return row.Rank;
                 }, comparer));
             try
@@ -147,9 +149,12 @@ public class SortingTests
             await h.Table.ViewReady;
             fails = true;
 
-            Expect.Throws<InvalidOperationException>(() =>
-                h.Table.Release(new object[] { removed })
-            );
+            // The release re-projects the accepted sort, so its keys are read on the worker:
+            // the failure faults ViewReady and reaches the UI exception boundary.
+            var failure = TestHost.TrapAsync();
+            h.Table.Release(new object[] { removed });
+            Assert.IsInstanceOfType<InvalidOperationException>(await failure.WaitAsync(TimeSpan.FromSeconds(5)));
+            Assert.IsTrue(h.Table.ViewReady.IsFaulted);
 
             CollectionAssert.AreEqual(new[] { "k0", "k1", "k2" }, h.ViewKeys());
             Assert.IsTrue((bool)Proof.Call(h.Table, "IsHeld", removed)!);

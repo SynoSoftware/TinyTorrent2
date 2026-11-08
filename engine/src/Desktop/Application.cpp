@@ -101,7 +101,8 @@ std::jthread Watchdog(std::chrono::steady_clock::time_point deadline, UINT code)
 
 Application::Application(std::filesystem::path directory, std::wstring sid, bool headless)
     : headless_(headless),
-      power_(strings_)
+      power_(strings_),
+      registrations_([this] { PostMessageW(owner_.get(), wake, 0, 0); })
 {
     auto module = GetModuleHandleW(nullptr);
     std::filesystem::create_directories(directory);
@@ -258,6 +259,7 @@ LRESULT Application::Handle(UINT message, WPARAM first, LPARAM second)
         return 0;
     }
     case wake:
+        registrations_.Drain([](std::exception const&) {});
         Tick();
         return 0;
     case WM_TIMER:
@@ -358,11 +360,23 @@ void Application::Receive(std::shared_ptr<Pipe::Connection> const& client, Json 
                 reply(Failure(ErrorCode::InvalidRequest, "Unknown registration action."));
                 break;
             }
-            auto outcome = registration_.Execute(*action);
-            // A failure also reports what Windows holds, which it kept.
-            auto response = outcome.error ? Failure(*outcome.error, outcome.detail) : Success();
-            response["data"] = registration_.Observe();
-            reply(std::move(response));
+            registrations_.Run([this, action = *action]
+            {
+                auto outcome = registration_.Execute(action);
+                // A failure also reports what Windows holds, which it kept.
+                auto response = outcome.error ? Failure(*outcome.error, outcome.detail) : Success();
+                response["data"] = registration_.Observe();
+                return response;
+            }, [reply](std::expected<Json, StorageOutcome> response)
+            {
+                if (response)
+                {
+                    reply(std::move(*response));
+                    return;
+                }
+                auto failure = response.error().ToOutcome(ErrorCode::RegistrationFailed);
+                reply(Failure(*failure.error, failure.detail));
+            });
             break;
         }
         case Command::Ready:
@@ -787,28 +801,36 @@ void Application::CheckPrograms()
     {
         return;
     }
-    auto reported = activity_.reportedPrograms;
-    std::vector<std::string> fresh;
-    for (auto& program : registration_.MissingPrograms())
+    registrations_.Run([this] { return registration_.MissingPrograms(); },
+        [this](std::expected<std::vector<std::string>, StorageOutcome> missing)
     {
-        if (std::ranges::find(reported, program) == reported.end())
+        if (!missing)
         {
-            fresh.push_back(program);
+            return;
         }
-    }
-    if (fresh.empty())
-    {
-        return;
-    }
-    reported.insert(reported.end(), fresh.begin(), fresh.end());
-    Toast toast{.kind = ToastKind::MissingProgram, .name = fresh.front(),
-        .count = static_cast<unsigned>(fresh.size())};
-    engine_->RecordPrograms(std::move(reported), [this, toast](Outcome outcome)
-    {
-        if (!outcome.error)
+        auto reported = activity_.reportedPrograms;
+        std::vector<std::string> fresh;
+        for (auto& program : *missing)
         {
-            toasts_->Queue(toast);
+            if (std::ranges::find(reported, program) == reported.end())
+            {
+                fresh.push_back(program);
+            }
         }
+        if (fresh.empty())
+        {
+            return;
+        }
+        reported.insert(reported.end(), fresh.begin(), fresh.end());
+        Toast toast{.kind = ToastKind::MissingProgram, .name = fresh.front(),
+            .count = static_cast<unsigned>(fresh.size())};
+        engine_->RecordPrograms(std::move(reported), [this, toast](Outcome outcome)
+        {
+            if (!outcome.error)
+            {
+                toasts_->Queue(toast);
+            }
+        });
     });
 }
 

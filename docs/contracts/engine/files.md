@@ -277,7 +277,8 @@ finished files and restoring wait until no move uses their drive or server;
 Exit does not wait, and
 stops the move between files. A payload
 operation's source and destination paths stay held until its disk work has a
-known outcome.
+known outcome. A rename that hangs on its drive or share shows the
+[location notice](notifications.md) for the torrents it renames.
 
 **Owner ruling:** Adding a torrent never waits for, and is never refused
 because of, another torrent's file work. A person adding a torrent wants it in

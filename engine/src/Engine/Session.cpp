@@ -54,7 +54,7 @@ lt::info_hash_t SavedHashes(std::vector<std::string> const& hashes)
 }
 
 Engine::State::State(std::filesystem::path path, std::function<void()> wake) :
-    directory(std::move(path)), store(wake), sources(wake), checks(wake), trees(wake),
+    directory(std::move(path)), store(wake), sources(wake), checks(wake), trees(wake), watching(wake),
     wake(std::move(wake)), language(settings.language)
 {
     // Without a saved document the engine starts from the default settings.
@@ -887,6 +887,7 @@ Engine::State::~State()
         connectionTest->stop.request_stop();
     checks.Abandon();
     trees.Abandon();
+    watching.Abandon();
 }
 
 void Engine::State::Tick()
@@ -912,6 +913,7 @@ void Engine::State::Tick()
     sources.Drain(failed);
     checks.Drain(failed);
     trees.Drain(failed);
+    watching.Drain(failed);
     if (session)
     {
         std::vector<lt::alert*> alerts;

@@ -15,7 +15,7 @@ stationary-dot draw gaps are 322, 266 and 225 ms against a 16.67 ms frame period
 and the largest overlap inside each round's worst gap is a blocking full garbage
 collection on the UI thread. Relocating work did not move those maxima. The open
 work is the [pending selection correction](#pending-correction-map-selection-preparation),
-then the [one next round](#next-round-size-the-projection-collections-from-known-counts).
+then the [one next round](#next-round-read-row-keys-and-sort-keys-on-the-worker).
 
 Purpose: faster input response and smooth animation, shown by before/after
 evidence on the same workload. Scope: map rendering, interaction and
@@ -77,11 +77,19 @@ thread; detached calculation and native map rendering run elsewhere.
   responsiveness, pause or hide them when it does not, and resume without
   another input when the gesture ends. Stationary dot animation keeps its own
   requirement.
+- **Owner ruling, 8 November: work leaves the UI and drawing threads.** The
+  goal is an app that answers input at once, so work that is not UI or drawing
+  moves off those threads, and optimizing a block that can move is not
+  accepted instead of moving it. The question for each piece of work is which
+  owner it moves to, not whether it can move: the owner whose responsibility it
+  already is, such as an app worker, a library policy or the engine. A move
+  never turns the architecture upside down, for example by making a library
+  depend on the app or the engine depend on the UI.
 - TableView work is eligible only for an operation that can and should move off
   the UI thread: detached inputs, a concrete blocking cost removed, and simpler
-  or equally clear ownership. Native WinUI updates and UI-affine selectors stay
-  on their owner. No publication redesign or broad table investigation, because
-  that redesign was tried, reverted and never attributed.
+  or equally clear ownership. Native WinUI updates stay on their owner. No
+  publication redesign or broad table investigation, because that redesign was
+  tried, reverted and never attributed.
 - Memory is a regression guard, not the goal. Dedicated memory tuning stays
   deferred; flag concrete, blatant waste when attribution shows it.
 - The owner reviews each recorded result before any further performance change,
@@ -195,7 +203,7 @@ the following hold:
 The guaranteed result is the removal of these synchronous scans. It does not
 claim shorter GC pauses or a large-selection latency figure.
 
-## Next round: size the projection collections from known counts
+## Next round: read row keys and sort keys on the worker
 
 What is established. A blocking full collection on the UI thread overlaps most
 of the worst stationary gap in every round:
@@ -217,14 +225,21 @@ candidate. The 1,105,232 handles and 200,468 finalizable objects come from GC
 show that every object is a COM wrapper.
 
 Allocation owners, from the `78fb43f` allocation trace (sampled tick amounts,
-not a census; its README holds the per-owner figures):
+not a census), read by owning frame from its raw ticks and by phase in its
+preserved [phase grouping](../../artifacts/evidence/ui-profile-alloc-current-20261106-78fb43f/phase-grouping.md).
+The journey is 59.3 s; its aggregate phase is 13.6 s with the whole population
+loaded.
 
-| Owner | Sampled allocation | Standing |
-| --- | ---: | --- |
-| TableView projection collections at `Table/View.cs`: UI `CaptureProjection`'s object-to-object entry arrays and integer arrays, worker `Prepare`'s object-to-position and object-set entry arrays | 184 + 33 MiB and 139 + 198 MiB over the journey | Current code. Grown from zero capacity although the counts are known; at stress size every entry array is on the large object heap, and growth allocates a doubling chain of about twice the final size with rehash copies, the UI ones inside `CaptureProjection`. The README names sizing them as the next candidate and says it changes no identity, selection, release, sort or native reconciliation rule. |
-| Inspector `Filter` capture | 92 sampled capture arrays over the journey; 1.25 MiB in the marquee interval | Now one 4.9 MiB value array per capture. The fixture delivers about one reply burst per second, so coalescing captures per burst cannot move an endpoint here. |
-| `MapModel.Update` per-peer objects | the largest owner then | Removed at `fc0916d4` and `6528d57`. |
-| `Dictionary<DestinationKey, Destination>` rebuilt by `MapRenderer.Inspect` every render pass | 6.06 MiB in the marquee interval | About 1,000 entries, generation 0, at pass rate during navigation. |
+| Owner | Thread | Sampled allocation over the journey | Standing |
+| --- | --- | ---: | --- |
+| `Table.CaptureProjection`: the memoized row-key map, built by calling the host's key selector once per row | UI | 184 MiB of entries, 33 MiB of buckets | Moved to the worker by this round. The peers table sets a key, so every capture read 159,810 keys on the UI thread into a map grown from zero capacity. |
+| `Schema.SortKey` capture: the sort-key map, built by calling the host's sort selector once per row | UI | 19.5 MiB of entries, 3.8 MiB of buckets | Moved to the worker by this round. |
+| `Body.Projection.Prepare`: uniqueness and source-key sets, position map | worker | 198 MiB of set entries, 139 MiB of position entries, 78 MiB of buckets | Sized from their counts by this round, which removes the doubling chains; they never blocked the UI. |
+| `Body.View.Apply`: COM-wrapper holder arrays | UI | 51 MiB | The .NET 10 duplicate-bookkeeping defect, removed by the runtime option at `75af850`. |
+| `Peer[]` replacement lists in `ApplyPeers` reconciliation | worker | 119 MiB in the aggregate phase | No correction selected. |
+| Inspector `Filter` capture | worker | about 24 captures in the aggregate phase, 1.7 per second | One 4.9 MiB value array per capture. The fixture delivers about one reply burst per second, so coalescing captures per burst cannot move an endpoint here. |
+| `MapModel.Update` per-peer objects | worker | 209 MiB | Removed at `fc0916d4` and `6528d57`. |
+| `Dictionary<DestinationKey, Destination>` rebuilt by `MapRenderer.Inspect` every render pass | render worker | 137 MiB | About 1,000 entries, generation 0, at pass rate during navigation. |
 
 Issues [573](https://github.com/SynoSoftware/TinyTorrent2/issues/573) and
 [578](https://github.com/SynoSoftware/TinyTorrent2/issues/578) are therefore
@@ -233,24 +248,39 @@ the engine answers one torrent at a time, and the geolocation sets are real
 when geolocation runs, but this fixture shows neither. They ride in the next
 build without a predicted endpoint.
 
-The measured change, after the selection correction lands: give the UI identity
-map, the worker uniqueness set and the position map at `Table/View.cs` their
-capacity from the counts already available. Capacity only: no publication
-redesign, no relocation, no behavior change. This is outside the letter of the
-TableView fence above, because it moves nothing off the UI thread, and inside
-its reason, because it reopens no design and the trace attributes it. The fence
-is the owner's, so this one-change exception needs the owner's yes. Without it,
-this round is the conditional heap snapshot below, and the capacity change is
-recorded here as the largest measured churn owner awaiting that decision.
+The change, implemented in the working tree after the selection correction,
+[issue 579](https://github.com/SynoSoftware/TinyTorrent2/issues/579): the
+projection worker reads the host's row key and sort keys itself, once per row,
+from the source snapshot the UI captured. `Table.CaptureProjection` captures
+only UI-affine state (the source snapshot, displayed rows, realized indices,
+hierarchy state and holds) and passes the raw selectors; `Body.Projection`
+memoizes the keys and builds the sort comparer, and sizes its collections from
+the counts they fill. One UI-thread read stays: a sort or layout request reads
+its keys once when it is made, so a request whose selector fails is rejected
+before the table changes, as the contract and its tests require; every later
+projection of the accepted sort, which is the per-update path, reads on the
+worker. Hosts are unchanged. This meets the TableView fence as written: detached inputs, a
+concrete blocking cost removed, and clearer ownership, since the worker now
+prepares everything from one captured snapshot.
+
+The contract changes with it: key and sort-key selectors run on the worker and
+read only state the host publishes safely, never UI objects. Every host
+selector was audited: the peers table's key and sort keys read readonly fields
+and the volatile record snapshot the map already reads off-thread; torrent and
+tracker selectors read plain properties written on the UI thread, where a
+stale read sorts a row by its previous value until the next update; file nodes,
+Library entries, the sample and the tests read plain or immutable data.
 
 Predicted endpoints, one build and one matched city/1,000 docked run against
-the step-1 build as reference: induced full-collection count and total GC
-suspension down; UI `CaptureProjection` elapsed (an existing in-app marker)
-down; click-to-XAML p95 down; peak private commitment not up. Issues 573 and
-578 ride in the same build because the fixture cannot see either, so they
-cannot confound the comparison. Issue 575 and the `Inspect` dictionary rebuild
-wait, because they touch the measured draw path. Pass or fail is recorded once
-under [deciding a correction](#deciding-a-correction); a fail ends the round.
+the step-1 build as reference: click-to-XAML p95 and command-delivery worst
+down, because the per-row capture no longer runs inside the UI turn that
+follows a click or a peer update; induced full-collection count, total GC
+suspension and peak private commitment not up, since the same bytes move to the
+worker minus the doubling chains. Issues 573 and 578 ride in the same build
+because the fixture cannot see either, so they cannot confound the comparison.
+Issue 575 and the `Inspect` dictionary rebuild wait, because they touch the
+measured draw path. Pass or fail is recorded once under
+[deciding a correction](#deciding-a-correction); a fail ends the round.
 
 Conditional diagnostics, not stages:
 
@@ -267,10 +297,10 @@ Conditional diagnostics, not stages:
   publication, which lifts the TableView fence and needs that attribution
   first. The 249 ms endpoint is click-to-XAML completion, not visible selection.
 
-Why this round and not another relocation: the thread-work objective is
-complete, four rounds that changed code without a predicted endpoint ended
-mixed, and this is the largest allocation owner the existing trace measures.
-It is a capacity argument that names what it should move.
+Why this round: it is the one population-sized piece of work the trace still
+shows on the UI thread, it leaves under the owner's ruling above, and the map's
+thread-work objective is already complete. Sizing the worker's collections rides
+along because the same change already owns them.
 
 ## Follow-ups, not steps
 

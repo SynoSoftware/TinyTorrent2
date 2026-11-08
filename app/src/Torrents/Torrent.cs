@@ -101,17 +101,22 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
     // The name of the torrent whose file work a waiting move waits for, when
     // its drives are free.
     public string WaitingFiles { get; private set; } = string.Empty;
+    // The waiting work, left unfinished at the last exit, waits for the
+    // person to continue or abandon it.
+    public bool WaitingAnswer { get; private set; }
     public string? StatusTip
     {
         get
         {
-            var detail = WaitingDrive.Length == 0
-                ? WaitingFiles.Length == 0
-                    ? null
-                    : strings.Format("status", "waiting_for_files", WaitingFiles)
-                : nameOf(WaitingTorrentId) is { } holder
-                    ? strings.Format("status", "waiting_for_torrent", WaitingDrive, holder)
-                    : strings.Format("status", "waiting_for", WaitingDrive);
+            var detail = WaitingAnswer
+                ? strings.Get("status", "waiting_for_answer")
+                : WaitingDrive.Length == 0
+                    ? WaitingFiles.Length == 0
+                        ? null
+                        : strings.Format("status", "waiting_for_files", WaitingFiles)
+                    : nameOf(WaitingTorrentId) is { } holder
+                        ? strings.Format("status", "waiting_for_torrent", WaitingDrive, holder)
+                        : strings.Format("status", "waiting_for", WaitingDrive);
             if (!IsWaiting)
                 return detail;
             var waiting = StateText;
@@ -327,6 +332,7 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
         WaitingDrive = ReadText("waiting_drive", WaitingDrive);
         WaitingTorrentId = ReadText("waiting_torrent_id", WaitingTorrentId);
         WaitingFiles = ReadText("waiting_files", WaitingFiles);
+        WaitingAnswer = Set(WaitingAnswer, row.GetProperty("waiting_answer").GetBoolean());
         DownloadRate = Set(DownloadRate, row.GetProperty("download_rate").GetDouble());
         UploadRate = Set(UploadRate, row.GetProperty("upload_rate").GetDouble());
         ErrorCode = ReadText("error", ErrorCode);

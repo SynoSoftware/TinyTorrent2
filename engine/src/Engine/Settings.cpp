@@ -344,7 +344,6 @@ void Engine::State::Settings::Fields(Self& settings, Visit&& visit)
     visit("seed_rule", settings.seedRule, Words{seedRules});
     visit("watch", settings.watches, Bool{});
     visit("watch_path", settings.watchPath, Text{.valid = optionalFolder});
-    visit("watch_recursive", settings.watchesRecursively, Bool{});
     visit("watch_destination", settings.watchDestination, Text{.valid = optionalFolder});
     visit("recheck_finished", settings.rechecksFinished, Bool{});
     visit(setting::incompleteFolder, settings.incompleteFolder, Text{.valid = folder});
@@ -725,21 +724,25 @@ void Engine::State::SaveSettings(Settings next, std::function<void()> settled, s
             completion(std::move(outcome));
             return;
         }
-        // The connection test runs only without a proxy or adapter, so choosing
-        // either ends it.
-        if (connectionTest && (settings.proxy != next.proxy || settings.networkAdapter != next.networkAdapter))
-            ReleaseConnectionTest(connectionTest->connectionId, ConnectionPhase::Cancelled);
+        bool routeChanged = settings.proxy != next.proxy || settings.networkAdapter != next.networkAdapter;
         if (settings.scheduleEnabled != next.scheduleEnabled)
         {
             limitOverride.reset();
         }
-        if (settings.watches != next.watches || settings.watchPath != next.watchPath ||
-            settings.watchesRecursively != next.watchesRecursively)
+        if (settings.watches != next.watches || settings.watchPath != next.watchPath)
         {
             watchFailed = false;
             watchSaveFailed = false;
+            // A scan of the earlier choice can wait for a share that does not
+            // answer; it ends now, so the new choice is watched at once.
+            watching.Interrupt();
         }
         settings = next;
+        // The connection test runs only without a proxy or adapter, so choosing
+        // either ends it. It ends after the new settings are in place, so the
+        // session resumes on the new route and never on the old one.
+        if (connectionTest && routeChanged)
+            ReleaseConnectionTest(connectionTest->connectionId, ConnectionPhase::Cancelled);
         RefreshPolicy();
         finish();
     });

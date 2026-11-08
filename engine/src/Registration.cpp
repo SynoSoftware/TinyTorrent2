@@ -271,8 +271,10 @@ Copy Identify(std::wstring const& command)
     {
         return Copy::Other;
     }
-    // Only the owner thread enters here; a timed-out lookup must finish
-    // before another starts, without making shutdown wait for blocked I/O.
+    // One thread at a time enters here: the start before the engine runs,
+    // then the application's registration worker. A timed-out lookup must
+    // finish before another starts, without making shutdown wait for
+    // blocked I/O.
     static std::future<Copy> pending;
     if (pending.valid() && pending.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
     {

@@ -33,7 +33,14 @@ void SpeedHistory::Range::Sample(std::int64_t time, double download, double uplo
     if (bucket.count || !points.empty())
     {
         auto previous = bucket.count ? bucket.time : std::int64_t(points.back().time);
-        if (time <= previous)
+        // Ticks are a steady second apart but dated by the wall clock, which
+        // can slew or step back by less than a second, so two ticks can carry
+        // the same second; that second already has its sample.
+        if (time == previous)
+            return;
+        // A clock that steps back restarts the history, because points dated
+        // ahead of the clock would stop the history until it catches up.
+        if (time < previous)
         {
             points.clear();
             bucket = {};

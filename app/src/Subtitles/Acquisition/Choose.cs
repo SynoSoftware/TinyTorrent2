@@ -23,7 +23,7 @@ internal sealed partial class Acquisition
             _lifetime.Token,
             cancellation
         );
-        await _operation.WaitAsync(pending.Token).ConfigureAwait(false);
+        await TakeForPerson(pending.Token).ConfigureAwait(false);
         try
         {
             if (
@@ -97,7 +97,7 @@ internal sealed partial class Acquisition
             _lifetime.Token,
             cancellation
         );
-        await _operation.WaitAsync(pending.Token).ConfigureAwait(false);
+        await TakeForPerson(pending.Token).ConfigureAwait(false);
         try
         {
             if (

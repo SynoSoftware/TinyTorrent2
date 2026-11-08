@@ -20,6 +20,7 @@ internal sealed class Projection
     internal sealed record Ordering
     {
         internal IComparer<object>? Comparer { get; init; }
+        internal Func<IReadOnlyCollection<object>, IComparer<object>>? Capture { get; init; }
         internal SortDirection Direction { get; init; }
         internal bool Local { get; init; }
         internal bool Reorders { get; init; }
@@ -64,6 +65,7 @@ internal sealed class Projection
     private readonly Input _input;
     private readonly IReadOnlyList<object> _view;
     private readonly ItemIdentity _identity;
+    private readonly IComparer<object>? _comparer;
     private readonly Dictionary<object, (bool Present, long Named)> _released;
     private readonly HashSet<object> _held;
     private readonly Hierarchy.Snapshot? _hierarchy;
@@ -75,12 +77,43 @@ internal sealed class Projection
     {
         _input = input;
         _view = input.Rows.Displayed;
-        _identity = input.Rows.Identity;
+        _hierarchy = input.Rows.Hierarchy;
+        _identity = CaptureKeys(input.Rows, input.Holding);
+        // A sort request read its keys on the UI thread so a failing selector rejects the
+        // request before the table changes; every later projection reads them here.
+        IReadOnlyCollection<object> sortable = _hierarchy is null ? input.Rows.Source : _hierarchy.Nodes.Keys;
+        _comparer = input.Ordering.Comparer ?? input.Ordering.Capture?.Invoke(sortable);
         _released = new(input.Holding.Released, _identity);
         _held = new(_identity);
-        _hierarchy = input.Rows.Hierarchy;
         _nodes = _hierarchy?.Nodes.Values.ToDictionary(node => node.Item, ReferenceEqualityComparer.Instance);
         _orderSettledAt = input.Ordering.SettledAt;
+    }
+
+    /// <summary>
+    /// Reads the host's row key once for every row preparation can touch, so identity
+    /// comparisons never call the selector again. Without a key selector, identity is the row
+    /// reference and nothing is read.
+    /// </summary>
+    private static ItemIdentity CaptureKeys(Rows rows, Holding holding)
+    {
+        if (rows.Identity.KeySelector is not { } key)
+            return rows.Identity;
+        IReadOnlyCollection<object> keyed = rows.Hierarchy is { } hierarchy ? hierarchy.Nodes.Keys : rows.Source;
+        var keys = new Dictionary<object, object>(
+            Math.Max(keyed.Count, rows.Displayed.Count), ReferenceEqualityComparer.Instance);
+        var all = keyed.Concat(rows.Displayed)
+            .Concat(rows.PreviousHierarchy?.Nodes.Keys ?? Enumerable.Empty<object>()).Concat(holding.Released.Keys)
+            .Concat(holding.Releases.SelectMany(release => release.Items.Concat(release.Source).Concat(release.Displayed)));
+        foreach (var item in all)
+        {
+            if (keys.ContainsKey(item))
+                continue;
+            // Checked before the selector casts the row, so a wrong row type reports itself.
+            if (rows.RowType is not null && !rows.RowType.IsInstanceOfType(item))
+                throw new InvalidOperationException($"The source contains a row outside {rows.RowType}.");
+            keys[item] = key(item);
+        }
+        return new ItemIdentity { KeySelector = item => keys[item], KeyComparer = rows.Identity.KeyComparer };
     }
 
     private bool SortsLocally => _input.Ordering.Local;
@@ -95,7 +128,7 @@ internal sealed class Projection
     {
         var rows = _input.Rows;
         var source = _hierarchy is null ? rows.Source : Project(null);
-        var unique = new HashSet<object>(_identity);
+        var unique = new HashSet<object>(_hierarchy is null ? source.Count : _nodes!.Count, _identity);
         foreach (var item in _hierarchy is null ? source : _nodes!.Keys)
         {
             if (rows.RowType is not null && !rows.RowType.IsInstanceOfType(item))
@@ -126,7 +159,7 @@ internal sealed class Projection
         var changes = new Changes(_view, _identity);
         changes.Prepare(order, _input.Realized, pinned);
         var comparer = _identity.KeySelector is null ? ReferenceEqualityComparer.Instance : _identity.KeyComparer;
-        var positions = new Dictionary<object, (int Index, int Sibling)>(comparer);
+        var positions = new Dictionary<object, (int Index, int Sibling)>(order.Count, comparer);
         var counts = new Dictionary<object, int>(_identity);
         int roots = 0;
         for (int index = 0; index < order.Count; index++)
@@ -142,11 +175,14 @@ internal sealed class Projection
             }
             positions.Add(KeyOf(item), (index, sibling));
         }
+        var sourceKeys = new HashSet<object>(source.Count, comparer);
+        foreach (var item in source)
+            sourceKeys.Add(KeyOf(item));
         return new Prepared
         {
             Order = order,
             Held = _held.Select(KeyOf).ToHashSet(comparer),
-            SourceKeys = source.Select(KeyOf).ToHashSet(comparer),
+            SourceKeys = sourceKeys,
             Released = _released,
             Positions = positions,
             Changes = changes,
@@ -184,8 +220,8 @@ internal sealed class Projection
     private IReadOnlyList<object> SortedSnapshot(IReadOnlyList<object> source)
     {
         if (_hierarchy is not null)
-            return Project(_input.Ordering.Comparer);
-        return Order(source, _input.Ordering.Comparer).ToArray();
+            return Project(_comparer);
+        return Order(source, _comparer).ToArray();
     }
 
     private IEnumerable<object> Order(IReadOnlyList<object> rows, IComparer<object>? comparer) =>

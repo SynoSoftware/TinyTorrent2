@@ -122,17 +122,7 @@ public sealed partial class MainWindow : Window
             )
                 Torrents.RefreshView();
         };
-        Model.RevealRequested += async (_, torrents) =>
-        {
-            if (_interaction is { } interaction)
-                await interaction.Completion.Task;
-            if (!await ShowTorrents())
-                return;
-            // An added or found torrent is the person's, so it is shown now, not at the settle.
-            Torrents.Release(torrents);
-            Torrents.ScrollIntoView(torrents[^1], torrents);
-            await SelectTorrent(new Syno.TableView.Selection(torrents, torrents[^1]));
-        };
+        Model.RevealRequested += async (_, torrents) => await RevealTorrents(torrents, keepsBack: false);
         Model.ReleaseRequested += (_, torrents) => Torrents.Release(torrents);
         Model.SettingsRequested += async (_, target) => await ShowSettings(target);
         Model.TorrentsRequested += async (_, _) => await ShowTorrents();
