@@ -67,13 +67,12 @@ It also owns the native peer map and its estimated country distribution.
 The contract also owns moving dots, activity fades, the configurable fastest-arc
 limit and retained, budgeted map preparation. GitHub tracks remaining map defects.
 
-The [rendering and selection plan](plans/17-rendering-and-selection.md) records
-the implemented map handoff, presentation before complete detail and relevant
-render work. It prioritizes stall attribution against the heavier 50-torrent
-baseline, including memory, and retains the displayed-state/selection corrections,
-investigation evidence and [visual review](plans/17-rendering-and-selection-review.html).
-The design grill is complete. Measured stall fixes, remaining corrections and
-controlled benchmark acceptance, including next-frame selection, remain open.
+The [rendering and selection plan](plans/17-rendering-and-selection.md) holds
+the open map performance work: the preserved map handoff and settled decisions,
+the pending map-selection correction, acceptance on the harness's existing
+response and draw endpoints, the one next measured round and links to the
+recorded comparisons.
+Responsiveness acceptance is open.
 
 [Licences](contracts/licences.md) holds release rights, provider attribution and the
 unresolved distribution questions.
