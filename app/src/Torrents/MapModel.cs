@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.ComponentModel;
 using System.Numerics;
 using Syno.TinyTorrent.Shared;
@@ -9,6 +10,7 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
 {
     private Population _population = new(owner.PeerSubject, []);
     internal object Subject => owner.PeerSubject;
+    internal int PeerVersion => owner.PeerVersion;
     internal Dictionary<string, Group> Countries { get; private set; } = [];
     internal List<Destination> Destinations { get; private set; } = [];
     internal Location? Origin { get; private set; }
@@ -64,6 +66,11 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
 
     internal sealed record Population(object Subject, Observation[] Observations);
 
+    internal sealed record Selection(bool HasPeers, bool Cities, FrozenDictionary<PeerPlace, int> Counts)
+    {
+        internal static readonly Selection Empty = new(false, false, FrozenDictionary<PeerPlace, int>.Empty);
+    }
+
     internal sealed record Snapshot(Observation[] Observations, Location? Origin, Strings Text, bool Cities, double Ceiling)
     {
         internal required object Subject { get; init; }
@@ -79,24 +86,15 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
         internal float Meridian => (float)(Origin?.Longitude ?? 0);
         internal bool Cities { get; init; }
 
-        internal Dictionary<PeerPlace, int> Marks(IReadOnlyList<Location?> selected)
+        internal Dictionary<PeerPlace, int> Marks(Selection selected)
         {
-            if (selected.Count == 0)
+            if (selected.Counts.Count == 0)
                 return [];
-            Dictionary<PeerPlace, int> counts = [];
-            foreach (var location in selected)
-            {
-                if (location is not null)
-                {
-                    var place = PeerPlace.Of(location, Cities);
-                    counts[place] = counts.GetValueOrDefault(place) + 1;
-                }
-            }
             Dictionary<PeerPlace, int> marks = [];
             foreach (var destination in Destinations)
             {
                 var group = destination.Group;
-                if (!marks.ContainsKey(group.Place) && counts.TryGetValue(group.Place, out var count))
+                if (!marks.ContainsKey(group.Place) && selected.Counts.TryGetValue(group.Place, out var count))
                     marks[group.Place] = group.Regions.Length == 0 ? 1 : Reach(group.Regions, count);
             }
             return marks;

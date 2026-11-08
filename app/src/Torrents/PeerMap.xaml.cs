@@ -34,8 +34,6 @@ public sealed partial class PeerMap : UserControl
     private Color? _underlay;
     private string _language = string.Empty;
     private Destination? _selected;
-    private IReadOnlyList<Peer> _selectedPeers = [];
-    private (Peer Peer, Location? Location)[] _selection = [];
     private Destination? _pointed;
     private long _dotBytes = MapMotion.SmallestDot;
     private MapAnimation _animation = MapAnimation.Normal;
@@ -183,7 +181,7 @@ public sealed partial class PeerMap : UserControl
     /// Highlights the locations of the peers selected in the table. The location
     /// chosen on the map stays chosen.
     /// </summary>
-    internal void Select(IReadOnlyList<Peer> peers)
+    internal void Select(IReadOnlyList<object> peers)
     {
         if (ReferenceEquals(_selectedPeers, peers) && _pointed is null)
             return;
@@ -215,7 +213,6 @@ public sealed partial class PeerMap : UserControl
             Invalidate();
             return;
         }
-        CaptureSelection();
         if (_presentation is { } presentation && presentation.Subject != _model.Subject)
         {
             _selected = _pointed = null;
@@ -227,6 +224,7 @@ public sealed partial class PeerMap : UserControl
             _pointed = null;
             _motion?.CancelDrawing();
         }
+        CaptureSelection();
         QueuePreparation();
     }
 
@@ -235,6 +233,7 @@ public sealed partial class PeerMap : UserControl
         var loading = new object();
         _loading = loading;
         _model.PropertyChanged += OnModelChanged;
+        CaptureSelection();
         WatchSettings();
         RefreshNavigation();
         try
@@ -431,7 +430,8 @@ public sealed partial class PeerMap : UserControl
                 Download = Colour(Download.Background),
                 Upload = Colour(Upload.Background),
             },
-            Selection = _selection,
+            Selection = !_selection.HasPeers || presentation.Cities == _selection.Cities
+                ? _selection : MapModel.Selection.Empty,
             Chosen = _selected?.Key,
             Pointed = _pointed?.Key,
             Place = _model.Place,
@@ -561,23 +561,6 @@ public sealed partial class PeerMap : UserControl
         displayed ??= Displayed;
         AutomationProperties.SetHelpText(this, _model.Describe(Inspected(displayed)) + " " + text.Get("peer_map", "keyboard"));
         DescribedChanged?.Invoke(this, EventArgs.Empty);
-    }
-
-    /// <summary>The peers selected in the table; their places are marked.</summary>
-    private void SelectPeers(IReadOnlyList<Peer> peers)
-    {
-        _selectedPeers = peers;
-        CaptureSelection();
-    }
-
-    private void CaptureSelection()
-    {
-        var changed = _selection.Length != _selectedPeers.Count;
-        for (var index = 0; !changed && index < _selection.Length; index++)
-            changed = !ReferenceEquals(_selection[index].Peer, _selectedPeers[index])
-                || _selection[index].Location != _selectedPeers[index].Location;
-        if (changed)
-            _selection = _selectedPeers.Select(peer => (peer, peer.Location)).ToArray();
     }
 
 }

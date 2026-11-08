@@ -32,6 +32,7 @@ public sealed partial class Inspector
     internal event EventHandler<IReadOnlyList<Peer>>? PeersReleased;
 
     internal MapModel Map => field ??= new MapModel(this);
+    internal int PeerVersion => _filterVersion;
 
     internal void UpdateMap(bool cities)
     {

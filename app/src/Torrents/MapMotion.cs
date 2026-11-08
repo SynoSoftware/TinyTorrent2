@@ -175,7 +175,7 @@ internal sealed class MapMotion : IDisposable
     {
         internal required Presentation Model { get; init; }
         internal required MapRenderer.Palette Palette { get; init; }
-        internal required (Peer Peer, Location? Location)[] Selection { get; init; }
+        internal required MapModel.Selection Selection { get; init; }
         internal DestinationKey? Chosen { get; init; }
         internal DestinationKey? Pointed { get; init; }
         internal PeerPlace? Place { get; init; }
@@ -607,11 +607,11 @@ internal sealed class MapMotion : IDisposable
         var modelChanged = !ReferenceEquals(input.Model, previous?.Model);
         if (modelChanged || !ReferenceEquals(input.Selection, previous?.Selection))
         {
-            var marks = input.Model.Marks(input.Selection.Select(item => item.Location).ToArray());
+            var marks = input.Model.Marks(input.Selection);
             if (marks.Count != _marks.Count || marks.Any(mark => _marks.GetValueOrDefault(mark.Key) != mark.Value))
                 _marks = marks;
             var marking = new MapRenderer.Highlight(null, _marks, null);
-            var selected = input.Selection.Length == 0 ? null : input.Model.Destinations
+            var selected = !input.Selection.HasPeers ? null : input.Model.Destinations
                 .Where(marking.IsSelected).Select(destination => destination.Key).ToHashSet();
             if (selected is null || _selection is null || !_selection.SetEquals(selected))
                 _selection = selected;

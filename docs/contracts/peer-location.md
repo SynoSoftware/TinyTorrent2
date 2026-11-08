@@ -88,12 +88,18 @@ publish prepared facts. Map settings reuse the accepted snapshot. `MapModel`
 takes this detached population without enumerating peers or relabelling an old subject. One
 serialized `MapWork` worker owns grouping and estimated distribution. It
 publishes detached group copies that nobody subsequently mutates. The UI
-captures size, appearance and selection; `MapMotion`'s dedicated render worker
+captures size, appearance and selection intent; `MapMotion`'s dedicated render worker
 owns native geometry, route resources and cached pictures. Its Win2D game loop
 presents completed pictures, fixed-DIP markers and dots. Aggregation and native
 rendering never run on the UI thread. Neither reads live peers.
-Table selection publishes captured peer locations independently of aggregation,
-so the next map frame can highlight them while peer preparation is pending.
+Table selection passes its immutable packet without a UI copy. PeerMap counts
+selected places on the thread pool, independently of aggregation, with one active
+task and one latest request. It accepts only the current peer generation,
+selection, subject, detail and map lifetime; clearing is immediate and unload
+does not join the task. Accepted immutable place counts reach the render worker
+through the existing handoff, where estimated destinations are resolved. Neither
+UI nor presentation scans the selected peers, and blocked grouping cannot block
+their highlights.
 Hit testing reads detached line segments from the same sampled arcs that draw;
 it neither creates nor releases native geometry on the UI thread.
 `MapViewport` supplies detached transforms for preparation and inspection.

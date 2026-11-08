@@ -434,6 +434,40 @@ public sealed partial class MainWindow
                     outcomes.Add(new { journey = "map equivalent torrent switch", redrawn = false });
                     if (!paused)
                     {
+                        map.Select([peer]);
+                        await Until(() => Read<MapModel.Selection>(map, "_selection").HasPeers
+                            && !Read<bool>(map, "_selecting"), "Selected peer places did not prepare.");
+                        map.Select([]);
+                        var selecting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                        using var selectedRelease = new ManualResetEventSlim();
+                        map.PreparingSelection = () =>
+                        {
+                            if (DispatcherQueue.HasThreadAccess)
+                                throw new InvalidOperationException("Selected peer places ran on the UI thread.");
+                            selecting.TrySetResult();
+                            if (!selectedRelease.Wait(TimeSpan.FromSeconds(5)))
+                                throw new TimeoutException("The selection fixture did not release its worker.");
+                        };
+                        try
+                        {
+                            map.Select([peer]);
+                            await selecting.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                            map.Select([MakePeer(0)]);
+                            map.Select([]);
+                            if (Read<MapModel.Selection>(map, "_selection").HasPeers)
+                                throw new InvalidOperationException("Clearing selection waited for preparation.");
+                        }
+                        finally
+                        {
+                            map.PreparingSelection = null;
+                            selectedRelease.Set();
+                            await Until(() => !Read<bool>(map, "_selecting"), "Obsolete selection preparation did not finish.");
+                        }
+                        var cleared = Read<MapModel.Selection>(map, "_selection");
+                        if (cleared.HasPeers || cleared.Counts.Count != 0)
+                            throw new InvalidOperationException("Obsolete preparation restored cleared map marks.");
+                        outcomes.Add(new { journey = "map stale selection preparation", workerThread = true,
+                            immediateClear = true, obsoleteMarksRejected = true });
                         var chosen = model.Destinations[0];
                         map.PlaceChanged += (_, place) => owner.Place = place;
                         typeof(PeerMap).GetMethod("Choose", Flags)!.Invoke(map, [chosen, CaptureDisplay(map)]);
@@ -2089,7 +2123,7 @@ public sealed partial class MainWindow
                             var clickStart = CaptureCycles.Current();
                             var displayed = CaptureDisplay(drawing)!;
                             var hit = displayed.Inspection.HitTest(point, displayed.View);
-                            selectPeers.Invoke(drawing, [Array.Empty<Peer>()]);
+                            selectPeers.Invoke(drawing, [Array.Empty<object>()]);
                             choose.Invoke(drawing, [hit, displayed]);
                             describe.Invoke(drawing, [displayed]);
                             redraw.Invoke(drawing, null);

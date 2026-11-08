@@ -35,7 +35,7 @@ public sealed partial class InspectorPane
                     .TransformPoint(args.Position ?? new Point(0, args.Target.ActualHeight))
             );
         Peers.SelectionChanged += (_, selection) =>
-            _peerMap?.Select(selection.Items.OfType<Peer>().ToArray());
+            _peerMap?.Select(selection.Items);
         PeerSplit.ValueChanged += (_, value) =>
         {
             if (_arrangingPeers)
@@ -324,7 +324,7 @@ public sealed partial class InspectorPane
                 if (_peerMap is null)
                 {
                     _peerMap = new PeerMap(Model.Map);
-                    _peerMap.Select(Peers.Selection.Items.OfType<Peer>().ToArray());
+                    _peerMap.Select(Peers.Selection.Items);
                     _peerMap.PlaceChanged += (_, place) => ChoosePlace(place);
                     _peerMap.DotBytesChanged += (_, _) => ShowSpeedLine();
                     _peerMap.DescribedChanged += (_, _) => ShowSpeedLine();
