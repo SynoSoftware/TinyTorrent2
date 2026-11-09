@@ -74,6 +74,10 @@ response and draw endpoints, the one next measured round and links to the
 recorded comparisons.
 Responsiveness acceptance is open.
 
+The [keep-up plan](plans/18-keep-up-with-the-person.md) holds the click-first
+work: the map drawn land first, then connections, then unconnected places, and
+the lost presses.
+
 [Licences](contracts/licences.md) holds release rights, provider attribution and the
 unresolved distribution questions.
 

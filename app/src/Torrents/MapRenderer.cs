@@ -38,6 +38,8 @@ internal sealed class MapRenderer : IDisposable
     private readonly Dictionary<string, float> _countryStarts = [];
     private readonly Dictionary<string, float> _countryTargets = [];
     private readonly List<Route> _routes = [];
+    // The routes that draw an arc: the active ones with the highest rates, up to the limit.
+    private HashSet<Route> _shown = [];
     private readonly Dictionary<DestinationKey, float> _displayed = [];
     private MapMotion.Traffic? _traffic;
     private (Color Download, Color Upload) _dotColours;
@@ -191,6 +193,7 @@ internal sealed class MapRenderer : IDisposable
         foreach (var destination in _routes)
             destination.Release();
         _routes.Clear();
+        _shown.Clear();
         _traffic = null;
         _originMask?.Dispose();
         _originMask = null;
@@ -204,6 +207,22 @@ internal sealed class MapRenderer : IDisposable
 
     /// <returns>Whether the map changed, so it must be drawn again.</returns>
     internal bool Prepare(CancellationToken cancellation = default)
+    {
+        var changed = PrepareRoutes();
+        PrepareArcs(cancellation);
+        // A redraw hands the dots their scene; without one they take the new
+        // rates here.
+        if (!changed)
+            ShowDots();
+        return changed;
+    }
+
+    /// <summary>
+    /// The part of <see cref="Prepare"/> that the land needs: the routes, the ones that show an
+    /// arc, the glow's arrangement and the activity fade. <see cref="PrepareArcs"/> builds the arcs.
+    /// </summary>
+    /// <returns>Whether the map changed, so it must be drawn again.</returns>
+    internal bool PrepareRoutes()
     {
         var next = NextStep();
         var origin = _model.Origin;
@@ -243,35 +262,20 @@ internal sealed class MapRenderer : IDisposable
         if (previous is not null)
             foreach (var route in previous.Values)
                 route.Release();
-        var shown = _routes.Where(route => origin is not null && route.Destination.Group.Active > 0)
+        _shown = _routes.Where(route => origin is not null && route.Destination.Group.Active > 0)
             .OrderByDescending(route => route.Destination.Rate)
             .Take(ArcLimit)
             .ToHashSet();
         var originChanged = origin != _arcOrigin;
         foreach (var route in _routes)
-            if (originChanged || !shown.Contains(route))
+            if (originChanged || !_shown.Contains(route))
                 route.Release();
         _arcOrigin = origin;
         if (originChanged)
             _arrangement++;
-        foreach (var route in _routes)
-        {
-            cancellation.ThrowIfCancellationRequested();
-            if (route.Arc is null && origin is { } source && shown.Contains(route))
-            {
-                route.Path = new GreatCircle(source, route.Destination.Point);
-                route.Arc = Arc(route.Path, _viewport.Scale, out var degrees, out var segments);
-                route.Segments = segments;
-                route.Scale = _viewport.Scale;
-                route.Degrees = degrees;
-#if CAPTURE
-                RoutePrepared?.Invoke(cancellation);
-#endif
-            }
-        }
         // A rate change alone keeps the glow until its strengths change.
         var arranged = _routes
-            .Select(route => Arranged.Of(route.Destination.Key, route.Destination.Group, route.Arc is not null))
+            .Select(route => Arranged.Of(route.Destination.Key, route.Destination.Group, _shown.Contains(route)))
             .Concat(_model.Countries.Values
                 .Where(group => group.Estimated)
                 .Select(group => Arranged.Of(new DestinationKey(group.Code, null, true), group, false)))
@@ -279,7 +283,7 @@ internal sealed class MapRenderer : IDisposable
         if (!arranged.SequenceEqual(_arranged))
             _arrangement++;
         _arranged = arranged;
-        _originOpacity = OriginOpacity(_routes.Count(route => route.Arc is not null));
+        _originOpacity = OriginOpacity(_shown.Count);
         if (!retained)
         {
             var keys = _model.Destinations.Select(destination => destination.Key)
@@ -290,7 +294,7 @@ internal sealed class MapRenderer : IDisposable
         _started = Stopwatch.GetTimestamp();
         var change = _routes
             .Where(route =>
-                route.Arc is not null || route.Destination.Group.Estimated && route.Destination.Group.Active > 0)
+                _shown.Contains(route) || route.Destination.Group.Estimated && route.Destination.Group.Active > 0)
             .Select(route => Math.Abs(route.Strength - route.Start))
             .Concat(_model.Countries.Values
                 .Where(group => group.Estimated && group.Active > 0)
@@ -319,6 +323,30 @@ internal sealed class MapRenderer : IDisposable
         if (change > 0)
             _glowInputs = null;
         _shownProgress = Progress;
+        _prepared = true;
+        // A fade redraws at its own steps, starting from the drawn strengths.
+        return !prepared || _arrangement != arrangement
+            || change > 0 && (!_interpolating || _shownProgress > 0);
+    }
+
+    /// <summary>Builds the arcs that <see cref="PrepareRoutes"/> chose to show, and their traffic.</summary>
+    internal void PrepareArcs(CancellationToken cancellation)
+    {
+        foreach (var route in _routes)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            if (route.Arc is null && _model.Origin is { } source && _shown.Contains(route))
+            {
+                route.Path = new GreatCircle(source, route.Destination.Point);
+                route.Arc = Arc(route.Path, _viewport.Scale, out var degrees, out var segments);
+                route.Segments = segments;
+                route.Scale = _viewport.Scale;
+                route.Degrees = degrees;
+#if CAPTURE
+                RoutePrepared?.Invoke(cancellation);
+#endif
+            }
+        }
         if (Animated)
         {
             _traffic = new MapMotion.Traffic(
@@ -354,15 +382,6 @@ internal sealed class MapRenderer : IDisposable
         {
             _traffic = null;
         }
-        _prepared = true;
-        // A fade redraws at its own steps, starting from the drawn strengths.
-        var changed = !prepared || _arrangement != arrangement
-            || change > 0 && (!_interpolating || _shownProgress > 0);
-        // A redraw hands the dots their scene; without one they take the new
-        // rates here.
-        if (!changed)
-            ShowDots();
-        return changed;
     }
 
     /// <summary>The origin mask's strength at its centre, lower when many arcs meet there.</summary>
@@ -811,16 +830,38 @@ internal sealed class MapRenderer : IDisposable
             RadiusY = 30,
         };
 
+    /// <summary>Whether the map is prepared and has a size to draw at.</summary>
+    internal bool CanDraw => _prepared && _viewport.ViewScale > 0;
+
     /// <returns>Whether it drew the map, which it does once prepared and sized.</returns>
     internal bool Draw(CanvasDrawingSession draw, CanvasDrawingSession arcDrawing, Palette palette, Highlight highlight, CancellationToken cancellation = default)
     {
-        if (!_prepared || _viewport.ViewScale <= 0)
+        if (!CanDraw)
             return false;
         DrawScene(draw, arcDrawing, palette, highlight, cancellation);
+        ShowColours(palette, highlight);
+        return true;
+    }
+
+    /// <summary>
+    /// The first of a new subject's two drawings: land, country shading and borders. Call it
+    /// after <see cref="PrepareRoutes"/>, once <see cref="CanDraw"/>.
+    /// </summary>
+    internal void DrawLand(CanvasDrawingSession draw, Palette palette, Highlight highlight, CancellationToken cancellation) =>
+        DrawScene(draw, null, palette, highlight, cancellation);
+
+    /// <summary>The second drawing: the glow and cores of the arcs <see cref="PrepareArcs"/> built.</summary>
+    internal void DrawArcs(CanvasDrawingSession arcDrawing, Palette palette, Highlight highlight, CancellationToken cancellation)
+    {
+        DrawScene(null, arcDrawing, palette, highlight, cancellation);
+        ShowColours(palette, highlight);
+    }
+
+    private void ShowColours(Palette palette, Highlight highlight)
+    {
         _dotColours = (palette.Download, palette.Upload);
         _highlight = highlight;
         ShowDots();
-        return true;
     }
 
     // A change of colours redraws the map, so the dots take their scene from
@@ -833,7 +874,13 @@ internal sealed class MapRenderer : IDisposable
                     { Highlight = _highlight }
                 : null;
 
-    private void DrawScene(CanvasDrawingSession draw, CanvasDrawingSession arcDrawing, Palette palette, Highlight highlight, CancellationToken cancellation)
+    /// <param name="draw">The land target, or null when only the arcs draw.</param>
+    /// <param name="arcDrawing">The arcs target, or null when only the land draws.</param>
+    /// <remarks>
+    /// Each drawing has its own rebuild allowance, so a picture drawn in two parts never needs
+    /// another pass that one drawing would not have needed.
+    /// </remarks>
+    private void DrawScene(CanvasDrawingSession? draw, CanvasDrawingSession? arcDrawing, Palette palette, Highlight highlight, CancellationToken cancellation)
     {
 #if CAPTURE
         var measured = Stopwatch.GetTimestamp();
@@ -846,9 +893,14 @@ internal sealed class MapRenderer : IDisposable
         var up = palette.Upload;
         var contrast = HighContrast;
         var progress = Progress;
+        if (draw is not null)
+            TraceLand(cancellation);
         _rebuildUntil = Stopwatch.GetTimestamp() + RebuildBudget;
-        _rebuildPending = false;
-        _staleBorders.Clear();
+        if (draw is not null)
+        {
+            _rebuildPending = false;
+            _staleBorders.Clear();
+        }
         // The view shows one turn of longitude around its centre. A shape near
         // a map edge also draws a turn away, so it continues on the other side.
         var view = _viewport.Transform;
@@ -860,26 +912,30 @@ internal sealed class MapRenderer : IDisposable
             new Vector2(west, _viewport.ToMap(Vector2.Zero).Y),
             new Vector2(east, _viewport.ToMap(new Vector2(0, (float)_viewport.Size.Height)).Y)
         ).Grown(new Vector2(2) / scale);
-        MoveWindow(visible);
-        foreach (var route in _routes)
+        if (draw is not null)
+            MoveWindow(visible);
+        if (arcDrawing is not null)
         {
-            cancellation.ThrowIfCancellationRequested();
-            if (route.Arc is null || route.Scale >= _viewport.ViewScale
-                || !(Reaches(route, -1) || Reaches(route, 0) || Reaches(route, 1)))
-                continue;
-            if (!MayRebuild())
-                break;
-            // Retain finer guides when zooming out; only visible routes refine.
-            var detail = MathF.Pow(2, MathF.Ceiling(MathF.Log2(_viewport.ViewScale)));
-            var arc = Arc(route.Path, detail, out _, out var segments);
-            route.Release();
-            route.Arc = arc;
-            route.Segments = segments;
-            route.Scale = detail;
-            ReleaseGlow();
+            foreach (var route in _routes)
+            {
+                cancellation.ThrowIfCancellationRequested();
+                if (route.Arc is null || route.Scale >= _viewport.ViewScale
+                    || !(Reaches(route, -1) || Reaches(route, 0) || Reaches(route, 1)))
+                    continue;
+                if (!MayRebuild())
+                    break;
+                // Retain finer guides when zooming out; only visible routes refine.
+                var detail = MathF.Pow(2, MathF.Ceiling(MathF.Log2(_viewport.ViewScale)));
+                var arc = Arc(route.Path, detail, out _, out var segments);
+                route.Release();
+                route.Arc = arc;
+                route.Segments = segments;
+                route.Scale = detail;
+                ReleaseGlow();
+            }
         }
         // Prioritise the selected routes before map drawing uses its rebuild budget.
-        if (_model.Origin is { } source)
+        if (arcDrawing is not null && _model.Origin is { } source)
         {
             foreach (var selected in _routes.Where(route => highlight.IsMarked(route.Destination)))
             {
@@ -895,233 +951,234 @@ internal sealed class MapRenderer : IDisposable
                 paint.Core(highlight.Colour(colour, selected.Destination.Key));
             }
         }
-        // Initial outlines share the same allowance as later retracing, so
-        // showing or recreating a map does not trace the whole world at once.
-        foreach (var country in _world.Values)
+        // The drawn strengths start the next fade, so each part records only what it draws.
+        if (arcDrawing is not null)
         {
-            cancellation.ThrowIfCancellationRequested();
-            if (country.Rings.Length == 0 || _land.ContainsKey(country.Code))
-                continue;
-            if (!MayRebuild())
-                break;
-            if (Trace(country) is { } traced)
-                _land[country.Code] = traced;
+            foreach (var route in _routes)
+                _displayed[route.Destination.Key] =
+                    route.Start + (route.Strength - route.Start) * (float)progress;
         }
-        foreach (var route in _routes)
-            _displayed[route.Destination.Key] =
-                route.Start + (route.Strength - route.Start) * (float)progress;
-        foreach (var group in _model.Countries.Values.Where(group => group.Estimated))
-            _displayed[new DestinationKey(group.Code, null, true)] =
-                _countryStarts[group.Code]
-                + (_countryTargets[group.Code] - _countryStarts[group.Code]) * (float)progress;
+        if (draw is not null)
+        {
+            foreach (var group in _model.Countries.Values.Where(group => group.Estimated))
+                _displayed[new DestinationKey(group.Code, null, true)] =
+                    _countryStarts[group.Code]
+                    + (_countryTargets[group.Code] - _countryStarts[group.Code]) * (float)progress;
+        }
         var bounds = _viewport.View.Bounds;
-        using (draw.CreateLayer(1, bounds))
-        using (arcDrawing.CreateLayer(1, bounds))
+        using (draw?.CreateLayer(1, bounds))
+        using (arcDrawing?.CreateLayer(1, bounds))
         {
 #if CAPTURE
             Measure("setup", ref measured);
 #endif
-            // A ring moved to within a turn of the centre can reach past 180°,
-            // so each country tests every turn. It traces and realizes, and so
-            // spends rebuild budget, only where it shows.
-            // Adjacent antialiased fills add their edge coverage without a seam.
-            var blend = draw.Blend;
-            draw.Blend = CanvasBlend.Add;
-            for (var turn = -1; turn <= 1; turn++)
+            if (draw is not null)
             {
-                draw.Transform = Turned(turn);
-                foreach (var (code, traced) in _land)
+                // A ring moved to within a turn of the centre can reach past 180°,
+                // so each country tests every turn. It traces and realizes, and so
+                // spends rebuild budget, only where it shows.
+                // Adjacent antialiased fills add their edge coverage without a seam.
+                var blend = draw.Blend;
+                draw.Blend = CanvasBlend.Add;
+                for (var turn = -1; turn <= 1; turn++)
                 {
-                    cancellation.ThrowIfCancellationRequested();
-                    if (!traced.Extent.Moved(360 * turn).Overlaps(visible))
-                        continue;
-                    var outline =
-                        traced.Detail == _detail || !MayRebuild()
-                            ? traced
-                            : Retrace(code, traced);
-                    var fill = land;
-                    if (_model.Countries.TryGetValue(code, out var group) && group.Estimated)
-                    {
-                        var strength = _displayed[new DestinationKey(code, null, true)];
-                        fill = Blend(land, down, group.Active > 0 ? .1 + .35 * strength : .08);
-                    }
-                    if (Filled(code, outline, turn, visible) is { } cached)
-                        draw.DrawCachedGeometry(cached, fill);
-                }
-            }
-            draw.Blend = blend;
-#if CAPTURE
-            Measure("fills", ref measured);
-#endif
-            var borderWidth = BorderWidth;
-            var border = contrast ? ink : Alpha(edge, .5 / borderWidth);
-            for (var turn = -1; turn <= 1; turn++)
-            {
-                var transform = Turned(turn);
-                Vector2? applied = null;
-                foreach (var outline in _land.Values)
-                {
-                    if (!outline.Extent.Moved(360 * turn).Overlaps(visible))
-                        continue;
-                    foreach (var piece in outline.Pieces)
+                    draw.Transform = Turned(turn);
+                    foreach (var (code, traced) in _land)
                     {
                         cancellation.ThrowIfCancellationRequested();
-                        if (!piece.Extent.Moved(360 * turn).Overlaps(visible))
+                        if (!traced.Extent.Moved(360 * turn).Overlaps(visible))
                             continue;
-                        var stroke = Stroked(piece);
-                        if (!IsCurrent(stroke.Scale, BorderTolerance))
-                            _staleBorders.Enqueue(piece);
-                        ApplyStroke(draw, stroke, transform, ref applied);
-                        var widened = _viewport.AxisScale / stroke.Scale;
-                        draw.DrawCachedGeometry(stroke.Geometry,
-                            contrast ? ink : Alpha(border, 2 / (widened.X + widened.Y)));
-                    }
-                }
-            }
-            draw.Transform = Matrix3x2.Identity;
-#if CAPTURE
-            Measure("borders", ref measured);
-#endif
-            var arcs = _routes.Where(route => route.Arc is not null).ToArray();
-            // Routes lie within 180° of the origin, which is the map's centre.
-            Span<int> turns = stackalloc int[3];
-            var count = 0;
-            for (var turn = -1; turn <= 1; turn++)
-            {
-                if (Shows(-180, 180, turn))
-                    turns[count++] = turn;
-            }
-            turns = turns[..count];
-            if (arcs.Length > 0 && _model.Origin is { } home)
-            {
-                var origin = _viewport.Screen(home);
-                var opacity = contrast ? 1 : _originOpacity;
-                if (_originMask is null || _originStrength != opacity)
-                {
-                    // Masks use only alpha; theme text colours can be translucent.
-                    var opaque = Microsoft.UI.Colors.White;
-                    _originMask?.Dispose();
-                    _originMask = new CanvasRadialGradientBrush(
-                        _device,
-                        [
-                            .. new[] { 0, .25f, .5f, .75f, 1 }.Select(position => new CanvasGradientStop
-                            {
-                                Position = position,
-                                Color = Alpha(opaque, OriginFade(position, opacity)),
-                            }),
-                        ]
-                    )
-                    {
-                        RadiusX = OriginRadius,
-                        RadiusY = OriginRadius,
-                    };
-                    _originStrength = opacity;
-                }
-                _originMask.Center = origin;
-                _originMask.Opacity = contrast ? 1 : .8f;
-                using (arcDrawing.CreateLayer(_originMask))
-                {
-                    // The blurred glow is kept while its inputs stay the same.
-                    // Animation changes it at every step. A glow that kept a
-                    // stroke from another scale is rebuilt only while budget
-                    // is left, because without budget it would record the
-                    // same strokes again. Border work left over from a zoom
-                    // does not rebuild it.
-                    var inputs = new GlowInputs(view, _viewport.Size, down, up, _arrangement, highlight.Selection);
-                    if (
-                        !contrast
-                        && (
-                            progress < 1
-                            || _glowInputs != inputs
-                            || _glowBlur is null
-                            || (!_glowComplete && MayRebuild())
-                        )
-                    )
-                    {
-                        var pending = _rebuildPending;
-                        _rebuildPending = false;
-                        ReleaseGlow();
-                        _glowLines = new CanvasCommandList(_device);
-                        using (var halo = _glowLines.CreateDrawingSession())
+                        var outline =
+                            traced.Detail == _detail || !MayRebuild()
+                                ? traced
+                                : Retrace(code, traced);
+                        var fill = land;
+                        if (_model.Countries.TryGetValue(code, out var group) && group.Estimated)
                         {
-                            foreach (var turn in turns)
-                            {
-                                var transform = Turned(turn);
-                                Vector2? applied = null;
-                                foreach (var route in arcs)
-                                {
-                                    cancellation.ThrowIfCancellationRequested();
-                                    if (!Reaches(route, turn))
-                                        continue;
-                                    var strength = _displayed[route.Destination.Key];
-                                    var colour = route.Destination.Group.Downloads ? down : up;
-                                    colour = highlight.Colour(colour, route.Destination.Key);
-                                    var paint = PaintOf(route, home);
-                                    var glowStroke = paint.Glow(Step(2 + 3 * strength, 2));
-                                    var brush = paint.Halo(colour);
-                                    brush.Center = _viewport.Coordinates(route.Destination.Point);
-                                    brush.RadiusX = 30 / scale.X;
-                                    brush.RadiusY = 30 / scale.Y;
-                                    brush.Opacity = .5f * .35f * strength * strength;
-                                    ApplyStroke(halo, glowStroke, transform, ref applied);
-                                    halo.DrawCachedGeometry(glowStroke.Geometry, brush);
-                                }
-                            }
+                            var strength = _displayed[new DestinationKey(code, null, true)];
+                            fill = Blend(land, down, group.Active > 0 ? .1 + .35 * strength : .08);
                         }
-                        _glowBlur = new GaussianBlurEffect
-                        {
-                            Source = new CropEffect
-                            {
-                                Source = _glowLines,
-                                SourceRectangle = new Rect(
-                                    -6,
-                                    -6,
-                                    _viewport.Size.Width + 12,
-                                    _viewport.Size.Height + 12
-                                ),
-                            },
-                            BlurAmount = 1.5f,
-                            CacheOutput = true,
-                        };
-                        _glowInputs = progress < 1 ? null : inputs;
-                        _glowComplete = !_rebuildPending;
-                        _rebuildPending |= pending;
+                        if (Filled(code, outline, turn, visible) is { } cached)
+                            draw.DrawCachedGeometry(cached, fill);
                     }
-                    if (!contrast && _glowBlur is not null)
-                        arcDrawing.DrawImage(_glowBlur);
+                }
+                draw.Blend = blend;
 #if CAPTURE
-                    Measure("glow", ref measured);
+                Measure("fills", ref measured);
 #endif
-                    foreach (var turn in turns)
+                var borderWidth = BorderWidth;
+                var border = contrast ? ink : Alpha(edge, .5 / borderWidth);
+                for (var turn = -1; turn <= 1; turn++)
+                {
+                    var transform = Turned(turn);
+                    Vector2? applied = null;
+                    foreach (var outline in _land.Values)
                     {
-                        var transform = Turned(turn);
-                        Vector2? applied = null;
-                        foreach (var route in arcs)
+                        if (!outline.Extent.Moved(360 * turn).Overlaps(visible))
+                            continue;
+                        foreach (var piece in outline.Pieces)
                         {
                             cancellation.ThrowIfCancellationRequested();
-                            if (!Reaches(route, turn))
+                            if (!piece.Extent.Moved(360 * turn).Overlaps(visible))
                                 continue;
-                            var strength = _displayed[route.Destination.Key];
-                            var paint = PaintOf(route, home);
-                            var marked = highlight.IsMarked(route.Destination);
-                            var line = paint.Line(marked ? 2 : Step(1 + strength, 4));
-                            if (contrast)
-                            {
-                                ApplyStroke(arcDrawing, line, transform, ref applied);
-                                arcDrawing.DrawCachedGeometry(line.Geometry, ink);
-                                continue;
-                            }
-                            var brush = paint.Core(
-                                highlight.Colour(
-                                    marked && highlight.Selection is null ? ink : route.Destination.Group.Downloads ? down : up,
-                                    route.Destination.Key)
-                            );
-                            brush.Opacity = .18f + .82f * strength;
-                            ApplyStroke(arcDrawing, line, transform, ref applied);
-                            arcDrawing.DrawCachedGeometry(line.Geometry, brush);
+                            var stroke = Stroked(piece);
+                            if (!IsCurrent(stroke.Scale, BorderTolerance))
+                                _staleBorders.Enqueue(piece);
+                            ApplyStroke(draw, stroke, transform, ref applied);
+                            var widened = _viewport.AxisScale / stroke.Scale;
+                            draw.DrawCachedGeometry(stroke.Geometry,
+                                contrast ? ink : Alpha(border, 2 / (widened.X + widened.Y)));
                         }
                     }
-                    arcDrawing.Transform = Matrix3x2.Identity;
+                }
+                draw.Transform = Matrix3x2.Identity;
+#if CAPTURE
+                Measure("borders", ref measured);
+#endif
+            }
+            if (arcDrawing is not null)
+            {
+                var arcs = _routes.Where(route => route.Arc is not null).ToArray();
+                // Routes lie within 180° of the origin, which is the map's centre.
+                Span<int> turns = stackalloc int[3];
+                var count = 0;
+                for (var turn = -1; turn <= 1; turn++)
+                {
+                    if (Shows(-180, 180, turn))
+                        turns[count++] = turn;
+                }
+                turns = turns[..count];
+                if (arcs.Length > 0 && _model.Origin is { } home)
+                {
+                    var origin = _viewport.Screen(home);
+                    var opacity = contrast ? 1 : _originOpacity;
+                    if (_originMask is null || _originStrength != opacity)
+                    {
+                        // Masks use only alpha; theme text colours can be translucent.
+                        var opaque = Microsoft.UI.Colors.White;
+                        _originMask?.Dispose();
+                        _originMask = new CanvasRadialGradientBrush(
+                            _device,
+                            [
+                                .. new[] { 0, .25f, .5f, .75f, 1 }.Select(position => new CanvasGradientStop
+                                {
+                                    Position = position,
+                                    Color = Alpha(opaque, OriginFade(position, opacity)),
+                                }),
+                            ]
+                        )
+                        {
+                            RadiusX = OriginRadius,
+                            RadiusY = OriginRadius,
+                        };
+                        _originStrength = opacity;
+                    }
+                    _originMask.Center = origin;
+                    _originMask.Opacity = contrast ? 1 : .8f;
+                    using (arcDrawing.CreateLayer(_originMask))
+                    {
+                        // The blurred glow is kept while its inputs stay the same.
+                        // Animation changes it at every step. A glow that kept a
+                        // stroke from another scale is rebuilt only while budget
+                        // is left, because without budget it would record the
+                        // same strokes again. Border work left over from a zoom
+                        // does not rebuild it.
+                        var inputs = new GlowInputs(view, _viewport.Size, down, up, _arrangement, highlight.Selection);
+                        if (
+                            !contrast
+                            && (
+                                progress < 1
+                                || _glowInputs != inputs
+                                || _glowBlur is null
+                                || (!_glowComplete && MayRebuild())
+                            )
+                        )
+                        {
+                            var pending = _rebuildPending;
+                            _rebuildPending = false;
+                            ReleaseGlow();
+                            _glowLines = new CanvasCommandList(_device);
+                            using (var halo = _glowLines.CreateDrawingSession())
+                            {
+                                foreach (var turn in turns)
+                                {
+                                    var transform = Turned(turn);
+                                    Vector2? applied = null;
+                                    foreach (var route in arcs)
+                                    {
+                                        cancellation.ThrowIfCancellationRequested();
+                                        if (!Reaches(route, turn))
+                                            continue;
+                                        var strength = _displayed[route.Destination.Key];
+                                        var colour = route.Destination.Group.Downloads ? down : up;
+                                        colour = highlight.Colour(colour, route.Destination.Key);
+                                        var paint = PaintOf(route, home);
+                                        var glowStroke = paint.Glow(Step(2 + 3 * strength, 2));
+                                        var brush = paint.Halo(colour);
+                                        brush.Center = _viewport.Coordinates(route.Destination.Point);
+                                        brush.RadiusX = 30 / scale.X;
+                                        brush.RadiusY = 30 / scale.Y;
+                                        brush.Opacity = .5f * .35f * strength * strength;
+                                        ApplyStroke(halo, glowStroke, transform, ref applied);
+                                        halo.DrawCachedGeometry(glowStroke.Geometry, brush);
+                                    }
+                                }
+                            }
+                            _glowBlur = new GaussianBlurEffect
+                            {
+                                Source = new CropEffect
+                                {
+                                    Source = _glowLines,
+                                    SourceRectangle = new Rect(
+                                        -6,
+                                        -6,
+                                        _viewport.Size.Width + 12,
+                                        _viewport.Size.Height + 12
+                                    ),
+                                },
+                                BlurAmount = 1.5f,
+                                CacheOutput = true,
+                            };
+                            _glowInputs = progress < 1 ? null : inputs;
+                            _glowComplete = !_rebuildPending;
+                            _rebuildPending |= pending;
+                        }
+                        if (!contrast && _glowBlur is not null)
+                            arcDrawing.DrawImage(_glowBlur);
+#if CAPTURE
+                        Measure("glow", ref measured);
+#endif
+                        foreach (var turn in turns)
+                        {
+                            var transform = Turned(turn);
+                            Vector2? applied = null;
+                            foreach (var route in arcs)
+                            {
+                                cancellation.ThrowIfCancellationRequested();
+                                if (!Reaches(route, turn))
+                                    continue;
+                                var strength = _displayed[route.Destination.Key];
+                                var paint = PaintOf(route, home);
+                                var marked = highlight.IsMarked(route.Destination);
+                                var line = paint.Line(marked ? 2 : Step(1 + strength, 4));
+                                if (contrast)
+                                {
+                                    ApplyStroke(arcDrawing, line, transform, ref applied);
+                                    arcDrawing.DrawCachedGeometry(line.Geometry, ink);
+                                    continue;
+                                }
+                                var brush = paint.Core(
+                                    highlight.Colour(
+                                        marked && highlight.Selection is null ? ink : route.Destination.Group.Downloads ? down : up,
+                                        route.Destination.Key)
+                                );
+                                brush.Opacity = .18f + .82f * strength;
+                                ApplyStroke(arcDrawing, line, transform, ref applied);
+                                arcDrawing.DrawCachedGeometry(line.Geometry, brush);
+                            }
+                        }
+                        arcDrawing.Transform = Matrix3x2.Identity;
+                    }
                 }
             }
         }
@@ -1129,7 +1186,8 @@ internal sealed class MapRenderer : IDisposable
         Measure("arcs", ref measured);
 #endif
         // Borders take what the arcs leave of the budget.
-        StrokeStaleBorders(cancellation);
+        if (arcDrawing is not null)
+            StrokeStaleBorders(cancellation);
         if (_rebuildPending)
             _invalidate();
 #if CAPTURE
@@ -1165,6 +1223,25 @@ internal sealed class MapRenderer : IDisposable
         }
         _window = visible.Grown(span);
         _windowDetail = _detail;
+    }
+
+    /// <summary>
+    /// Traces every country that has no outline yet, without the rebuild allowance, so the
+    /// first picture of a map shows all of its land before any arc. Sliced over the allowance,
+    /// the land would take many drawings, each showing arcs over missing countries. This runs
+    /// once per map; a cancellation keeps the outlines already traced.
+    /// </summary>
+    private void TraceLand(CancellationToken cancellation)
+    {
+        _rebuildUntil = long.MaxValue;
+        foreach (var country in _world.Values)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            if (country.Rings.Length == 0 || _land.ContainsKey(country.Code))
+                continue;
+            if (Trace(country) is { } traced)
+                _land[country.Code] = traced;
+        }
     }
 
     // The complete old outline stays usable until its replacement is ready;
@@ -1425,17 +1502,25 @@ internal sealed class MapRenderer : IDisposable
     // realization only when it reaches the next step.
     private static float Step(float width, float steps) => MathF.Round(width * steps) / steps;
 
-    internal Inspection Inspect(Presentation presentation, MapView? view = null)
+    internal Inspection Inspect(Presentation presentation, MapView? view = null) =>
+        Inspect(presentation, presentation.Destinations, view);
+
+    /// <summary>
+    /// The inspection of a picture that shows only <paramref name="places"/>, as a new
+    /// subject's first picture does while it is published in phases.
+    /// </summary>
+    internal Inspection Inspect(Presentation presentation, IReadOnlyList<Destination> places, MapView? view)
     {
-        var destinations = presentation.Destinations.ToDictionary(destination => destination.Key);
-        return new(view ?? _viewport.View, _routes.Select(route => new Inspection.Target(
-            destinations[route.Destination.Key], route.Reach, route.Segments)).ToArray())
+        var shown = places.ToDictionary(destination => destination.Key);
+        return new(view ?? _viewport.View, _routes.Where(route => shown.ContainsKey(route.Destination.Key))
+            .Select(route => new Inspection.Target(shown[route.Destination.Key], route.Reach, route.Segments)).ToArray())
         {
             Highlight = _highlight,
-            Origin = _routes.Any(route => route.Arc is not null) ? presentation.Origin : null,
+            Origin = _routes.Any(route => route.Arc is not null && shown.ContainsKey(route.Destination.Key))
+                ? presentation.Origin : null,
             Subject = presentation.Subject,
             Cities = presentation.Cities,
-            Destinations = presentation.Destinations,
+            Destinations = places,
         };
     }
 

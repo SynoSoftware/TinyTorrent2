@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -265,7 +266,7 @@ public sealed partial class Table
         }
 
         CancelGesture();
-        HitTarget hit = HitTest(e.OriginalSource as DependencyObject, out object? item);
+        HitTarget hit = HitTest(e.OriginalSource as DependencyObject, point.Position, out object? item);
         if (hit == HitTarget.Suppressed)
         {
             return;
@@ -546,6 +547,7 @@ public sealed partial class Table
             e.PointerDeviceType == PointerDeviceType.Touch
             && SelectFromTap(
                 e.OriginalSource as DependencyObject,
+                e.GetPosition(_surface),
                 IsDown(VirtualKey.Control),
                 IsDown(VirtualKey.Shift)
             )
@@ -555,9 +557,9 @@ public sealed partial class Table
         }
     }
 
-    private bool SelectFromTap(DependencyObject? source, bool ctrl, bool shift)
+    private bool SelectFromTap(DependencyObject? source, Point? position, bool ctrl, bool shift)
     {
-        HitTarget hit = HitTest(source, out object? item);
+        HitTarget hit = HitTest(source, position, out object? item);
         if (hit == HitTarget.Suppressed)
         {
             return false;
@@ -711,7 +713,8 @@ public sealed partial class Table
     private void OnRowsDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
         if (
-            HitTest(e.OriginalSource as DependencyObject, out object? item) != HitTarget.Row
+            HitTest(e.OriginalSource as DependencyObject, e.GetPosition(_surface), out object? item)
+                != HitTarget.Row
             || item is null
         )
         {
@@ -742,8 +745,11 @@ public sealed partial class Table
     {
         if (
             _surface is null
-            || HitTest(e.OriginalSource as DependencyObject, out object? item)
-                == HitTarget.Suppressed
+            || HitTest(
+                e.OriginalSource as DependencyObject,
+                e.TryGetPosition(_surface, out Point pointer) ? pointer : null,
+                out object? item
+            ) == HitTarget.Suppressed
         )
         {
             return;
@@ -813,7 +819,16 @@ public sealed partial class Table
     /// <c>IsRowGestureEnabled="False"</c> subtree, and the scroll bars all stop a table gesture; anything
     /// else that reaches the list without passing a container is empty row surface.
     /// </summary>
-    private HitTarget HitTest(DependencyObject? source, out object? item)
+    /// <param name="position">The pointer's position on the row surface, or null without a pointer.</param>
+    /// <remarks>
+    /// While the list moves rows after a view change, a press can land on a row that is
+    /// animating out, whose container has no index any more, or reach the surface through a row
+    /// that is animating in. A row animating out is still visible, so the press targets it. A
+    /// row animating in is invisible until <see cref="ArrivalDelay"/> after the frame that laid it
+    /// out, and a press there landed on a place that looked empty, so it targets nothing and
+    /// clears nothing; after that, the press targets the row.
+    /// </remarks>
+    private HitTarget HitTest(DependencyObject? source, Point? position, out object? item)
     {
         item = null;
         if (_surface is null)
@@ -826,7 +841,9 @@ public sealed partial class Table
         {
             if (node is ListViewItem container)
             {
-                item = RowItem(container);
+                item =
+                    RowItem(container)
+                    ?? (container.Content is { } shown ? ResolveItem(shown) : null);
                 return item is null ? HitTarget.Suppressed : HitTarget.Row;
             }
 
@@ -843,7 +860,60 @@ public sealed partial class Table
             node = VisualTreeHelper.GetParent(node);
         }
 
-        return node is null ? HitTarget.Suppressed : HitTarget.EmptySurface;
+        if (node is null)
+        {
+            return HitTarget.Suppressed;
+        }
+
+        item = position is Point at ? RowAt(at) : null;
+        if (item is null)
+        {
+            return HitTarget.EmptySurface;
+        }
+
+        if (_layoutPending || Stopwatch.GetElapsedTime(_laidOutAt) < ArrivalDelay)
+        {
+            item = null;
+            return HitTarget.Suppressed;
+        }
+
+        return HitTarget.Row;
+    }
+
+    /// <summary>
+    /// The row the list has laid out under <paramref name="position"/> on the row surface, from
+    /// the layout rather than hit testing, which skips a row that is animating in.
+    /// </summary>
+    private object? RowAt(Point position)
+    {
+        if (_surface?.ItemsPanelRoot is not ItemsStackPanel rows || rows.FirstVisibleIndex < 0)
+        {
+            return null;
+        }
+
+        Point point = _surface.TransformToVisual(rows).TransformPoint(position);
+        int last = Math.Min(rows.LastVisibleIndex, _view.Count - 1);
+        for (int index = rows.FirstVisibleIndex; index <= last; index++)
+        {
+            if (_surface.ContainerFromIndex(index) is not FrameworkElement container)
+            {
+                continue;
+            }
+
+            // A row is only as wide as its columns; beside them is empty surface.
+            Rect slot = LayoutInformation.GetLayoutSlot(container);
+            if (
+                point.Y >= slot.Top
+                && point.Y < slot.Bottom
+                && point.X >= slot.Left
+                && point.X < slot.Left + container.ActualWidth
+            )
+            {
+                return _view[index];
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

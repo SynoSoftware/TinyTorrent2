@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -25,6 +26,20 @@ public sealed partial class Table
     /// same tick, which would clear it too early.
     /// </remarks>
     private bool _layoutPending;
+
+    /// <summary>
+    /// The <see cref="Stopwatch"/> timestamp of the frame that laid out the last view change, where
+    /// the rows it inserted start their <see cref="ArrivalDelay"/>.
+    /// </summary>
+    private long _laidOutAt;
+
+    /// <summary>
+    /// How long a row the list inserts stays invisible before it fades in. The platform does not
+    /// publish its insert transition's timing, so this is the measured value in the remarks on
+    /// <see cref="_layoutPending"/>.
+    /// </summary>
+    private static readonly TimeSpan ArrivalDelay = TimeSpan.FromMilliseconds(300);
+
     private Dictionary<object, (int Index, int Sibling)>? _positions;
 
     /// <summary>The private view, in current visual row order.</summary>
@@ -506,6 +521,7 @@ public sealed partial class Table
     private void OnLaidOut(object? sender, object e)
     {
         CompositionTarget.Rendering -= OnLaidOut;
+        _laidOutAt = Stopwatch.GetTimestamp();
         // The tick ends when the frame returns, so the note clears and the reveal runs past it.
         // A view change made inside a frame, from a Loaded or a SizeChanged handler, is laid out
         // after this event in the same frame, which is why the note cannot clear here.

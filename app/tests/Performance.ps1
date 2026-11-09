@@ -150,7 +150,23 @@ function Report {
             receivedMs = if ($click.received) { ($click.received - $click.sent) * 1000 / $frequency } else { $null };
             selectedMs = if ($click.selected) { ($click.selected - $click.sent) * 1000 / $frequency } else { $null };
             renderMs = if ($click.rendered) { ($click.rendered - $click.sent) * 1000 / $frequency } else { $null };
-            renderMegacycles = if ($click.renderCycles) { ([double]$click.renderCycles - $click.pressCycles) / 1e6 } else { $null } }
+            renderMegacycles = if ($click.renderCycles) { ([double]$click.renderCycles - $click.pressCycles) / 1e6 } else { $null };
+            pressedOn = $click.pressedOn;
+            # A committed frame is taken as on screen two refreshes later, after the compositor's next frame.
+            sentBeforeViewChange = if ($null -ne $click.viewShown -and $click.matches -eq 1) {
+                $click.viewShown + 2 * $period * $frequency / 1000 -gt $click.sent } else { $null };
+            afterViewChangeMs = if ($click.viewShown -and $click.matches -eq 1) { ($click.sent - $click.viewShown) * 1000 / $frequency } else { $null };
+            lostCause = if ($click.selected) { $null }
+                elseif ($click.matches -ne 1) { 'press not matched' }
+                elseif ($click.pressedOn -eq 'no row') { 'press found no row' }
+                elseif ($click.pressedOn -eq 'leaving row') { 'press on a leaving row' }
+                elseif (-not $click.pressGesture) { 'no gesture record' }
+                elseif ($click.pressGesture.Gesture -eq 'None') { 'press armed no gesture' }
+                elseif (-not $click.pressGesture.SameItem) { 'press resolved another row' }
+                elseif (-not $click.pressGesture.Deferred) { 'press applied, selected nothing' }
+                elseif (-not $click.releaseGesture) { 'no release observed' }
+                elseif ($click.releaseGesture.Gesture -eq 'None') { 'gesture cancelled before release' }
+                else { 'release dispatched nothing' } }
     })
     $cadence = @(for ($index = 1; $index -lt $clicks.Count; $index++) { ($clicks[$index].sent - $clicks[$index - 1].sent) * 1000 / $frequency })
     $marqueePhase = $timing.phases | Where-Object name -eq 'torrent-marquee'
@@ -209,7 +225,11 @@ function Report {
         alreadySelected = @($clicks | Where-Object alreadySelected).Count;
         invalidClickMatches = @($clicks | Where-Object { $null -ne $_.matches -and $_.matches -ne 1 }).Count;
         unselected = @($clicks | Where-Object { $null -eq $_.selectedMs }).Count;
+        lostCauses = @($clicks | Where-Object lostCause | Group-Object lostCause | ForEach-Object {
+            [pscustomobject]@{ cause = $_.Name; count = $_.Count } });
         notRendered = @($clicks | Where-Object { $null -eq $_.renderMs }).Count;
+        sentBeforeViewChange = @($clicks | Where-Object sentBeforeViewChange | Group-Object pressedOn | ForEach-Object {
+            [pscustomobject]@{ pressedOn = $_.Name; count = $_.Count } });
         clickCadenceMs = Summary $cadence;
         cadenceValid = if ($cadence.Count) { @($cadence | Where-Object { $_ -lt 135 -or $_ -gt 165 }).Count -eq 0 } else { $null };
         marqueeSamples = $marquee.Count;
@@ -308,6 +328,22 @@ function Report {
         $lines.Add(('Click → selection: median {0:F1} ms, p95 {1:F1} ms, worst {2:F1} ms.' -f $report.selectionMs.median, $report.selectionMs.p95, $report.selectionMs.worst))
         $lines.Add(('Click → rendered selection: median {0:F1} ms, p95 {1:F1} ms, worst {2:F1} ms. Unselected: {3}; not observed rendered: {4}.' -f
             $report.renderMs.median, $report.renderMs.p95, $report.renderMs.worst, $report.unselected, $report.notRendered))
+        if ($report.lostCauses.Count) {
+            $lines.Add(('Unselected clicks by cause: {0}.' -f (($report.lostCauses | ForEach-Object { '{0} {1}' -f $_.count, $_.cause }) -join '; ')))
+        }
+        if ($null -ne $timing.clearedSelections) { $lines.Add(('Selections cleared during the clicks: {0}.' -f $timing.clearedSelections)) }
+        if (@($clicks | Where-Object { $null -ne $_.sentBeforeViewChange }).Count) {
+            $crossed = @($report.sentBeforeViewChange | ForEach-Object { '{0} on {1}' -f $_.count, $_.pressedOn })
+            $lines.Add(('Clicks sent before a table view change reached the screen and handled after it: {0}.' -f
+                $(if ($crossed.Count) { $crossed -join '; ' } else { 0 })))
+            # The hit test finds no row where a row is animating in. The table ignores such a click while the row is
+            # still invisible and gives it the row laid out there after that.
+            foreach ($outcome in @(@{ Selected = $true; Text = 'given the row laid out there' }, @{ Selected = $false; Text = 'that selected nothing' })) {
+                $arriving = @($clicks | Where-Object { $_.pressedOn -eq 'no row' -and ($null -ne $_.selectedMs) -eq $outcome.Selected -and $null -ne $_.afterViewChangeMs })
+                $lines.Add(('Clicks on no row, {0}: {1}; sent this many ms after the last table view change was committed: {2}.' -f $outcome.Text,
+                    $arriving.Count, $(if ($arriving.Count) { (@($arriving.afterViewChangeMs | Sort-Object | ForEach-Object { '{0:F0}' -f $_ })) -join ', ' } else { '—' })))
+            }
+        }
         $lines.Add(('UI-thread cycles from press to rendered selection: median {0:F1}, p95 {1:F1}, worst {2:F1} megacycles.' -f
             $report.renderMegacycles.median, $report.renderMegacycles.p95, $report.renderMegacycles.worst))
         $lines.Add(('All-click feedback, including already-selected acknowledgements: p95 {0:F1} ms, worst {1:F1} ms.' -f

@@ -89,12 +89,11 @@ thread; detached calculation and native map rendering run elsewhere.
   the UI thread: detached inputs, a concrete blocking cost removed, and simpler
   or equally clear ownership. Native WinUI updates stay on their owner. No
   publication redesign or broad table investigation, because that redesign was
-  tried, reverted and never attributed.
+  tried, reverted and never attributed. The one exception is the table's hit
+  test for lost presses ([plan 18](18-keep-up-with-the-person.md)), because the
+  owner ruled on 9 November that a lost click is a bug.
 - Memory is a regression guard, not the goal. Dedicated memory tuning stays
   deferred; flag concrete, blatant waste when attribution shows it.
-- The owner reviews each recorded result before any further performance change,
-  build or run. Silence is not approval, because an unreviewed loop produced
-  four rounds of mixed results and no decision.
 - Build, test and capture rules are owned by [testing](../agents/testing.md)
   and [compilation](../agents/compilation.md); this plan adds none.
 
@@ -291,11 +290,11 @@ Conditional diagnostics, not stages:
 - Click feedback. Use the preserved `75af850` delay attribution first
   (delivery, selection and XAML completion separated; the delivery interval
   includes row-binding notifications). Add a probe only if those records
-  cannot separate dispatcher delay from handler work. If native publication
-  of the selected torrent's peer table is the cost, the options are deferring
-  it until after the selection frame presents, or chunked, natively consistent
-  publication, which lifts the TableView fence and needs that attribution
-  first. The 249 ms endpoint is click-to-XAML completion, not visible selection.
+  cannot separate dispatcher delay from handler work. The 9 November native
+  trace attributed the click delay to WinUI realizing, laying out and drawing
+  changed table rows. Filling those rows in phases
+  ([plan 18](18-keep-up-with-the-person.md)) made the typical click slower in
+  every measured pair and was removed. The 249 ms endpoint is click-to-XAML completion, not visible selection.
 
 Why this round: it is the one population-sized piece of work the trace still
 shows on the UI thread, it leaves under the owner's ruling above, and the map's

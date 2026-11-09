@@ -560,7 +560,7 @@ notification, and the change in count is raised at the end. Raising each of
 work for rows that are not on screen.
 What falsifies the rule is a container whose content differs from the view's
 row at its index after a sort, a scroll, or `ScrollIntoView`; the reference
-host's diagnostics section R checks exactly that.
+host's diagnostics section J checks exactly that.
 
 A source that implements `INotifyCollectionChanged` is live for membership and
 source-order changes. A plain `IEnumerable` is immutable from the table's
@@ -1469,6 +1469,20 @@ Touch selection occurs on a recognized passive-row tap through the same selectio
 model as click and Space. A pan or press-and-hold does not begin that selection
 path; scrolling and context recognition remain native. Tapping empty row surface
 clears selection, and interactive descendants keep their own input.
+
+Every press, tap or context request on a row targets the row the list has laid
+out under it when the table handles it, also while the list animates a view
+change. A row that is animating out is still visible there, so it targets the
+row it shows, where that row now is; nothing is targeted when the row has left
+the view. A row that is
+animating in stays invisible for the platform's first 300 ms, and the list
+does not hit-test it. A press there before the frame that lays out the change,
+or within those 300 ms after it, landed on a place that looked empty, so it
+targets nothing and clears nothing. After that, it targets its row, so it is
+never empty row surface. A press that waited in the input queue
+while the view changed is applied to the layout at the time the table handles
+it, as a Win32 list view applies a queued click, because the table keeps no
+record of earlier frames.
 
 The control MUST scroll the current item into view when keyboard navigation
 moves beyond the viewport.

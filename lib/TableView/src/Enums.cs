@@ -75,7 +75,10 @@ internal enum RowGesture
 /// <summary>What a press on the row surface landed on.</summary>
 internal enum HitTarget
 {
-    /// <summary>An interactive cell descendant, a suppressed subtree, or outside the rows.</summary>
+    /// <summary>
+    /// An interactive cell descendant, a suppressed subtree, outside the rows, or a row that is
+    /// still invisible as it arrives.
+    /// </summary>
     Suppressed,
 
     Row,

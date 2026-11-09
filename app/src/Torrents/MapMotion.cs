@@ -98,6 +98,10 @@ internal sealed class MapMotion : IDisposable
             && picture?.Scene?.Traffic.Routes.Count > 0;
     }
 
+    /// <summary>The subject and peer count of the picture drawn last, read on the game loop thread.</summary>
+    internal (object Subject, int Peers)? DrawnSubject => Volatile.Read(ref _drawnPicture)?.Input?.Model is { } model
+        ? (model.Subject, model.Countries.Values.Sum(group => group.Count)) : null;
+
     /// <summary>
     /// The CPU cycles the game loop thread had used at its latest update,
     /// which counts the previous frame's present.
@@ -296,6 +300,87 @@ internal sealed class MapMotion : IDisposable
             if (picture is not null)
                 Return(picture);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Draws a new subject's first picture once and publishes it three times:
+    /// its land, then its arcs with the places they connect, then every place.
+    /// </summary>
+    /// <remarks>
+    /// The worker keeps its lease's reference until the last publication or a
+    /// cancellation, and each publication takes a reference of its own. The
+    /// game loop draws the arcs target only from the publication that completes it.
+    /// </remarks>
+    private void DrawPhases(MapView raster, MapRenderer.Highlight highlight, Request request)
+    {
+        if (_disposed || _device is not { } device || _renderer is not { } renderer)
+            return;
+        var input = request.Input;
+        var cancellation = request.Cancellation;
+        if (!renderer.CanDraw)
+        {
+            renderer.PrepareArcs(cancellation);
+            _appliedInput = input;
+            return;
+        }
+        Picture? picture = null;
+        try
+        {
+            picture = Lease(device, raster);
+            using (var land = picture.Bitmap.CreateDrawingSession())
+            {
+                land.Clear(Microsoft.UI.Colors.Transparent);
+                renderer.DrawLand(land, input.Palette, highlight, cancellation);
+            }
+            cancellation.ThrowIfCancellationRequested();
+            var completed = new Completed
+            {
+                Picture = picture,
+                View = request.View,
+                RasterView = raster,
+                Background = input.Background,
+                Input = input,
+                Inspection = renderer.Inspect(input.Model, new List<Destination>(), request.View),
+                Surface = request.Surface,
+                ArcsDrawn = false,
+            };
+            picture.Retain();
+            Publish(completed, cancellation);
+
+            renderer.PrepareArcs(cancellation);
+            using (var arcs = picture.Arcs.CreateDrawingSession())
+            {
+                arcs.Clear(Microsoft.UI.Colors.Transparent);
+                renderer.DrawArcs(arcs, input.Palette, highlight, cancellation);
+            }
+            cancellation.ThrowIfCancellationRequested();
+            var connected = renderer.Inspect(input.Model,
+                input.Model.Destinations.Where(destination => destination.Group.Connections > 0).ToList(), request.View);
+            completed = completed with
+            {
+                Scene = renderer.Scene,
+                Inspection = connected,
+                Markers = PrepareMarkers(input, request.View, connected),
+                ArcsDrawn = true,
+            };
+            picture.Retain();
+            Publish(completed, cancellation);
+
+            var every = renderer.Inspect(input.Model, request.View);
+            completed = completed with { Inspection = every, Markers = PrepareMarkers(input, request.View, every) };
+            picture.Retain();
+            Publish(completed, cancellation);
+            _appliedInput = input;
+        }
+        catch (Exception error) when (device.IsDeviceLost(error.HResult))
+        {
+            device.RaiseDeviceLost();
+        }
+        finally
+        {
+            if (picture is not null)
+                Return(picture);
         }
     }
 
@@ -639,13 +724,18 @@ internal sealed class MapMotion : IDisposable
 #endif
         if (prepare)
             _appliedInput = null;
-        var changed = prepare ? renderer.Prepare(cancellation) : renderer.Advance();
-        _appliedInput = input;
+        // A new subject's land shows before its arcs are built. Its input
+        // applies after the last phase, so a pass cancelled between phases
+        // prepares and draws again.
+        var phased = prepare && _completed?.Input?.Model.Subject != input.Model.Subject;
+        var changed = !prepare ? renderer.Advance() : phased ? renderer.PrepareRoutes() : renderer.Prepare(cancellation);
+        if (!phased)
+            _appliedInput = input;
 #if CAPTURE
         DrawingStarted?.Invoke(cancellation);
 #endif
         cancellation.ThrowIfCancellationRequested();
-        var draw = _again || viewChanged || changed || input.Palette != previous?.Palette
+        var draw = phased || _again || viewChanged || changed || input.Palette != previous?.Palette
             || highlight != _highlight || input.Background != previous?.Background
             || input.HighContrast != previous?.HighContrast;
 #if CAPTURE
@@ -655,7 +745,10 @@ internal sealed class MapMotion : IDisposable
         {
             _again = false;
             _highlight = highlight;
-            Draw(raster, input.Background, (geography, arcs) => renderer.Draw(geography, arcs, input.Palette, highlight, cancellation), request);
+            if (phased)
+                DrawPhases(raster, highlight, request);
+            else
+                Draw(raster, input.Background, (geography, arcs) => renderer.Draw(geography, arcs, input.Palette, highlight, cancellation), request);
         }
         else if (renderer.HasStaleBorders)
             renderer.StrokeBorders(cancellation);
@@ -810,7 +903,9 @@ internal sealed class MapMotion : IDisposable
         {
             DrawLayer(picture.Bitmap);
             DrawMarks(draw, picture, view);
-            DrawLayer(picture.Arcs);
+            // The worker may still be drawing the arcs of a land-only picture.
+            if (picture.ArcsDrawn)
+                DrawLayer(picture.Arcs);
         }
         DrawDots(draw, picture, view);
 #if CAPTURE
@@ -927,7 +1022,7 @@ internal sealed class MapMotion : IDisposable
     {
         var previous = _completed;
         if (previous?.Markers is { } retained && previous.Input is { } earlier
-            && ReferenceEquals(input.Model.Destinations, earlier.Model.Destinations)
+            && ReferenceEquals(inspection.Destinations, previous.Inspection?.Destinations)
             && view.Meridian == previous.View.Meridian && input.Palette == earlier.Palette
             && input.HighContrast == earlier.HighContrast && inspection.Highlight == previous.Inspection?.Highlight
             && inspection.Origin == previous.Inspection?.Origin)
@@ -936,7 +1031,7 @@ internal sealed class MapMotion : IDisposable
         var ink = input.Palette.Ink;
         var highlight = inspection.Highlight;
         Vector2? origin = inspection.Origin is { } location ? view.Coordinates(location) : null;
-        var locations = input.Model.Destinations.Select(destination =>
+        var locations = inspection.Destinations.Select(destination =>
         {
             var colour = input.HighContrast ? ink : highlight.Colour(ink, destination.Key);
             return new Marker(view.Coordinates(destination.Point),
@@ -1150,6 +1245,9 @@ internal sealed class MapMotion : IDisposable
         internal MapRenderer.Inspection? Inspection { get; init; }
         internal Markers? Markers { get; init; }
         internal Surface? Surface { get; init; }
+
+        /// <summary>Whether <see cref="Arcs"/> holds this picture's arcs, which a subject's land-only first publication lacks.</summary>
+        internal bool ArcsDrawn { get; init; } = true;
     }
 
     private sealed record Markers

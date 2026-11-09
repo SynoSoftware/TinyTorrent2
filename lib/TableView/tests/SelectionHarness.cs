@@ -139,7 +139,7 @@ internal sealed class SelectionHarness
         (bool)Invoke("SelectFocusedItem", ctrl, shift)!;
 
     internal bool Tap(DependencyObject source, bool ctrl = false, bool shift = false) =>
-        (bool)Invoke("SelectFromTap", source, ctrl, shift)!;
+        (bool)Invoke("SelectFromTap", source, null, ctrl, shift)!;
 
     internal bool SelectAll() => (bool)Invoke("SelectAllFromKeyboard")!;
 
@@ -160,7 +160,7 @@ internal sealed class SelectionHarness
             "HitTest",
             BindingFlags.Instance | BindingFlags.NonPublic
         )!;
-        object?[] args = { source, null };
+        object?[] args = { source, null, null };
         object result = method.Invoke(Table, args)!;
         return result.ToString()!;
     }

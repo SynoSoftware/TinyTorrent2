@@ -90,7 +90,12 @@ public sealed partial class MainWindow
             AppWindow.ResizeClient(new SizeInt32(1920, 1080));
             if (!IsPerformanceReplay)
             {
-                AppWindow.Move(new PointInt32(0, 0));
+                // The borderless window keeps an invisible resize frame, so the client area goes
+                // to the display's origin, and a 1920x1080 display holds it.
+                var display = PerformanceDisplay();
+                AppWindow.Move(new PointInt32(display.X, display.Y));
+                var client = PerformanceInput.Screen(WinRT.Interop.WindowNative.GetWindowHandle(this), default);
+                AppWindow.Move(new PointInt32(2 * display.X - (int)client.X, 2 * display.Y - (int)client.Y));
                 Activate();
                 return;
             }
@@ -98,6 +103,23 @@ public sealed partial class MainWindow
         AppWindow.IsShownInSwitchers = false;
         AppWindow.Move(new PointInt32(-10000, -10000));
         AppWindow.Show(false);
+    }
+
+    /// <summary>
+    /// The display a visible performance run uses: one other than the main display when one
+    /// holds the 1920x1080 client area, so the owner keeps the main display.
+    /// </summary>
+    private static RectInt32 PerformanceDisplay()
+    {
+        var main = Microsoft.UI.Windowing.DisplayArea.Primary;
+        var displays = Microsoft.UI.Windowing.DisplayArea.FindAll();
+        for (var index = 0; index < displays.Count; index++)
+        {
+            var bounds = displays[index].OuterBounds;
+            if (displays[index].DisplayId.Value != main.DisplayId.Value && bounds.Width >= 1920 && bounds.Height >= 1080)
+                return bounds;
+        }
+        return main.OuterBounds;
     }
 
     partial void ConfigureCapture()
@@ -1170,9 +1192,6 @@ public sealed partial class MainWindow
 
     [DllImport("user32.dll", ExactSpelling = true)]
     private static extern nint SendMessageW(nint hwnd, uint message, nint wParam, nint lParam);
-
-    [DllImport("user32.dll", ExactSpelling = true, CharSet = CharSet.Unicode)]
-    private static extern int MessageBoxW(nint hwnd, string text, string caption, uint type);
 
     private async Task<CheckBox[]> CaptureDays(FrameworkElement page, PeriodDraft draft)
     {
@@ -3431,11 +3450,6 @@ public sealed partial class MainWindow
                     )
                 );
             }
-            // A person watches the visible benchmark, so a failed run says why
-            // before its window disappears. Error icon, topmost, foreground.
-            if (failure is not null && IsPerformanceReview && !IsPerformanceReplay)
-                MessageBoxW(WinRT.Interop.WindowNative.GetWindowHandle(this),
-                    $"The benchmark stopped.\n\n{failure.Message}", "TinyTorrent benchmark", 0x10 | 0x40000 | 0x10000);
             if (ReviewMode == CaptureMode.SettingsPrototype)
                 foreach (var setting in Model.Settings.All)
                     setting.Cancel();

@@ -59,6 +59,8 @@ public sealed partial class MainWindow
         (string? TorrentId, long Qpc) selection = default;
         var lastPress = 0L;
         var lastPressTime = 0L;
+        // When the UI thread committed the last frame that showed a view change of the torrent table.
+        var viewShown = 0L;
         var inputOffset = 0L;
         var samples = new List<object>();
         var pictures = new ConcurrentQueue<object>();
@@ -83,7 +85,10 @@ public sealed partial class MainWindow
         var phase = string.Empty;
         var phaseStarted = 0L;
         var selecting = false;
+        var clearedSelections = 0;
         var firstPicture = 0L;
+        var settlingPeers = 0;
+        var subjectDraws = new ConcurrentDictionary<object, long>(ReferenceEqualityComparer.Instance);
         var opening = 0L;
         var reorder = Torrents.CanReorder;
         using var feeding = new CancellationTokenSource();
@@ -173,12 +178,24 @@ public sealed partial class MainWindow
         }
         void Selected(object? sender, Syno.TableView.Selection next)
         {
-            if (!selecting || next.Current is not Torrent target) return;
+            if (!selecting) return;
+            if (next.Current is not Torrent target)
+            {
+                clearedSelections++;
+                return;
+            }
             selection = (target.TorrentId, Stopwatch.GetTimestamp());
             foreach (var pending in presses.Where(press => press.Selected != 0 && press.Rendered == 0
                 && press.TorrentId != target.TorrentId)) pending.Superseded = true;
             var pendingPress = presses.LastOrDefault(press => press.TorrentId == target.TorrentId && press.Selected == 0);
             if (pendingPress is not null) pendingPress.Selected = selection.Qpc;
+        }
+        PerformanceGesture Gesture(string torrentId) => new(Read<object>(Torrents, "_gesture").ToString()!,
+            Read<bool>(Torrents, "_gestureDeferred"), (Read<object?>(Torrents, "_gestureItem") as Torrent)?.TorrentId == torrentId);
+        void Releasing(object sender, PointerRoutedEventArgs args)
+        {
+            if (selecting && presses.Count > 0 && presses[^1] is { Release: null } press)
+                press.Release = Gesture(press.TorrentId);
         }
         void Pressed(object sender, PointerRoutedEventArgs args)
         {
@@ -186,18 +203,23 @@ public sealed partial class MainWindow
             if (!point.Properties.IsLeftButtonPressed) return;
             var now = Stopwatch.GetTimestamp();
             lastPressTime = (long)point.Timestamp;
-            for (var element = args.OriginalSource as DependencyObject; element is not null; element = VisualTreeHelper.GetParent(element))
-                if (element is ListViewItem { Content: Torrent torrent })
-                {
-                    if (selecting)
-                    {
-                        var selected = selection.TorrentId == torrent.TorrentId && selection.Qpc > lastPress ? selection.Qpc : 0;
-                        var alreadySelected = selected == 0 && ReferenceEquals(Torrents.Selection.Current, torrent);
-                        presses.Add(new PerformancePress { TorrentId = torrent.TorrentId, InputTime = lastPressTime, Received = now,
-                            Selected = alreadySelected ? now : selected, AlreadySelected = alreadySelected, PressCycles = CaptureCycles.Current() });
-                    }
-                    break;
-                }
+            if (selecting)
+            {
+                var container = default(ListViewItem);
+                for (var element = args.OriginalSource as DependencyObject; element is not null && container is null; element = VisualTreeHelper.GetParent(element))
+                    container = element as ListViewItem;
+                // A press on no row records the row the table chose, if any, so every press has a record.
+                var torrent = container?.Content as Torrent ?? Read<object?>(Torrents, "_gestureItem") as Torrent;
+                var torrentId = torrent?.TorrentId ?? string.Empty;
+                var selected = torrent is not null && selection.TorrentId == torrentId && selection.Qpc > lastPress ? selection.Qpc : 0;
+                var alreadySelected = torrent is not null && selected == 0 && ReferenceEquals(Torrents.Selection.Current, torrent);
+                presses.Add(new PerformancePress { TorrentId = torrentId, InputTime = lastPressTime, Received = now,
+                    Selected = alreadySelected ? now : selected, AlreadySelected = alreadySelected, PressCycles = CaptureCycles.Current(),
+                    PressedOn = container is null ? "no row" : Read<ListView>(Torrents, "_surface").IndexFromContainer(container) < 0 ? "leaving row" : "row",
+                    Press = Gesture(torrentId),
+                    // A view change no frame has shown yet is the layout the press was applied to.
+                    ViewShown = Read<bool>(Torrents, "_layoutPending") ? now : viewShown });
+            }
             lastPress = now;
         }
         void Rendered(object? sender, RenderedEventArgs args)
@@ -205,6 +227,9 @@ public sealed partial class MainWindow
             var now = Stopwatch.GetTimestamp();
             if (selecting)
             {
+                // The table clears this note after the frame that laid out its view change.
+                if (Read<bool>(Torrents, "_layoutPending"))
+                    viewShown = now;
                 var cycles = CaptureCycles.Current();
                 foreach (var press in presses.Where(press => press.Selected != 0 && press.Rendered == 0 && !press.Superseded
                     && press.TorrentId == (Torrents.Selection.Current as Torrent)?.TorrentId))
@@ -275,6 +300,8 @@ public sealed partial class MainWindow
                 map.CaptureInput = (kind, delta) => received.Enqueue(new { phase = Volatile.Read(ref phase),
                     qpc = Stopwatch.GetTimestamp(), kind, delta });
             TypedEventHandler<ICanvasAnimatedControl, CanvasAnimatedDrawEventArgs> drawn = (_, _) => {
+                if (Volatile.Read(ref settlingPeers) is > 0 and var peers && motion.DrawnSubject is { } shown && shown.Peers == peers)
+                    subjectDraws.TryAdd(shown.Subject, Stopwatch.GetTimestamp());
                 if (motion.DrawnView is { } view)
                 {
                     var dots = motion.DrawnDots;
@@ -477,6 +504,8 @@ public sealed partial class MainWindow
         Torrents.SelectionChanged += Selected;
         var pressed = new PointerEventHandler(Pressed);
         Torrents.AddHandler(UIElement.PointerPressedEvent, pressed, true);
+        var releasing = new PointerEventHandler(Releasing);
+        Panel? rowsPanel = null;
         Microsoft.UI.Xaml.UnhandledExceptionEventHandler unhandled = (_, args) =>
             File.WriteAllText(Path.Combine(directory, "unhandled.log"), args.Exception.ToString());
         Application.Current.UnhandledException += unhandled;
@@ -631,6 +660,9 @@ public sealed partial class MainWindow
             }).ToArray();
             for (var index = 0; index < positions.Length * 3; index++) clicks.Add(new PerformanceClick {
                 Position = positions[index % positions.Length], Visit = index / positions.Length + 1 });
+            // Inside the list, so it runs before the table handles the release.
+            rowsPanel = surface.ItemsPanelRoot;
+            rowsPanel.AddHandler(UIElement.PointerReleasedEvent, releasing, true);
             selecting = true;
             await Measure("torrent-clicks", PerformanceInput.Clicks(window, clicks.Select(click => click.Position).ToArray(), 150), (step, sent) => {
                 var index = step.Click!.Value;
@@ -642,6 +674,8 @@ public sealed partial class MainWindow
                 Call(Torrents, "SelectItem", torrent, false, false);
             });
             var released = Stopwatch.GetTimestamp();
+            var subjectAtRelease = inspector.PeerSubject;
+            Volatile.Write(ref settlingPeers, selectedCount);
             while (!replay && lastPressTime < clicks[^1].InputTime - 50000 && Stopwatch.GetElapsedTime(released).TotalSeconds < 2)
                 await Task.Delay(10);
             await CaptureLayout();
@@ -650,7 +684,13 @@ public sealed partial class MainWindow
             await Until(() => ReferenceEquals(((Syno.TableView.Table)table).ItemsSource, inspector.ShownPeers)
                 && inspector.ShownPeers?.Count == selectedCount, "The final peer table did not publish.");
             await Connections("selection-map-settlement", released, selectedCount);
+            Volatile.Write(ref settlingPeers, 0);
+            // When the last click had already selected the heavy torrent, its map could be on screen before the release.
+            var subjectChanged = !ReferenceEquals(inspector.PeerSubject, subjectAtRelease);
+            double? firstSubjectPictureMs = subjectChanged && subjectDraws.TryGetValue(inspector.PeerSubject, out var subjectDrawn)
+                ? (subjectDrawn - released) * 1000d / Stopwatch.Frequency : null;
             outcomes.Add(new { journey = "heavy detail after clicks", ms = Stopwatch.GetElapsedTime(released).TotalMilliseconds,
+                firstSubjectPictureMs, firstSubjectPictureEndpoint = "map-draw", subjectChanged,
                 peers = inspector.Peers?.Count, mapWidth = Read<PeerMap>(pane, "_peerMap").ActualWidth, tableWidth = table.ActualWidth });
             await Screenshot("marquee-map");
             overlay = Read<FrameworkElement>(Torrents, "_marqueeOverlay");
@@ -708,6 +748,7 @@ public sealed partial class MainWindow
                 catch (Exception error) { feedFailure = error; }
             Torrents.SelectionChanged -= Selected;
             Torrents.RemoveHandler(UIElement.PointerPressedEvent, pressed);
+            rowsPanel?.RemoveHandler(UIElement.PointerReleasedEvent, releasing);
             Application.Current.UnhandledException -= unhandled;
             CompositionTarget.Rendered -= Rendered;
             foreach (var detach in changeObservers.Values) detach();
@@ -727,7 +768,7 @@ public sealed partial class MainWindow
                 fixture = new { detail = cities ? "cities" : "countries", expected = data.PeerCount, summaries = targets.Sum(torrent => torrent.PeerCount),
                     parsed = inspector.Peers?.Count, observations = inspector.Map.Capture().Observations.Length,
                     inspector.Map.Cities, inspector.IsLoading, inspector.IsReplacing, motion = map?.MotionState },
-                presses, inputOffset,
+                presses, inputOffset, clearedSelections,
                 clicks = clicks.Select(click => {
                     var matches = presses.Where(press => replay ? press.InputTime == click.InputTime
                         : Math.Abs(press.InputTime - click.InputTime) < 50000).ToArray();
@@ -736,7 +777,9 @@ public sealed partial class MainWindow
                         matches = matches.Length, superseded = press?.Superseded ?? false,
                         received = press?.Received ?? 0, selected = press?.Selected ?? 0, rendered = press?.Rendered ?? 0,
                         pressCycles = press?.PressCycles ?? 0, renderCycles = press?.RenderCycles ?? 0,
-                        alreadySelected = press?.AlreadySelected ?? false };
+                        alreadySelected = press?.AlreadySelected ?? false,
+                        pressedOn = press?.PressedOn, pressGesture = press?.Press, releaseGesture = press?.Release,
+                        viewShown = press?.ViewShown };
                 }) }));
             if (feedFailure is not null) throw feedFailure;
         }
@@ -761,7 +804,20 @@ public sealed partial class MainWindow
         /// <summary>The UI thread's CPU cycles when the press reached it and when its selection rendered.</summary>
         public ulong PressCycles { get; init; }
         public ulong RenderCycles { get; set; }
+        /// <summary>What the press landed on: a row, a row the list has let go of, or no row.</summary>
+        public string? PressedOn { get; init; }
+        /// <summary>The table's gesture just after it handled the press, and just before it handles the release.</summary>
+        public PerformanceGesture? Press { get; init; }
+        public PerformanceGesture? Release { get; set; }
+        /// <summary>
+        /// When the UI thread committed the last frame that showed a view change of the torrent
+        /// table, as the press reached the table, or the press time while a view change waits for
+        /// its first frame. A press sent before it may target a row the person had not seen there.
+        /// </summary>
+        public long ViewShown { get; init; }
     }
+
+    private sealed record PerformanceGesture(string Gesture, bool Deferred, bool SameItem);
 }
 
 internal sealed class PerformanceData

@@ -213,7 +213,11 @@ surface, so adjacent shaded countries meet without a source-over blending seam.
 Borders and routes retain their normal blending.
 
 Outline tracing yields at bounded source-point, ring and border-piece
-checkpoints, checking the renderer's rebuild budget before continuing. A complete
+checkpoints. A map traces every country that has no outline yet before it draws
+its land, without the renderer's rebuild budget, so the map's first picture
+shows all of its land before any arc. Tracing the world takes about 0.1 s on
+the worker, once per map. Retracing at another detail checks the budget at each
+checkpoint before continuing. A complete
 old outline stays visible until its replacement is complete; nearby strokes are
 prepared within the same budget. A native tessellation call runs to completion.
 Superseded work releases its native resources on detail, meridian/device change
@@ -428,9 +432,19 @@ same-subject observations coalesce while a useful pass finishes, so continuous
 updates cannot starve completed content. A different Inspector subject,
 origin, detail mode, surface or device cancels incompatible work. The worker
 checks cancellation between routes, countries and border pieces and immediately
-before publishing one immutable result containing its bitmap, scene, inspection
-and source view. The presenter adopts that whole result. A later cancellation
-cannot separate a published bitmap from its packet scene.
+before each publication. A publication is one immutable result containing its
+bitmap, scene, inspection and source view. The presenter adopts that whole
+result, so a later cancellation cannot separate a published bitmap from its
+packet scene.
+
+The first picture of a new subject is drawn once and published three times, so
+its land does not wait for its arcs. The first publication holds the land,
+country shading and borders, with no scene, markers or places. The second adds
+the arcs, the scene and the places that have a connection. The third adds every
+other place. The presenter does not draw the arcs layer of the first
+publication, because the worker is still drawing it; the second publication
+completes it. A cancellation between publications leaves
+the last one on screen, and the next pass prepares and draws the picture again.
 
 Grouping returns only geographic facts; it cannot restore captured selection
 or hover. The Inspector owns a subject identity that survives ordinary refreshes.
