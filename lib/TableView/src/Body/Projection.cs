@@ -65,7 +65,7 @@ internal sealed class Projection
     private readonly Input _input;
     private readonly IReadOnlyList<object> _view;
     private readonly ItemIdentity _identity;
-    private readonly IComparer<object>? _comparer;
+    private IComparer<object>? _comparer;
     private readonly Dictionary<object, (bool Present, long Named)> _released;
     private readonly HashSet<object> _held;
     private readonly Hierarchy.Snapshot? _hierarchy;
@@ -79,10 +79,6 @@ internal sealed class Projection
         _view = input.Rows.Displayed;
         _hierarchy = input.Rows.Hierarchy;
         _identity = CaptureKeys(input.Rows, input.Holding);
-        // A sort request read its keys on the UI thread so a failing selector rejects the
-        // request before the table changes; every later projection reads them here.
-        IReadOnlyCollection<object> sortable = _hierarchy is null ? input.Rows.Source : _hierarchy.Nodes.Keys;
-        _comparer = input.Ordering.Comparer ?? input.Ordering.Capture?.Invoke(sortable);
         _released = new(input.Holding.Released, _identity);
         _held = new(_identity);
         _nodes = _hierarchy?.Nodes.Values.ToDictionary(node => node.Item, ReferenceEqualityComparer.Instance);
@@ -217,11 +213,19 @@ internal sealed class Projection
         return (order, held, true);
     }
 
+    /// <summary>
+    /// A sort request read its keys on the UI thread so a failing selector rejects the
+    /// request before the table changes; a later projection reads them here, and only when
+    /// it sorts, because an update that keeps the view's order never compares rows.
+    /// </summary>
+    private IComparer<object>? Comparer => _comparer ??= _input.Ordering.Comparer
+        ?? _input.Ordering.Capture?.Invoke(_hierarchy is null ? _input.Rows.Source : _hierarchy.Nodes.Keys);
+
     private IReadOnlyList<object> SortedSnapshot(IReadOnlyList<object> source)
     {
         if (_hierarchy is not null)
-            return Project(_comparer);
-        return Order(source, _comparer).ToArray();
+            return Project(Comparer);
+        return Order(source, Comparer).ToArray();
     }
 
     private IEnumerable<object> Order(IReadOnlyList<object> rows, IComparer<object>? comparer) =>

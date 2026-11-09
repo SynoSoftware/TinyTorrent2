@@ -84,7 +84,13 @@ workers capture published immutable records and locations, reconcile updates and
 build one flat array of map facts for the full subject, independently of
 place-filtered rows. Record and location replacement invalidates the filter
 generation before notifications; only a still-current generation and subject may
-publish prepared facts. Map settings reuse the accepted snapshot. `MapModel`
+publish prepared facts. The table takes each torrent's reply, but once the map
+has shown a whole poll round of a subject, later rounds publish their final
+facts once, when the round ends, because each publication regroups every peer
+of the scope. Until then each reply publishes, so a new subject's map fills
+while its first round loads. While a new subject's rows are unread, the map
+keeps its last picture rather than an empty one, which would release every
+arc only to build them again. Map settings reuse the accepted snapshot. `MapModel`
 takes this detached population without enumerating peers or relabelling an old subject. One
 serialized `MapWork` worker owns grouping and estimated distribution. It
 publishes detached group copies that nobody subsequently mutates. The UI
@@ -249,7 +255,9 @@ otherwise the chosen place: a map pin, the place, its connections (peers not
 merely known), then its download and upload rates in the totals' colours.
 Connections and each rate show only when above zero, because "0 connections"
 or a dash tells the person nothing. It describes no place while the map is
-dragged. An estimated
+dragged. It and the map's accessible description change with the displayed
+places and their highlight, not with each new picture, so panning and zooming
+add no UI-thread work for them. An estimated
 destination shows the totals of the peers that choosing it shows, not its
 estimated share.
 Land and boundaries use the platform's secondary control surface and strong

@@ -149,7 +149,8 @@ function Report {
             alreadySelected = [bool]$click.alreadySelected; matches = $click.matches;
             receivedMs = if ($click.received) { ($click.received - $click.sent) * 1000 / $frequency } else { $null };
             selectedMs = if ($click.selected) { ($click.selected - $click.sent) * 1000 / $frequency } else { $null };
-            renderMs = if ($click.rendered) { ($click.rendered - $click.sent) * 1000 / $frequency } else { $null } }
+            renderMs = if ($click.rendered) { ($click.rendered - $click.sent) * 1000 / $frequency } else { $null };
+            renderMegacycles = if ($click.renderCycles) { ([double]$click.renderCycles - $click.pressCycles) / 1e6 } else { $null } }
     })
     $cadence = @(for ($index = 1; $index -lt $clicks.Count; $index++) { ($clicks[$index].sent - $clicks[$index - 1].sent) * 1000 / $frequency })
     $marqueePhase = $timing.phases | Where-Object name -eq 'torrent-marquee'
@@ -203,6 +204,7 @@ function Report {
         });
         selectionMs = Summary @($clicks | Where-Object { -not $_.alreadySelected -and $null -ne $_.selectedMs } | ForEach-Object selectedMs);
         renderMs = Summary @($clicks | Where-Object { -not $_.alreadySelected -and $null -ne $_.renderMs } | ForEach-Object renderMs);
+        renderMegacycles = Summary @($clicks | Where-Object { -not $_.alreadySelected -and $null -ne $_.renderMegacycles } | ForEach-Object renderMegacycles);
         feedbackMs = Summary @($clicks.renderMs | Where-Object { $null -ne $_ });
         alreadySelected = @($clicks | Where-Object alreadySelected).Count;
         invalidClickMatches = @($clicks | Where-Object { $null -ne $_.matches -and $_.matches -ne 1 }).Count;
@@ -306,6 +308,8 @@ function Report {
         $lines.Add(('Click → selection: median {0:F1} ms, p95 {1:F1} ms, worst {2:F1} ms.' -f $report.selectionMs.median, $report.selectionMs.p95, $report.selectionMs.worst))
         $lines.Add(('Click → rendered selection: median {0:F1} ms, p95 {1:F1} ms, worst {2:F1} ms. Unselected: {3}; not observed rendered: {4}.' -f
             $report.renderMs.median, $report.renderMs.p95, $report.renderMs.worst, $report.unselected, $report.notRendered))
+        $lines.Add(('UI-thread cycles from press to rendered selection: median {0:F1}, p95 {1:F1}, worst {2:F1} megacycles.' -f
+            $report.renderMegacycles.median, $report.renderMegacycles.p95, $report.renderMegacycles.worst))
         $lines.Add(('All-click feedback, including already-selected acknowledgements: p95 {0:F1} ms, worst {1:F1} ms.' -f
             $report.feedbackMs.p95, $report.feedbackMs.worst))
         $lines.Add(('Actual click cadence: median {0:F1} ms, worst {1:F1} ms; valid within 150±15 ms: {2}.' -f

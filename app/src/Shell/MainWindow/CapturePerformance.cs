@@ -39,6 +39,7 @@ public sealed partial class MainWindow
         if (scopeReview && (!replay || ReviewMode != CaptureMode.PerformanceSelection))
             throw new InvalidOperationException("Peer-scope attribution requires the offscreen selection replay.");
         using var input = replay ? null : new PerformanceInput(window);
+        input?.BringToFront();
         await ShowTorrents();
         Model.Filter = TorrentFilter.All;
         Model.IsFilterOpen = false;
@@ -193,7 +194,7 @@ public sealed partial class MainWindow
                         var selected = selection.TorrentId == torrent.TorrentId && selection.Qpc > lastPress ? selection.Qpc : 0;
                         var alreadySelected = selected == 0 && ReferenceEquals(Torrents.Selection.Current, torrent);
                         presses.Add(new PerformancePress { TorrentId = torrent.TorrentId, InputTime = lastPressTime, Received = now,
-                            Selected = alreadySelected ? now : selected, AlreadySelected = alreadySelected });
+                            Selected = alreadySelected ? now : selected, AlreadySelected = alreadySelected, PressCycles = CaptureCycles.Current() });
                     }
                     break;
                 }
@@ -203,8 +204,15 @@ public sealed partial class MainWindow
         {
             var now = Stopwatch.GetTimestamp();
             if (selecting)
+            {
+                var cycles = CaptureCycles.Current();
                 foreach (var press in presses.Where(press => press.Selected != 0 && press.Rendered == 0 && !press.Superseded
-                    && press.TorrentId == (Torrents.Selection.Current as Torrent)?.TorrentId)) press.Rendered = now;
+                    && press.TorrentId == (Torrents.Selection.Current as Torrent)?.TorrentId))
+                {
+                    press.Rendered = now;
+                    press.RenderCycles = cycles;
+                }
+            }
             if (phase.Length == 0) return;
             if (Stopwatch.GetElapsedTime(lastTableSample, now).TotalMilliseconds >= 100)
             {
@@ -604,7 +612,10 @@ public sealed partial class MainWindow
                 var initial = await PerformanceInput.Run(PerformanceInput.Clicks(window, [Screen(firstRow, new Point(32, firstRow.ActualHeight / 2))], 150), directory);
                 await Until(() => lastPressTime != 0, "The calibration click did not reach the torrent table.");
                 inputOffset = lastPressTime - initial.ClickTimes[0];
-                if (Math.Abs(inputOffset) > 100000) throw new InvalidOperationException("The pointer and sender uptime clocks did not agree within 100 ms.");
+                var clocks = PerformanceInput.ClockOffsets();
+                if (!clocks.Any(clock => Math.Abs(inputOffset - clock) <= 100000))
+                    throw new InvalidOperationException($"The calibration click's pointer time was {inputOffset / 1000} ms from its send; "
+                        + $"no uptime clock explains it ({string.Join(", ", clocks.Select(clock => clock / 1000))} ms).");
             }
             var heavyOpened = Stopwatch.GetTimestamp();
             await SelectTorrent(new Syno.TableView.Selection([heavy], heavy));
@@ -627,7 +638,7 @@ public sealed partial class MainWindow
                 var already = ReferenceEquals(Torrents.Selection.Current, torrent);
                 var stamp = Stopwatch.GetTimestamp();
                 presses.Add(new PerformancePress { TorrentId = torrent.TorrentId, InputTime = sent, Received = stamp,
-                    AlreadySelected = already, Selected = already ? stamp : 0 });
+                    AlreadySelected = already, Selected = already ? stamp : 0, PressCycles = CaptureCycles.Current() });
                 Call(Torrents, "SelectItem", torrent, false, false);
             });
             var released = Stopwatch.GetTimestamp();
@@ -724,6 +735,7 @@ public sealed partial class MainWindow
                     return new { press?.TorrentId, click.Visit, sent = click.Sent, inputTime = click.InputTime,
                         matches = matches.Length, superseded = press?.Superseded ?? false,
                         received = press?.Received ?? 0, selected = press?.Selected ?? 0, rendered = press?.Rendered ?? 0,
+                        pressCycles = press?.PressCycles ?? 0, renderCycles = press?.RenderCycles ?? 0,
                         alreadySelected = press?.AlreadySelected ?? false };
                 }) }));
             if (feedFailure is not null) throw feedFailure;
@@ -746,6 +758,9 @@ public sealed partial class MainWindow
         internal bool Superseded;
         public long Selected { get; set; }
         public long Rendered { get; set; }
+        /// <summary>The UI thread's CPU cycles when the press reached it and when its selection rendered.</summary>
+        public ulong PressCycles { get; init; }
+        public ulong RenderCycles { get; set; }
     }
 }
 

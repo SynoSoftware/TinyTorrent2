@@ -1171,6 +1171,9 @@ public sealed partial class MainWindow
     [DllImport("user32.dll", ExactSpelling = true)]
     private static extern nint SendMessageW(nint hwnd, uint message, nint wParam, nint lParam);
 
+    [DllImport("user32.dll", ExactSpelling = true, CharSet = CharSet.Unicode)]
+    private static extern int MessageBoxW(nint hwnd, string text, string caption, uint type);
+
     private async Task<CheckBox[]> CaptureDays(FrameworkElement page, PeriodDraft draft)
     {
         var days = CaptureElements(page)
@@ -3428,6 +3431,11 @@ public sealed partial class MainWindow
                     )
                 );
             }
+            // A person watches the visible benchmark, so a failed run says why
+            // before its window disappears. Error icon, topmost, foreground.
+            if (failure is not null && IsPerformanceReview && !IsPerformanceReplay)
+                MessageBoxW(WinRT.Interop.WindowNative.GetWindowHandle(this),
+                    $"The benchmark stopped.\n\n{failure.Message}", "TinyTorrent benchmark", 0x10 | 0x40000 | 0x10000);
             if (ReviewMode == CaptureMode.SettingsPrototype)
                 foreach (var setting in Model.Settings.All)
                     setting.Cancel();

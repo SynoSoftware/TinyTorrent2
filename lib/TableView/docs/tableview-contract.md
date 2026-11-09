@@ -417,8 +417,9 @@ The control deliberately has two extension mechanisms, with no overlap:
 Policy callbacks MUST be pure, synchronous, and cheap. The table never calls
 them per render frame. A sort or layout request reads its sort keys once on the
 UI thread, so a request whose selector fails throws there and changes nothing.
-Every projection reads identity and sort keys on the worker at the start of
-preparation, once per row, from the source snapshot the UI captured; selection
+Every projection reads identity on the worker at the start of preparation, and
+sort keys when it sorts rather than keeping the view's order, once per row,
+from the source snapshot the UI captured; selection
 and hierarchy capture still read identity on the UI thread. Key and sort-key
 selectors and comparisons therefore must not access UI state; captured key values must remain stable. `Comparer<TKey>.Default` supplies normal .NET ordering, including enums
 and nullable keys; default nulls come first ascending. An optional comparer
@@ -510,7 +511,8 @@ sort-key selectors stay on the UI thread because the host's collections may be
 UI-owned. TableView then reads identity
 and sort keys once per row and prepares validation, sorting, membership holds,
 pinning, hierarchy projection, position indices and collection edits on a
-worker. Key and sort-key selectors run on that worker for every projection, and
+worker. Key selectors run on that worker for every projection, sort-key
+selectors for every projection that sorts, and they run
 on the UI thread for the read that validates a sort or layout request and for
 selection and hierarchy identity: they read only state the host publishes
 safely, such as immutable fields, snapshots or volatile values, and never UI

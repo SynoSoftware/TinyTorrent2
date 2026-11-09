@@ -28,6 +28,9 @@ public sealed partial class Inspector
     private IReadOnlyList<Peer>? _releaseBaseline;
     private (int Connected, int Active) _peerCounts;
     private MapModel.Population? _mapPopulation;
+    private MapModel.Population? _roundPopulation;
+    // The subject whose map has shown a whole poll round.
+    private object? _mapRoundSubject;
 
     internal event EventHandler<IReadOnlyList<Peer>>? PeersReleased;
 
@@ -126,8 +129,11 @@ public sealed partial class Inspector
         });
         if (!IsCurrent())
             return;
-        _mapPopulation = prepared.Population;
-        UpdateMap(Map.Cities);
+        // While a replacement's rows are unread, the map keeps its last picture,
+        // as the rest of the inspector keeps its detail; an empty map would
+        // release every arc only to build them again when the rows arrive.
+        if (peers is not null || !IsReplacing)
+            ShowMapPopulation(prepared.Population);
         if (!IsCurrent())
             return;
         _releaseBaseline = null;
@@ -153,6 +159,41 @@ public sealed partial class Inspector
         }
         if (IsCurrent())
             _peersReady!.TrySetResult();
+    }
+
+    /// <summary>
+    /// Gives the map a population. The table takes each torrent's reply, but
+    /// rebuilding the map passes over every peer of the scope, so once a poll
+    /// round of the subject has finished, later rounds rebuild the map once,
+    /// when they end. Until then each reply shows at once, so a new subject's
+    /// map fills while its first round loads.
+    /// </summary>
+    private void ShowMapPopulation(MapModel.Population population)
+    {
+        if (_fetching && ReferenceEquals(_mapRoundSubject, population.Subject))
+        {
+            _roundPopulation = population;
+            return;
+        }
+        if (!ReferenceEquals(_mapPopulation?.Subject, population.Subject))
+            _mapRoundSubject = null;
+        _roundPopulation = null;
+        _mapPopulation = population;
+        UpdateMap(Map.Cities);
+    }
+
+    /// <summary>
+    /// Called when a poll round of the peers ends; shows the population it left
+    /// waiting. A Filter still running holds the round's newest rows and shows
+    /// them itself when it finishes, so the round does not show older ones first.
+    /// </summary>
+    private void EndMapRound()
+    {
+        if (_peersReady?.Task.IsCompleted != false && _roundPopulation is { } population
+            && ReferenceEquals(population.Subject, PeerSubject))
+            ShowMapPopulation(population);
+        if (ReferenceEquals(_mapPopulation?.Subject, PeerSubject))
+            _mapRoundSubject = PeerSubject;
     }
 
     internal bool HasCities =>

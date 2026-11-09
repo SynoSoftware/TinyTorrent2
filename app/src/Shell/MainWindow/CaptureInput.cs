@@ -40,7 +40,49 @@ public sealed class PerformanceInput : IDisposable
     public void Check()
     {
         if ((GetAsyncKeyState(27) & 0x8000) != 0) throw new OperationCanceledException("Escape stopped input.");
-        if (GetForegroundWindow() != _window) throw new InvalidOperationException("The benchmark lost foreground focus.");
+        if (GetForegroundWindow() != _window) throw new InvalidOperationException("Another window is in front of the benchmark.");
+    }
+
+    /// <summary>
+    /// Brings the benchmark window to the front. Windows refuses a plain
+    /// SetForegroundWindow for some time after the person last typed or clicked
+    /// in another window, so this thread briefly shares input state with that
+    /// window's thread, which Windows accepts.
+    /// </summary>
+    public void BringToFront()
+    {
+        var current = GetForegroundWindow();
+        if (current == _window)
+            return;
+        var other = GetWindowThreadProcessId(current, 0);
+        var self = GetCurrentThreadId();
+        var attached = other != 0 && other != self && AttachThreadInput(self, other, true);
+        try
+        {
+            BringWindowToTop(_window);
+            SetForegroundWindow(_window);
+        }
+        finally
+        {
+            if (attached)
+                AttachThreadInput(self, other, false);
+        }
+    }
+
+    /// <summary>A performance-counter timestamp in microseconds, the unit of <see cref="Result.ClickTimes"/>.</summary>
+    public static long Microseconds(long timestamp) => Stopwatch.GetElapsedTime(0, timestamp).Ticks / 10;
+
+    /// <summary>
+    /// How far, in microseconds, each uptime clock a pointer timestamp may use is
+    /// ahead of the performance counter: the counter itself, the tick count, and
+    /// the interrupt time without sleep. They drift apart while Windows runs and
+    /// sleeps, so a click's pointer timestamp is compared against all of them.
+    /// </summary>
+    public static long[] ClockOffsets()
+    {
+        QueryUnbiasedInterruptTime(out var unbiased);
+        var counter = Microseconds(Stopwatch.GetTimestamp());
+        return [0, Environment.TickCount64 * 1000 - counter, (long)(unbiased / 10) - counter];
     }
 
     public static Vector2 Screen(nint window, Vector2 point)
@@ -252,7 +294,7 @@ public sealed class PerformanceInput : IDisposable
                 if (step.Click is { } click)
                 {
                     clicks[click] = now;
-                    clickTimes[click] = Environment.TickCount64 * 1000;
+                    clickTimes[click] = Microseconds(now);
                 }
                 worst = Math.Max(worst, (now - start) * 1000d / Stopwatch.Frequency - step.At);
                 deliver(index, now);
@@ -314,4 +356,10 @@ public sealed class PerformanceInput : IDisposable
     [DllImport("gdi32.dll")] private static extern int GetDeviceCaps(nint dc, int index);
     [DllImport("winmm.dll")] private static extern uint timeBeginPeriod(uint period);
     [DllImport("winmm.dll")] private static extern uint timeEndPeriod(uint period);
+    [DllImport("kernel32.dll")] private static extern bool QueryUnbiasedInterruptTime(out ulong time);
+    [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint window, nint process);
+    [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint attach, uint to, bool join);
+    [DllImport("user32.dll")] private static extern bool BringWindowToTop(nint window);
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(nint window);
 }

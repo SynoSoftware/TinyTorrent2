@@ -515,6 +515,8 @@ public sealed partial class Inspector : INotifyPropertyChanged
             if (context == _context)
             {
                 _fetching = false;
+                if (section == InspectorSection.Peers)
+                    EndMapRound();
                 if (changed)
                     Refresh();
                 else

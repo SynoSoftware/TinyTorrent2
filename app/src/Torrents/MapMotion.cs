@@ -162,6 +162,7 @@ internal sealed class MapMotion : IDisposable
     /// </summary>
     internal event Action<long?, double>? Measured;
 
+    /// <summary>Raised on the UI thread when the displayed places, their highlight or the surface change.</summary>
     internal event Action? DisplayChanged;
 
     internal Task Ready => _ready.Task;
@@ -823,7 +824,11 @@ internal sealed class MapMotion : IDisposable
             var displayed = previous is { } current && ReferenceEquals(current.Inspection, inspection) && current.View == view
                 && ReferenceEquals(current.Surface, surface) ? current : new Displayed(inspection, view, surface);
             Volatile.Write(ref _displayed, displayed);
-            if (!ReferenceEquals(previous?.Inspection, inspection) || !ReferenceEquals(previous?.Surface, surface))
+            // Every new picture brings a new inspection, also while the view only
+            // moves, so the UI hears only when the places or their highlight change.
+            if (previous is null || !ReferenceEquals(previous.Surface, surface)
+                || !ReferenceEquals(previous.Inspection.Destinations, inspection.Destinations)
+                || previous.Inspection.Highlight != inspection.Highlight)
                 _dispatcher.TryEnqueue(() =>
                 {
                     if (!_disposed)
