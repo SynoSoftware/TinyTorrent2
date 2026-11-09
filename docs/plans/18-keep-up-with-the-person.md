@@ -3,9 +3,10 @@
 Status, 9 November 2026: revision 15. Steps 2 and 3 are implemented and met
 their predictions in every pair of rounds 2 and 3. Step 1, rows filled in
 phases, made the median click slower in all 15 pairs of rounds 1 to 3, in two
-designs, and is removed (see Step 1). Round 4 measures the build with steps 2
-and 3 against the reference; it has not run yet. The owner asked for "clear
-improvements and proof in all fields touched".
+designs, and is removed (see Step 1). Round 4 measured steps 2 and 3 alone:
+the map and press endpoints improved in every pair, and every other endpoint is
+mixed (see Round 4). The owner asked for "clear improvements and proof in all
+fields touched".
 
 In this plan, "today" means the reference build: HEAD `2967cdd`, without
 steps 1 to 3.
@@ -141,10 +142,20 @@ clicking the UI thread is busy most of the time in both builds: in round 1,
 2.0 to 2.9 s of the 3.15 s of clicks ran in frames longer than two refreshes.
 So the pieces ran where the next press landed, and each piece added its own
 layout pass or frame. In round 3, one row per frame also kept the window
-drawing about twice as many frames for the 1 to 2 s after the clicks. In those
-seconds the map's glow drawing, which shares the laptop's processor, graphics
-and power with the window, took about twice as long, so the arcs came later.
-Round 2's frame rate and glow time matched the reference.
+drawing about twice as many frames for the 1 to 2 s after the clicks, and in 4
+of 5 pairs the map's glow drawing took about twice as long, so the arcs came
+later. That link is not proven: in round 4, without Step 1, the frame rate
+matched the reference, and the glow drawing still took 430 to 1,430 ms in both
+builds (see Round 4).
+
+**What is left.** Only a smaller row makes the click faster. The table's own
+row code is already small: `CellsPanel` creates one `ContentPresenter` per
+visible column once, sets its content when the row's item changes, and measures
+each cell once. The cost is WinUI inflating each cell's `DataTemplate`, binding
+it and measuring its text. Making that smaller changes how the table builds a
+cell, for every host. The rendering plan excludes that redesign ("no
+publication redesign or broad table investigation"), so it needs the owner's
+decision before any work.
 
 **Removed with it:** its TableView code, its paragraph in contract section 5.3,
 and its row in the implementation map. Section 5.3's reference to the reference
@@ -668,11 +679,12 @@ So filling at Low priority removed part of Step 1's cost to the click, not all
 of it. It also made `firstConnectionsMs` later in every pair, where round 2 was
 mixed. The inspector did not leave the heavy torrent later (earlier in 3
 pairs), so the delay comes after the clicks, while the heavy torrent's peers
-table fills and its map draws the arcs. The saved records show the cause: from
-the release to the arcs, the window drew 25 to 31 frames per second against 14
-to 18, one filled row per frame, and the selected map's one glow drawing took
-828 to 1,077 ms against 356 to 491 ms in 4 of 5 pairs. Round 2's frame rate
-and glow time matched the reference.
+table fills and its map draws the arcs. The saved records point at a cause:
+from the release to the arcs, the window drew 25 to 31 frames per second
+against 14 to 18, one filled row per frame, and the selected map's one glow
+drawing took 828 to 1,077 ms against 356 to 491 ms in 4 of 5 pairs. Round 2's
+frame rate and glow time matched the reference. Round 4 shows the glow time
+varying as much without Step 1, so this cause is not proven.
 
 **Result of three rounds.** Met in every pair of rounds 2 and 3: the map's
 first picture of the selected torrent, the land in one drawing, no selection
@@ -683,10 +695,49 @@ response are lower in 3 or 4 of 5 pairs; and with Low-priority filling,
 `firstConnectionsMs` is later in every pair. Step 1 is therefore removed (see
 Step 1).
 
-**Round 4.** Builds: the same reference, and new
+**Round 4, 9 November.** Builds: the same reference, and new
 `V:\artifacts\TinyTorrent2\evidence\keep-up-new4_capture`: steps 2 and 3
-without Step 1. Not run yet.
+without Step 1, commit `d72c4d5`. Every run ran on the other display after 45 s
+without input. One reference run was interrupted by input and repeated. Before
+pair 4's reference run, another `dotnet` process used CPU. Values are the five
+pairs in order; the reference values vary more than in round 3 (median click 41
+to 100 ms against 36 to 41).
 
-## Estimate
+The new build selects presses that the reference loses, and those presses land
+while the rows change, the costliest moments. So the click endpoints are also
+given over the clicks that both builds selected (6 to 13 per pair, 48 in all).
 
-- Round 4: one build and one round of ten runs, about one hour of machine time.
+| Endpoint | Reference | New | Verdict |
+| --- | --- | --- | --- |
+| Ticks per click, press to rendered selection, median, all clicks (M) | 28.5, 31.1, 39.8, 43.7, 34.2 | 27.1, 40.9, 37.7, 69.2, 42.8 | mixed: more in 3 pairs |
+| Ticks per click, worst, all clicks (M) | 160, 91, 279, 377, 292 | 340, 519, 649, 392, 517 | **more in every pair**; the worst click of pairs 1 and 2 is one the reference lost |
+| Ticks per click, median, common clicks (M) | 35.9, 31.1, 39.3, 43.7, 36.1 | 27.1, 40.9, 37.2, 31.4, 41.8 | mixed: more in 2 pairs |
+| Ticks per click, worst, common clicks (M) | 160, 38, 279, 131, 292 | 90, 147, 633, 392, 517 | mixed: more in 4 pairs |
+| UI-thread ticks from the first to the last press (G) | 4.34, 4.03, 5.45, 4.91, 4.75 | 4.89, 4.82, 4.64, 4.35, 5.85 | mixed: more in 3 pairs |
+| Click to rendered selection, median, all clicks | 58.0, 40.6, 78.3, 48.7, 99.7 | 77.0, 67.2, 70.1, 93.7, 111.9 | mixed: higher in 4 pairs |
+| Click to rendered selection, median, common clicks | 62.5, 40.6, 73.6, 44.0, 101.7 | 77.0, 65.2, 70.1, 93.7, 111.9 | mixed: higher in 4 pairs |
+| Click to rendered selection, worst, all clicks | 169, 156, 505, 308, 222 | 384, 285, 351, 239, 413 | mixed: higher in 3 pairs |
+| UI-thread response in `torrent-clicks`, p95 | 52, 93, 201, 198, 152 | 129, 171, 220, 134, 261 | mixed: higher in 4 pairs |
+| UI-thread response in `torrent-clicks`, worst | 225, 259, 320, 314, 292 | 249, 246, 377, 169, 302 | mixed: higher in 3 pairs |
+| Presses that selected nothing | 5, 6, 6, 6, 4 | 0, 0, 0, 2, 0 | met: one landed on an arriving row 121 ms after the view change, and one matched no click |
+| Presses lost on a leaving row | 2, 2, 4, 3, 1 | 0, 0, 0, 0, 0 | met |
+| Selections cleared by a press | 1, 1, 1, 1, 2 | 0, 0, 0, 0, 0 | met |
+| Selected but never observed rendered | 5, 7, 8, 11, 9 | 5, 4, 7, 7, 9 | met: not more |
+| `firstSubjectPictureMs` | 1495, 1267, 3646, 1697, 1258 | 126, 1017, 126, 778, 847 | met: lower in every pair |
+| `firstConnectionsMs` | 1498, 1283, 3675, 1893, 1266 | 1588, 3384, 1609, 1838, 2652 | met: mixed, later in 3 pairs |
+| The selected map's glow drawing, ms | 468, 482, 1430, 556, 430 | 432, 1189, 564, 559, 1061 | mixed |
+| Drawings that trace land when the map opens | 21, 16, 18, 27, 24 | 1, 1, 1, 1, 1 | met |
+| Marquee gap, p95 | 153, 176, 352, 156, 247 | 149, 154, 278, 196, 78 | met: lower in 4 pairs |
+| Marquee gap, worst | 216, 705, 619, 470, 321 | 274, 325, 418, 221, 335 | met: mixed |
+| Docked navigation gap, worst | 307, 370, 516, 560, 586 | 270, 305, 520, 542, 611 | met: mixed |
+| Stationary dot gap, worst | 87, 388, 127, 158, 72 | 117, 118, 111, 101, 122 | met: mixed |
+| Peak private commitment, MiB | 1291, 1164, 1177, 1119, 1288 | 1079, 1288, 1076, 1201, 1197 | met: mixed |
+
+**Result.** Steps 2 and 3 improve what they set out to improve, in every pair:
+the selected torrent's land shows first, the land traces in one drawing, no
+press on a leaving row is lost, no press clears the selection, and only
+presses on rows still invisible as they arrive select nothing. Every other
+endpoint is mixed, so none is worse by the rule above, except the worst ticks
+per click over all clicks. That one counts presses the reference never handled;
+over the clicks both builds selected it is mixed. The click itself is not
+faster, because the step that aimed at it is removed.
