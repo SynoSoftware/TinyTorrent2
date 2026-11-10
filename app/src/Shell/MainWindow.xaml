@@ -653,10 +653,13 @@
                           <TextBlock
                             Grid.Column="1"
                             Text="{x:Bind Status, Mode=OneWay}"
-                            ToolTipService.ToolTip="{x:Bind StatusTip, Mode=OneWay}"
                             VerticalAlignment="Center"
                             TextTrimming="CharacterEllipsis"
-                          />
+                          >
+                            <ToolTipService.ToolTip>
+                              <ToolTip Content="{x:Bind StatusTip, Mode=OneWay}" />
+                            </ToolTipService.ToolTip>
+                          </TextBlock>
                         </Grid>
                       </DataTemplate>
                     </table:Column.CellTemplate>
@@ -742,9 +745,12 @@
                       <DataTemplate x:DataType="torrents:Torrent">
                         <TextBlock
                           Text="{x:Bind AddedText, Mode=OneWay}"
-                          ToolTipService.ToolTip="{x:Bind AddedTip, Mode=OneWay}"
                           VerticalAlignment="Center"
-                        />
+                        >
+                          <ToolTipService.ToolTip>
+                            <ToolTip Content="{x:Bind AddedTip, Mode=OneWay}" />
+                          </ToolTipService.ToolTip>
+                        </TextBlock>
                       </DataTemplate>
                     </table:Column.CellTemplate>
                   </table:Column>
@@ -753,9 +759,12 @@
                       <DataTemplate x:DataType="torrents:Torrent">
                         <TextBlock
                           Text="{x:Bind CompletedOnText, Mode=OneWay}"
-                          ToolTipService.ToolTip="{x:Bind CompletedOnTip, Mode=OneWay}"
                           VerticalAlignment="Center"
-                        />
+                        >
+                          <ToolTipService.ToolTip>
+                            <ToolTip Content="{x:Bind CompletedOnTip, Mode=OneWay}" />
+                          </ToolTipService.ToolTip>
+                        </TextBlock>
                       </DataTemplate>
                     </table:Column.CellTemplate>
                   </table:Column>

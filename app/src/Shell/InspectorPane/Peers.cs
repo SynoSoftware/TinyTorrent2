@@ -17,12 +17,34 @@ public sealed partial class InspectorPane
     private bool _peerRowsQueued;
     private bool _arrangingPeers;
     private bool _peersStacked;
+
+    // What the peer layout was last arranged for, so a refresh that changes
+    // none of it sets nothing.
+    private (PeerView View, bool Stacked, bool ShowsMap, double Extent)? _peerArrangement;
     private readonly Button _peerMore;
+
+    // The peer facts each sortable column's key reads, so the table re-reads
+    // only the keys of peers whose sorted value changed.
+    private readonly Dictionary<Syno.TableView.Column, Peer.Properties> _peerSortFacts = [];
+
+    // The peer subject whose rows the table holds.
+    private object? _peerRowsSubject;
 
     // The entries the open peer menu shows. Its choices keep it open, and it keeps
     // these entries until it closes, because WinUI places a menu that grows or
     // shrinks again, which moves it away from the pointer.
     private (bool Map, bool Download)? _peerMenuShape;
+
+    private void SortPeers<TKey>(
+        Syno.TableView.Schema<Peer> schema,
+        Syno.TableView.Column column,
+        Func<Peer, TKey> key,
+        Peer.Properties facts
+    )
+    {
+        schema.SortKey(column, key);
+        _peerSortFacts.Add(column, facts);
+    }
 
     private void SetupPeers()
     {
@@ -280,6 +302,19 @@ public sealed partial class InspectorPane
                 && Model.IsVisible
                 && Model.HasContent
                 && _library is null;
+            var extent = Math.Max(
+                0,
+                (stacked ? PeerContent.ActualHeight : PeerContent.ActualWidth) - 16
+            );
+            // StopTracking takes the map out without arranging.
+            var drawn = showsMap
+                ? _peerMap is not null && ReferenceEquals(PeerDrawing.Content, _peerMap)
+                : PeerDrawing.Content is null;
+            if (_peerArrangement == (view, stacked, showsMap, extent) && drawn)
+            {
+                return;
+            }
+            _peerArrangement = (view, stacked, showsMap, extent);
             if (Peers.Visibility == Visibility.Collapsed && view.Layout != PeerLayout.Map)
                 Peers.RefreshView();
             Peers.Visibility =
@@ -314,10 +349,6 @@ public sealed partial class InspectorPane
                     fraction
                 );
             }
-            var extent = Math.Max(
-                0,
-                (stacked ? PeerContent.ActualHeight : PeerContent.ActualWidth) - 16
-            );
             PeerSplit.SetBounds(extent * .15, extent * .85, extent * fraction);
             if (showsMap)
             {
@@ -366,25 +397,11 @@ public sealed partial class InspectorPane
         _mapQueued = DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
         {
             _mapQueued = false;
-            if (
-                !IsLoaded
-                || _peerMap is null
-                || _library is not null
-                || Model.Section != InspectorSection.Peers
-                || !Model.IsVisible
-                || Model.IsReplacing
-                || !ReferenceEquals(PeerDrawing.Content, _peerMap)
-            )
+            if (!ShowsMap)
+            {
                 return;
-            PeerTransfer.Text = Model.Text;
-            PeerTransfer.Download = Model.DownloadText;
-            PeerTransfer.Upload = Model.UploadText;
-            PeerTransfer.Description = Model.Text.Format(
-                "peer_map",
-                "speed_hint",
-                Model.DownloadText,
-                Model.UploadText
-            );
+            }
+            ShowTransfer();
             ShowSpeedLine();
             var cities = _layout.View.Cities && Model.HasCities;
             // A chosen place belongs to one map detail.
@@ -394,6 +411,23 @@ public sealed partial class InspectorPane
         });
     }
 
+    private bool ShowsMap =>
+        IsLoaded
+        && _peerMap is not null
+        && _library is null
+        && Model.Section == InspectorSection.Peers
+        && Model.IsVisible
+        && !Model.IsReplacing
+        && ReferenceEquals(PeerDrawing.Content, _peerMap);
+
+    private void ShowTransfer()
+    {
+        PeerTransfer.Text = Model.Text;
+        PeerTransfer.Download = Model.DownloadText;
+        PeerTransfer.Upload = Model.UploadText;
+        PeerTransfer.Description = Model.Text.Format("peer_map", "speed_hint", Model.DownloadText, Model.UploadText);
+    }
+
     // The person's place choice changes which peers show, and that does not
     // wait for the table's settle.
     private void ChoosePlace(PeerPlace? place)
@@ -401,10 +435,13 @@ public sealed partial class InspectorPane
         Model.Place = place;
     }
 
-    private void OnPeersReleased(object? sender, IReadOnlyList<Peer> peers) => Peers.Release(peers);
+    private void OnPeersWithdrawn(object? sender, EventArgs args) => Peers?.Withdraw();
 
-    // Rows that change alone, as when a place is chosen, reach the table after
-    // the input that changed them, without refreshing the rest of the pane.
+    // The table's one delivery: its rows, a new list only after a join, a
+    // leave or a chosen place, and the peers whose sorted value changed. It
+    // comes after the input that changed them, without refreshing the rest of
+    // the pane. A skipped delivery leaves the changed peers for the next one; a
+    // map-only or unsorted table reads every sort key when it shows or sorts.
     private void QueuePeerRows()
     {
         if (_peerRowsQueued)
@@ -419,9 +456,29 @@ public sealed partial class InspectorPane
                 || Model.Section != InspectorSection.Peers
                 || !Model.IsVisible
                 || Model.IsReplacing
+                || Model.FindsShownPeers
             )
                 return;
             Peers.ItemsSource = Model.ShownPeers;
+            var sorted = _layout.View.Layout != PeerLayout.Map && Peers.Sort is { } sort
+                ? _peerSortFacts[sort.Column]
+                : Peer.Properties.None;
+            var changed = Model.TakeChangedRows(sorted);
+            // The table keeps the sort keys of rows that stay in its source, and
+            // a new subject drops the changes the table had not taken, so the
+            // rows of a new subject have every key read again.
+            if (!ReferenceEquals(_peerRowsSubject, Model.PeerSubject))
+            {
+                _peerRowsSubject = Model.PeerSubject;
+                if (sorted != Peer.Properties.None)
+                {
+                    Peers.RefreshView();
+                }
+            }
+            else if (changed.Count > 0)
+            {
+                Peers.RefreshView(changed);
+            }
         });
     }
 
@@ -449,7 +506,11 @@ public sealed partial class InspectorPane
         var amount = text.Bytes(bytes);
         DotAmount.Text = text.Format("peer_map", "dot", amount);
         var hint = text.Format("peer_map", "dot_hint", amount);
-        ToolTipService.SetToolTip(DotScale, hint);
-        AutomationProperties.SetName(DotScale, hint);
+        // A new tooltip value replaces the ToolTip object, so an unchanged hint is not set again.
+        if (!Equals(ToolTipService.GetToolTip(DotScale), hint))
+        {
+            ToolTipService.SetToolTip(DotScale, hint);
+            AutomationProperties.SetName(DotScale, hint);
+        }
     }
 }

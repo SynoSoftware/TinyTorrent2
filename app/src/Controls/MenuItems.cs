@@ -115,7 +115,7 @@ internal static partial class MenuItems
             kept = false;
             Fill(menu.Items, describe(), text(), Retain);
         };
-        menu.Closed += (_, _) => Truncate(menu.Items, 0);
+        menu.Closed += (_, _) => Remove(menu.Items, 0, menu.Items.Count);
         Refills.Add(menu, Refill);
         return menu;
     }
@@ -155,19 +155,24 @@ internal static partial class MenuItems
         // when choices have content icons to show beside their state.
         var checks = lines.OfType<MenuChoice>().All(choice =>
             choice.Glyph is not null || choice.FlagRegion is not null);
-        // The items before the first change stay, so the item that a click kept
-        // open stays under the pointer and keeps keyboard focus.
-        var unchanged = 0;
+        // The items before the first change and after the last one stay, so the
+        // item that a click kept open stays under the pointer and keeps keyboard
+        // focus, and a line that comes or goes re-creates no other item.
+        bool Keeps(MenuFlyoutItemBase item, MenuEntry line) =>
+            Matches(item, line, checks, retain?.Invoke(line) is not null);
+        var head = 0;
+        while (head < items.Count && head < lines.Length && Keeps(items[head], lines[head]))
+            head++;
+        var tail = 0;
         while (
-            unchanged < items.Count
-            && unchanged < lines.Length
-            && Matches(items[unchanged], lines[unchanged], checks,
-                retain?.Invoke(lines[unchanged]) is not null)
+            tail < items.Count - head
+            && tail < lines.Length - head
+            && Keeps(items[items.Count - 1 - tail], lines[lines.Length - 1 - tail])
         )
-            unchanged++;
-        Truncate(items, unchanged);
-        for (var index = unchanged; index < lines.Length; index++)
-            items.Add(Create(lines[index], items, checks, retain?.Invoke(lines[index])));
+            tail++;
+        Remove(items, head, items.Count - tail);
+        for (var index = head; index < lines.Length - tail; index++)
+            items.Insert(index, Create(lines[index], items, checks, retain?.Invoke(lines[index])));
         for (var index = 0; index < lines.Length; index++)
             Update(items[index], lines[index], text, retain);
     }
@@ -231,6 +236,14 @@ internal static partial class MenuItems
     {
         if ((line is MenuCommand or MenuHeading or MenuSeparator) && Equals(item.DataContext, line))
             return;
+        // A choice's spoken state is in the current language, which its entry
+        // does not hold. Its check needs no reset: each item's Click restores it.
+        if (
+            line is MenuChoice same
+            && Equals(item.DataContext, line)
+            && AutomationProperties.GetItemStatus(item) == Status(same, text)
+        )
+            return;
         item.DataContext = line;
         switch (line, item)
         {
@@ -266,18 +279,7 @@ internal static partial class MenuItems
                     radio.GroupName = choice.Group;
                     radio.IsChecked = choice.State == true;
                 }
-                AutomationProperties.SetItemStatus(
-                    shown,
-                    text.Get(
-                        "menus",
-                        choice.State switch
-                        {
-                            true => "on",
-                            false => "off",
-                            null => "mixed",
-                        }
-                    )
-                );
+                AutomationProperties.SetItemStatus(shown, Status(choice, text));
                 break;
             case (MenuSubmenu submenu, MenuFlyoutSubItem shown):
                 shown.Text = submenu.Text;
@@ -295,6 +297,17 @@ internal static partial class MenuItems
                 break;
         }
     }
+
+    private static string Status(MenuChoice choice, Strings text) =>
+        text.Get(
+            "menus",
+            choice.State switch
+            {
+                true => "on",
+                false => "off",
+                null => "mixed",
+            }
+        );
 
     private static void Show(
         MenuFlyoutItem item,
@@ -328,23 +341,23 @@ internal static partial class MenuItems
         return new FontIcon { FontFamily = font, Glyph = glyph };
     }
 
-    // Removes the items after the first count one at a time: a MenuBarItem mirrors each
+    // Removes the items from start up to end one at a time: a MenuBarItem mirrors each
     // removal into its flyout but ignores Clear, which left old entries behind after a
     // language change. Dropping each command ends the item's subscription to it.
-    private static void Truncate(IList<MenuFlyoutItemBase> items, int count)
+    private static void Remove(IList<MenuFlyoutItemBase> items, int start, int end)
     {
-        while (items.Count > count)
+        for (var index = end - 1; index >= start; index--)
         {
-            switch (items[^1])
+            switch (items[index])
             {
                 case MenuFlyoutItem item:
                     item.Command = null;
                     break;
                 case MenuFlyoutSubItem submenu:
-                    Truncate(submenu.Items, 0);
+                    Remove(submenu.Items, 0, submenu.Items.Count);
                     break;
             }
-            items.RemoveAt(items.Count - 1);
+            items.RemoveAt(index);
         }
     }
 }

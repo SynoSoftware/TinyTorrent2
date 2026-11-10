@@ -273,47 +273,182 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
 
     public override string ToString() => Name;
 
+    /// <summary>The facts a property is computed from: each field of an engine row, the connection, and the passing of time.</summary>
+    [Flags]
+    private enum Fields : ulong
+    {
+        None = 0,
+        Name = 1UL << 0,
+        SavePath = 1UL << 1,
+        FinalFolder = 1UL << 2,
+        IsMoving = 1UL << 3,
+        MoveDestination = 1UL << 4,
+        Size = 1UL << 5,
+        Completed = 1UL << 6,
+        Downloaded = 1UL << 7,
+        Uploaded = 1UL << 8,
+        SeedCount = 1UL << 9,
+        PeerCount = 1UL << 10,
+        KnownPeerCount = 1UL << 11,
+        SwarmSeedCount = 1UL << 12,
+        SwarmLeecherCount = 1UL << 13,
+        Queue = 1UL << 14,
+        Added = 1UL << 15,
+        CompletedOn = 1UL << 16,
+        Hashes = 1UL << 17,
+        Sequential = 1UL << 18,
+        FirstLast = 1UL << 19,
+        DownloadLimit = 1UL << 20,
+        UploadLimit = 1UL << 21,
+        Progress = 1UL << 22,
+        State = 1UL << 23,
+        WaitingDrive = 1UL << 24,
+        WaitingTorrentId = 1UL << 25,
+        WaitingFiles = 1UL << 26,
+        WaitingAnswer = 1UL << 27,
+        DownloadRate = 1UL << 28,
+        UploadRate = 1UL << 29,
+        ErrorCode = 1UL << 30,
+        ErrorDetail = 1UL << 31,
+        CanRetry = 1UL << 32,
+        Connected = 1UL << 33,
+        // A minute passed, so the ages shown change.
+        Time = 1UL << 34,
+    }
+
+    // Each property with the facts it is computed from. An update raises a
+    // property only when one of them changed, so a row's bindings re-read and
+    // format only what moved; one notice per property is shared by every row.
+    private static readonly (PropertyChangedEventArgs Notice, Fields Inputs)[] Notices =
+    [
+        (new(nameof(Name)), Fields.Name),
+        (new(nameof(SavePath)), Fields.SavePath),
+        (new(nameof(FinalFolder)), Fields.FinalFolder),
+        (new(nameof(IsMoving)), Fields.IsMoving),
+        (new(nameof(MoveDestination)), Fields.MoveDestination),
+        (new(nameof(Size)), Fields.Size),
+        (new(nameof(Completed)), Fields.Completed),
+        (new(nameof(Downloaded)), Fields.Downloaded),
+        (new(nameof(Uploaded)), Fields.Uploaded),
+        (new(nameof(SeedCount)), Fields.SeedCount),
+        (new(nameof(PeerCount)), Fields.PeerCount),
+        (new(nameof(KnownPeerCount)), Fields.KnownPeerCount),
+        (new(nameof(LeecherCount)), Fields.PeerCount | Fields.SeedCount),
+        (new(nameof(SwarmSeedCount)), Fields.SwarmSeedCount),
+        (new(nameof(SwarmLeecherCount)), Fields.SwarmLeecherCount),
+        (new(nameof(Queue)), Fields.Queue),
+        (new(nameof(IsQueued)), Fields.Queue),
+        (new(nameof(QueueOrder)), Fields.Queue),
+        (new(nameof(QueueText)), Fields.Queue),
+        (new(nameof(Added)), Fields.Added),
+        (new(nameof(AddedText)), Fields.Added | Fields.Time),
+        (new(nameof(AddedTip)), Fields.Added),
+        (new(nameof(CompletedOn)), Fields.CompletedOn),
+        (new(nameof(CompletedOnText)), Fields.CompletedOn | Fields.Time),
+        (new(nameof(CompletedOnTip)), Fields.CompletedOn),
+        (new(nameof(Hashes)), Fields.Hashes),
+        (new(nameof(Sequential)), Fields.Sequential),
+        (new(nameof(FirstLast)), Fields.FirstLast),
+        (new(nameof(DownloadLimit)), Fields.DownloadLimit),
+        (new(nameof(UploadLimit)), Fields.UploadLimit),
+        (new(nameof(IsLimited)), Fields.DownloadLimit | Fields.UploadLimit),
+        (new(nameof(LimitText)), Fields.DownloadLimit | Fields.UploadLimit),
+        (new(nameof(LimitName)), Fields.DownloadLimit | Fields.UploadLimit),
+        (new(nameof(Progress)), Fields.Progress),
+        (new(nameof(ProgressText)), Fields.Progress),
+        (new(nameof(Remaining)), Fields.Size | Fields.Completed),
+        (new(nameof(RemainingText)), Fields.Size | Fields.Completed),
+        (new(nameof(Eta)), Fields.Connected | Fields.DownloadRate | Fields.Size | Fields.Completed),
+        (new(nameof(EtaText)), Fields.Connected | Fields.DownloadRate | Fields.Size | Fields.Completed),
+        (new(nameof(Ratio)), Fields.Downloaded | Fields.Uploaded),
+        (new(nameof(RatioText)), Fields.Downloaded | Fields.Uploaded),
+        (new(nameof(State)), Fields.State),
+        (new(nameof(Status)), Fields.State),
+        (new(nameof(StatusGlyph)), Fields.State),
+        (new(nameof(IsPaused)), Fields.State),
+        (new(nameof(OpensConnections)), Fields.Connected | Fields.State),
+        (new(nameof(IsDownloading)), Fields.State | Fields.ErrorCode),
+        (new(nameof(IsStatusNeutral)), Fields.State | Fields.ErrorCode),
+        (new(nameof(IsProgressMuted)), Fields.ErrorCode | Fields.IsMoving | Fields.State | Fields.Progress),
+        (new(nameof(WaitingDrive)), Fields.WaitingDrive),
+        (new(nameof(WaitingTorrentId)), Fields.WaitingTorrentId),
+        (new(nameof(WaitingFiles)), Fields.WaitingFiles),
+        (new(nameof(WaitingAnswer)), Fields.WaitingAnswer),
+        (new(nameof(StatusTip)),
+            Fields.State | Fields.WaitingAnswer | Fields.WaitingDrive | Fields.WaitingFiles | Fields.WaitingTorrentId),
+        (new(nameof(DownloadRate)), Fields.DownloadRate),
+        (new(nameof(UploadRate)), Fields.UploadRate),
+        (new(nameof(DownloadText)), Fields.Connected | Fields.State | Fields.DownloadRate),
+        (new(nameof(DownloadName)), Fields.Connected | Fields.State | Fields.DownloadRate),
+        (new(nameof(UploadText)), Fields.Connected | Fields.State | Fields.UploadRate),
+        (new(nameof(UploadName)), Fields.Connected | Fields.State | Fields.UploadRate),
+        (new(nameof(ErrorCode)), Fields.ErrorCode),
+        (new(nameof(ErrorDetail)), Fields.ErrorDetail),
+        (new(nameof(IsError)), Fields.ErrorCode),
+        (new(nameof(ErrorText)), Fields.ErrorCode | Fields.ErrorDetail),
+        (new(nameof(CanRetry)), Fields.CanRetry),
+        (new(nameof(SizeText)), Fields.Size),
+        (new(nameof(DownloadedText)), Fields.Downloaded),
+        (new(nameof(UploadedText)), Fields.Uploaded),
+        (new(nameof(SeedsText)), Fields.SeedCount | Fields.SwarmSeedCount),
+        (new(nameof(SeedsName)), Fields.SeedCount | Fields.SwarmSeedCount),
+        (new(nameof(PeersText)), Fields.PeerCount | Fields.SeedCount | Fields.SwarmLeecherCount),
+        (new(nameof(PeersName)), Fields.PeerCount | Fields.SeedCount | Fields.SwarmLeecherCount),
+    ];
+    private static readonly PropertyChangedEventArgs Everything = new(string.Empty);
+
     internal void RefreshText()
     {
         _searchText = null;
-        Notify();
+        PropertyChanged?.Invoke(this, Everything);
     }
 
-    private void Notify() =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+    private void Raise(Fields changed)
+    {
+        if (changed == Fields.None || PropertyChanged is not { } handler)
+        {
+            return;
+        }
+        foreach (var (notice, inputs) in Notices)
+        {
+            if ((changed & inputs) != 0)
+            {
+                handler(this, notice);
+            }
+        }
+    }
 
     internal void Disconnect()
     {
         _connected = false;
-        Notify();
+        Raise(Fields.Connected);
     }
 
     internal bool Update(JsonElement row)
     {
-        var changed = !_connected;
+        var changed = _connected ? Fields.None : Fields.Connected;
         _connected = true;
-        var previousName = Name;
-        var previousState = State;
-        Name = ReadText("name", Name);
-        SavePath = ReadText("save_path", SavePath);
-        FinalFolder = ReadText("final_folder", FinalFolder);
-        IsMoving = Set(IsMoving, row.GetProperty("moving").GetBoolean());
-        MoveDestination = ReadText("move_destination", MoveDestination);
-        Size = Set(Size, row.GetProperty("size").GetInt64());
-        Completed = Set(Completed, row.GetProperty("completed").GetInt64());
-        Downloaded = Set(Downloaded, row.GetProperty("downloaded").GetInt64());
-        Uploaded = Set(Uploaded, row.GetProperty("uploaded").GetInt64());
-        SeedCount = Set(SeedCount, row.GetProperty("seed_count").GetInt32());
-        PeerCount = Set(PeerCount, row.GetProperty("peer_count").GetInt32());
-        KnownPeerCount = Set(KnownPeerCount, row.GetProperty("known_peer_count").GetInt32());
-        SwarmSeedCount = Set(SwarmSeedCount, row.GetProperty("swarm_seed_count").GetInt32());
+        Name = ReadText("name", Name, Fields.Name);
+        SavePath = ReadText("save_path", SavePath, Fields.SavePath);
+        FinalFolder = ReadText("final_folder", FinalFolder, Fields.FinalFolder);
+        IsMoving = Set(IsMoving, row.GetProperty("moving").GetBoolean(), Fields.IsMoving);
+        MoveDestination = ReadText("move_destination", MoveDestination, Fields.MoveDestination);
+        Size = Set(Size, row.GetProperty("size").GetInt64(), Fields.Size);
+        Completed = Set(Completed, row.GetProperty("completed").GetInt64(), Fields.Completed);
+        Downloaded = Set(Downloaded, row.GetProperty("downloaded").GetInt64(), Fields.Downloaded);
+        Uploaded = Set(Uploaded, row.GetProperty("uploaded").GetInt64(), Fields.Uploaded);
+        SeedCount = Set(SeedCount, row.GetProperty("seed_count").GetInt32(), Fields.SeedCount);
+        PeerCount = Set(PeerCount, row.GetProperty("peer_count").GetInt32(), Fields.PeerCount);
+        KnownPeerCount = Set(KnownPeerCount, row.GetProperty("known_peer_count").GetInt32(), Fields.KnownPeerCount);
+        SwarmSeedCount = Set(SwarmSeedCount, row.GetProperty("swarm_seed_count").GetInt32(), Fields.SwarmSeedCount);
         SwarmLeecherCount = Set(
             SwarmLeecherCount,
-            row.GetProperty("swarm_leecher_count").GetInt32()
+            row.GetProperty("swarm_leecher_count").GetInt32(),
+            Fields.SwarmLeecherCount
         );
-        Queue = Set(Queue, row.GetProperty("queue").GetInt32());
-        Added = Set(Added, Moment(row.GetProperty("added")));
-        CompletedOn = Set(CompletedOn, Moment(row.GetProperty("completed_on")));
+        Queue = Set(Queue, row.GetProperty("queue").GetInt32(), Fields.Queue);
+        Added = Set(Added, Moment(row.GetProperty("added")), Fields.Added);
+        CompletedOn = Set(CompletedOn, Moment(row.GetProperty("completed_on")), Fields.CompletedOn);
         var hashes = row.GetProperty("hashes");
         var sameHashes = hashes.GetArrayLength() == Hashes.Length;
         for (var index = 0; sameHashes && index < Hashes.Length; index++)
@@ -321,51 +456,52 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
         if (!sameHashes)
         {
             Hashes = hashes.EnumerateArray().Select(hash => hash.GetString()!).ToArray();
-            changed = true;
+            changed |= Fields.Hashes;
         }
-        Sequential = Set(Sequential, row.GetProperty("sequential").GetBoolean());
-        FirstLast = Set(FirstLast, row.GetProperty("first_last").GetBoolean());
-        DownloadLimit = Set(DownloadLimit, row.GetProperty("download_limit").GetInt32());
-        UploadLimit = Set(UploadLimit, row.GetProperty("upload_limit").GetInt32());
-        Progress = Set(Progress, row.GetProperty("progress").GetDouble());
-        State = Set(State, ReadState(row.GetProperty("status")));
-        WaitingDrive = ReadText("waiting_drive", WaitingDrive);
-        WaitingTorrentId = ReadText("waiting_torrent_id", WaitingTorrentId);
-        WaitingFiles = ReadText("waiting_files", WaitingFiles);
-        WaitingAnswer = Set(WaitingAnswer, row.GetProperty("waiting_answer").GetBoolean());
-        DownloadRate = Set(DownloadRate, row.GetProperty("download_rate").GetDouble());
-        UploadRate = Set(UploadRate, row.GetProperty("upload_rate").GetDouble());
-        ErrorCode = ReadText("error", ErrorCode);
-        ErrorDetail = ReadText("detail", ErrorDetail);
-        CanRetry = Set(CanRetry, row.GetProperty("retry").GetBoolean());
-        if (Name != previousName || State != previousState)
+        Sequential = Set(Sequential, row.GetProperty("sequential").GetBoolean(), Fields.Sequential);
+        FirstLast = Set(FirstLast, row.GetProperty("first_last").GetBoolean(), Fields.FirstLast);
+        DownloadLimit = Set(DownloadLimit, row.GetProperty("download_limit").GetInt32(), Fields.DownloadLimit);
+        UploadLimit = Set(UploadLimit, row.GetProperty("upload_limit").GetInt32(), Fields.UploadLimit);
+        Progress = Set(Progress, row.GetProperty("progress").GetDouble(), Fields.Progress);
+        State = Set(State, ReadState(row.GetProperty("status")), Fields.State);
+        WaitingDrive = ReadText("waiting_drive", WaitingDrive, Fields.WaitingDrive);
+        WaitingTorrentId = ReadText("waiting_torrent_id", WaitingTorrentId, Fields.WaitingTorrentId);
+        WaitingFiles = ReadText("waiting_files", WaitingFiles, Fields.WaitingFiles);
+        WaitingAnswer = Set(WaitingAnswer, row.GetProperty("waiting_answer").GetBoolean(), Fields.WaitingAnswer);
+        DownloadRate = Set(DownloadRate, row.GetProperty("download_rate").GetDouble(), Fields.DownloadRate);
+        UploadRate = Set(UploadRate, row.GetProperty("upload_rate").GetDouble(), Fields.UploadRate);
+        ErrorCode = ReadText("error", ErrorCode, Fields.ErrorCode);
+        ErrorDetail = ReadText("detail", ErrorDetail, Fields.ErrorDetail);
+        CanRetry = Set(CanRetry, row.GetProperty("retry").GetBoolean(), Fields.CanRetry);
+        if ((changed & (Fields.Name | Fields.State)) != 0)
+        {
             _searchText = null;
+        }
+        var facts = changed;
         var now = DateTimeOffset.UtcNow;
-        if (changed)
+        if (now - _ageRefresh >= TimeSpan.FromMinutes(1) || now < _ageRefresh)
         {
             _ageRefresh = now;
-            Notify();
+            changed |= Fields.Time;
         }
-        else if (now - _ageRefresh >= TimeSpan.FromMinutes(1) || now < _ageRefresh)
-        {
-            _ageRefresh = now;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AddedText)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CompletedOnText)));
-        }
-        return changed;
+        Raise(changed);
+        return facts != Fields.None;
 
-        T Set<T>(T previous, T value)
+        T Set<T>(T previous, T value, Fields field)
         {
-            changed |= !EqualityComparer<T>.Default.Equals(previous, value);
+            if (!EqualityComparer<T>.Default.Equals(previous, value))
+            {
+                changed |= field;
+            }
             return value;
         }
 
-        string ReadText(string name, string previous)
+        string ReadText(string name, string previous, Fields field)
         {
             var value = row.GetProperty(name);
             if (value.ValueEquals(previous))
                 return previous;
-            changed = true;
+            changed |= field;
             return value.GetString()!;
         }
     }

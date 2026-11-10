@@ -18,13 +18,22 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly PipeClient _client;
     private readonly ICommand[] _commands;
+    // The commands that read the selection, a part of _commands.
+    private readonly ICommand[] _selectionCommands;
     private readonly DispatcherQueue _dispatcher;
     private readonly Dictionary<string, Torrent> _byId = [];
     private readonly List<Torrent> _torrents = [];
+    // The ids of the torrents the last snapshot listed. It is kept between
+    // snapshots so that each snapshot reuses its capacity.
+    private readonly HashSet<string> _listed = [];
     private readonly object _snapshotGate = new();
     private JsonElement? _latest;
     private bool _applyQueued;
-    private JsonElement? _detail;
+    // The newest unapplied observation of each subscription's torrent, keyed
+    // as the engine keys them, so an earlier subscription's late message never
+    // replaces a newer one; and the list one drain applies them from.
+    private readonly Dictionary<(long Context, string TorrentId), PipeClient.Observation> _observations = [];
+    private readonly List<PipeClient.Observation> _draining = [];
     private bool _detailQueued;
     private bool _refreshDetail;
     private Torrent[] _selected = [];
@@ -64,6 +73,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _applyingSnapshot;
     private long _limitsMinute;
     private (bool CanClose, bool CanExit, bool HasDraft, bool AddOpen)? _taskState;
+    // CountStatus as last raised. The window handles every notice of this
+    // model, so an input change that leaves the text as it was raises nothing.
+    private string? _countStatus;
     private (SubtitleAcquisition? Subtitles, int LookupLimit)? _featureState;
 
     // The update check uses it with or without the Library database.
@@ -321,7 +333,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     }
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? TextChanged;
-    internal event EventHandler<SnapshotAppliedEventArgs>? SnapshotApplied;
+    // Carries the torrents the snapshot updated in place.
+    internal event EventHandler<IReadOnlyList<Torrent>>? SnapshotApplied;
     public event EventHandler<Torrent[]>? RevealRequested;
     public event EventHandler<Torrent[]>? ReleaseRequested;
     public event EventHandler? AddRequested;
@@ -387,7 +400,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             if (args.PropertyName is nameof(Library.Query) or "")
                 Changed(nameof(Query));
             if (args.PropertyName is nameof(Library.Status) or "")
-                Changed(nameof(CountStatus));
+                RefreshCountStatus();
         };
         Filters = Enum.GetValues<TorrentFilter>()
             .Select(filter => new FilterChoice(this, filter))
@@ -397,7 +410,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Inspector.RowsUpdated += (_, section) =>
         {
             if (section == InspectorSection.Peers)
-                Changed(nameof(CountStatus));
+                RefreshCountStatus();
         };
         Settings.PropertyChanged += (sender, args) =>
         {
@@ -664,20 +677,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             },
             () => true
         );
-        _commands =
+        _selectionCommands =
         [
-            Add,
-            AddMagnet,
             Pause,
             Resume,
             Force,
             Retry,
-            RetryAll,
             SwitchSequential,
             SwitchFirstLast,
             LimitSpeed,
-            SwitchFilters,
-            SwitchToolbar,
             Verify,
             Remove,
             MoveFiles,
@@ -686,14 +694,23 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             Down,
             Top,
             Bottom,
-            PauseAll,
-            ResumeAll,
-            ResolvePause,
             Open,
             OpenFolder,
             CopyMagnet,
             CopyHash,
             Properties,
+        ];
+        _commands =
+        [
+            .. _selectionCommands,
+            Add,
+            AddMagnet,
+            RetryAll,
+            SwitchFilters,
+            SwitchToolbar,
+            PauseAll,
+            ResumeAll,
+            ResolvePause,
             Limits,
             ClearFilters,
             ShowSettings,
@@ -708,7 +725,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         ];
         Settings.Updates.PropertyChanged += (_, _) => ObserveUpdates();
         _client.Snapshot += QueueSnapshot;
-        _client.Detail += detail => QueueDetail(detail);
+        _client.Observed += observation => QueueDetail(observation);
         _client.CommandReplied += reply =>
         {
             QueueDetail(null);
@@ -887,13 +904,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             && tag != _requestedLanguage
         )
             _languageLoad = LoadLanguage(tag);
-        var present = new HashSet<string>();
+        _listed.Clear();
         var rowsChanged = false;
+        List<Torrent>? updated = null;
         var inspectedChanged = false;
         foreach (var item in snapshot.GetProperty("torrents").EnumerateArray())
         {
             var torrentId = item.GetProperty("torrent_id").GetString()!;
-            present.Add(torrentId);
             if (!_byId.TryGetValue(torrentId, out var torrent))
             {
                 torrent = new Torrent(
@@ -905,20 +922,31 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 _torrents.Add(torrent);
                 rowsChanged = true;
             }
+            // The torrent's own id, which lives as long as the torrent, so
+            // the set keeps no string of this snapshot past it.
+            _listed.Add(torrent.TorrentId);
             var changed = torrent.Update(item);
+            if (changed)
+                (updated ??= []).Add(torrent);
             rowsChanged |= changed;
             inspectedChanged |= changed && ReferenceEquals(torrent, Inspector.Target);
         }
-        foreach (var torrent in Torrents.Where(row => !present.Contains(row.TorrentId)).ToArray())
+        // Every listed torrent is in _byId now, so _byId holds more only when
+        // the engine stopped listing some. The selection holds only torrents
+        // of _byId, so it loses torrents only then too.
+        if (_byId.Count > _listed.Count)
         {
-            _torrents.Remove(torrent);
-            _byId.Remove(torrent.TorrentId);
-            rowsChanged = true;
+            foreach (var torrent in Torrents.Where(row => !_listed.Contains(row.TorrentId)).ToArray())
+            {
+                _torrents.Remove(torrent);
+                _byId.Remove(torrent.TorrentId);
+                rowsChanged = true;
+            }
+            _selected = _selected.Where(row => _listed.Contains(row.TorrentId)).ToArray();
         }
-        _selected = _selected.Where(row => present.Contains(row.TorrentId)).ToArray();
         var selectionChanged =
             previousSelection != _selected.Length || rowsChanged && _selected.Length > 0;
-        if (_current is not null && !present.Contains(_current.TorrentId))
+        if (_current is not null && !_listed.Contains(_current.TorrentId))
             _current = null;
         if (previousSelection != _selected.Length)
             SelectionChanged?.Invoke(this, EventArgs.Empty);
@@ -950,7 +978,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         LifetimeTotals = ReadTotals(transfers.GetProperty("all_time"));
         ObserveMemory();
         ObserveSpace();
-        var published = rowsChanged && Project();
+        if (rowsChanged)
+            Project();
         if (accessChanged)
             Refresh();
         else
@@ -965,12 +994,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 if (RemovalDraft.Torrents.Length > 0)
                     RemovalDraft.Refresh();
             }
-            if (
-                published
-                || previousCount != Torrents.Count
-                || previousSelection != _selected.Length
-            )
-                Changed(nameof(CountStatus));
+            RefreshCountStatus();
             if (previousCount != Torrents.Count)
             {
                 Changed(nameof(EmptyTitle));
@@ -1006,7 +1030,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             }
             if (previousLanguageSaved != _languageSaved)
                 Changed(nameof(CurrentStatus));
-            if (selectionChanged || limitsChanged || previousCount != Torrents.Count)
+            // A selection change has refreshed its commands in RefreshSelection.
+            if (limitsChanged || previousCount != Torrents.Count)
                 foreach (RelayCommand command in _commands)
                     command.Refresh();
         }
@@ -1021,7 +1046,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 || (Inspector.Target is null && rowsChanged)
                 || previousSelection != _selected.Length
         );
-        SnapshotApplied?.Invoke(this, new SnapshotAppliedEventArgs(published, rowsChanged));
+        SnapshotApplied?.Invoke(this, (IReadOnlyList<Torrent>?)updated ?? []);
         RevealPending();
     }
 
@@ -1088,40 +1113,62 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         });
     }
 
-    private void QueueDetail(JsonElement? detail)
+    private void QueueDetail(PipeClient.Observation? observation)
     {
         lock (_snapshotGate)
         {
-            if (detail is null)
+            if (observation is null)
             {
-                // Replies invalidate the context before any buffered detail can apply.
+                // Replies invalidate the context before any buffered observation can apply.
                 _refreshDetail = true;
-                _detail = null;
+                foreach (var dropped in _observations.Values)
+                {
+                    dropped.Return();
+                }
+                _observations.Clear();
             }
-            else if (!_refreshDetail)
-                _detail = detail;
+            else if (_refreshDetail)
+            {
+                observation.Return();
+            }
+            else
+            {
+                var key = (observation.Context, observation.TorrentId);
+                if (_observations.Remove(key, out var replaced))
+                {
+                    replaced.Return();
+                }
+                _observations[key] = observation;
+            }
             if (_detailQueued)
                 return;
             _detailQueued = true;
         }
         _dispatcher.TryEnqueue(DispatcherQueuePriority.Low, () =>
         {
-            JsonElement? latest;
             bool refresh;
             lock (_snapshotGate)
             {
-                latest = _detail;
+                _draining.AddRange(_observations.Values);
+                _observations.Clear();
                 refresh = _refreshDetail;
-                _detail = null;
                 _refreshDetail = false;
                 _detailQueued = false;
             }
-            if (_closed)
-                return;
-            if (refresh)
-                Inspector.RefreshDetail();
-            else if (latest is { } message)
-                Inspector.Receive(message);
+            try
+            {
+                if (_closed)
+                    return;
+                if (refresh)
+                    Inspector.RefreshDetail();
+                else
+                    foreach (var message in _draining)
+                        Inspector.Receive(message);
+            }
+            finally
+            {
+                _draining.Clear();
+            }
         });
     }
 
@@ -1370,6 +1417,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         foreach (var choice in Filters)
             choice.Refresh();
         _taskState = (CanClose, CanExit, HasDraft, AddDraft.IsOpen);
+        _countStatus = CountStatus;
         Changed(string.Empty);
         foreach (RelayCommand command in _commands)
             command.Refresh();
@@ -1378,7 +1426,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private void OnTaskChanged(object? sender, PropertyChangedEventArgs args)
     {
         if (ReferenceEquals(sender, Inspector))
-            Changed(nameof(CountStatus));
+            RefreshCountStatus();
         if (ReferenceEquals(sender, Settings))
         {
             ObserveSpace();
@@ -1406,6 +1454,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             Changed(nameof(HasDraft));
         if (previous?.AddOpen != state.AddOpen)
             ((RelayCommand)Add).Refresh();
+    }
+
+    private void RefreshCountStatus()
+    {
+        var text = CountStatus;
+        if (text == _countStatus)
+            return;
+        _countStatus = text;
+        Changed(nameof(CountStatus));
     }
 
     private void OnFeaturesChanged(object? sender, EventArgs args)
@@ -1488,12 +1545,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         lock (_snapshotGate)
             _latest = null;
     }
-}
-
-internal sealed class SnapshotAppliedEventArgs(bool published, bool rowsChanged) : EventArgs
-{
-    public bool Published { get; } = published;
-    public bool RowsChanged { get; } = rowsChanged;
 }
 
 internal readonly record struct TransferTotals(long Downloaded, long Uploaded);

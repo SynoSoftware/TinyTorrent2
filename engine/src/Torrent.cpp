@@ -7,9 +7,9 @@
 #include <libtorrent/peer_info.hpp>
 #include <libtorrent/torrent_info.hpp>
 #include <algorithm>
+#include <charconv>
 #include <stdexcept>
 #include <sstream>
-#include <unordered_set>
 #include <utility>
 
 namespace tt
@@ -490,7 +490,12 @@ std::optional<tt::PathWork> Torrent::PathWork() const
 
 std::string Torrent::Name() const
 {
-    return tt::Name(status.name, Hashes());
+    return Name(Hashes());
+}
+
+std::string Torrent::Name(std::vector<std::string> const& hashes) const
+{
+    return tt::Name(status.name, hashes);
 }
 
 std::vector<std::string> Torrent::Hashes() const
@@ -990,53 +995,132 @@ char const* ToString(TrackerStatus status)
     return "";
 }
 
+template <typename Text>
+void Append(Text& text, std::string_view part)
+{
+    text.insert(text.end(), part.begin(), part.end());
+}
+
+template <typename Text, typename Number>
+void AppendNumber(Text& text, Number value)
+{
+    char buffer[32];
+    auto end = std::to_chars(buffer, std::end(buffer), value).ptr;
+    text.insert(text.end(), buffer, end);
+}
+
+// "address:port", with an IPv6 address in brackets.
+template <typename Text>
+void AppendEndpoint(Text& text, lt::tcp::endpoint const& endpoint)
+{
+    auto v6 = endpoint.address().is_v6();
+    if (v6) text.push_back('[');
+    Append(text, endpoint.address().to_string());
+    if (v6) text.push_back(']');
+    text.push_back(':');
+    AppendNumber(text, endpoint.port());
+}
+
 std::string DescribeEndpoint(lt::tcp::endpoint const& endpoint)
 {
-    auto address = endpoint.address().to_string();
-    return (endpoint.address().is_v6() ? "[" + address + "]" : address) +
-        ":" + std::to_string(endpoint.port());
+    std::string text;
+    AppendEndpoint(text, endpoint);
+    return text;
 }
 
-Json DescribeWait(lt::bandwidth_state_flags_t state)
+using Bytes = std::vector<std::uint8_t>;
+
+// A peer names its own client, so the name can hold any bytes. The JSON
+// library writes anything but plain ASCII, escaping it and replacing invalid
+// UTF-8 as the pipe does.
+void AppendString(Bytes& text, std::string_view value)
 {
-    auto waits = Json::array();
-    if (bool(state & lt::peer_info::bw_limit)) waits.push_back("limit");
-    if (bool(state & lt::peer_info::bw_network)) waits.push_back("network");
-    if (bool(state & lt::peer_info::bw_disk)) waits.push_back("disk");
-    return waits;
+    auto plain = std::all_of(value.begin(), value.end(),
+        [](char c) { return c >= ' ' && c <= '~' && c != '"' && c != '\\'; });
+    if (!plain)
+    {
+        Append(text, Json(std::string(value)).dump(-1, ' ', false, Json::error_handler_t::replace));
+        return;
+    }
+    text.push_back('"');
+    Append(text, value);
+    text.push_back('"');
 }
 
-Json DescribeSources(lt::peer_source_flags_t source)
+// `"name":`, after a comma unless it starts the object.
+void AppendName(Bytes& text, std::string_view name)
 {
-    auto sources = Json::array();
-    if (bool(source & lt::peer_info::tracker)) sources.push_back("tracker");
-    if (bool(source & lt::peer_info::dht)) sources.push_back("dht");
-    if (bool(source & lt::peer_info::pex)) sources.push_back("pex");
-    if (bool(source & lt::peer_info::lsd)) sources.push_back("lsd");
-    if (bool(source & lt::peer_info::resume_data)) sources.push_back("resume");
-    if (bool(source & lt::peer_info::incoming)) sources.push_back("incoming");
-    return sources;
+    if (text.back() != '{') text.push_back(',');
+    text.push_back('"');
+    Append(text, name);
+    Append(text, "\":");
 }
 
+void AppendBool(Bytes& text, std::string_view name, bool value)
+{
+    AppendName(text, name);
+    Append(text, value ? "true" : "false");
+}
+
+// The names of the flags that are set, as a JSON array.
+template <typename Flags>
+void AppendFlags(Bytes& text, std::string_view name, Flags flags,
+    std::initializer_list<std::pair<Flags, std::string_view>> names)
+{
+    AppendName(text, name);
+    text.push_back('[');
+    for (auto const& [flag, word] : names)
+    {
+        if (!bool(flags & flag)) continue;
+        if (text.back() != '[') text.push_back(',');
+        AppendString(text, word);
+    }
+    text.push_back(']');
+}
+
+void AppendWait(Bytes& text, std::string_view name, lt::bandwidth_state_flags_t state)
+{
+    AppendFlags(text, name, state, {{lt::peer_info::bw_limit, "limit"}, {lt::peer_info::bw_network, "network"},
+        {lt::peer_info::bw_disk, "disk"}});
+}
+
+void AppendSources(Bytes& text, lt::peer_source_flags_t source)
+{
+    AppendFlags(text, "sources", source, {{lt::peer_info::tracker, "tracker"}, {lt::peer_info::dht, "dht"},
+        {lt::peer_info::pex, "pex"}, {lt::peer_info::lsd, "lsd"}, {lt::peer_info::resume_data, "resume"},
+        {lt::peer_info::incoming, "incoming"}});
+}
+
+// The torrent's connected peers, then the known peers that are not connected,
+// written as JSON text: a large swarm needs no JSON object per peer.
 Json DescribePeers(Detail const& detail)
 {
-    Json data;
-    data["peers"] = Json::array();
-    std::unordered_set<std::string> endpoints;
+    Bytes text;
+    text.reserve(detail.peers.size() * 512 + detail.knownPeers.size() * 96 + 2);
+    text.push_back('[');
+    std::vector<lt::tcp::endpoint> connected;
+    connected.reserve(detail.peers.size());
     for (auto const& peer : detail.peers)
     {
-        std::string address;
-        auto transport = bool(peer.flags & lt::peer_info::utp_socket) ? "utp" : "tcp";
+        if (text.back() != '[') text.push_back(',');
+        text.push_back('{');
+        AppendName(text, "endpoint");
+        std::string_view transport = bool(peer.flags & lt::peer_info::utp_socket) ? "utp" : "tcp";
         if (bool(peer.flags & lt::peer_info::i2p_socket))
         {
             transport = "i2p";
 #if TORRENT_USE_I2P
-            address = lt::aux::to_hex(peer.i2p_destination().to_string());
+            AppendString(text, lt::aux::to_hex(peer.i2p_destination().to_string()));
+#else
+            AppendString(text, "");
 #endif
         }
         else
         {
-            address = DescribeEndpoint(peer.remote_endpoint());
+            text.push_back('"');
+            AppendEndpoint(text, peer.remote_endpoint());
+            text.push_back('"');
+            connected.push_back(peer.remote_endpoint());
         }
         auto webSeed = bool(peer.connection_type & (lt::peer_info::web_seed | lt::peer_info::http_seed));
         if (webSeed)
@@ -1064,31 +1148,52 @@ Json DescribePeers(Detail const& detail)
             else
                 encryption = PeerEncryption::Plain;
         }
-        endpoints.insert(address);
-        data["peers"].push_back({{"endpoint", address}, {"client", peer.client},
-            {"role", bool(peer.flags & lt::peer_info::seed) ? "seed" :
-                state == PeerState::Connected && !webSeed ? "leecher" : "unknown"},
-            {"transport", transport},
-            {"incoming", !bool(peer.flags & lt::peer_info::outgoing_connection)},
-            {"state", ToString(state)}, {"encryption", ToString(encryption)},
-            {"interested", bool(peer.flags & lt::peer_info::interesting)},
-            {"choked", bool(peer.flags & lt::peer_info::choked)},
-            {"remote_interested", bool(peer.flags & lt::peer_info::remote_interested)},
-            {"remote_choked", bool(peer.flags & lt::peer_info::remote_choked)},
-            {"read_wait", DescribeWait(peer.read_state)}, {"write_wait", DescribeWait(peer.write_state)},
-            {"sources", DescribeSources(peer.source)},
-            {"progress", peer.progress_ppm / 1'000'000.0},
-            {"download_rate", peer.payload_down_speed}, {"upload_rate", peer.payload_up_speed},
-            {"downloaded", peer.total_download}, {"uploaded", peer.total_upload}});
+        AppendName(text, "client");
+        AppendString(text, peer.client);
+        AppendName(text, "role");
+        AppendString(text, bool(peer.flags & lt::peer_info::seed) ? "seed" :
+            state == PeerState::Connected && !webSeed ? "leecher" : "unknown");
+        AppendName(text, "transport");
+        AppendString(text, transport);
+        AppendBool(text, "incoming", !bool(peer.flags & lt::peer_info::outgoing_connection));
+        AppendName(text, "state");
+        AppendString(text, ToString(state));
+        AppendName(text, "encryption");
+        AppendString(text, ToString(encryption));
+        AppendBool(text, "interested", bool(peer.flags & lt::peer_info::interesting));
+        AppendBool(text, "choked", bool(peer.flags & lt::peer_info::choked));
+        AppendBool(text, "remote_interested", bool(peer.flags & lt::peer_info::remote_interested));
+        AppendBool(text, "remote_choked", bool(peer.flags & lt::peer_info::remote_choked));
+        AppendWait(text, "read_wait", peer.read_state);
+        AppendWait(text, "write_wait", peer.write_state);
+        AppendSources(text, peer.source);
+        AppendName(text, "progress");
+        AppendNumber(text, peer.progress_ppm / 1'000'000.0);
+        AppendName(text, "download_rate");
+        AppendNumber(text, peer.payload_down_speed);
+        AppendName(text, "upload_rate");
+        AppendNumber(text, peer.payload_up_speed);
+        AppendName(text, "downloaded");
+        AppendNumber(text, peer.total_download);
+        AppendName(text, "uploaded");
+        AppendNumber(text, peer.total_upload);
+        text.push_back('}');
     }
+    std::sort(connected.begin(), connected.end());
     for (auto const& peer : detail.knownPeers)
     {
-        auto address = DescribeEndpoint(peer.endpoint);
-        if (endpoints.contains(address)) continue;
-        data["peers"].push_back({{"endpoint", std::move(address)}, {"state", "known"},
-            {"role", peer.seed ? "seed" : "unknown"}, {"sources", DescribeSources(peer.source)}});
+        if (std::binary_search(connected.begin(), connected.end(), peer.endpoint)) continue;
+        if (text.back() != '[') text.push_back(',');
+        Append(text, "{\"endpoint\":\"");
+        AppendEndpoint(text, peer.endpoint);
+        Append(text, "\",\"state\":\"known\"");
+        AppendName(text, "role");
+        AppendString(text, peer.seed ? "seed" : "unknown");
+        AppendSources(text, peer.source);
+        text.push_back('}');
     }
-    return data;
+    text.push_back(']');
+    return Fragment(std::move(text));
 }
 
 TrackerStatus ClassifyTracker(lt::announce_infohash const& state, bool usable)
@@ -1308,7 +1413,7 @@ Json Torrent::Describe(TorrentView view, Detail const& detail,
     {
     case TorrentView::Peers:
         if (detail.Has(DetailKind::Peers, since))
-            data.update(DescribePeers(detail));
+            data["peers"] = DescribePeers(detail);
         else
             data["peers"] = nullptr;
         break;
@@ -1336,20 +1441,21 @@ Json Torrent::Describe(TorrentView view, Detail const& detail,
     return data;
 }
 
-Json Torrent::Row(bool sessionPaused, int queue, std::optional<double> moveProgress, DriveWait const& wait,
+Json Torrent::Row(Status shown, int queue, std::optional<double> moveProgress, DriveWait const& wait,
     bool retry) const
 {
     auto problem = Diagnose();
     auto complete = completion.IsReached(status);
     auto saved = status.state == lt::torrent_status::checking_resume_data ? savedProgress : std::nullopt;
+    auto hashes = Hashes();
     return {{"torrent_id", torrentId}, {"save_path", facts.savePath}, {"final_folder", facts.finalFolder},
         {"moving", ShowsPathWork()}, {"move_destination", facts.marker ? facts.marker->destination : std::string()},
         {"paused", facts.intent == Intent::Paused}, {"forced", facts.intent == Intent::Forced},
         {"sequential", facts.sequential}, {"first_last", facts.firstLast},
         {"download_limit", facts.downloadLimit}, {"upload_limit", facts.uploadLimit},
-        {"added", facts.added}, {"name", Name()}, {"size", status.total_wanted},
+        {"added", facts.added}, {"name", Name(hashes)}, {"size", status.total_wanted},
         {"completed", saved ? std::int64_t(double(*saved) * double(status.total_wanted)) : status.total_wanted_done},
-        {"progress", moveProgress.value_or(saved.value_or(status.progress))}, {"status", ToString(Classify(sessionPaused))},
+        {"progress", moveProgress.value_or(saved.value_or(status.progress))}, {"status", ToString(shown)},
         {"waiting_drive", wait.drive}, {"waiting_torrent_id", wait.holderId},
         {"waiting_files", wait.files}, {"waiting_answer", wait.answer},
         {"download_rate", status.download_payload_rate}, {"upload_rate", status.upload_payload_rate},
@@ -1364,7 +1470,7 @@ Json Torrent::Row(bool sessionPaused, int queue, std::optional<double> moveProgr
         {"downloaded", status.all_time_download}, {"uploaded", status.all_time_upload},
         {"queue", queue},
         {"complete", complete}, {"completed_on", complete ? status.completed_time : 0},
-        {"incoming", status.has_incoming}, {"hashes", Hashes()}};
+        {"incoming", status.has_incoming}, {"hashes", std::move(hashes)}};
 }
 
 // Choices that wait for busy files are saved, so they show before libtorrent

@@ -9,10 +9,15 @@ pwsh -NoProfile -File .\app\tests\Capture.ps1 -Review performance-map -Configura
 ```
 
 Repeat the three profiles with `-Review performance-selection` for docked maps,
-selection and marquee. `-Replay -InputOnly` runs the existing scenarios in an
-offscreen 1920×1080 window without activating it, taking images or sending desktop
-input. The launcher rejects pre-replay binaries before starting their engine or
-window. The preserved pre-reboot binary remains historical evidence; build the
+selection and marquee. `-Replay -InputOnly` runs the existing scenarios in a
+1920×1080 window on a display other than the main one, without activating it,
+taking images or sending desktop input, so the owner keeps the main display,
+keyboard, mouse and focus. With no other display the window is offscreen. Offscreen,
+the 9 November comparison of one pair drew no map dots during sorting and clicks
+(63–91% of draws on a display) and opened the selected torrent's map in 3.7–3.9 s
+(0.5–1.9 s on a display), so compare only runs placed the same way; a binary
+built before replay chose the display opens offscreen. The launcher
+rejects pre-replay binaries before starting their engine or window. The preserved pre-reboot binary remains historical evidence; build the
 unchanged production version with this harness for a new matched baseline.
 
 The external source process emits the same 120 Hz motion schedule and 150 ms row
@@ -22,7 +27,10 @@ emission, application and XAML completion separately; late commands are applied 
 order rather than skipped. Pan and zoom call the existing map viewport/zoom owners;
 selection and marquee call the table's existing commitment and coverage owners.
 They bypass native delivery, hit-testing, pointer capture and focus. This measures
-command-to-render behavior, not native click latency or foreground performance.
+command-to-render behavior, not native click latency or foreground performance:
+in the 9 November comparison a replayed click cost the UI thread a median of
+20–29 megacycles against 54–64 for a native click, and no replayed press can
+land on a row that moves away.
 The external one-second peer source, summaries, sorting and churn stay unchanged.
 No replay result establishes displayed FPS or physical next-frame acceptance.
 

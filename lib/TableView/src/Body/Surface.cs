@@ -149,7 +149,7 @@ public sealed partial class Surface : ListView
             IExpandCollapseProvider
     {
         private ExpandCollapseState? _expanded;
-        private object? Current => parent.Table?.ResolveItem(Item);
+        private object? Current => parent.Table?.ShownRow(Item);
         private bool CanSelect =>
             parent.Table is { SelectionMode: not ListViewSelectionMode.None } table
             && Current is { } current
@@ -164,16 +164,18 @@ public sealed partial class Surface : ListView
             };
 
         protected override int GetLevelCore() =>
-            parent.Table?.Hierarchy?.Find(Item) is { } node ? node.Depth + 1 : base.GetLevelCore();
+            Current is { } current && parent.Table?.Hierarchy?.Find(current) is { } node
+                ? node.Depth + 1
+                : base.GetLevelCore();
 
         protected override int GetPositionInSetCore() =>
-            parent.Table?.Hierarchy is not null
-                ? parent.Table.HierarchyPosition(Item)
+            parent.Table?.Hierarchy is not null && Current is { } current
+                ? parent.Table.HierarchyPosition(current)
                 : base.GetPositionInSetCore();
 
         protected override int GetSizeOfSetCore() =>
-            parent.Table?.Hierarchy is not null
-                ? parent.Table.HierarchyCount(Item)
+            parent.Table?.Hierarchy is not null && Current is { } current
+                ? parent.Table.HierarchyCount(current)
                 : base.GetSizeOfSetCore();
 
         private ExpandCollapseState Expansion
@@ -181,7 +183,9 @@ public sealed partial class Surface : ListView
             get
             {
                 var hierarchy = parent.Table?.Hierarchy;
-                if (hierarchy?.Find(Item) is not { } node || !hierarchy.IsExpandable(node))
+                if (Current is not { } current
+                    || hierarchy?.Find(current) is not { } node
+                    || !hierarchy.IsExpandable(node))
                     return ExpandCollapseState.LeafNode;
                 return hierarchy.IsExpanded(node.Item)
                     ? ExpandCollapseState.Expanded
@@ -225,7 +229,8 @@ public sealed partial class Surface : ListView
             && Current is { } current
             && parent.Table?.IsInteractive(current) != false;
 
-        bool ISelectionItemProvider.IsSelected => parent.Table?.IsRowSelected(Item) == true;
+        bool ISelectionItemProvider.IsSelected =>
+            Current is { } current && parent.Table?.IsRowSelected(current) == true;
         IRawElementProviderSimple ISelectionItemProvider.SelectionContainer =>
             ProviderFromPeer(parent);
 

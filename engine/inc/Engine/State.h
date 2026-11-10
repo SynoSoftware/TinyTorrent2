@@ -751,7 +751,7 @@ public:
     // Keep the cadence's phase when a collection tick arrives late.
     std::chrono::steady_clock::time_point snapshotAt = std::chrono::steady_clock::now();
     std::int64_t snapshotSequence = 0;
-    std::map<std::string, Reply> snapshotSubscribers;
+    std::map<std::string, Push> snapshotSubscribers;
     std::optional<ScheduleMode> scheduledMode;
     bool bypassesScheduledPause = false;
     std::optional<LimitMode> limitOverride;
@@ -995,43 +995,57 @@ public:
     std::map<std::string, Rename> renames;
     // The roots whose file names QueryFiles reads.
     std::set<std::string> queryingFiles;
-    // The detail of the torrent that torrent requests are reading. It is the
-    // only detail the engine keeps, so nothing accumulates for other torrents.
-    struct Reading
+    struct Loaded
     {
-        struct Loaded
-        {
-            std::vector<std::string> folders;
-            std::vector<lt::file_index_t> files;
-        };
-        // A torrent request, with no view when it asks for the torrent itself.
-        struct Read
-        {
-            std::string connectionId;
-            std::string torrentId;
-            std::optional<TorrentView> view;
-            Reply reply;
-            std::chrono::steady_clock::time_point started{};
-            std::optional<std::int64_t> context;
-            // A Files read from a browser that holds part of the tree names
-            // what it holds, and gets their values instead of every file's.
-            std::optional<Loaded> loaded;
-        };
-        // Cached readiness and action reads accept facts this much older than
-        // the request. Display can use older facts while fresh queries finish.
-        // Answers received during a read count until its other queries finish.
-        static constexpr auto answerAge = std::chrono::seconds(3);
-
-        std::string torrentId;
-        Detail detail;
-        bool changed = false;
-        // Reads that wait for answers to the torrent's detail queries.
-        std::vector<Read> held;
-        // Reads of another torrent, which start once no read is held, because
-        // replacing the detail would discard the answers the held reads need.
-        std::vector<Read> waiting;
+        std::vector<std::string> folders;
+        std::vector<lt::file_index_t> files;
     };
-    std::optional<Reading> reading;
+    // A read of one torrent's detail. A display read, with a context, belongs
+    // to its connection's subscription: it receives every observation of its
+    // torrent until the subscription ends. A complete read, without one, is
+    // answered once, when its facts are complete; without a view it asks for
+    // the torrent itself.
+    struct Reader
+    {
+        std::string connectionId;
+        std::string torrentId;
+        std::optional<TorrentView> view;
+        Reply reply;
+        std::chrono::steady_clock::time_point started{};
+        std::optional<std::int64_t> context;
+        // A Files read from a browser that holds part of the tree names
+        // what it holds, and gets their values instead of every file's.
+        std::optional<Loaded> loaded;
+
+        // A display read takes only facts that arrived after it started; a
+        // complete read also takes those a little older.
+        std::chrono::steady_clock::time_point Since() const;
+        // The detail holds every fact the read needs, recent enough for it.
+        bool Complete(Detail const& detail, bool metadata) const;
+    };
+    // Complete reads accept facts this much older than the request, because
+    // answers received during a read count until its other queries finish.
+    static constexpr auto answerAge = std::chrono::seconds(3);
+    // The detail of one torrent that reads hold. It ends with its last read,
+    // so detail accumulates only for torrents someone reads.
+    struct Collection
+    {
+        Detail detail;
+        // An answer arrived since the observations were last published.
+        bool changed = false;
+        // It waits in `demanded` or `refreshing`.
+        bool queued = false;
+        std::vector<Reader> held;
+    };
+    std::map<std::string, Collection> collections;
+    // libtorrent's alert queue drops alerts past its size, so at most this
+    // many collections have queries outstanding at once.
+    static constexpr std::size_t collectionLimit = 8;
+    std::set<std::string> collecting;
+    // Collections that wait for room: new demand first, then the periodic
+    // refresh of held subscriptions.
+    std::deque<std::string> demanded;
+    std::deque<std::string> refreshing;
 
     using Resumes = std::map<std::string, lt::add_torrent_params>;
 
@@ -1213,7 +1227,7 @@ public:
     void On(lt::storage_moved_failed_alert const& alert);
 
     std::optional<ErrorCode> Refusal() const;
-    void Execute(Json const& request, std::string const& connectionId, Reply reply);
+    void Execute(Json const& request, std::string const& connectionId, Reply reply, Push push);
     void MergeTrackers(Preview& preview, std::string const& torrentId, std::function<void(Outcome)> completion);
     void Act(std::vector<std::string> ids, std::function<void(Outcome)> completion, Action action);
     // Rechecks each torrent now, or once its files are no longer busy.
@@ -1685,33 +1699,54 @@ public:
     void On(lt::save_resume_data_alert& alert);
     void On(lt::save_resume_data_failed_alert const& alert);
 
+    // Replaces the connection's subscription with display reads of `ids`,
+    // whose observations `push` sends keyed by torrent.
+    void Subscribe(std::string const& connectionId, std::int64_t context, TorrentView view,
+        std::string const& section, std::vector<std::string> const& ids, std::optional<Loaded> const& loaded,
+        Push const& push);
     // Display reads answer immediately and receive their missing detail later;
-    // action reads wait for the complete detail they need.
-    void ReadDetail(Reading::Read read);
-    void CollectDetail(Reading::Read read);
+    // complete reads wait for the complete detail they need.
+    void ReadDetail(Reader read);
+    void CollectDetail(Reader read);
+    // Queues the collection behind the other demanded ones and ahead of every
+    // refresh, also when it already waits for its refresh.
+    void Demand(std::string const& torrentId, Collection& collection);
+    // Why libtorrent cannot answer the torrent's detail queries yet, if it cannot.
+    std::optional<Json> Unreadable(Torrent const& torrent) const;
     // Replies `data` to the read. A Files read that names what the browser
     // holds gets those values from the tree worker, in order with its other
     // replies.
-    void Respond(Torrent const& torrent, Reading::Read const& read, Detail const& detail, Json data);
+    void Respond(Torrent const& torrent, Reader const& read, Detail const& detail, Json data);
     // Asks libtorrent for that part of the torrent's detail, unless a query of
     // that kind is outstanding.
     void Query(Torrent& torrent, DetailKind kind);
-    void ContinueReading(bool changed = false);
-    // Makes the torrent's detail queried until now obsolete, so the window,
-    // which reads again after a command's reply, never sees the torrent as it
-    // was before the change.
+    // Starts waiting collections while fewer than collectionLimit collect.
+    void Admit();
+    // Queries what the collection's reads lack, and answers those that lack nothing.
+    void Collect(std::string const& torrentId);
+    // Answers the collection's reads from its detail, asks again for what a
+    // collecting one still lacks, and ends the collection or its collecting
+    // when nothing holds or waits.
+    void ContinueCollection(std::string const& torrentId, bool changed);
+    // Answers the reads of the collections whose detail the alert batch changed.
+    void PublishDetail();
+    // Collects every held subscription again, at the window's refresh interval.
+    void RefreshSubscriptions();
+    // Makes the torrent's detail queried until now obsolete, so the window
+    // never sees the torrent as it was before the change.
     void Invalidate(std::string const& torrentId);
     // Consumes the outstanding query and reports whether its answer is current.
-    // Only the inspected torrent keeps a copy.
+    // Only a torrent that a read holds keeps a copy.
     bool Receive(lt::torrent_handle const& handle, DetailKind kind,
         std::function<void(Detail&)> const& store, std::function<void(Torrent&)> const& observe = {});
-    // Answers each held read with the failure, then ends the reading.
-    void FailReading(Json const& failure);
+    // Answers each held read of the torrent, or of every torrent, with the
+    // failure, and ends their collections.
+    void FailReading(Json const& failure, std::optional<std::string> const& torrentId = std::nullopt);
     // Display release preserves actions awaiting complete detail; disconnect
     // drops both because their replies can no longer reach the client.
     void ReleaseReading(std::string const& connectionId, bool disconnected = false);
-    // Forgets the detail, which holds no read, and starts the waiting reads.
-    void EndReading();
+    // Ends the collections that no read holds, which makes room for waiting ones.
+    void EndIdleCollections();
     void RecoverDetail(lt::alerts_dropped_alert const& alert);
     void On(lt::tracker_list_alert const& alert);
     void On(lt::peer_info_alert& alert);

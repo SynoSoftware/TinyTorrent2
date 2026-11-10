@@ -48,6 +48,7 @@ public sealed partial class Strip : Control
     private readonly TranslateTransform _markerOffset = new();
 
     private FrameworkElement? _clip;
+    private readonly RectangleGeometry _clipBounds = new();
     private CellsPanel? _panel;
     private FrameworkElement? _marker;
     private Popup? _resizeGuide;
@@ -111,6 +112,8 @@ public sealed partial class Strip : Control
         if (_clip is not null)
         {
             _clip.SizeChanged -= OnClipSizeChanged;
+            // The kept geometry moves to the new template's part.
+            _clip.Clip = null;
         }
 
         _clip = GetTemplateChild(ClipPartName) as FrameworkElement;
@@ -143,10 +146,8 @@ public sealed partial class Strip : Control
             return;
         }
 
-        _clip.Clip = new RectangleGeometry
-        {
-            Rect = new Rect(0, 0, e.NewSize.Width, e.NewSize.Height),
-        };
+        _clipBounds.Rect = new Rect(0, 0, e.NewSize.Width, e.NewSize.Height);
+        _clip.Clip = _clipBounds;
     }
 
     private void OnHeaderGotFocus(object sender, RoutedEventArgs e)

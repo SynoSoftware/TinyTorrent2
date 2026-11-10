@@ -5,11 +5,67 @@ condensed rewrite or restore an older copy over it. Propose shortening as an
 edit that keeps the owner rulings, the findings table, the modules-and-seams
 section and the baseline gate, so the owner can see what is removed.**
 
-**Paused.** Stage 1, the reviewed responsiveness fixes, is implemented, and its
-rules live in the [pipe API](../contracts/pipe-api.md) and
-[engine](../contracts/engine.md) contracts. The next version below is not
-scheduled: it is complicated for little gain, and the owner has not decided
-whether to implement it. Start it only when the owner asks.
+**In progress.** Stage 1, the reviewed responsiveness fixes, is implemented,
+and its rules live in the [pipe API](../contracts/pipe-api.md) and
+[engine](../contracts/engine.md) contracts. On 9 November the owner asked to
+implement the next version below, as batch 4 of the
+[rendering and selection plan](17-rendering-and-selection.md)'s fix list. Its
+step 4's incremental row application is that plan's batches 1 and 2.
+
+**Step 1 baseline, 9 November.** Engine of protocol 38 (the build before
+batch 4), `engine/tests/Latency.ps1 -Samples 40` under a load of 117 live peer
+connections over 120 torrents, Release, on the owner's laptop. Run
+`Latency-e7c6918e`. The all-torrents Peers refresh, one round trip per
+torrent: 10 torrents median 24 ms (worst 143), 100 torrents 211 ms (worst
+240), 120 torrents 210 ms (worst 228). At about 2 ms per torrent it would
+outgrow the default one-second refresh interval near 500 torrents. The
+120-torrent snapshot is 105,492 bytes, arrives in a median 5.7 ms and parses in
+1.7 ms. A Files read got its three answers in one alert batch 77 times of 80,
+and a Pieces read 74 of 80, so partial publication seldom sends anything.
+`DescribeFiles` for the owner's largest file list is unmeasured: the owner's
+library is private and the load torrents hold one file each.
+
+**Steps 2, 3 and 5 are built, 10 November.** Protocol 39 has
+`subscribe` and per-torrent observations, the engine keeps one collection per
+torrent and collects at most eight at once, and the pipe keeps the latest
+pushed message per key. The window subscribes once per view, and PipeClient
+lost its detail and file gate. The engine writes a torrent's peers as JSON
+text, without a JSON object per peer. Two departures from the design below:
+
+- No `overloaded` byte budget. Each torrent has one pending entry, so the
+  scope bounds the pending messages, and ending a large subscription would
+  hide every torrent's peers instead of showing what is known.
+- No per-key sequence number on observations. Observations travel only
+  through the keyed slot, keyed by context and torrent, so a newer one for a
+  key always follows an older one; snapshots keep their existing `sequence`.
+
+The `Consumer` enum stays: it still gives each view its one unsent read, and
+replacing it touches the summary and draft readers, which steps 2 and 3 do not
+need.
+
+**After steps 2 and 3, 10 November.** The same script and load on the same
+laptop, two runs, `Latency-dd83bae1` and `Latency-1a5f6fcb`. The all-torrents
+Peers refresh, from the subscription to every torrent's ready observation:
+
+| Torrents | Protocol 38, median (range) | Protocol 39, first run | Second run |
+| ---: | --- | --- | --- |
+| 10 | 24 ms (19–143) | 20 ms (15–124) | 17 ms (11–57) |
+| 100 | 211 ms (190–240) | 129 ms (115–183) | 144 ms (107–333) |
+| 120 | 210 ms (198–228) | 151 ms (137–169) | 164 ms (135–385) |
+
+In the first run every refresh of 100 or 120 torrents is faster than every
+refresh of protocol 38. The second run's slowest refreshes came while its
+snapshots also arrived two to six times slower than in the other runs, up to
+37 ms against 5 to 11; batch 4 only made that path cheaper, so the laptop was
+busy then. The script parses each frame in PowerShell: the subscription's
+reply arrives a median 0.5 to 0.6 ms after the first observation. At two
+frames per torrent that parse is most of the 120-torrent time, so the engine's
+own time per torrent is lower than the table shows and is not isolated. In the
+second run, whose script starts its clock at the request as protocol 38's did,
+one torrent's first and complete observations take a median 1.5–1.7 and
+2.4–2.8 ms across the five views, against 1.4–1.9 and 2.3–2.9 for protocol 38.
+A Files read got its answers in one alert batch 80 times of 80, and a Pieces
+read 78 of 80.
 
 [Architecture](../contracts/architecture.md), [engine](../contracts/engine.md), [pipe API](../contracts/pipe-api.md),
 [UI](../contracts/ui.md#committing-edits), and [testing](../agents/testing.md) remain the

@@ -25,8 +25,7 @@ internal sealed class MapWork(Dictionary<string, Geography.Country> world) : IDi
 #endif
     }
 
-    private readonly Arrangement _model = new();
-    private Snapshot? _snapshot;
+    private readonly Arrangement _model = new(world);
     private Presentation? _presentation;
     private float _scale;
     private readonly TaskCompletionSource _released = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -37,27 +36,27 @@ internal sealed class MapWork(Dictionary<string, Geography.Country> world) : IDi
     {
 #if CAPTURE
         Started?.Invoke();
-#endif
-        input.Cancellation.ThrowIfCancellationRequested();
-#if CAPTURE
         var started = Stopwatch.GetTimestamp();
 #endif
-        var factsChanged = _snapshot is null || input.Model.Subject != _snapshot.Subject || !input.Model.Matches(_snapshot);
-        var arrange = factsChanged || input.Scale != _scale;
-        if (factsChanged)
-            _model.Update(input.Model);
-        if (arrange)
-        {
-            _model.Arrange(world, input.Scale);
-            _presentation = _model.Present();
-        }
-        _snapshot = input.Model;
-        _scale = input.Scale;
+        var language = _model.Text?.Language;
+        _model.Update(input.Model, input.Cancellation);
         input.Cancellation.ThrowIfCancellationRequested();
-        var model = _presentation!;
+        var presentation = _presentation;
+        if (presentation is null || _model.Changed || input.Scale != _scale)
+        {
+            _model.Arrange(input.Scale);
+            var arranged = _model.Present();
+            // A new population of equal peer facts, such as a return to the
+            // subject's peers, keeps the presentation, so the map does not
+            // inspect and publish the same picture again.
+            if (presentation is null || language != input.Model.Text.Language || !arranged.Matches(presentation))
+                presentation = _presentation = arranged;
+            _scale = input.Scale;
+        }
+        input.Cancellation.ThrowIfCancellationRequested();
         return new()
         {
-            Model = model,
+            Model = presentation,
 #if CAPTURE
             PreparationMs = Stopwatch.GetElapsedTime(started).TotalMilliseconds,
 #endif
@@ -67,9 +66,7 @@ internal sealed class MapWork(Dictionary<string, Geography.Country> world) : IDi
     public void Dispose()
     {
         _model.Clear();
-        _snapshot = null;
         _presentation = null;
-        world = [];
         _released.TrySetResult();
     }
 }

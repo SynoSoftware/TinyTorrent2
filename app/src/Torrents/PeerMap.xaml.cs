@@ -330,10 +330,7 @@ public sealed partial class PeerMap : UserControl
             _viewport.Resize(size);
             _preparationQueued = true;
         }
-        if (_viewport.ViewScale <= 0)
-            return null;
-        var snapshot = _model.Capture();
-        if (!ReferenceEquals(snapshot.Subject, _model.Subject))
+        if (_viewport.ViewScale <= 0 || _model.Capture() is not { } snapshot)
             return null;
         return new()
         {
@@ -363,7 +360,13 @@ public sealed partial class PeerMap : UserControl
                     ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
                 if (!ReferenceEquals(_work, work) || !IsLoaded)
                     return;
-                if (preparation.IsCanceled || input.Model.Subject != _model.Subject || input.Model.Cities != _model.Cities)
+                // The preparation runs without the token, so that it always takes the
+                // changes handed over with it; a cancelled one therefore faults.
+                if (
+                    preparation.Exception?.InnerException is OperationCanceledException
+                    || input.Model.Subject != _model.Subject
+                    || input.Model.Cities != _model.Cities
+                )
                 {
                     continue;
                 }

@@ -47,8 +47,20 @@ public static class PerformanceSource
             connections, swapsPerSecond);
     }
 
-    public static async Task<JsonElement> Peers(string pipe, string torrentId) =>
-        await Read<JsonElement>(pipe, new(ReadKind.Peers, torrentId)).ConfigureAwait(false);
+    /// <summary>
+    /// A torrent's peers, parsed in pooled buffers as the app's pipe client parses an engine
+    /// message, so the replay's collections are the app's own. Disposing the document gives the
+    /// buffers back.
+    /// </summary>
+    public static async Task<JsonDocument> Peers(string name, string torrentId)
+    {
+        await using var pipe = new NamedPipeClientStream(".", name, PipeDirection.InOut, PipeOptions.Asynchronous);
+        await pipe.ConnectAsync(5000).ConfigureAwait(false);
+        await Write(pipe, JsonSerializer.SerializeToUtf8Bytes(new Request(ReadKind.Peers, torrentId)), default).ConfigureAwait(false);
+        await pipe.ReadExactlyAsync(new byte[4]).ConfigureAwait(false);
+        // The source closes the pipe after its one reply, so the reply ends the stream.
+        return await JsonDocument.ParseAsync(pipe).ConfigureAwait(false);
+    }
 
     public static Task<Status> State(string pipe, int? afterTick = null, CancellationToken cancellation = default) =>
         Read<Status>(pipe, new(ReadKind.Status, AfterTick: afterTick), cancellation);

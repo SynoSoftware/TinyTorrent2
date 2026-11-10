@@ -52,10 +52,15 @@ Background eligibility changes apply the saved order once after the alert batch,
 so restoring many torrents does not replay the whole queue for each torrent.
 Explicit queue commands apply their accepted order immediately.
 
-Detail answers mark the current reading as changed while the alert batch is
-handled, and the engine publishes it once after that batch, building each latest
-document once. Publication waits for neither the periodic tick nor a debounce
-timer.
+Detail answers mark their torrent's collection as changed while the alert batch
+is handled, and the engine publishes each changed collection once after that
+batch, building each latest document once. Publication waits for neither the
+periodic tick nor a debounce timer. Each torrent has one collection, shared by
+its readers, and at most eight collect at once, because libtorrent's alert
+queue drops answers beyond its limit when hundreds of torrents are queried
+together; [the pipe contract](pipe-api.md#snapshots-and-detail) describes
+subscriptions and reads. A torrent's peer list is written as JSON text,
+without a JSON object per peer.
 
 Pause all pauses the libtorrent session, which keeps each torrent's own running
 or paused state, so Resume all does not start torrents the person paused one by

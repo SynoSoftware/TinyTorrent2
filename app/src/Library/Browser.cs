@@ -59,6 +59,9 @@ public sealed partial class Browser
     public Strings Text { get; }
     public IReadOnlyList<LibraryRow> Rows { get; private set; } = [];
 
+    /// <summary>The rows of <see cref="Rows"/> that its search updated in place.</summary>
+    internal IReadOnlyList<LibraryRow> UpdatedRows { get; private set; } = [];
+
     /// <summary>Whether <see cref="Rows"/> answer the person's search, filter or library choice.</summary>
     internal bool RowsSearched { get; private set; }
     internal event EventHandler? SelectionChanged;
@@ -913,6 +916,7 @@ public sealed partial class Browser
                 var previousEntry = previous?.Entry;
                 var retained = new HashSet<long>();
                 var rows = new List<LibraryRow>(matches.Entries.Count);
+                List<LibraryRow> updated = [];
                 var rowsChanged = _rowsQuery?.Configuration != query.Configuration;
                 foreach (var entry in matches.Entries)
                 {
@@ -927,7 +931,11 @@ public sealed partial class Browser
                         _rows[entry.EntryId] = row = new LibraryRow(shown, this);
                     else
                     {
-                        rowsChanged |= row.Entry != shown;
+                        if (row.Entry != shown)
+                        {
+                            rowsChanged = true;
+                            updated.Add(row);
+                        }
                         row.Update(shown);
                     }
                     rows.Add(row);
@@ -954,6 +962,7 @@ public sealed partial class Browser
                     // Every person's change raises the revision; a background refresh keeps it.
                     RowsSearched = revision != _rowsRevision;
                     Rows = rows;
+                    UpdatedRows = updated;
                 }
                 _rowsRevision = revision;
                 _rowsQuery = query;

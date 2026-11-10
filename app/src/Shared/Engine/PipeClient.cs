@@ -32,6 +32,13 @@ internal sealed partial class PipeClient : IDisposable
     private int? _processId;
     private bool _disposed;
     private bool _hasConnected;
+
+    // The context of the inspector's subscription, or null once it is released
+    // or withdrawn. An observation of another context belongs to a view the
+    // inspector has left, so the receive loop drops it and returns its buffer
+    // at once. The inspector still checks each observation, because its view
+    // can change after the receive thread let one through.
+    private long? _observed;
     private string? _dataDirectory;
     internal string? DataDirectory => _dataDirectory;
     internal bool IsConnected
@@ -60,7 +67,9 @@ internal sealed partial class PipeClient : IDisposable
     internal event Action<string>? TorrentRequested;
     internal event Action<string[], string>? DownloadRequested;
     internal event Action<JsonElement>? Toast;
-    internal event Action<JsonElement>? Detail;
+    // An observation of the inspector's subscription, on the receive thread;
+    // the handler takes it over.
+    internal event Action<Observation>? Observed;
     internal event Action<CommandReply>? CommandReplied;
 
     internal PipeClient(Strings strings) => _strings = strings;
@@ -125,12 +134,39 @@ internal sealed partial class PipeClient : IDisposable
         }
     }
 
+    // Replaces the inspector's subscription: the engine sends an observation of
+    // each torrent at once and pushes fresh ones while the subscription holds.
+    // An unsent subscription is replaced by the next, and Withdraw cancels it.
+    internal Task<JsonElement> Subscribe(long context, Dictionary<string, object> arguments)
+    {
+        arguments["context"] = context;
+        lock (_gate)
+        {
+            _observed = context;
+        }
+        return Read(Consumer.Inspector, "subscribe", arguments);
+    }
+
+    // Ends the inspector's subscription, so the engine stops collecting for it.
+    internal Task<JsonElement> Release()
+    {
+        lock (_gate)
+        {
+            _observed = null;
+        }
+        return Read(Consumer.Inspector, "subscribe", new { torrent_ids = Array.Empty<string>() });
+    }
+
     // Cancels the consumer's unsent read. A read already sent completes, and
     // its consumer ignores the outcome.
     internal void Withdraw(Consumer consumer)
     {
         lock (_gate)
         {
+            if (consumer == Consumer.Inspector)
+            {
+                _observed = null;
+            }
             if (_reads.Find(read => read.Consumer == consumer) is not { } pending)
                 return;
             _reads.Remove(pending);
@@ -150,11 +186,8 @@ internal sealed partial class PipeClient : IDisposable
             if (active.Count(consumer => consumer is not null) >= ReadLimit)
                 return null;
             var index = _reads.FindIndex(read =>
-                read.Consumer != Consumer.Files
-                && (read.Consumer != Consumer.Summary || !active.Contains(Consumer.Summary))
+                read.Consumer != Consumer.Summary || !active.Contains(Consumer.Summary)
             );
-            if (index < 0)
-                index = _reads.FindIndex(read => read.Consumer == Consumer.Files);
             if (index < 0)
                 return null;
             var read = _reads[index];
@@ -364,8 +397,6 @@ internal sealed partial class PipeClient : IDisposable
             _commandCount -= _commands.Count;
             _commands.Clear();
             _reads.Clear();
-            EndFiles();
-            EndInspector();
         }
     }
 
@@ -395,9 +426,6 @@ internal sealed partial class PipeClient : IDisposable
                 : arguments
                     .EnumerateObject()
                     .ToDictionary(property => property.Name, property => property.Value);
-            long? context = fields.TryGetValue("context", out var value) ? value.GetInt64() : null;
-            if (!BeginDetail(request, context))
-                return;
             fields["request_id"] = JsonSerializer.SerializeToElement(requestId);
             fields["command"] = JsonSerializer.SerializeToElement(request.Name);
             var pending = new PendingReply(request, arguments);
@@ -407,12 +435,10 @@ internal sealed partial class PipeClient : IDisposable
             request.Written.TrySetResult();
             var reply = await pending.Completion.Task.WaitAsync(deadline.Token);
             var data = ReadOutcome(reply, _strings, request.Name);
-            CompleteDetail(request, data);
             request.Completion.TrySetResult(data);
         }
         catch (CommandException error)
         {
-            CompleteDetail(request, default);
             request.Completion.TrySetException(error);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -453,7 +479,18 @@ internal sealed partial class PipeClient : IDisposable
         {
             while (true)
             {
-                var message = await Read(pipe, token);
+                var (document, bytes) = await ReadPooled(pipe, token);
+                var root = document.RootElement;
+                if (root.TryGetProperty("type", out var kind) && kind.ValueEquals("observation"))
+                {
+                    if (Keeps(root))
+                        Observed?.Invoke(new(document, bytes, _strings));
+                    else
+                        Return(document, bytes);
+                    continue;
+                }
+                var message = root.Clone();
+                Return(document, bytes);
                 if (message.TryGetProperty("type", out var type))
                 {
                     if (
@@ -470,8 +507,6 @@ internal sealed partial class PipeClient : IDisposable
                             message.GetProperty("destination").GetString()!);
                     else if (type.GetString() == "toast")
                         Toast?.Invoke(message);
-                    else if (type.GetString() == "detail")
-                        ReceiveDetail(message);
                     else if (type.GetString() == "snapshot")
                         Publish(ReadOutcome(message, _strings, "snapshot"));
                 }
@@ -548,6 +583,16 @@ internal sealed partial class PipeClient : IDisposable
         }
     }
 
+    // Whether an observation is of the inspector's current subscription.
+    private bool Keeps(JsonElement observation)
+    {
+        var context = observation.GetProperty("context").GetInt64();
+        lock (_gate)
+        {
+            return context == _observed;
+        }
+    }
+
     internal static NamedPipeClientStream CreatePipe() =>
         new(
             ".",
@@ -596,7 +641,7 @@ internal sealed partial class PipeClient : IDisposable
 
     private static void CheckVersion(NamedPipeClientStream pipe, JsonElement hello, Strings strings)
     {
-        if (hello.TryGetProperty("version", out var version) && version.GetInt32() == 38)
+        if (hello.TryGetProperty("version", out var version) && version.GetInt32() == 39)
             return;
         throw new VersionException(EngineProcess.VersionMessage(pipe, strings));
     }
@@ -628,6 +673,21 @@ internal sealed partial class PipeClient : IDisposable
 
     private static async Task<JsonElement> Read(Stream pipe, CancellationToken token)
     {
+        var (document, bytes) = await ReadPooled(pipe, token);
+        var message = document.RootElement.Clone();
+        Return(document, bytes);
+        return message;
+    }
+
+    // Reads one message into a pooled buffer and parses it there, also into
+    // pooled buffers. The caller gives both back through Return once nothing
+    // reads the message; a message never given back is left to the garbage
+    // collector.
+    private static async Task<(JsonDocument Document, byte[] Bytes)> ReadPooled(
+        Stream pipe,
+        CancellationToken token
+    )
+    {
         var header = new byte[4];
         await pipe.ReadExactlyAsync(header, token);
         var length = BinaryPrimitives.ReadInt32LittleEndian(header);
@@ -638,13 +698,19 @@ internal sealed partial class PipeClient : IDisposable
         {
             var message = bytes.AsMemory(0, length);
             await pipe.ReadExactlyAsync(message, token);
-            using var document = JsonDocument.Parse(message);
-            return document.RootElement.Clone();
+            return (JsonDocument.Parse(message), bytes);
         }
-        finally
+        catch
         {
             ArrayPool<byte>.Shared.Return(bytes);
+            throw;
         }
+    }
+
+    private static void Return(JsonDocument document, byte[] bytes)
+    {
+        document.Dispose();
+        ArrayPool<byte>.Shared.Return(bytes);
     }
 
     private static async Task Write(Stream pipe, object message, CancellationToken token)
@@ -704,6 +770,66 @@ internal sealed partial class PipeClient : IDisposable
         bool Succeeded,
         JsonElement? Snapshot
     );
+
+    /// <summary>
+    /// One torrent's section as the inspector's subscription saw it. The
+    /// message stays in the pooled buffers it was read and parsed into, so a
+    /// large peer list is read in place: never copied and never parsed again.
+    /// </summary>
+    internal sealed class Observation
+    {
+        private readonly JsonDocument _document;
+        private byte[]? _bytes;
+
+        // Takes over the pooled buffers of an observation message.
+        internal Observation(JsonDocument document, byte[] bytes, Strings strings)
+        {
+            _document = document;
+            _bytes = bytes;
+            var message = document.RootElement;
+            SessionId = message.GetProperty("session_id").GetString()!;
+            Context = message.GetProperty("context").GetInt64();
+            TorrentId = message.GetProperty("torrent_id").GetString()!;
+            try
+            {
+                Detail = ReadOutcome(message, strings, "torrent");
+            }
+            catch (CommandException error)
+            {
+                Failure = error;
+            }
+        }
+
+        internal string SessionId { get; }
+        internal long Context { get; }
+        internal string TorrentId { get; }
+
+        /// <summary>
+        /// Why the engine could not read the torrent, or null when
+        /// <see cref="Detail"/> holds its section.
+        /// </summary>
+        internal CommandException? Failure { get; }
+
+        /// <summary>
+        /// The section's values and <c>ready</c>, readable until
+        /// <see cref="Return"/>.
+        /// </summary>
+        internal JsonElement Detail { get; }
+
+        /// <summary>
+        /// Gives the buffers back to the pool. Call it once nothing reads
+        /// <see cref="Detail"/>, workers included; an observation never
+        /// returned is left to the garbage collector.
+        /// </summary>
+        internal void Return()
+        {
+            // A second return would hand one buffer to two readers.
+            if (_bytes is not { } bytes)
+                return;
+            _bytes = null;
+            PipeClient.Return(_document, bytes);
+        }
+    }
 
     private sealed class VersionException(string message) : Exception(message);
 

@@ -116,12 +116,11 @@ public sealed partial class Column : DependencyObject
     public HorizontalAlignment CellAlignment { get; set; } = HorizontalAlignment.Left;
 
     /// <summary>
-    /// Captures the keys this column sorts by, supplied by <see cref="Table.Schema{TRow}"/>: on the
-    /// UI thread for a sort request and on the preparation worker for every later projection.
-    /// There is no separate switch: a column given a sort key is sortable and one that was not is
-    /// not, so the two cannot disagree.
+    /// Creates a store for the keys this column sorts by, supplied by
+    /// <see cref="Table.Schema{TRow}"/>. There is no separate switch: a column given a sort key is
+    /// sortable and one that was not is not, so the two cannot disagree.
     /// </summary>
-    internal Func<IReadOnlyCollection<object>, IComparer<object>>? CaptureSort { get; set; }
+    internal Func<Body.SortKeys>? SortKeys { get; set; }
 
-    internal bool CanSort => CaptureSort is not null;
+    internal bool CanSort => SortKeys is not null;
 }

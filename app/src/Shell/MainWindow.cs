@@ -30,6 +30,9 @@ public sealed partial class MainWindow : Window
     private AddDialog? _addDialog;
     private bool _allowClose;
     private bool _loaded;
+    // CanShowMap's answers when the map commands' changes were last raised;
+    // null before the first.
+    private (bool Selected, bool All)? _maps;
     private readonly Dictionary<ICommand, KeyboardAccelerator> _shortcuts = [];
 
     // VirtualKey omits the Windows OEM comma code.
@@ -98,6 +101,7 @@ public sealed partial class MainWindow : Window
             RefreshPopups();
         };
         Model.PropertyChanged += OnModelChanged;
+        Model.Inspector.PropertyChanged += (_, _) => RefreshMaps();
         Model.TextChanged += (_, _) => RefreshText();
         Model.Notifications.AnnouncementRequested += (_, message) =>
             FrameworkElementAutomationPeer
@@ -108,19 +112,12 @@ public sealed partial class MainWindow : Window
                     message,
                     "command"
                 );
-        Model.SnapshotApplied += (_, change) =>
+        Model.SnapshotApplied += (_, updated) =>
         {
-            // Project already publishes changes to the ascending queue order.
-            if (
-                !change.Published
-                && change.RowsChanged
-                && Torrents.Sort is { } sort
-                && (
-                    sort.Column != QueueColumn
-                    || sort.Direction != Syno.TableView.SortDirection.Ascending
-                )
-            )
-                Torrents.RefreshView();
+            // A torrent keeps its row object, so the table reads its new sort
+            // key only when named, whether or not the snapshot published a new list.
+            if (updated.Count > 0 && Torrents.Sort is not null)
+                Torrents.RefreshView(updated);
         };
         Model.RevealRequested += async (_, torrents) => await RevealTorrents(torrents, keepsBack: false);
         Model.ReleaseRequested += (_, torrents) => Torrents.Release(torrents);
@@ -440,10 +437,9 @@ public sealed partial class MainWindow : Window
             || !Model.Inspector.HasPeerScope
         )
             KeepMap();
-        ((RelayCommand)SelectedMap).Refresh();
-        ((RelayCommand)AllMap).Refresh();
-        QueueStatus();
-        QueueMenus();
+        RefreshMaps();
+        ObserveStatus();
+        ObserveMenus(args.PropertyName);
         if (
             string.IsNullOrEmpty(args.PropertyName)
             || args.PropertyName == nameof(MainViewModel.ShowsTitleSpeeds)
@@ -509,6 +505,21 @@ public sealed partial class MainWindow : Window
                 .FirstOrDefault(choice => choice.Filter == Model.Filter);
             _refreshingFilters = false;
         }
+    }
+
+    // Raises a map command's change only when CanShowMap's answer changed,
+    // because each raise reaches the toolbar and the View menu. Every notice
+    // of the model and of the inspector checks the answer, because the
+    // inspector's pending save reaches the model's notices only when it
+    // changes CanClose.
+    private void RefreshMaps()
+    {
+        var maps = (Selected: CanShowMap(false), All: CanShowMap(true));
+        if (_maps?.Selected != maps.Selected)
+            ((RelayCommand)SelectedMap).Refresh();
+        if (_maps?.All != maps.All)
+            ((RelayCommand)AllMap).Refresh();
+        _maps = maps;
     }
 
     private void OnLoaded(object sender, RoutedEventArgs args)

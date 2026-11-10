@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Reflection;
 using System.Text.Json;
 using Microsoft.UI.Xaml.Controls;
 using Syno.TinyTorrent.Settings;
@@ -101,19 +100,13 @@ public sealed partial class MainWindow
     {
         var original = inspector.Peers!;
         var table = (Syno.TableView.Table)pane.FindName("Peers");
-        var apply = typeof(Inspector).GetMethod(
-            "ApplyPeers", BindingFlags.Instance | BindingFlags.NonPublic
-        )!;
         var property = typeof(Inspector).GetProperty(nameof(Inspector.Peers))!;
         pane.Layout = pane.Layout with { View = PeerView.Default with { Layout = PeerLayout.Table } };
         Model.IsInspectorMaximized = true;
         foreach (var count in new[] { 100, 1000, 10000 })
         {
             property.SetValue(inspector, null);
-            await (Task<bool>)apply.Invoke(inspector, [
-                original[0].TorrentId, PeerRows(count),
-                typeof(Inspector).GetField("_context", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(inspector)!
-            ])!;
+            await inspector.ApplyCapturedPeers(original[0].TorrentId, PeerRows(count));
             for (var index = 0; index < count; index++)
                 inspector.Peers![index].Location = original[index % original.Count].Location;
             inspector.Refresh();

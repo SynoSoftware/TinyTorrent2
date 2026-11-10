@@ -41,6 +41,19 @@ internal sealed class Source
         SnapshotChanged?.Invoke(this, next);
     }
 
+    /// <summary>
+    /// Stop following the host's source and take <paramref name="shown"/>, the snapshot the view
+    /// shows, as the latest one, without raising <see cref="SnapshotChanged"/>.
+    /// </summary>
+    internal void Withdraw(IReadOnlyList<object> shown)
+    {
+        RequireUiThread();
+        Hierarchy?.Invalidate();
+        Detach();
+        _source = null;
+        _snapshot = shown;
+    }
+
     internal void Suspend()
     {
         _suspended = true;
@@ -88,7 +101,14 @@ internal sealed class Source
     /// </summary>
     private static IReadOnlyList<object> Capture(IEnumerable? source)
     {
-        List<object> next = new();
+        List<object> next = new(
+            source switch
+            {
+                ICollection collection => collection.Count,
+                IReadOnlyCollection<object> rows => rows.Count,
+                _ => 0,
+            }
+        );
         if (source is not null)
         {
             foreach (object? item in source)

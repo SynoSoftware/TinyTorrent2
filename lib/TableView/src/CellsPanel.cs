@@ -11,13 +11,10 @@ namespace Syno.TableView;
 /// </summary>
 public sealed partial class CellsPanel : Panel
 {
-    /// <summary>The column a row cell shows. A header cell names its own.</summary>
-    private static readonly DependencyProperty ColumnProperty = DependencyProperty.RegisterAttached(
-        "Column",
-        typeof(Column),
-        typeof(CellsPanel),
-        new PropertyMetadata(null)
-    );
+    // Children's cells in their order, each with the column it shows. SyncChildren is the only
+    // writer of Children and keeps this list equal to it, so layout and cell fill read their
+    // cells here instead of fetching each one back from WinUI and looking up its wrapper.
+    private readonly List<(Column Column, UIElement Cell)> _cells = [];
 
     private Table? _owner;
     private EffectiveLayout? _layout;
@@ -27,7 +24,6 @@ public sealed partial class CellsPanel : Panel
     {
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
-        DataContextChanged += OnDataContextChanged;
     }
 
     /// <summary>Claimed by <see cref="Header.Strip"/> before the panel is ever loaded.</summary>
@@ -126,21 +122,25 @@ public sealed partial class CellsPanel : Panel
         InvalidateMeasure();
     }
 
-    private void OnDataContextChanged(FrameworkElement sender, DataContextChangedEventArgs args)
+    /// <summary>
+    /// Show the row's new item in every cell. <see cref="Body.Row"/> passes on its own data context
+    /// change, so a rebind raises one managed event for the row and its cells, not one each.
+    /// </summary>
+    internal void ShowItem(object? item)
     {
-        if (_isHeader || _layout is null)
+        if (_layout is null)
         {
             return;
         }
 
-        foreach (UIElement child in Children)
+        foreach (var (_, child) in _cells)
         {
             if (child is ContentPresenter presenter)
             {
-                presenter.Content = args.NewValue;
+                presenter.Content = item;
             }
             else if (child is Body.HierarchyCell hierarchyCell)
-                hierarchyCell.Item = args.NewValue;
+                hierarchyCell.Item = item;
         }
     }
 
@@ -159,10 +159,11 @@ public sealed partial class CellsPanel : Panel
 
         IReadOnlyList<VisibleColumn> visible = _layout.VisibleColumns;
 
-        for (int i = Children.Count - 1; i >= 0; i--)
+        for (int i = _cells.Count - 1; i >= 0; i--)
         {
-            if (VisibleIndexOf(visible, ColumnOf(Children[i])) < 0)
+            if (VisibleIndexOf(visible, _cells[i].Column) < 0)
             {
+                _cells.RemoveAt(i);
                 Children.RemoveAt(i);
             }
         }
@@ -170,21 +171,26 @@ public sealed partial class CellsPanel : Panel
         for (int i = 0; i < visible.Count; i++)
         {
             Column column = visible[i].Column.Column;
-            int at = ChildIndexOf(column, i);
+            int at = CellIndexOf(column, i);
 
             if (at < 0)
             {
-                Children.Insert(i, CreateChild(column));
+                UIElement cell = CreateChild(column);
+                _cells.Insert(i, (column, cell));
+                Children.Insert(i, cell);
             }
             else if (at != i)
             {
                 // A reorder of visual children, not of a displayed collection: the rule against
                 // Move is about an ObservableCollection bound to a ListView, and nothing here is
                 // bound. Removing and re-adding the element would unload and reload it instead.
+                var moved = _cells[at];
+                _cells.RemoveAt(at);
+                _cells.Insert(i, moved);
                 Children.Move((uint)at, (uint)i);
             }
 
-            RefreshChild(Children[i]);
+            RefreshChild(_cells[i].Cell);
         }
     }
 
@@ -200,7 +206,7 @@ public sealed partial class CellsPanel : Panel
         }
     }
 
-    private static int VisibleIndexOf(IReadOnlyList<VisibleColumn> visible, Column? column)
+    private static int VisibleIndexOf(IReadOnlyList<VisibleColumn> visible, Column column)
     {
         for (int i = 0; i < visible.Count; i++)
         {
@@ -213,11 +219,11 @@ public sealed partial class CellsPanel : Panel
         return -1;
     }
 
-    private int ChildIndexOf(Column column, int start)
+    private int CellIndexOf(Column column, int start)
     {
-        for (int i = start; i < Children.Count; i++)
+        for (int i = start; i < _cells.Count; i++)
         {
-            if (ReferenceEquals(ColumnOf(Children[i]), column))
+            if (ReferenceEquals(_cells[i].Column, column))
             {
                 return i;
             }
@@ -225,9 +231,6 @@ public sealed partial class CellsPanel : Panel
 
         return -1;
     }
-
-    private static Column? ColumnOf(UIElement child) =>
-        child is Header.Cell cell ? cell.Column : child.GetValue(ColumnProperty) as Column;
 
     /// <summary>
     /// The header cell and the row cell, built four lines apart and reading one inset, because a
@@ -261,12 +264,9 @@ public sealed partial class CellsPanel : Panel
             Padding = padding,
             Content = DataContext,
         };
-        UIElement child =
-            _owner?.IsHierarchyColumn(column) == true
-                ? new Body.HierarchyCell(_owner, presenter)
-                : presenter;
-        child.SetValue(ColumnProperty, column);
-        return child;
+        return _owner?.IsHierarchyColumn(column) == true
+            ? new Body.HierarchyCell(_owner, presenter)
+            : presenter;
     }
 
     /// <summary>
@@ -308,10 +308,10 @@ public sealed partial class CellsPanel : Panel
     /// </remarks>
     private void RequireOneCellPerColumn(int visible)
     {
-        if (Children.Count != visible)
+        if (_cells.Count != visible)
         {
             throw new InvalidOperationException(
-                $"The panel holds {Children.Count} cells against {visible} visible columns. "
+                $"The panel holds {_cells.Count} cells against {visible} visible columns. "
                     + "SyncChildren owns that reconcile, so every column change must reach it."
             );
         }
@@ -346,7 +346,7 @@ public sealed partial class CellsPanel : Panel
 
         for (int i = 0; i < visible.Count; i++)
         {
-            UIElement child = Children[i];
+            UIElement child = _cells[i].Cell;
             child.Measure(new Size(visible[i].Width, double.PositiveInfinity));
             height = Math.Max(height, child.DesiredSize.Height);
         }
@@ -366,7 +366,7 @@ public sealed partial class CellsPanel : Panel
 
         for (int i = 0; i < visible.Count; i++)
         {
-            Children[i].Arrange(new Rect(visible[i].Offset, 0, visible[i].Width, finalSize.Height));
+            _cells[i].Cell.Arrange(new Rect(visible[i].Offset, 0, visible[i].Width, finalSize.Height));
         }
 
         return finalSize;

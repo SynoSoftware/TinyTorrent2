@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Net;
 using System.Numerics;
 using System.Reflection;
 using System.Text.Json;
@@ -248,7 +249,7 @@ public sealed partial class MainWindow
                 {
                     ObserveChanges(table, "peers");
                     tables.Add(new { phase, qpc = now, table = "peers", subject = inspector.Target?.TorrentId ?? "all",
-                        rows = VisibleRows(table).OfType<Peer>().Select(peer => new { key = peer.Key, rate = peer.DownloadRate }).ToArray() });
+                        rows = VisibleRows(table).OfType<Peer>().Select(peer => new { key = peer.TorrentId + "/" + peer.Endpoint, rate = peer.DownloadRate }).ToArray() });
                 }
             }
             if (opening != 0 && firstPicture == 0 && map?.MotionPictures > 0
@@ -338,7 +339,7 @@ public sealed partial class MainWindow
                     && Read<MapMotion?>(peerMap, "_motion") is { } motion && motion.Control.Opacity > 0
                     && motion.ShowsConnections(inspector.Map.Subject, count)) observedAt = Stopwatch.GetTimestamp();
                 return observedAt != 0 && !inspector.IsLoading && !inspector.IsReplacing
-                    && inspector.Peers?.Count == count && inspector.Map.Capture().Observations.Length == count;
+                    && inspector.Peers?.Count == count && Read<MapModel.Population>(inspector.Map, "_population").Peers.Count == count;
             }, "The docked Peers map did not show the requested connections in its drawn picture.");
             await ViewDrawn();
             if (inspector.Map.Cities != cities || Read<int>(map!, "_arcLimit") != arcLimit)
@@ -387,7 +388,7 @@ public sealed partial class MainWindow
             await CaptureLayout();
             await Until(() => firstPicture != 0, "No XAML frame completed after the first visible map picture.");
             await Until(() => !inspector.IsLoading && !inspector.IsReplacing && inspector.Peers?.Count == data.PeerCount
-                && inspector.Map.Capture().Observations.Length == data.PeerCount,
+                && Read<MapModel.Population>(inspector.Map, "_population").Peers.Count == data.PeerCount,
                 "The global map did not receive all synthetic peers.");
             await Until(() => inspector.Map.Cities == cities && motion.ShowsConnections(inspector.Map.Subject, data.PeerCount),
                 "The global map did not visibly show the requested connections.");
@@ -575,9 +576,9 @@ public sealed partial class MainWindow
                 await PanDegrees("origin-16x-pan-west", -30);
                 viewport.Fit();
                 await ViewDrawn();
-                var before = map.MotionFrames;
+                var before = map!.MotionFrames;
                 await Measure("map-1x-animation", PerformanceInput.Idle(window, 3000));
-                outcomes.Add(new { journey = "1x moving dots", frames = map.MotionFrames - before, state = map.MotionState });
+                outcomes.Add(new { journey = "1x moving dots", frames = map!.MotionFrames - before, state = map!.MotionState });
                 await Screenshot("full-screen-map");
                 if (ReviewMode == CaptureMode.PerformanceMap) return;
                 await GoBack();
@@ -621,16 +622,31 @@ public sealed partial class MainWindow
                     var retention = await Task.Run(() =>
                     {
                         var shared = previous.Where(peer => ids.Contains(peer.TorrentId)).ToArray();
-                        var rows = current.ToDictionary(peer => peer.Key);
+                        var rows = current.ToDictionary(peer => (peer.TorrentId, peer.Endpoint));
                         return new { shared = shared.Length,
-                            retained = shared.Count(peer => rows.TryGetValue(peer.Key, out var next) && ReferenceEquals(peer, next)),
-                            missing = shared.Count(peer => !rows.ContainsKey(peer.Key)),
+                            retained = shared.Count(peer => rows.TryGetValue((peer.TorrentId, peer.Endpoint), out var next) && ReferenceEquals(peer, next)),
+                            missing = shared.Count(peer => !rows.ContainsKey((peer.TorrentId, peer.Endpoint))),
                             outside = current.Count(peer => !ids.Contains(peer.TorrentId)) };
                     });
                     outcomes.Add(new { journey = name, expected, retention });
                 }
                 return;
             }
+            // Ctrl+A on every peer: the map counts the selected places on a
+            // worker, so a trace of this phase shows what the UI and render
+            // threads still do per peer.
+            phaseStarted = Stopwatch.GetTimestamp();
+            Volatile.Write(ref phase, "peer-select-all");
+            Call(peersTable, "SelectAllFromKeyboard");
+            if (peersTable.Selection.Items.Count != data.PeerCount)
+                throw new InvalidOperationException("Select all did not select every peer.");
+            await Until(() => Read<MapModel.Selection>(map!, "_selection").HasPeers && !Read<bool>(map!, "_selecting"),
+                "The map did not mark the selected peers' places.");
+            await ViewDrawn();
+            phases.Add(new { name = "peer-select-all", started = phaseStarted, ended = Stopwatch.GetTimestamp(),
+                peers = data.PeerCount, places = Read<MapModel.Selection>(map!, "_selection").Counts.Count });
+            Volatile.Write(ref phase, string.Empty);
+            peersTable.Selection = new Syno.TableView.Selection([], null);
             var surface = Read<ListView>(Torrents, "_surface");
             var heavy = targets.Single(torrent => torrent.TorrentId == data.Source.Torrents.MaxBy(torrent => torrent.Connections)!.TorrentId);
             var selectedCount = data.Leechers[Array.IndexOf(targets, heavy)] * 3;
@@ -766,7 +782,7 @@ public sealed partial class MainWindow
                 phases, samples, updates, tables, traceChanges, changes, feedFailure = feedFailure?.ToString(), pictures = pictures.ToArray(), mapFrames = mapFrames.ToArray(), work = work.ToArray(),
                 received = received.ToArray(), replay, scopeReview, dispatched,
                 fixture = new { detail = cities ? "cities" : "countries", expected = data.PeerCount, summaries = targets.Sum(torrent => torrent.PeerCount),
-                    parsed = inspector.Peers?.Count, observations = inspector.Map.Capture().Observations.Length,
+                    parsed = inspector.Peers?.Count, observations = Read<MapModel.Population>(inspector.Map, "_population").Peers.Count,
                     inspector.Map.Cities, inspector.IsLoading, inspector.IsReplacing, motion = map?.MotionState },
                 presses, inputOffset, clearedSelections,
                 clicks = clicks.Select(click => {
@@ -826,7 +842,7 @@ internal sealed class PerformanceData
     internal int PeerCount => Leechers.Sum() * 3;
     internal IReadOnlyList<Location> Locations { get; }
     internal PerformanceSource.Configuration Source { get; }
-    private readonly Dictionary<string, Location> _locations = [];
+    private readonly Dictionary<IPAddress, Location> _locations = [];
     internal Location Origin { get; } = new("GB", new Place("GB", null), null, new GeoPoint(0, 51.5));
 
     internal PerformanceData(Torrent[] torrents, int[] leechers, int locationCount, IReadOnlyDictionary<string, Geography.Country> world,
@@ -846,8 +862,8 @@ internal sealed class PerformanceData
             throw new InvalidOperationException("The bundled countries do not supply enough distinct benchmark locations.");
         for (var torrent = 0; torrent < torrents.Length; torrent++)
             for (var row = 0; row < Leechers[torrent] * 3; row++)
-                _locations.Add(PerformanceSource.Endpoint(torrent, row), Locations[(row + torrent * 3) % Locations.Count]);
+                _locations.Add(IPEndPoint.Parse(PerformanceSource.Endpoint(torrent, row)).Address, Locations[(row + torrent * 3) % Locations.Count]);
     }
-    internal Task<JsonElement> Peers(Torrent torrent) => PerformanceSource.Peers(Source.Pipe, torrent.TorrentId);
-    internal Location? Location(string endpoint) => _locations.GetValueOrDefault(endpoint);
+    internal Task<JsonDocument> Peers(Torrent torrent) => PerformanceSource.Peers(Source.Pipe, torrent.TorrentId);
+    internal Location? Location(IPAddress address) => _locations.GetValueOrDefault(address);
 }

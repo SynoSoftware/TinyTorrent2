@@ -56,6 +56,13 @@ internal static class TableHarness
             () => !Proof.Field<bool>(table, "_layoutPending"),
             "the list to lay out the rows"
         );
+
+        // The list learns a long list's count in slices after the update (contract section 5.3),
+        // and a test may reach past the first screen through the list itself.
+        await WaitUntilAsync(
+            () => !Proof.Field<bool>(table, "_catchingUp"),
+            "the list to be told every row"
+        );
     }
 
     /// <summary>

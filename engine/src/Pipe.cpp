@@ -22,8 +22,67 @@ constexpr std::size_t outputLimit = Toast::limit + requestLimit + 8;
 // The fields that the refusal of an oversized message keeps from it, so the
 // client can tell which message was refused.
 constexpr char const* replyIdentity[] = {"request_id"};
-constexpr char const* detailIdentity[] = {"request_id", "type", "session_id", "torrent_id", "context"};
-constexpr char const* snapshotIdentity[] = {"request_id", "type"};
+constexpr char const* pushIdentity[] = {"type", "session_id", "context", "torrent_id", "section"};
+
+// Arrays are not searched; see Fragment.
+bool HoldsFragment(Json const& value)
+{
+    return IsFragment(value) || (value.is_object() && std::any_of(value.begin(), value.end(), HoldsFragment));
+}
+
+// Writes `value`, each fragment as its text. The JSON library writes every
+// part that holds no fragment, because it writes faster.
+void Write(Json const& value, std::string& text)
+{
+    if (IsFragment(value))
+    {
+        auto const& bytes = value.get_binary();
+        text.append(bytes.begin(), bytes.end());
+        return;
+    }
+    if (!HoldsFragment(value))
+    {
+        text += value.dump(-1, ' ', false, Json::error_handler_t::replace);
+        return;
+    }
+    text += '{';
+    for (auto item = value.begin(); item != value.end(); ++item)
+    {
+        if (item != value.begin())
+            text += ',';
+        text += Json(item.key()).dump(-1, ' ', false, Json::error_handler_t::replace);
+        text += ':';
+        Write(*item, text);
+    }
+    text += '}';
+}
+
+// The bytes of the fragments in `value`, searched as HoldsFragment searches.
+std::size_t FragmentBytes(Json const& value)
+{
+    if (IsFragment(value))
+        return value.get_binary().size();
+    std::size_t bytes = 0;
+    if (value.is_object())
+    {
+        for (auto const& item : value)
+            bytes += FragmentBytes(item);
+    }
+    return bytes;
+}
+
+std::string Serialize(Json const& message)
+{
+    if (!HoldsFragment(message))
+        return message.dump(-1, ' ', false, Json::error_handler_t::replace);
+    // A fragment is nearly all of its message, and the text grown around one
+    // would copy it again.
+    constexpr std::size_t envelope = 4096;
+    std::string text;
+    text.reserve(FragmentBytes(message) + envelope);
+    Write(message, text);
+    return text;
+}
 
 // Durations in milliseconds, as GetTickCount64 counts.
 constexpr ULONGLONG forwardTimeout = 5000;
@@ -142,21 +201,31 @@ void Pipe::Connection::Answer(std::int64_t requestId, Json message)
     {
         return;
     }
-    auto type = message.value("type", std::string());
-    if (type == "detail")
+    requests_.erase(requestId);
+    Queue(std::move(message));
+}
+
+void Pipe::Connection::Replace(std::string key, Json message)
+{
+    std::lock_guard lock(mutex_);
+    if (closed_)
     {
-        detail_ = std::move(message);
-        changed_.notify_one();
+        return;
     }
-    else if (type == "snapshot")
+    auto [entry, added] = pushed_.insert_or_assign(key, std::move(message));
+    if (added)
     {
-        snapshot_ = std::move(message);
-        changed_.notify_one();
+        pushOrder_.push_back(std::move(key));
     }
-    else
+    changed_.notify_one();
+}
+
+void Pipe::Connection::Withdraw(std::string const& key)
+{
+    std::lock_guard lock(mutex_);
+    if (pushed_.erase(key) != 0)
     {
-        requests_.erase(requestId);
-        Queue(std::move(message));
+        std::erase(pushOrder_, key);
     }
 }
 
@@ -322,13 +391,14 @@ void Pipe::Serve(HANDLE handle)
 void Pipe::Deliver(std::shared_ptr<Connection> client, HANDLE handle)
 {
     std::unique_lock lock(client->mutex_);
+    // One pushed message follows each ordered one, so replies come first
+    // without a steady stream of them holding back the pushed messages.
     bool sentReply = false;
-    bool sentSnapshot = false;
     while (!client->closed_)
     {
         client->changed_.wait(lock, [&]
         {
-            return client->closed_ || !client->output_.empty() || client->detail_ || client->snapshot_;
+            return client->closed_ || !client->output_.empty() || !client->pushOrder_.empty();
         });
         if (client->closed_)
         {
@@ -336,31 +406,23 @@ void Pipe::Deliver(std::shared_ptr<Connection> client, HANDLE handle)
         }
         Json message;
         std::span<char const* const> identity;
-        if (!client->output_.empty() && (!sentReply || (!client->detail_ && !client->snapshot_)))
+        if (!client->output_.empty() && (!sentReply || client->pushOrder_.empty()))
         {
             message = std::move(client->output_.front());
             client->output_.pop_front();
             identity = replyIdentity;
             sentReply = true;
         }
-        else if (client->detail_ && (!client->snapshot_ || sentSnapshot))
-        {
-            message = std::move(*client->detail_);
-            client->detail_.reset();
-            identity = detailIdentity;
-            sentReply = false;
-            sentSnapshot = false;
-        }
         else
         {
-            message = std::move(*client->snapshot_);
-            client->snapshot_.reset();
-            identity = snapshotIdentity;
+            auto pushed = client->pushed_.extract(client->pushOrder_.front());
+            client->pushOrder_.pop_front();
+            message = std::move(pushed.mapped());
+            identity = pushIdentity;
             sentReply = false;
-            sentSnapshot = true;
         }
         lock.unlock();
-        auto bytes = message.dump(-1, ' ', false, Json::error_handler_t::replace);
+        auto bytes = Serialize(message);
         if (bytes.size() > messageLimit)
         {
             auto refusal = Failure(ErrorCode::ResponseTooLarge);

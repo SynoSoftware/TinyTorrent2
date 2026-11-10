@@ -31,7 +31,7 @@ public sealed partial class MainViewModel
         Changed(nameof(ReturnWorkspace));
         Changed(nameof(ReturnText));
         Changed(nameof(Query));
-        Changed(nameof(CountStatus));
+        RefreshCountStatus();
         ((RelayCommand)ClearFilters).Refresh();
     }
 

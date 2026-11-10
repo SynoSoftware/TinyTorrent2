@@ -60,9 +60,12 @@ download would most likely transfer the same file.
 the city file. The Inspector looks a peer's address up when the peer appears
 and again only when the city data changes, because the address never changes
 and the names come in every language DB-IP ships, so a language switch needs
-no new lookup. Rows appear before those lookups: one background worker resolves
-peer and map-origin locations, then updates only the peers still displayed and
-only from the current dataset version. An address the
+no new lookup. The worker that reads a torrent's reply looks up the peers that
+joined, so rows appear with their locations, and a newer click cancels the
+lookups with the read. A torrent's peers looked up in older data are looked up
+again by its next reply, and a change of data subscribes again, so the shown
+torrents reply at once. Only the shown torrents' peers are looked up. The map
+origin, the public address, has its own lookup. An address the
 data lacks, a web seed's host name or an I2P destination has no location.
 
 ## Flags
@@ -79,25 +82,32 @@ text block uses the font; the name beside it stays in the app's font.
 ## Map
 
 `Inspector.Place` is the chosen filter for both views. Inspector captures the
-immutable peer-list reference and filter intent on the UI thread. Its existing
-workers capture published immutable records and locations, reconcile updates and
-build one flat array of map facts for the full subject, independently of
-place-filtered rows. Record and location replacement invalidates the filter
-generation before notifications; only a still-current generation and subject may
-publish prepared facts. The table takes each torrent's reply, but once the map
-has shown a whole poll round of a subject, later rounds publish their final
-facts once, when the round ends, because each publication regroups every peer
-of the scope. Until then each reply publishes, so a new subject's map fills
-while its first round loads. While a new subject's rows are unread, the map
-keeps its last picture rather than an empty one, which would release every
-arc only to build them again. Map settings reuse the accepted snapshot. `MapModel`
-takes this detached population without enumerating peers or relabelling an old subject. One
-serialized `MapWork` worker owns grouping and estimated distribution. It
-publishes detached group copies that nobody subsequently mutates. The UI
+immutable peer-list reference and filter intent on the UI thread, and finds a
+chosen place's rows on a worker only when a join, a leave or a location can
+change them. For the map it gathers each reply that joined or removed a peer or
+changed a peer's role, state, rates or location, independently of
+place-filtered rows. A new
+list that no reply describes, such as a new scope, makes the map group every
+peer again. The table takes each torrent's reply, but once the map has shown a
+whole poll round of a subject, later rounds give the map their gathered changes
+once, when the round ends, because each publication draws the whole picture
+again. Until then each reply publishes, so a new subject's map fills while its
+first round loads. While a new subject's rows are unread, the map keeps its last
+picture rather than an empty one, which would release every arc only to build
+them again. Map settings reuse the accepted population, and an update that
+changes none of the map's facts does not prepare the map again. `MapModel` takes the
+population and its changes without enumerating peers or relabelling an old
+subject. One serialized `MapWork` worker owns grouping and estimated
+distribution. It keeps each peer's contribution to its groups, so a change takes
+exactly that off and adds the peer's published record and location; a new
+subject, detail, language or population groups every peer again. It publishes
+detached group copies that nobody subsequently mutates, copying a group again
+only after it changed. The UI
 captures size, appearance and selection intent; `MapMotion`'s dedicated render worker
 owns native geometry, route resources and cached pictures. Its Win2D game loop
 presents completed pictures, fixed-DIP markers and dots. Aggregation and native
-rendering never run on the UI thread. Neither reads live peers.
+rendering never run on the UI thread. Aggregation reads only each peer's
+published immutable record and its location; rendering reads no peers.
 Table selection passes its immutable packet without a UI copy. PeerMap counts
 selected places on the thread pool, independently of aggregation, with one active
 task and one latest request. It accepts only the current peer generation,
@@ -115,8 +125,8 @@ captures that value once and resolves current intent within its destinations;
 subject, detail, surface and lifetime guards exclude stale content. UI
 notifications refresh descriptions from the current display without installing
 captured targets. New grouping never replaces the person's interaction intent.
-Drawing and pan alone do not regroup peers. Equivalent visible facts retain the
-presentation and picture when peer instances change within one accepted subject.
+Drawing and pan alone do not regroup peers. Changes that leave every peer's map
+facts equal retain the presentation and picture.
 A different subject or map detail cancels pending aggregation; compatible
 telemetry coalesces its next pass. Navigation, hover and selection publish
 independently of aggregation.
@@ -600,8 +610,9 @@ from browser wheel events.
 
 ### Torrent scope
 
-Single-torrent, selected-group and all-torrent peers use one Inspector read path
-and the existing asynchronous detail collector, one torrent at a time. Without a
+Single-torrent, selected-group and all-torrent peers use one Inspector read path:
+one [detail subscription](pipe-api.md#snapshots-and-detail) for the whole scope,
+which the engine collects up to eight torrents at a time. Without a
 torrent selection, the scope is all torrents; otherwise it is the selected group.
 Torrent identity remains
 part of every row key, so shared endpoints across torrents are not deduplicated.

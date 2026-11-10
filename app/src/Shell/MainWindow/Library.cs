@@ -28,7 +28,7 @@ public sealed partial class MainWindow
         };
         Model.Library.PropertyChanged += (_, args) =>
         {
-            QueueStatus();
+            ObserveStatus();
             if (args.PropertyName == nameof(LibraryBrowser.Selected))
                 UpdateAssociation();
             if (

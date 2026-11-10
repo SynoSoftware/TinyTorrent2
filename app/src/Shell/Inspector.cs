@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
@@ -19,7 +20,11 @@ public sealed partial class Inspector : INotifyPropertyChanged
     private readonly PipeClient _client;
     private readonly DispatcherQueue _dispatcher;
     private readonly ICommand[] _commands;
+    // Each command's answer its last CanExecuteChanged announced, or null before the first.
+    private readonly bool?[] _enabled;
     private FrameCallback? _refreshFrame;
+    // The pending refresh raises every property, not only the facts.
+    private bool _refreshesAll;
     private FrameCallback? _readFrame;
     private CancellationTokenSource _reading = new();
 
@@ -31,11 +36,19 @@ public sealed partial class Inspector : INotifyPropertyChanged
     private string _session = string.Empty;
     private int _context;
     private bool _fetching;
-    private (
-        string TorrentId,
-        TaskCompletionSource Completion,
-        Action<JsonElement> Apply
-    )? _awaitedPush;
+
+    // The view the engine's subscription serves, until a new view replaces it.
+    private Subscription? _subscription;
+
+    // Observations of the subscription waiting to apply, the newest of each torrent.
+    private readonly Dictionary<string, PipeClient.Observation> _observed = new(StringComparer.Ordinal);
+    private bool _observing;
+
+    // The torrents whose fresh facts the current round still lacks, and those
+    // that failed, which a round does not wait for.
+    private readonly HashSet<string> _unready = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _failed = new(StringComparer.Ordinal);
+    private TaskCompletionSource? _firstRound;
     private bool _loading;
     private (bool Available, bool Editable) _access;
     private TaskCompletionSource? _pending;
@@ -98,10 +111,11 @@ public sealed partial class Inspector : INotifyPropertyChanged
     public IReadOnlyList<Peer>? Peers
     {
         get => _peers;
+        // A new view, whose peers the map groups again.
         private set
         {
-            _peers = value;
-            Filter();
+            _mapReplies = null;
+            ShowPeers(value);
         }
     }
     public IReadOnlyList<Tracker>? Trackers { get; private set; }
@@ -298,10 +312,21 @@ public sealed partial class Inspector : INotifyPropertyChanged
             MoveFiles,
             DownloadCities,
         ];
+        _enabled = new bool?[_commands.Length];
         owner.Geolocation.PropertyChanged += (_, _) =>
         {
             Refresh();
-            _ = LocatePeers();
+            // Each reply looks its kept peers up again in new location data,
+            // and a new subscription asks for the shown torrents' replies at once.
+            if (_locationVersion != _owner.Geolocation.Version)
+            {
+                _locationVersion = _owner.Geolocation.Version;
+                if (_section == InspectorSection.Peers)
+                {
+                    RefreshDetail();
+                }
+            }
+            _ = LocateOrigin();
         };
     }
 
@@ -349,7 +374,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
             return true;
         if (HasDraft || IsPending)
             return false;
-        PeerSubject = new();
+        RenewPeerSubject();
         _readFailure = _editFailure = null;
         CancelDraft();
         IsReplacing =
@@ -393,15 +418,15 @@ public sealed partial class Inspector : INotifyPropertyChanged
 
     internal void Observe(string session, bool changed)
     {
-        if (_awaitedPush is not null && !IsAvailable)
+        if (_subscription is not null && !IsAvailable)
         {
             Invalidate();
         }
-        if (_session != session)
+        var renewed = _session != session;
+        if (renewed)
         {
             _session = session;
-            _peerCache.Clear();
-            Peers = null;
+            ForgetSwarms();
             Map.ResetPeak();
             Trackers = null;
             Pieces = null;
@@ -412,7 +437,6 @@ public sealed partial class Inspector : INotifyPropertyChanged
             else if (!IsActive)
                 CancelReading();
             _readFailure = null;
-            changed = true;
         }
         if (!IsVisible)
             return;
@@ -421,8 +445,10 @@ public sealed partial class Inspector : INotifyPropertyChanged
             QueueSubject();
             return;
         }
-        if (changed || _access != (IsAvailable, CanEdit))
+        if (renewed || _access != (IsAvailable, CanEdit))
             Refresh();
+        else if (changed)
+            Refresh(everything: false);
         QueueRead();
     }
 
@@ -430,7 +456,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
     {
         if (IsVisible)
             Invalidate();
-        _peerCache.Clear();
+        ForgetHiddenSwarms();
         History = null;
         Refresh();
     }
@@ -445,6 +471,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
             || _fetching
             || IsPending
             || _owner.IsClosing
+            || IsServed
         )
             return;
         _readFrame = new FrameCallback(_dispatcher, () =>
@@ -453,6 +480,14 @@ public sealed partial class Inspector : INotifyPropertyChanged
             _ = Read();
         });
     }
+
+    // The engine keeps a subscription's view current; only a new view
+    // subscribes again. Every snapshot asks for a read, and a queued read
+    // counts as loading, so a served view queues none.
+    private bool IsServed =>
+        _section != InspectorSection.Speed
+        && _subscription is { } held
+        && held.Serves(_context, Subjects(), SubscribedKeys());
 
     private async Task Read()
     {
@@ -489,23 +524,15 @@ public sealed partial class Inspector : INotifyPropertyChanged
             {
                 return;
             }
-            await ReadDetail(
-                target,
-                section,
-                context,
-                async detail =>
-                {
-                    if (await ApplyDetail(detail, context))
-                    {
-                        Refresh();
-                    }
-                }
-            );
+            await Subscribe(context, [target], section);
         }
         catch (Exception error)
         {
             if (context == _context)
             {
+                // The next read subscribes again, as the engine may not have
+                // taken this subscription.
+                _subscription = null;
                 _readFailure = error;
                 changed = true;
             }
@@ -525,157 +552,213 @@ public sealed partial class Inspector : INotifyPropertyChanged
         }
     }
 
-    internal void Receive(JsonElement message)
+    /// <summary>The torrents the section reads: the peers scope's torrents that have peers, or the one inspected.</summary>
+    private Torrent[] Subjects() =>
+        _section == InspectorSection.Peers && _target is null
+            ? Scope.Where(torrent => torrent.PeerCount > 0 || torrent.KnownPeerCount > 0).ToArray()
+            : _target is { } target ? [target] : [];
+
+    // The Files browser's loaded folders and files, whose values the engine sends.
+    private FileKeys? SubscribedKeys() => _section == InspectorSection.Files ? Files.Keys : null;
+
+    /// <summary>
+    /// Subscribes to the section of <paramref name="targets"/>, then waits for
+    /// the first round: each torrent's fresh facts or its failure. The engine
+    /// then pushes fresh facts at the refresh interval until the view changes.
+    /// </summary>
+    private async Task Subscribe(int context, Torrent[] targets, InspectorSection section)
     {
-        if (
-            _awaitedPush is not { } awaited
-            || message.GetProperty("session_id").GetString() != _session
-            || message.GetProperty("torrent_id").GetString() != awaited.TorrentId
-            || message.GetProperty("context").GetInt64() != _context
-        )
+        var keys = SubscribedKeys();
+        var subscription = new Subscription(context, targets, keys);
+        var round = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _subscription = subscription;
+        ForgetObserved();
+        _failed.Clear();
+        _unready.Clear();
+        _unready.UnionWith(subscription.Ids);
+        _firstRound = round;
+        if (_unready.Count == 0)
+            round.TrySetResult();
+        var arguments = new Dictionary<string, object>
         {
+            ["section"] = section.ToString().ToLowerInvariant(),
+            ["torrent_ids"] = subscription.Ids,
+        };
+        if (keys is not null)
+        {
+            arguments["folders"] = keys.Folders;
+            arguments["files"] = keys.Files;
+        }
+        var subscribed = _client.Subscribe(context, arguments);
+        // Invalidate withdraws an unsent subscription; a cancelled task is
+        // awaited without throwing, because every new view can abandon one.
+        await ((Task)subscribed).ConfigureAwait(
+            ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing
+        );
+        if (subscribed.IsCanceled || !IsCurrent(context))
             return;
-        }
-        try
-        {
-            var data = PipeClient.ReadOutcome(message, Text, "torrent");
-            awaited.Apply(data);
-        }
-        catch (Exception error)
-        {
-            awaited.Completion.TrySetException(error);
-        }
+        await subscribed;
+        var ready = round.Task.WaitAsync(PipeClient.RequestTimeout, _reading.Token);
+        await ((Task)ready).ConfigureAwait(
+            ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing
+        );
+        if (!ready.IsCanceled)
+            await ready;
     }
 
-    // Every answer uses the same application path while this view is current;
-    // completion only ends the wait for fresh detail.
-    private async Task ReadDetail(
-        Torrent torrent,
-        InspectorSection section,
-        int context,
-        Func<JsonElement, Task> apply
-    )
+    internal void Receive(PipeClient.Observation observation)
     {
-#if CAPTURE
-        if (section == InspectorSection.Peers && CapturePeers is { } peers)
+        if (
+            _subscription is not { } subscription
+            || observation.SessionId != _session
+            || observation.Context != subscription.Context
+        )
         {
-            await apply(await peers(torrent));
+            observation.Return();
             return;
         }
-#endif
-        var cancellation = _reading.Token;
-        var completion = new TaskCompletionSource(
-            TaskCreationOptions.RunContinuationsAsynchronously
-        );
-        var receivedPush = false;
-        (JsonElement Data, bool Fresh)? latest = null;
-        var applying = false;
-        _awaitedPush = (
-            torrent.TorrentId,
-            completion,
-            data =>
-            {
-                receivedPush = true;
-                Queue(data, true);
-            }
-        );
+        if (_observed.Remove(observation.TorrentId, out var replaced))
+        {
+            replaced.Return();
+        }
+        _observed[observation.TorrentId] = observation;
+        if (!_observing)
+            _ = ApplyObserved();
+    }
+
+    // Applies the observations in turns that never overlap, so each turn
+    // starts from the view the last one left.
+    private async Task ApplyObserved()
+    {
+        _observing = true;
         try
         {
-            var arguments = new Dictionary<string, object>
+            while (_observed.Count > 0 && _subscription is { } subscription)
             {
-                ["torrent_id"] = torrent.TorrentId,
-                ["context"] = context,
-                ["view"] = section.ToString().ToLowerInvariant(),
-            };
-            if (section == InspectorSection.Files)
-            {
-                var keys = Files.Keys;
-                arguments["folders"] = keys.Folders;
-                arguments["files"] = keys.Files;
+                PipeClient.Observation[] batch = [.. _observed.Values];
+                _observed.Clear();
+                try
+                {
+                    await Apply(batch, subscription);
+                }
+                finally
+                {
+                    // Apply has awaited every reader of the batch, the peers'
+                    // worker included, so its buffers go back to the pool.
+                    foreach (var observation in batch)
+                        observation.Return();
+                }
             }
-            var read = _client.Read(Consumer.Inspector, "torrent", arguments).WaitAsync(cancellation);
-            // Invalidate withdraws an unsent read; a cancelled task is awaited
-            // without throwing, because every refresh can abandon one.
-            await ((Task)read).ConfigureAwait(
-                ConfigureAwaitOptions.ContinueOnCapturedContext
-                    | ConfigureAwaitOptions.SuppressThrowing
-            );
-            if (read.IsCanceled)
-            {
-                return;
-            }
-            var reply = await read;
-            // The push can reach the dispatcher before this await resumes, and
-            // is then newer than the held facts.
-            if (!completion.Task.IsCompleted && !receivedPush)
-            {
-                Queue(reply, false);
-            }
-            var ready = completion.Task.WaitAsync(PipeClient.RequestTimeout, cancellation);
-            await ready.ConfigureAwait(
-                ConfigureAwaitOptions.ContinueOnCapturedContext
-                    | ConfigureAwaitOptions.SuppressThrowing
-            );
-            if (!ready.IsCanceled)
-                await ready;
-        }
-        catch (TimeoutException)
-        {
-            // Releasing the demand lets background file reads continue.
-            if (context == _context)
-            {
-                await Release();
-            }
-            throw;
         }
         finally
         {
-            if (ReferenceEquals(_awaitedPush?.Completion, completion))
-            {
-                _awaitedPush = null;
-            }
+            _observing = false;
         }
+    }
 
-        void Queue(JsonElement data, bool fresh)
+    private async Task Apply(PipeClient.Observation[] batch, Subscription subscription)
+    {
+        var context = subscription.Context;
+        if (!IsCurrent(context))
+            return;
+        List<(int Slot, string TorrentId, JsonElement Rows)> peers = [];
+        JsonElement? detail = null;
+        List<string> answered = [];
+        foreach (var observation in batch)
         {
-            if (!IsCurrent(context) || !_owner.Contains(torrent))
-                return;
-            latest = (data, fresh);
-            if (!applying)
-                _ = Drain();
-        }
-
-        async Task Drain()
-        {
-            applying = true;
-            try
+            var torrentId = observation.TorrentId;
+            if (observation.Failure is { } error)
             {
-                while (IsCurrent(context) && latest is { } next)
+                // A torrent that cannot be read answers its part of the round;
+                // its failure replaces the view only when it is the view's one torrent.
+                _failed.Add(torrentId);
+                answered.Add(torrentId);
+                if (subscription.Ids.Length == 1)
                 {
-                    latest = null;
-                    await apply(next.Data);
-                    if (latest is null && next.Fresh && next.Data.GetProperty("ready").GetBoolean())
-                        completion.TrySetResult();
+                    _readFailure = error;
+                    Refresh();
                 }
+                continue;
             }
-            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
-            {
-                completion.TrySetCanceled(cancellation);
-            }
-            catch (Exception error)
-            {
-                completion.TrySetException(error);
-            }
-            finally
-            {
-                applying = false;
-            }
+            var data = observation.Detail;
+            _failed.Remove(torrentId);
+            if (data.GetProperty("ready").GetBoolean())
+                answered.Add(torrentId);
+            if (_section != InspectorSection.Peers)
+                detail = data;
+            else if (data.GetProperty("peers") is { ValueKind: not JsonValueKind.Null } rows)
+                peers.Add((Array.IndexOf(subscription.Ids, torrentId), torrentId, rows));
         }
+        try
+        {
+            if (peers.Count > 0)
+            {
+                var refresh = await ApplyPeers(peers, context);
+                if (!IsCurrent(context))
+                    return;
+                refresh |= _readFailure is not null;
+                _readFailure = null;
+                if (refresh)
+                    Refresh();
+            }
+            // The section keeps parts of its values past the observation's
+            // return, so it applies a copy.
+            if (detail is { } latest && await ApplyDetail(latest.Clone(), context))
+                Refresh();
+        }
+        catch (OperationCanceledException) when (_reading.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (Exception error)
+        {
+            if (context == _context)
+            {
+                _readFailure = error;
+                Refresh();
+            }
+            return;
+        }
+        if (!IsCurrent(context))
+            return;
+        _unready.ExceptWith(answered);
+        if (_unready.Count == 0)
+            EndRound(subscription);
+    }
+
+    // Every torrent sent fresh facts or failed: the first round ends the
+    // loading, and every round gives the map its changes once.
+    private void EndRound(Subscription subscription)
+    {
+        _firstRound?.TrySetResult();
+        if (_section == InspectorSection.Peers)
+            EndMapRound();
+        _unready.UnionWith(subscription.Ids.Where(id => !_failed.Contains(id)));
+    }
+
+    /// <summary>The view a subscription serves: its context, torrents in slot order, and loaded files.</summary>
+    private sealed record Subscription(int Context, string[] Ids, FileKeys? Keys)
+    {
+        internal Subscription(int context, Torrent[] targets, FileKeys? keys)
+            : this(context, [.. targets.Select(torrent => torrent.TorrentId)], keys) { }
+
+        // The browser keeps its keys until its rows change, so unchanged keys
+        // are the same object.
+        internal bool Serves(int context, Torrent[] targets, FileKeys? keys) =>
+            Context == context
+            && Ids.SequenceEqual(targets.Select(torrent => torrent.TorrentId))
+            && (
+                ReferenceEquals(Keys, keys)
+                || Keys is not null
+                    && keys is not null
+                    && Keys.Folders.SequenceEqual(keys.Folders)
+                    && Keys.Files.SequenceEqual(keys.Files)
+            );
     }
 
     internal void RefreshScope()
     {
-        PeerSubject = new();
+        RenewPeerSubject();
         IsReplacing = IsVisible && HasContent;
         History = null;
         _readFailure = null;
@@ -767,7 +850,9 @@ public sealed partial class Inspector : INotifyPropertyChanged
                     Trackers = nextTrackers;
                     changed = true;
                 }
-                else if (updated)
+                // A kept tracker keeps its row object, also in a new list, so the
+                // table reads its new sort key only when told.
+                if (updated)
                     RowsUpdated?.Invoke(this, InspectorSection.Trackers);
                 break;
             case InspectorSection.Pieces:
@@ -809,7 +894,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
             : Scope.Select(torrent => torrent.TorrentId).ToArray();
         if (!ShowsAllPeers && PeerSelection is not null && ids.Length == 0)
             return [];
-        var data = await _client.Read(Consumer.Inspector, "history", HistoryArguments("day")).WaitAsync(cancellation);
+        var data = await _client.Read("history", HistoryArguments("day")).WaitAsync(cancellation);
         var day = await Task.Run(() => Samples(data), cancellation);
         if (!IsCurrent(context))
             return [];
@@ -819,7 +904,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
             IsReplacing = false;
             Refresh();
         }
-        data = await _client.Read(Consumer.Inspector, "history", HistoryArguments("five_minutes")).WaitAsync(cancellation);
+        data = await _client.Read("history", HistoryArguments("five_minutes")).WaitAsync(cancellation);
         return await Task.Run(() =>
         {
             var recent = Samples(data);
@@ -833,11 +918,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
 
         Dictionary<string, object> HistoryArguments(string range)
         {
-            var arguments = new Dictionary<string, object>
-            {
-                ["range"] = range,
-                ["release_detail"] = true,
-            };
+            var arguments = new Dictionary<string, object> { ["range"] = range };
             if (target is not null)
                 arguments["torrent_id"] = target.TorrentId;
             else if (ids.Length > 0)
@@ -882,8 +963,19 @@ public sealed partial class Inspector : INotifyPropertyChanged
         _ = Cancel(_reading);
         _reading = new();
         _fetching = false;
-        _awaitedPush?.Completion.TrySetResult();
-        _awaitedPush = null;
+        _subscription = null;
+        ForgetObserved();
+        _firstRound = null;
+    }
+
+    // The waiting observations are in no batch, so nothing else reads them.
+    private void ForgetObserved()
+    {
+        foreach (var observation in _observed.Values)
+        {
+            observation.Return();
+        }
+        _observed.Clear();
     }
 
     // CancelAsync marks the token immediately; callbacks must not run in a click.
@@ -893,12 +985,10 @@ public sealed partial class Inspector : INotifyPropertyChanged
             await reading.CancelAsync().ConfigureAwait(false);
     }
 
-    // The outcome does not matter, and a later Invalidate often withdraws
-    // this read, so it is awaited without throwing.
+    // The outcome does not matter, and a later subscription often replaces
+    // this one unsent, so it is awaited without throwing.
     private async Task Release() =>
-        await (
-            (Task)_client.Read(Consumer.Inspector, "torrent", new { release = true })
-        ).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        await ((Task)_client.Release()).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
 
     private void ApplyGeneral(JsonElement reply)
     {
@@ -1235,13 +1325,16 @@ public sealed partial class Inspector : INotifyPropertyChanged
 
     private void Clear()
     {
-        Files.Detach();
-        Files = CreateFiles();
-        _filesLoaded = false;
+        // Until files load, Files is an empty browser, which the next target keeps.
+        if (_filesLoaded)
+        {
+            Files.Detach();
+            Files = CreateFiles();
+            _filesLoaded = false;
+        }
         _confirmedFiles = null;
         _fileReply = null;
-        Peers = null;
-        _located = [];
+        ForgetView();
         Trackers = null;
         Pieces = null;
         _pieceFiles = null;
@@ -1262,7 +1355,55 @@ public sealed partial class Inspector : INotifyPropertyChanged
         TextChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    internal void Refresh()
+    // The properties a poll changes while the subject, section and access
+    // stay: the target's facts, and the scope's rates and selection count.
+    private static readonly (PropertyChangedEventArgs Notice, Func<Inspector, object?> Read)[] Facts =
+    [
+        (new(nameof(Name)), inspector => inspector.Name),
+        (new(nameof(SizeText)), inspector => inspector.SizeText),
+        (new(nameof(EmptyText)), inspector => inspector.EmptyText),
+        (new(nameof(HashV1)), inspector => inspector.HashV1),
+        (new(nameof(HashV2)), inspector => inspector.HashV2),
+        (new(nameof(HashV1Label)), inspector => inspector.HashV1Label),
+        (new(nameof(HashV2Label)), inspector => inspector.HashV2Label),
+        (new(nameof(IsIndeterminate)), inspector => inspector.IsIndeterminate),
+        (new(nameof(ShowsStatus)), inspector => inspector.ShowsStatus),
+        (new(nameof(ProgressText)), inspector => inspector.ProgressText),
+        (new(nameof(Summary)), inspector => inspector.Summary),
+        (new(nameof(LimitText)), inspector => inspector.LimitText),
+        (new(nameof(LimitName)), inspector => inspector.LimitName),
+        (new(nameof(DownloadText)), inspector => inspector.DownloadText),
+        (new(nameof(UploadText)), inspector => inspector.UploadText),
+        (new(nameof(GeneralState)), inspector => inspector.GeneralState),
+    ];
+    private static readonly FrozenSet<string> FactNames =
+        Facts.Select(fact => fact.Notice.PropertyName!).ToFrozenSet();
+    private static readonly PropertyChangedEventArgs Everything = new(string.Empty);
+
+    // Each fact as the pane last read it, so a poll raises only the facts it changed.
+    private readonly object?[] _facts = new object?[Facts.Length];
+
+    /// <summary>
+    /// The target's states that the General section shows through its visual
+    /// state and progress style rather than a binding, as one fact, so a
+    /// change of them alone reaches the pane.
+    /// </summary>
+    internal (bool IsProgressMuted, bool CanRetry, bool IsError)? GeneralState =>
+        _target is { } target ? (target.IsProgressMuted, target.CanRetry, target.IsError) : null;
+
+    /// <summary>
+    /// Whether a notice names one of the facts a poll changes, which the pane
+    /// shows through its bindings without rebuilding.
+    /// </summary>
+    internal static bool IsFact(string? name) => name is not null && FactNames.Contains(name);
+
+    internal void Refresh() => Refresh(everything: true);
+
+    /// <param name="everything">
+    /// False when only <see cref="Facts"/> changed, so the pane does not
+    /// rebuild and its bindings re-read only the facts whose value changed.
+    /// </param>
+    private void Refresh(bool everything)
     {
         if (_owner.IsClosed || !IsVisible)
             return;
@@ -1271,13 +1412,24 @@ public sealed partial class Inspector : INotifyPropertyChanged
         var enabled = CanEdit && _confirmedFiles is not null;
         if (Files.IsEnabled != enabled)
             Files.IsEnabled = enabled;
-        foreach (RelayCommand command in _commands)
-            command.Refresh();
+        for (var index = 0; index < _commands.Length; index++)
+        {
+            var command = _commands[index];
+            var executes = command.CanExecute(null);
+            if (_enabled[index] != executes)
+            {
+                _enabled[index] = executes;
+                ((RelayCommand)command).Refresh();
+            }
+        }
+        _refreshesAll |= everything;
         if (_refreshFrame is not null)
             return;
         _refreshFrame = new FrameCallback(_dispatcher, () =>
         {
             _refreshFrame = null;
+            var all = _refreshesAll;
+            _refreshesAll = false;
             // Keep the displayed detail bound until its replacement is ready.
             if (IsReplacing)
             {
@@ -1286,8 +1438,26 @@ public sealed partial class Inspector : INotifyPropertyChanged
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Message)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanEdit)));
             }
+            else if (all)
+            {
+                PropertyChanged?.Invoke(this, Everything);
+                for (var index = 0; index < Facts.Length; index++)
+                {
+                    _facts[index] = Facts[index].Read(this);
+                }
+            }
             else
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+            {
+                for (var index = 0; index < Facts.Length; index++)
+                {
+                    var value = Facts[index].Read(this);
+                    if (!Equals(_facts[index], value))
+                    {
+                        _facts[index] = value;
+                        PropertyChanged?.Invoke(this, Facts[index].Notice);
+                    }
+                }
+            }
         });
     }
 

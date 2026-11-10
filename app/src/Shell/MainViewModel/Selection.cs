@@ -74,12 +74,13 @@ public sealed partial class MainViewModel
             if (_closed)
                 return;
             RefreshSelection();
-            Changed(nameof(CountStatus));
-            foreach (RelayCommand command in _commands)
-                command.Refresh();
+            RefreshCountStatus();
         });
     }
 
+    // Raises what the selection and its torrents' facts change, and refreshes
+    // only the commands that read them, because each refresh reaches every
+    // button and menu item bound to the command.
     private void RefreshSelection()
     {
         Changed(nameof(Selected));
@@ -90,5 +91,7 @@ public sealed partial class MainViewModel
         Changed(nameof(Sequential));
         Changed(nameof(FirstLast));
         Changed(nameof(Limited));
+        foreach (RelayCommand command in _selectionCommands)
+            command.Refresh();
     }
 }

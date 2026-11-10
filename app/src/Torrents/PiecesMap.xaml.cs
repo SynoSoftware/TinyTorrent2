@@ -33,6 +33,10 @@ public sealed partial class PiecesMap : UserControl
     private readonly Motion _arrival = new();
     private Pieces? _data;
     private Raster? _layout;
+
+    // The last render's pixels, written again by the next render of the same
+    // size. Only one render runs at a time, because _drawing holds the next one.
+    private byte[]? _pixels;
     private Strings? _text;
     private string _language = string.Empty;
     private string _value = string.Empty;
@@ -261,7 +265,11 @@ public sealed partial class PiecesMap : UserControl
                 FlowDirection == FlowDirection.RightToLeft,
                 radius
             );
-            var layout = await Task.Run(() => Render(data, space, palette, cancellation), cancellation);
+            var reuse = _pixels;
+            var layout = await Task.Run(
+                () => Render(data, space, palette, reuse, cancellation),
+                cancellation
+            );
             cancellation.ThrowIfCancellationRequested();
             if (revision != _revision || !IsLoaded)
                 return;
@@ -281,6 +289,7 @@ public sealed partial class PiecesMap : UserControl
             using (var stream = bitmap.PixelBuffer.AsStream())
                 stream.Write(layout.Pixels);
             bitmap.Invalidate();
+            _pixels = layout.Pixels;
             _layout = layout with { Pixels = [] };
             Hover.Width = Hover.Height = layout.Side + 2;
             Selection.Width = Selection.Height = layout.Side + 4;
@@ -320,7 +329,13 @@ public sealed partial class PiecesMap : UserControl
         return count;
     }
 
-    private static Raster Render(Pieces data, Space space, Palette palette, CancellationToken cancellation)
+    private static Raster Render(
+        Pieces data,
+        Space space,
+        Palette palette,
+        byte[]? reuse,
+        CancellationToken cancellation
+    )
     {
         var scale = space.Scale;
         var rtl = space.IsRightToLeft;
@@ -353,7 +368,18 @@ public sealed partial class PiecesMap : UserControl
         var mapHeight = Spread(rows - 1, spareHeight, rowGutters) + side;
         var pixelWidth = (int)Math.Ceiling(mapWidth * scale);
         var pixelHeight = (int)Math.Ceiling(mapHeight * scale);
-        var pixels = new byte[pixelWidth * pixelHeight * 4];
+        var length = pixelWidth * pixelHeight * 4;
+        byte[] pixels;
+        if (reuse is not null && reuse.Length == length)
+        {
+            // Squares skip uncovered pixels, so the last render's must go.
+            Array.Clear(reuse);
+            pixels = reuse;
+        }
+        else
+        {
+            pixels = new byte[length];
+        }
         var blocks = new Block[count];
         for (var index = 0; index < count; index++)
         {
@@ -575,6 +601,7 @@ public sealed partial class PiecesMap : UserControl
     private void Clear()
     {
         _layout = null;
+        _pixels = null;
         Bitmap.Source = null;
         Refresh();
     }

@@ -11,39 +11,96 @@ public sealed partial class Inspector
 {
 #if CAPTURE
     internal Action? PreparingPeers { get; set; }
-    internal Func<Torrent, Task<JsonElement>>? CapturePeers { get; set; }
-    internal Func<string, Location?>? CaptureLocation { get; set; }
+    internal Func<Torrent, Task<JsonDocument>>? CapturePeers { get; set; }
+    internal Func<IPAddress, Location?>? CaptureLocation { get; set; }
     internal Location? CaptureOrigin { get; set; }
+
+    /// <summary>Keeps <paramref name="peers"/> as a torrent's peers, as its latest reply would.</summary>
+    internal void CaptureSwarm(string torrentId, Peer[] peers) =>
+        _swarms[torrentId] = new(new Swarm(torrentId, peers), peers.Count(peer => peer.State != PeerState.Known),
+            peers.Count(peer => peer.State == PeerState.Connected && peer.DownloadRate + peer.UploadRate > 0), ++_swarmReads,
+            _owner.Geolocation.Version);
+
+    /// <summary>
+    /// Applies <paramref name="rows"/> as the reply of a torrent the view shows.
+    /// A torrent the view does not show becomes its only torrent, as a fixture
+    /// that replaces the view's peers expects.
+    /// </summary>
+    internal Task<bool> ApplyCapturedPeers(string torrentId, JsonElement rows)
+    {
+        var slot = Array.FindIndex(_viewSwarms, swarm => swarm?.TorrentId == torrentId);
+        if (slot < 0)
+        {
+            _viewSwarms = [null];
+            slot = 0;
+        }
+        return ApplyPeers([(slot, torrentId, rows)], _context);
+    }
 #endif
+    private static readonly PropertyChangedEventArgs ShownPeersChanged = new(nameof(ShownPeers));
+    private static readonly PropertyChangedEventArgs PeerSummaryChanged = new(nameof(PeerSummary));
+    // The location data version last seen, so only new data reads the shown
+    // peers again.
     private int _locationVersion;
-    private HashSet<Peer> _located = [];
+    // The public address's lookup runs.
     private bool _locating;
-    private readonly List<(string TorrentId, IReadOnlyList<Peer> Peers)> _peerCache = [];
+    // Each torrent's peers as its latest reply left them, for the scope and
+    // the last few torrents read outside it, so going back shows them at once.
+    private readonly Dictionary<string, KeptSwarm> _swarms = new(StringComparer.Ordinal);
+    private long _swarmReads;
+    // The swarms Peers is joined from, one per torrent of the poll round.
+    private Swarm?[] _viewSwarms = [];
     private (string Address, int Version)? _originKey;
     private Location? _origin;
     private IReadOnlyList<Peer>? _peers;
     private PeerPlace? _place;
     private int _filterVersion;
+    // A join, a leave or a location changed since a finished filter last found
+    // the chosen place's rows.
+    private bool _rowsChanged;
     private TaskCompletionSource? _peersReady;
-    private IReadOnlyList<Peer>? _releaseBaseline;
-    private (int Connected, int Active) _peerCounts;
+    private (int Count, int Connected, int Active) _peerCounts;
+    // The view's peers the map was last given.
     private MapModel.Population? _mapPopulation;
-    private MapModel.Population? _roundPopulation;
+    // The replies that changed the view since then, or null when the map must
+    // group every peer again.
+    private List<Swarm.Reply>? _mapReplies;
     // The subject whose map has shown a whole poll round.
     private object? _mapRoundSubject;
+    // The subject's replies that changed peers since the table last took them.
+    private readonly List<Swarm.Reply> _rowReplies = [];
 
-    internal event EventHandler<IReadOnlyList<Peer>>? PeersReleased;
+    /// <summary>A torrent's peers and the counts its latest reply gave.</summary>
+    /// <param name="Read">When the reply came, so the oldest ones outside the scope go first.</param>
+    /// <param name="LocationVersion">The location data version its peers were looked up in.</param>
+    private readonly record struct KeptSwarm(Swarm Swarm, int Connected, int Active, long Read, int LocationVersion);
+
+    /// <summary>
+    /// The person chose other peers: another torrent, scope or place. The table
+    /// keeps its rows until the new ones come, and then shows them whole, even
+    /// under the pointer.
+    /// </summary>
+    internal event EventHandler? PeersWithdrawn;
 
     internal MapModel Map => field ??= new MapModel(this);
-    internal int PeerVersion => _filterVersion;
+
+    /// <summary>Changes when a peer's location does, the one peer fact the map's selection marks read.</summary>
+    internal int PeerVersion { get; private set; }
 
     internal void UpdateMap(bool cities)
     {
         var origin = Origin;
+        // Without the engine, or before the map has this subject's peers, it
+        // shows none, and the peers it is given next are grouped again. A
+        // replacement whose rows are unread keeps the last population.
+        if (!IsAvailable || !ReferenceEquals(_mapPopulation?.Subject, PeerSubject) && !KeepsLastMap)
+        {
+            _mapPopulation = null;
+            _mapReplies = null;
+        }
         // Decimal Mbit/s: 125,000 bytes per second each.
         Map.Update(
-            IsAvailable && _mapPopulation is { } population && ReferenceEquals(population.Subject, PeerSubject)
-                ? population : new(PeerSubject, []),
+            _mapPopulation ?? new(PeerSubject, []),
             origin,
             Text,
             cities,
@@ -63,7 +120,7 @@ public sealed partial class Inspector
             if (_place == value)
                 return;
             _place = value;
-            _releaseBaseline ??= ShownPeers ?? [];
+            PeersWithdrawn?.Invoke(this, EventArgs.Empty);
             Map.RefreshPlace();
             Filter();
         }
@@ -74,126 +131,208 @@ public sealed partial class Inspector
     private void NotifyShownPeers()
     {
         if (!_owner.IsClosed && IsVisible)
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShownPeers)));
+            PropertyChanged?.Invoke(this, ShownPeersChanged);
     }
 
     /// <summary>The table's rows: <see cref="Peers"/>, or those at <see cref="Place"/>.</summary>
     public IReadOnlyList<Peer>? ShownPeers { get; private set; }
-    internal Task PeersReady => _peersReady?.Task ?? Task.CompletedTask;
 
-    private sealed record PeerRows(IReadOnlyList<Peer>? Shown, IReadOnlyList<Peer> Released, int Connected, int Active)
+    // While a search for the chosen place's rows runs, the filter it serves:
+    // the one that started it, or a later one that waits for it to end. Null
+    // when no search runs.
+    private int? _finding;
+
+    /// <summary>
+    /// The chosen place's rows are being found. Until they are, <see cref="ShownPeers"/>
+    /// holds the rows from before the person's change, or none after another
+    /// torrent was chosen, and the table must not take them as that change.
+    /// </summary>
+    internal bool FindsShownPeers => _finding == _filterVersion;
+
+    /// <summary>
+    /// Takes the peers whose <paramref name="sorted"/> properties changed since
+    /// the last call, so the table reads only their sort keys again; a peer can
+    /// appear more than once. A peer that joined arrives with the list.
+    /// </summary>
+    internal IReadOnlyList<Peer> TakeChangedRows(Peer.Properties sorted)
     {
-        internal required MapModel.Population Population { get; init; }
+        List<Peer>? changed = null;
+        if (sorted != Peer.Properties.None)
+        {
+            foreach (var reply in _rowReplies)
+            {
+                foreach (var (peer, change) in reply.Changes)
+                {
+                    if ((change.Properties & sorted) != 0)
+                    {
+                        (changed ??= []).Add(peer);
+                    }
+                }
+            }
+        }
+        _rowReplies.Clear();
+        if (changed is null)
+        {
+            return [];
+        }
+        return changed;
     }
 
-    private async void Filter()
+    /// <summary>
+    /// Starts a new subject of the peers. The table reads every sort key of a
+    /// new subject's rows, so the changes it has not taken are dropped.
+    /// </summary>
+    private void RenewPeerSubject()
+    {
+        PeerSubject = new();
+        _rowReplies.Clear();
+    }
+
+    internal Task PeersReady => _peersReady?.Task ?? Task.CompletedTask;
+
+    /// <param name="rowsMayChange">
+    /// False when only peers' values changed, so a chosen place keeps the rows it shows.
+    /// </param>
+    private async void Filter(bool rowsMayChange = true)
     {
         var version = ++_filterVersion;
         var subject = PeerSubject;
         bool IsCurrent() => version == _filterVersion && ReferenceEquals(subject, PeerSubject);
         if (_peersReady?.Task.IsCompleted != false)
             _peersReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        _rowsChanged |= rowsMayChange;
+        var findsRows = _rowsChanged;
         var peers = _peers;
         var place = _place;
         var previous = ShownPeers;
-        if (peers is null)
-            _releaseBaseline ??= previous ?? [];
-        var release = _releaseBaseline;
         if (place is null || peers is null)
         {
             ShownPeers = peers;
             if (!ReferenceEquals(previous, peers))
                 NotifyShownPeers();
         }
-        var prepared = await Task.Run(() =>
+        var shown = place is null || peers is null ? peers : previous;
+        var searched = false;
+        // Only finding a chosen place's rows again passes over the peers.
+        if (place is { } chosen && peers is { } all && (findsRows || previous is null))
         {
-            var source = peers ?? [];
-            var captured = new MapModel.Observation[source.Count];
-            for (var index = 0; index < source.Count; index++)
-            {
-                var peer = source[index];
-                captured[index] = new(peer.Capture(), peer.Location);
-            }
-            IReadOnlyList<Peer>? shown = place is null || peers is null ? peers
-                : peers.Where((_, index) => place.Value.Contains(captured[index].Location)).ToArray();
-            if (place is not null && previous is not null && shown is not null && previous.SequenceEqual(shown))
-                shown = previous;
-            var released = release is not null
-                ? release.Except(shown ?? []).Concat((shown ?? []).Except(release)).ToArray() : [];
-            return new PeerRows(shown, released,
-                captured.Count(row => row.State != PeerState.Known),
-                captured.Count(row => row.State == PeerState.Connected && row.Down + row.Up > 0))
-            {
-                Population = new(subject, captured),
-            };
-        });
-        if (!IsCurrent())
-            return;
-        // While a replacement's rows are unread, the map keeps its last picture,
-        // as the rest of the inspector keeps its detail; an empty map would
-        // release every arc only to build them again when the rows arrive.
-        if (peers is not null || !IsReplacing)
-            ShowMapPopulation(prepared.Population);
-        if (!IsCurrent())
-            return;
-        _releaseBaseline = null;
-        if (prepared.Released.Count > 0)
-        {
-            PeersReleased?.Invoke(this, prepared.Released);
-            if (!IsCurrent())
+            // One search runs at a time. A call during it leaves the search to
+            // the one that follows it, which reads the latest peers and place,
+            // so a burst of replies searches the population once more, not
+            // once per reply.
+            var running = _finding is not null;
+            _finding = version;
+            if (running)
                 return;
+            shown = await Task.Run(() =>
+            {
+                IReadOnlyList<Peer> found = all.Where(peer => chosen.Contains(peer.Location)).ToArray();
+                return previous is not null && previous.SequenceEqual(found) ? previous : found;
+            });
+            searched = true;
+            var waiting = _finding != version;
+            _finding = null;
+            if (waiting)
+            {
+                Filter();
+                return;
+            }
         }
-        if (!ReferenceEquals(ShownPeers, prepared.Shown))
+        if (!IsCurrent())
+            return;
+        // The table took no rows while they were found, so it is told when they
+        // are, also when they stay the same.
+        if (searched || !ReferenceEquals(ShownPeers, shown))
         {
-            ShownPeers = prepared.Shown;
+            ShownPeers = shown;
             NotifyShownPeers();
             if (!IsCurrent())
                 return;
         }
-        var counts = (prepared.Connected, prepared.Active);
-        if (_peerCounts != counts)
+        _rowsChanged = false;
+        _peersReady!.TrySetResult();
+    }
+
+    // The summary's counts, summed over the view's swarms as their replies counted them.
+    private void ShowCounts()
+    {
+        (int Count, int Connected, int Active) counts = (Peers?.Count ?? 0, 0, 0);
+        foreach (var swarm in _viewSwarms)
         {
-            _peerCounts = counts;
-            if (!_owner.IsClosed && IsVisible)
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PeerSummary)));
+            if (swarm is not null && _swarms.TryGetValue(swarm.TorrentId, out var kept))
+            {
+                counts.Connected += kept.Connected;
+                counts.Active += kept.Active;
+            }
         }
-        if (IsCurrent())
-            _peersReady!.TrySetResult();
+        if (_peerCounts == counts)
+        {
+            return;
+        }
+        _peerCounts = counts;
+        if (!_owner.IsClosed && IsVisible)
+        {
+            PropertyChanged?.Invoke(this, PeerSummaryChanged);
+        }
     }
 
     /// <summary>
-    /// Gives the map a population. The table takes each torrent's reply, but
-    /// rebuilding the map passes over every peer of the scope, so once a poll
-    /// round of the subject has finished, later rounds rebuild the map once,
-    /// when they end. Until then each reply shows at once, so a new subject's
-    /// map fills while its first round loads.
+    /// Gives the map the view's peers and how they changed. The table takes
+    /// each torrent's reply, but each picture of the map draws the whole
+    /// scope, so once a poll round of the subject has finished, later rounds
+    /// give the map their changes once, when they end. Until then each reply
+    /// shows at once, so a new subject's map fills while its first round loads.
     /// </summary>
-    private void ShowMapPopulation(MapModel.Population population)
+    private void ShowMap()
     {
-        if (_fetching && ReferenceEquals(_mapRoundSubject, population.Subject))
-        {
-            _roundPopulation = population;
+        // A round's changes wait for its end; a new view, which the map groups
+        // again, shows at once.
+        if (ReferenceEquals(_mapRoundSubject, PeerSubject) && _mapReplies is not null)
             return;
+        GiveMap();
+    }
+
+    // While a replacement's rows are unread, the map keeps its last picture,
+    // as the rest of the inspector keeps its detail; an empty map would
+    // release every arc only to build them again when the rows arrive. A
+    // new scope of unread torrents shows an empty table at once, so the
+    // test is the swarms, not the rows.
+    private bool KeepsLastMap => IsReplacing && _viewSwarms.All(swarm => swarm is null);
+
+    private void GiveMap()
+    {
+        if (KeepsLastMap)
+            return;
+        var previous = _mapPopulation;
+        if (ReferenceEquals(previous?.Subject, PeerSubject))
+        {
+            if (_mapReplies is { Count: 0 })
+                return;
         }
-        if (!ReferenceEquals(_mapPopulation?.Subject, population.Subject))
+        else
+        {
             _mapRoundSubject = null;
-        _roundPopulation = null;
-        _mapPopulation = population;
+            _mapReplies = null;
+        }
+        _mapPopulation = new(PeerSubject, Peers ?? []) { Changes = _mapReplies, Follows = previous?.Number ?? 0 };
+        _mapReplies = [];
         UpdateMap(Map.Cities);
     }
 
-    /// <summary>
-    /// Called when a poll round of the peers ends; shows the population it left
-    /// waiting. A Filter still running holds the round's newest rows and shows
-    /// them itself when it finishes, so the round does not show older ones first.
-    /// </summary>
+    /// <summary>Called when a poll round of the peers ends; gives the map the changes the round gathered.</summary>
     private void EndMapRound()
     {
-        if (_peersReady?.Task.IsCompleted != false && _roundPopulation is { } population
-            && ReferenceEquals(population.Subject, PeerSubject))
-            ShowMapPopulation(population);
+        GiveMap();
         if (ReferenceEquals(_mapPopulation?.Subject, PeerSubject))
             _mapRoundSubject = PeerSubject;
+    }
+
+    // Shows a list whose difference from the last one the map's changes name.
+    private void ShowPeers(IReadOnlyList<Peer>? peers)
+    {
+        _peers = peers;
+        Filter();
+        ShowMap();
     }
 
     internal bool HasCities =>
@@ -258,310 +397,277 @@ public sealed partial class Inspector
 #endif
             var key = (_owner.PublicAddress, _owner.Geolocation.Version);
             if (_originKey != key)
-                _ = LocatePeers();
+                _ = LocateOrigin();
             return _originKey == key ? _origin : null;
         }
     }
 
-    // IPEndPoint also parses a bare address, so the public address and a
-    // peer's endpoint share this lookup.
+    // IPEndPoint also parses a bare address, such as the public address.
     private Location? Locate(string address) =>
         IPEndPoint.TryParse(address, out var endpoint)
             ? _owner.Geolocation.Find(endpoint.Address)
             : null;
 
-    private sealed record PeerLocations(IReadOnlyList<(Peer Peer, Location? Location)> Locations,
-        HashSet<Peer> Located, Location? Origin, bool Missing = false);
-
     private bool CanLocate => IsVisible && _section == InspectorSection.Peers && IsAvailable && !_owner.IsClosing;
 
-    private async Task LocatePeers()
+    // Looks up the public address, the map's origin, while Peers shows, and
+    // again when the address or the location data changes. The worker that
+    // reads a reply looks up its peers.
+    private async Task LocateOrigin()
     {
         if (_locating)
             return;
         _locating = true;
-        var restart = false;
         try
         {
-            while (CanLocate)
+            var key = (_owner.PublicAddress, _owner.Geolocation.Version);
+            while (CanLocate && _originKey != key)
             {
-                var key = (_owner.PublicAddress, _owner.Geolocation.Version);
-                if (_locationVersion != key.Version)
-                {
-                    _locationVersion = key.Version;
-                    _located = [];
-                    _originKey = null;
-                }
-                var source = Peers;
-                var located = _located;
-                var cancellation = _reading.Token;
-                var origin = _origin;
-                var needsOrigin = _originKey != key;
-                var preparation = Task.Run(() =>
-                {
-                    var members = (source ?? []).ToHashSet();
-                    var retained = located.Where(members.Contains).ToHashSet();
-                    List<(Peer, Location?)> locations = [];
-                    foreach (var peer in source ?? [])
-                    {
-                        if (retained.Contains(peer))
-                            continue;
-                        cancellation.ThrowIfCancellationRequested();
-                        locations.Add((peer, Locate(peer.Endpoint)));
-                        retained.Add(peer);
-                    }
-                    return new PeerLocations(locations, retained, needsOrigin ? Locate(key.PublicAddress) : origin);
-                }, cancellation);
-                await ((Task)preparation).ConfigureAwait(
-                    ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
-                if (preparation.IsCanceled || cancellation.IsCancellationRequested)
-                {
-                    restart = true;
-                    return;
-                }
-                var prepared = await preparation;
-                while (!ReferenceEquals(source, Peers) && CanLocate && _owner.Geolocation.Version == key.Version)
-                {
-                    source = Peers;
-                    var previous = prepared;
-                    preparation = Task.Run(() =>
-                    {
-                        var members = (source ?? []).ToHashSet();
-                        var retained = previous.Located.Where(members.Contains).ToHashSet();
-                        return previous with
-                        {
-                            Locations = previous.Locations.Where(location => members.Contains(location.Peer)).ToArray(),
-                            Located = retained,
-                            Missing = retained.Count < members.Count,
-                        };
-                    }, cancellation);
-                    await ((Task)preparation).ConfigureAwait(
-                        ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
-                    if (preparation.IsCanceled || cancellation.IsCancellationRequested)
-                    {
-                        restart = true;
-                        return;
-                    }
-                    prepared = await preparation;
-                }
-                if (!CanLocate)
-                    return;
-                if (_owner.Geolocation.Version != key.Version)
-                    continue;
-                _located = prepared.Located;
-                if (prepared.Locations.Count > 0)
-                    ++_filterVersion;
-                foreach (var location in prepared.Locations)
-                    location.Peer.Location = location.Location;
-                var changed = prepared.Locations.Count > 0;
-                if (needsOrigin && _owner.PublicAddress == key.PublicAddress)
+                var address = key.PublicAddress;
+                var origin = await Task.Run(() => Locate(address));
+                if (key == (_owner.PublicAddress, _owner.Geolocation.Version))
                 {
                     _originKey = key;
-                    _origin = prepared.Origin;
-                    changed = true;
+                    _origin = origin;
+                    UpdateMap(Map.Cities);
                 }
-                if (changed)
-                {
-                    RowsUpdated?.Invoke(this, InspectorSection.Peers);
-                    Filter();
-                }
-                if (!prepared.Missing && ReferenceEquals(source, Peers)
-                    && _originKey == (_owner.PublicAddress, _owner.Geolocation.Version))
-                    return;
+                key = (_owner.PublicAddress, _owner.Geolocation.Version);
             }
         }
         finally
         {
             _locating = false;
-            if (restart && CanLocate)
-                _ = LocatePeers();
         }
     }
 
-    private sealed record PeerScope(IReadOnlyList<Peer>? Rows, IReadOnlySet<string> Present, bool Cached);
-
+    // Returns whether the pane must refresh: the first rows, a replacement's
+    // end or a failure cleared. Rows that change alone reach the table without it.
     private async Task<bool> ReadPeers(int context)
     {
-        var aggregate = _target is null;
-        Torrent[] targets = aggregate
-            ? Scope.Where(torrent => torrent.PeerCount > 0 || torrent.KnownPeerCount > 0).ToArray()
-            : [_target!];
-        var cancellation = _reading.Token;
-        var current = Peers;
-        var cache = _peerCache.ToArray();
-        var present = _owner.Torrents.Select(torrent => torrent.TorrentId).ToArray();
-        var preparation = Task.Run(() =>
+        var targets = Subjects();
+        KeepSwarms(targets);
+        var swarms = new Swarm?[targets.Length];
+        for (var index = 0; index < targets.Length; index++)
+            swarms[index] = _swarms.TryGetValue(targets[index].TorrentId, out var kept) ? kept.Swarm : null;
+        if (!_viewSwarms.SequenceEqual(swarms))
         {
-            var ids = targets.Select(torrent => torrent.TorrentId).ToHashSet();
-            var alive = present.ToHashSet();
-            var cached = current is null && cache.Any(entry => ids.Contains(entry.TorrentId));
-            var shown = cached ? targets.SelectMany(torrent =>
-                cache.FirstOrDefault(entry => entry.TorrentId == torrent.TorrentId).Peers ?? []).ToArray() : current;
-            if (shown is not null && shown.Any(peer => !ids.Contains(peer.TorrentId)))
-                shown = shown.Where(peer => ids.Contains(peer.TorrentId)).ToArray();
-            return new PeerScope(shown, alive, cached);
-        }, cancellation);
-        await ((Task)preparation).ConfigureAwait(
-            ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
-        if (!IsCurrent(context) || preparation.IsCanceled)
-            return false;
-        var prepared = await preparation;
-        _peerCache.RemoveAll(entry => !prepared.Present.Contains(entry.TorrentId));
-        if (!ReferenceEquals(current, prepared.Rows))
-        {
-            if (current is not null)
-                _releaseBaseline ??= ShownPeers ?? [];
-            Peers = prepared.Rows;
-            if (prepared.Cached)
+            var first = Peers is null;
+            if (!await ShowSwarms(swarms, context, release: !first))
+                return false;
+            // The first rows came from kept swarms.
+            if (first && Peers is not null)
+            {
                 IsReplacing = false;
-            Refresh();
+                Refresh();
+            }
         }
         else if (!ReferenceEquals(_mapPopulation?.Subject, PeerSubject))
-            Filter();
-        // Returning to Peers resumes lookups abandoned while it was hidden.
-        _ = LocatePeers();
-        // One torrent at a time, so Inspector demands never overlap.
-        foreach (var torrent in targets)
         {
-            if (!IsCurrent(context))
+            Filter();
+            ShowMap();
+        }
+#if CAPTURE
+        // The capture's fixture answers one torrent at a time, as its
+        // measurements always have.
+        if (CapturePeers is { } capture)
+        {
+            for (var slot = 0; slot < targets.Length; slot++)
             {
-                return false;
-            }
-            if (aggregate && !_owner.Contains(torrent))
-            {
-                continue;
-            }
-            try
-            {
-                await ReadDetail(
-                    torrent,
-                    InspectorSection.Peers,
-                    context,
-                    async detail =>
-                    {
-                        if (detail.GetProperty("peers").ValueKind == JsonValueKind.Null)
-                            return;
-                        var changed = await ApplyPeers(
-                            torrent.TorrentId,
-                            detail.GetProperty("peers"),
-                            context
-                        );
-                        if (!IsCurrent(context))
-                            return;
-                        changed |= _readFailure is not null;
-                        _readFailure = null;
-                        if (changed)
-                            Refresh();
-                    }
-                );
-            }
-            catch (CommandException error) when (aggregate && error.Code == "torrent_removed")
-            {
-                // Removing one torrent does not discard the remaining torrents' peers.
+                if (!IsCurrent(context))
+                    return false;
+                // ApplyPeers awaits its worker, so nothing reads the rows after it.
+                using var detail = await capture(targets[slot]);
+                if (detail.RootElement.GetProperty("peers") is not { ValueKind: not JsonValueKind.Null } rows)
+                    continue;
+                var refresh = await ApplyPeers([(slot, targets[slot].TorrentId, rows)], context);
+                if (!IsCurrent(context))
+                    return false;
+                refresh |= _readFailure is not null;
+                _readFailure = null;
+                if (refresh)
+                    Refresh();
             }
         }
+        else
+#endif
+            await Subscribe(context, targets, InspectorSection.Peers);
         if (!IsCurrent(context))
         {
             return false;
         }
-        current = Peers;
-        present = _owner.Torrents.Select(torrent => torrent.TorrentId).ToArray();
-        var pruning = Task.Run(() =>
-        {
-            var alive = present.ToHashSet();
-            return (current ?? []).Where(peer => alive.Contains(peer.TorrentId)).ToArray();
-        }, cancellation);
-        await ((Task)pruning).ConfigureAwait(
-            ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
-        if (!IsCurrent(context) || pruning.IsCanceled)
-            return false;
-        var remaining = await pruning;
-        var changed = _readFailure is not null || Peers is null || IsReplacing;
-        changed |= Peers is not null && remaining.Length != Peers.Count;
-        if (changed)
-            Peers = remaining;
+        // A torrent removed meanwhile leaves the view when the next snapshot
+        // takes it out of the scope, which subscribes again.
+        var refreshes = _readFailure is not null || Peers is null || IsReplacing;
         IsReplacing = false;
+        // A view of one torrent that could not be read keeps showing why.
+        if (targets.Length == 1 && _failed.Contains(targets[0].TorrentId))
+            return refreshes;
+        // A scope whose torrents have no peers is read and empty.
+        Peers ??= [];
         _readFailure = null;
-        return changed;
+        return refreshes;
     }
 
-    private sealed record PeerUpdate(Peer[] Received, IReadOnlyList<Peer> Rows,
-        IReadOnlyList<(Peer Peer, Peer.Change Change)> Changes);
-
-    private async Task<bool> ApplyPeers(string torrentId, JsonElement rows, int context)
+    // Keeps the swarms of the scope's torrents, and of the eight torrents read
+    // most recently outside it that are still present.
+    private void KeepSwarms(Torrent[] targets)
     {
+        var scope = targets.Select(torrent => torrent.TorrentId).ToHashSet();
+        var outside = _swarms
+            .Where(entry => !scope.Contains(entry.Key))
+            .OrderByDescending(entry => entry.Value.Read)
+            .Select(entry => entry.Key)
+            .ToArray();
+        for (var index = 0; index < outside.Length; index++)
+        {
+            if (index >= 8 || _owner.Find(outside[index]) is null)
+                _swarms.Remove(outside[index]);
+        }
+    }
+
+    /// <summary>
+    /// Shows the peers of <paramref name="swarms"/>, joined on a worker. Returns
+    /// false when a newer read replaced this one meanwhile.
+    /// </summary>
+    /// <param name="release">The person changed the scope, so its rows change at once.</param>
+    private async Task<bool> ShowSwarms(Swarm?[] swarms, int context, bool release)
+    {
+        if (Peers is null && swarms.All(swarm => swarm is null))
+        {
+            _viewSwarms = swarms;
+            return true;
+        }
+        var joining = Task.Run(() => Swarm.Join(swarms), _reading.Token);
+        await ((Task)joining).ConfigureAwait(
+            ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
+        if (!IsCurrent(context) || joining.IsCanceled)
+            return false;
+        if (release)
+            PeersWithdrawn?.Invoke(this, EventArgs.Empty);
+        _viewSwarms = swarms;
+        Peers = await joining;
+        ShowCounts();
+        return true;
+    }
+
+    /// <summary>Forgets the shown peers; the swarms stay for a return to their torrents.</summary>
+    private void ForgetView()
+    {
+        PeersWithdrawn?.Invoke(this, EventArgs.Empty);
+        _viewSwarms = [];
+        Peers = null;
+    }
+
+    /// <summary>Forgets every torrent's peers, which another engine session does not have.</summary>
+    private void ForgetSwarms()
+    {
+        _swarms.Clear();
+        _rowReplies.Clear();
+        ForgetView();
+    }
+
+    /// <summary>
+    /// Forgets the swarms the view does not show. Their peers could be stale when
+    /// the engine connects again; the shown ones are read again at once.
+    /// </summary>
+    private void ForgetHiddenSwarms()
+    {
+        var shown = _viewSwarms.OfType<Swarm>().Select(swarm => swarm.TorrentId).ToHashSet();
+        foreach (var torrentId in _swarms.Keys.Where(torrentId => !shown.Contains(torrentId)).ToArray())
+            _swarms.Remove(torrentId);
+    }
+
+    /// <summary>
+    /// Reads each torrent's peers into its swarm, which sits at its slot of the
+    /// view's torrents, in one pass on a worker that also looks up the peers'
+    /// locations. Only the peers that changed raise their properties; a join or
+    /// leave publishes the view's new list, joined once for the whole batch.
+    /// Returns whether the pane must refresh: for the first rows or a
+    /// replacement's end.
+    /// </summary>
+    private async Task<bool> ApplyPeers(
+        IReadOnlyList<(int Slot, string TorrentId, JsonElement Rows)> batch,
+        int context
+    )
+    {
+        // A later read owns the view, which can be a different size.
+        if (!IsCurrent(context))
+            return false;
         var cancellation = _reading.Token;
         var text = Text;
-        var current = Peers ?? [];
+        var version = _owner.Geolocation.Version;
+        var previous = new KeptSwarm?[batch.Count];
+        for (var index = 0; index < batch.Count; index++)
+            previous[index] = _swarms.TryGetValue(batch[index].TorrentId, out var kept) ? kept : null;
+        var view = _viewSwarms;
+        Func<IPAddress, Location?> locate = _owner.Geolocation.Find;
+#if CAPTURE
+        locate = CaptureLocation ?? locate;
+#endif
         var preparation = Task.Run(() =>
         {
 #if CAPTURE
             PreparingPeers?.Invoke();
 #endif
-            var captured = current.Where(peer => peer.TorrentId == torrentId)
-                .Select(peer => (Peer: peer, Record: peer.Capture())).ToArray();
-            var previous = captured.ToDictionary(row => row.Peer.Endpoint);
-            HashSet<string> endpoints = [];
-            List<Peer> received = [];
-            List<(Peer, Peer.Change)> changes = [];
-            foreach (var data in rows.EnumerateArray())
+            var replies = new Swarm.Reply[batch.Count];
+            Swarm?[]? swarms = null;
+            for (var index = 0; index < batch.Count; index++)
             {
-                cancellation.ThrowIfCancellationRequested();
-                var endpoint = data.GetProperty("endpoint").GetString()!;
-                if (!endpoints.Add(endpoint))
-                    continue;
-                var parsed = Peer.Record.Parse(data);
-                if (previous.TryGetValue(endpoint, out var before))
-                {
-                    if (Peer.Prepare(before.Record, parsed) is { } change)
-                        changes.Add((before.Peer, change));
-                    received.Add(before.Peer);
-                }
-                else
-                {
-                    Location? location = null;
-#if CAPTURE
-                    location = CaptureLocation?.Invoke(endpoint);
-#endif
-                    received.Add(new Peer(text, torrentId, endpoint, location, parsed));
-                }
+                var (slot, torrentId, rows) = batch[index];
+                var kept = previous[index];
+                var relocate = kept.HasValue && kept.Value.LocationVersion != version;
+                replies[index] = Swarm.Read(torrentId, kept?.Swarm, rows, text, locate, relocate, cancellation);
+                if (!ReferenceEquals(replies[index].Swarm, view[slot]))
+                    (swarms ??= (Swarm?[])view.Clone())[slot] = replies[index].Swarm;
             }
-            var complete = received.ToArray();
-            IReadOnlyList<Peer> next = current;
-            if (!captured.Select(row => row.Peer).SequenceEqual(complete))
-            {
-                var merged = current.ToList();
-                var insertion = merged.FindIndex(peer => peer.TorrentId == torrentId);
-                merged.RemoveAll(peer => peer.TorrentId == torrentId);
-                merged.InsertRange(insertion < 0 ? merged.Count : insertion, complete);
-                next = merged.ToArray();
-            }
-            return new PeerUpdate(complete, next, changes);
+            return (Replies: replies, Swarms: swarms, Peers: swarms is null ? null : Swarm.Join(swarms));
         }, cancellation);
         await ((Task)preparation).ConfigureAwait(
             ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
         if (!IsCurrent(context) || preparation.IsCanceled)
             return false;
-        var prepared = await preparation;
-        if (prepared.Changes.Count > 0)
-            ++_filterVersion;
-        foreach (var (peer, change) in prepared.Changes)
-            peer.Apply(change);
-        _peerCache.RemoveAll(entry => entry.TorrentId == torrentId);
-        _peerCache.Insert(0, (torrentId, prepared.Received));
-        // Keep recent selections instant without retaining every torrent's peers.
-        if (_peerCache.Count > 8)
-            _peerCache.RemoveAt(_peerCache.Count - 1);
-        var changed = !ReferenceEquals(current, prepared.Rows) || Peers is null;
-        if (changed)
-            Peers = prepared.Rows;
-        else if (prepared.Changes.Count > 0)
+        var (replies, swarms, peers) = await preparation;
+        var changed = false;
+        var located = false;
+        for (var index = 0; index < batch.Count; index++)
         {
-            Filter();
-            RowsUpdated?.Invoke(this, InspectorSection.Peers);
+            var reply = replies[index];
+            foreach (var (peer, change) in reply.Changes)
+            {
+                peer.Apply(change);
+                located |= (change.Properties & Peer.Located) != 0;
+            }
+            _swarms[batch[index].TorrentId] = new(reply.Swarm, reply.Connected, reply.Active, ++_swarmReads, version);
+            if (reply.Changes.Count > 0)
+            {
+                _rowReplies.Add(reply);
+                changed = true;
+            }
+            if (_mapReplies is not null && MapModel.Affects(reply))
+            {
+                _mapReplies.Add(reply);
+            }
         }
+        if (located)
+        {
+            PeerVersion++;
+        }
+        var refreshes = Peers is null || IsReplacing;
+        if (swarms is not null)
+        {
+            _viewSwarms = swarms;
+            ShowPeers(peers);
+        }
+        else if (changed)
+        {
+            // A peer's new location can move it into or out of the chosen place.
+            Filter(rowsMayChange: located);
+            ShowMap();
+        }
+        if (changed)
+            RowsUpdated?.Invoke(this, InspectorSection.Peers);
+        ShowCounts();
         IsReplacing = false;
-        _ = LocatePeers();
-        return changed;
+        return refreshes;
     }
 }

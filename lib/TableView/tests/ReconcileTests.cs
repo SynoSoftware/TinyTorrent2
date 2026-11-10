@@ -73,19 +73,29 @@ public class ReconcileTests
     // ------------------------------------------------------------------ membership
 
     [TestMethod]
-    public void RowsJoiningAndLeavingAreAnnouncedWhereverTheyAre()
+    public void RowsJoiningAndLeavingAreAnnouncedWithinTheCache()
     {
         object[] rows = Rows(50);
         object view = NewView(rows);
 
         List<object> snapshot = rows.Where((_, i) => i % 5 != 0).ToList();
         object[] arrivals = Rows(3);
-        snapshot.InsertRange(20, arrivals);
+        snapshot.InsertRange(5, arrivals);
 
         int[] realized = Enumerable.Range(2, 12).ToArray();
         Watcher watch = new(view);
         Reconcile(view, snapshot, realized);
 
+        CollectionAssert.IsSubsetOf(
+            arrivals,
+            watch.Inserted,
+            "rows joining inside the cache are announced"
+        );
+        CollectionAssert.IsSubsetOf(
+            new[] { rows[0], rows[5], rows[10] },
+            watch.Removed,
+            "rows leaving inside the cache are announced"
+        );
         CollectionAssert.AreEqual(snapshot.ToArray(), Rows(view), "the view is the snapshot");
         Assert.AreEqual(
             snapshot.Count,
@@ -94,41 +104,59 @@ public class ReconcileTests
         );
     }
 
+    /// <summary>
+    /// Past the list's cache a change in membership changes only the count, which the table tells
+    /// the list in slices after the update. A notice per row in the update held the UI thread for
+    /// every row of a long list, and the list wrapped every row it was told of for COM, on screen
+    /// or not, so an arriving row is announced without its row.
+    /// </summary>
     [TestMethod]
-    public void ADifferentListIsAnnouncedOnlyWhereTheListHoldsAContainer()
+    public void RowsPastTheCacheChangeOnlyTheCountAndArriveWithoutTheirRow()
     {
-        object view = NewView(Rows(60));
-        object[] snapshot = Rows(40);
-        int[] realized = Enumerable.Range(10, 16).ToArray();
+        object[] rows = Rows(10);
+        object view = NewView(rows);
+        object[] longer = rows.Concat(Rows(1000)).ToArray();
+        int[] realized = Enumerable.Range(0, 10).ToArray();
 
         Watcher watch = new(view);
-        Reconcile(view, snapshot, realized);
+        Apply(view, longer, realized);
+        Assert.AreEqual(0, watch.Notifications, "the update raised nothing past the cache");
+        Assert.AreEqual(10, ((IList)view).Count, "the list has not been told of the arrivals");
 
-        CollectionAssert.AreEqual(snapshot, Rows(view), "the view is the snapshot");
-        watch.AssertListAgreesAt(realized, view);
-        Assert.AreEqual(snapshot.Length, watch.Count, "the count the notifications describe");
-        Assert.AreEqual(
-            2 * realized.Length + 20,
-            watch.Notifications,
-            "each container's row leaves and arrives, and only the change in count is added"
+        CatchUp(view);
+        Assert.AreEqual(longer.Length, watch.Count, "the catch-up told the list the count");
+        Assert.IsTrue(
+            watch.Inserted.All(row => row is null),
+            "an arrival was announced with its row"
         );
+        CollectionAssert.AreEqual(longer, Rows(view), "the list reads each row where it stands");
+
+        watch = new(view);
+        Apply(view, rows, realized);
+        Assert.AreEqual(0, watch.Notifications, "the update raised nothing past the cache");
+        Assert.IsNull(((IList)view)[500], "a position past the last row is vacant");
+
+        CatchUp(view);
+        CollectionAssert.AreEqual(rows, Rows(view), "the vacant positions are gone");
     }
 
     /// <summary>
-    /// A list scrolled past the end of a shorter different list: the list clamps its offset to the
-    /// new end, so it must be told about the rows there, or they appear without arriving.
+    /// A different list keeps the list's containers, which the table rebinds, so the list is told
+    /// only the change in count. A removal and an arrival per held position would make it build a
+    /// new row for every row on screen, the work a click made during the switch waits for.
     /// </summary>
     [TestMethod]
-    public void AShorterDifferentListAnnouncesTheRowsAtItsEnd()
+    public void ADifferentListRaisesOnlyTheChangeInCount()
     {
         object view = NewView(Rows(60));
-        object[] snapshot = Rows(8);
+        object[] snapshot = Rows(40);
 
         Watcher watch = new(view);
-        Reconcile(view, snapshot, Enumerable.Range(30, 16).ToArray());
+        Reconcile(view, snapshot, Enumerable.Range(10, 16).ToArray());
 
         CollectionAssert.AreEqual(snapshot, Rows(view), "the view is the snapshot");
-        watch.AssertListAgreesAt(Enumerable.Range(0, 8).ToArray(), view);
+        Assert.AreEqual(snapshot.Length, watch.Count, "the count the notifications describe");
+        Assert.AreEqual(20, watch.Notifications, "only the 20 rows the shorter list lacks");
     }
 
     // ------------------------------------------------------------------ a pinned row
@@ -232,7 +260,11 @@ public class ReconcileTests
             view,
             BindingFlags.Instance | BindingFlags.NonPublic,
             null,
-            new object[] { new Func<object, bool>(_ => false) },
+            new object[]
+            {
+                new Func<object, bool>(_ => false),
+                new Func<IEnumerable<int>>(() => []),
+            },
             null
         )!;
 
@@ -245,6 +277,7 @@ public class ReconcileTests
         return created;
     }
 
+    /// <summary>Apply the update, then tell the list the change in count, as the table does.</summary>
     private static void Reconcile(
         object view,
         IReadOnlyList<object> snapshot,
@@ -252,20 +285,69 @@ public class ReconcileTests
         IReadOnlySet<object>? pinned = null
     )
     {
+        Apply(view, snapshot, realized, pinned);
+        CatchUp(view);
+    }
+
+    /// <summary>
+    /// The update alone. The list's cache reaches as far as the last realized position, which is
+    /// where it reaches unless a container is pinned far from the rest.
+    /// </summary>
+    private static void Apply(
+        object view,
+        IReadOnlyList<object> snapshot,
+        IReadOnlyList<int> realized,
+        IReadOnlySet<object>? pinned = null
+    )
+    {
         var rows = Rows(view);
+        Type changesType = Control.GetType("Syno.TableView.Body.Changes")!;
+        object screen = Activator.CreateInstance(
+            changesType.GetNestedType("Screen", BindingFlags.NonPublic)!,
+            realized,
+            realized.Count == 0 ? 0 : realized.Max() + 1
+        )!;
+
+        // Each row's slot, as the table numbers rows: one small number per row in either list.
+        Dictionary<object, int> slots = new(ReferenceEqualityComparer.Instance);
+        foreach (object row in rows.Concat(snapshot))
+        {
+            slots.TryAdd(row, slots.Count);
+        }
+
+        object[] bySlot = slots.OrderBy(entry => entry.Value).Select(entry => entry.Key).ToArray();
+        int[] order = snapshot.Select(row => slots[row]).ToArray();
+        int[] targets = Enumerable.Repeat(-1, slots.Count).ToArray();
+        for (int i = 0; i < order.Length; i++)
+        {
+            targets[order[i]] = i;
+        }
+
+        object[] arguments =
+        {
+            rows,
+            new ArraySegment<int>(rows.Select(row => slots[row]).ToArray()),
+            new ArraySegment<int>(order),
+            targets,
+            new Func<int, object>(slot => bySlot[slot]),
+            screen,
+            (pinned ?? new HashSet<object>()).Select(row => slots[row]).ToHashSet(),
+        };
         var changes = Task.Run(() =>
         {
-            var type = Control.GetType("Syno.TableView.Body.Changes")!;
-            var identity = Activator.CreateInstance(Control.GetType("Syno.TableView.ItemIdentity")!, true)!;
-            var prepared = Activator.CreateInstance(type, BindingFlags.Instance | BindingFlags.NonPublic,
-                null, new object[] { rows, identity }, null)!;
-            type.GetMethod("Prepare", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .Invoke(prepared, new object[] { snapshot, realized, pinned ?? new HashSet<object>() });
+            var prepared = Activator.CreateInstance(changesType, nonPublic: true)!;
+            changesType.GetMethod("Prepare", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .Invoke(prepared, arguments);
             return prepared;
         }).GetAwaiter().GetResult();
         view.GetType().GetMethod("Apply", BindingFlags.Instance | BindingFlags.NonPublic)!
             .Invoke(view, new[] { changes });
     }
+
+    /// <summary>Tell the list the whole change in count the view owes it.</summary>
+    private static void CatchUp(object view) =>
+        view.GetType().GetMethod("CatchUp", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(view, new object[] { long.MaxValue });
 
     /// <summary>
     /// A list's-eye view: it is told nothing except the notifications, and it applies them the way
@@ -287,6 +369,9 @@ public class ReconcileTests
         internal int Count => _shadow.Count;
 
         internal List<object> Removed { get; } = new();
+
+        /// <summary>What the list read at each inserted position during the notice.</summary>
+        internal List<object?> Inserted { get; } = new();
 
         internal void AssertListAgreesAt(IReadOnlyList<int> realized, object view)
         {
@@ -314,7 +399,9 @@ public class ReconcileTests
                     _shadow.RemoveAt(index);
                     break;
                 case CollectionChange.ItemInserted:
-                    _shadow.Insert(index, ((IList)sender)[index]!);
+                    object? read = ((IList)sender)[index];
+                    Inserted.Add(read);
+                    _shadow.Insert(index, read!);
                     break;
                 case CollectionChange.ItemChanged:
                     _shadow[index] = ((IList)sender)[index]!;

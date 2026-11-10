@@ -1,27 +1,30 @@
 # Keep up with the person
 
-Status, 9 November 2026: revision 15. Steps 2 and 3 are implemented and met
-their predictions in every pair of rounds 2 and 3. Step 1, rows filled in
-phases, made the median click slower in all 15 pairs of rounds 1 to 3, in two
-designs, and is removed (see Step 1). Round 4 measured steps 2 and 3 alone:
-the map and press endpoints improved in every pair, and every other endpoint is
-mixed (see Round 4). The owner asked for "clear improvements and proof in all
-fields touched".
+Status, 9 November 2026: revision 16. Steps 2 and 3 are committed at
+`d72c4d5` and met their predictions in every pair of rounds 2 to 4. Step 1 is
+redesigned: a table that switches to a different list keeps the rows on screen
+and changes what they show. It is implemented in the working tree, and the
+peer table switch capture shows a switch at about 40% of its earlier cycles in
+every pair (see Round 5). Its first design, rows filled in phases, made the
+median click slower in all 15 pairs of rounds 1 to 3 and is removed. The
+owner asked for "clear improvements and proof in all fields touched".
 
 In this plan, "today" means the reference build: HEAD `2967cdd`, without
 steps 1 to 3.
 
-Purpose: a click on a torrent selects a row and is never lost, and the map of
-the selected torrent shows its land before its connections. The
-[rendering plan](17-rendering-and-selection.md) allows TableView changes only
-for work that can move off the UI thread. Step 3's hit test is the one
-exception, because the owner ruled that a lost click is a bug.
+Purpose: a click on a torrent switches the selection at once and is never lost,
+and the map of the selected torrent shows its land before its connections.
+Step 1 changes TableView, so it starts from the table's history, as the
+[rendering plan](17-rendering-and-selection.md) requires for every TableView
+change.
 
 ## What the person sees
 
-1. When a table's rows change, a click still waits for WinUI to realize, lay
-   out and draw the changed rows, as today. Step 1 tried to shorten that wait
-   and is removed.
+1. When the peers table switches to another torrent, the rows on screen stay
+   and show the new torrent's peers from its first row, with no animation.
+   The next click no longer waits for WinUI to build, animate and draw a new
+   row for every row on screen. Changes within one torrent's peers, such as a
+   sort or peers joining and leaving, animate as today.
 2. The map of a newly selected torrent shows its land first, with the country
    shading. Then it shows the arcs with the markers of places that have a
    connection. Then it adds the markers of the other places. Each layer is
@@ -35,9 +38,12 @@ exception, because the owner ruled that a lost click is a bug.
 The owner's words, in order:
 
 - "click moves cursor immediatelly. after that it does the rest."
-- "a table updated should be async, filled in only when it doesn't bother
-  others". And: "show what's on screen first, update the rest when there's
-  time", with piece sizes from engineering, "not a made up number".
+- "my requirement is to be able to switch the selection immediatelly", and "in
+  the end the UI needs to move a rectangle from old to new... then start
+  canceling the old and start working on the new." This replaces the earlier
+  request that "a table updated should be async, filled in only when it
+  doesn't bother others", which the owner withdrew after Step 1's first design
+  failed.
 - "we must not fall behind user. keep up with the user!!!! that means drop
   queued work that user doesn't want to see anymore." A pending click cancels
   display work, never a command: "if you're in the middle of executing Apply
@@ -48,12 +54,11 @@ The owner's words, in order:
   "map draws only once --- this is a matter of ordering the rendering, not of
   making more work".
 
-Step 1 was this plan's answer to the second request. It is removed, so that
-request is not met.
-
-The remarks on `Body.Changes.Reconcile` record an older owner requirement that
-still holds: on a repopulation, leaving rows animate out, arriving rows animate
-in, "and the table is never empty in between". The table keeps it, as today.
+Step 1 answers the second request. The remarks on `Body.Changes.Reconcile`
+record an older owner requirement that still holds within one list: leaving
+rows animate out, arriving rows animate in, "and the table is never empty in
+between". A switch to a different list follows the owner's later rulings
+instead (see Step 1).
 
 ## Evidence
 
@@ -102,7 +107,76 @@ torrent (`selection-map-settlement`): fills 0.26 ms, borders 0.19 ms, glow
 890.6 ms, arcs 823.3 ms. Today the land waits about 1.7 s for the arcs,
 because one picture publishes all layers together.
 
-## Step 1. Rows filled in phases (TableView): removed
+## Step 1. A different list switches in place (TableView)
+
+**What the click waits for.** The app already follows the owner's order. A
+press moves the selection; in the same handler `Inspector.QueueSubject`
+cancels the old torrent's reads (`Invalidate`, which also stops `ApplyPeers`
+row by row) and starts the new torrent only after the selection's frame
+(`FrameCallback`). The press waits for work already handed to WinUI. During
+fast clicking the UI thread waited for messages only 2% of the time. The saved
+traces of 9 November (reference run `557407bf`, 12 clicks, 1,364 ms from
+press to rendered selection in all) attribute that time:
+
+| Work on the UI thread | ms | Share |
+| --- | ---: | ---: |
+| Garbage collection, including one 263 ms induced full collection | about 460 | 34% |
+| WinUI drawing | about 410 | 30% |
+| App code | about 230 | 17% |
+| WinUI input, the hit test included | about 110 | 8% |
+| Layout | about 50 | 4% |
+
+Inside the long pauses, layout took 829 of 1,902 samples, 401 of them in
+`CellsPanel.MeasureOverride` measuring new cells, and drawing rows that animate
+took 589. The managed wrappers of new cells' WinUI objects
+(`ContentPresenter`, `TextBlock`, `ListViewItem`) report memory pressure
+(`GC.AddMemoryPressure`) as they are created, which counts toward the next
+collection.
+
+The peers table causes that work. Another torrent's peers share no row with
+the shown peers, so `Changes.Flip` removes every row the list holds and inserts
+a new one at each position: the list builds a new row for every row on screen
+and animates the old rows out while the new ones arrive.
+
+**History since `v0.9.1.2`.** The same switch went back and forth:
+
+| Version | A switch to a different list | Why it ended |
+| --- | --- | --- |
+| `v0.9.1.2`, 31 October | One removal and one arrival per row for the whole list, animated. | Replaced by the rework. |
+| `42a815f`, 1 November | The same notifications, animation off. **Owner ruling: the table never flashes.** The list's own removals finish before its delayed arrivals, so an animated switch shows no rows in between. | The revert below. |
+| `ce8f6b6`, 3 November | Also scrolls to the first row. **Owner ruling: a different list starts at the top**, because the new rows at the old offset show "an arbitrary middle of a list they have not seen". It tracked every row each frame laid out. | The revert below. |
+| `25da2fe`, 3 November | Revert of all of TableView to `v0.9.1.2`. | Made for memory: the rework held about 788 bytes per row against 266. The two rulings above cost no memory per row; they left with the files that held them. |
+| `65c1473`, 3 November, today | `Flip`: rows on screen animate out and in, other positions change without a notification. | Builds every row on screen, the work the next click waits for. Neither ruling came back. |
+
+**What changes.** `Changes.Flip` puts the new list's row at every position
+without a notification and raises only the change in count, at the end. The
+containers the list holds stay; `Table.RebindRows` gives each the row now at
+its position, so its cells rebind instead of being built. Nothing animates
+except rows at the end that join or leave. Then `Table.ShowDifferentList`
+scrolls to the first row unless the host's `ScrollTo` waits for this view, and,
+when the old list had selected rows, makes the list read every container's
+selection again through one range call.
+Two lookups that matched rows by identity now go by position, because after a
+switch the list's own record of a container's row is a row of the old list:
+`ShowCurrent`, which corrects a container the list fills later, and the
+automation peer's row (`Table.ShownRow`). No state is added per row; the
+switch allocates less than `Flip` did.
+
+This is better than each earlier attempt: unlike `42a815f` it builds no row,
+unlike `ce8f6b6` it tracks nothing per frame to start at the top, and unlike
+today it neither builds nor animates.
+
+**Done when:**
+
+- The source review shows that a switch to a different list raises only the
+  change in count, that every container shows the view's row at its index
+  afterwards, and that selection highlight and automation follow the shown row.
+- The TableView tests pass, with the reconcile test for a different list
+  changed to the new count of notifications.
+- The peer table switch capture shows fewer UI-thread cycles per switch in
+  every pair of five, and round 5 shows no endpoint worse in every pair.
+
+### Tried first: rows filled in phases, removed
 
 **What it did.** A row that the list realized while a view change waited for
 its layout (`Table._layoutPending`) showed its first cell at once. Its other
@@ -382,8 +456,9 @@ remarks record. The rule has three costs:
   samples), not from a click. Many bound
   properties are computed from several fields, so per-property notifications
   need a dependency map, and that work belongs to its own change.
-- **Row transitions do not change.** The owner requires that rows leaving
-  animate out and rows arriving animate in. Animated rows cost 589 samples.
+- **Row transitions within one list do not change.** The owner requires that
+  rows leaving animate out and rows arriving animate in. Only a switch to a
+  different list stops animating (Step 1).
 - **A click during an inspector save is still refused**
   (`MainViewModel.Select` checks `Inspector.IsPending`), so item 3 of "What
   the person sees" does not hold then. A save takes one engine round trip, and the benchmark never saves.
@@ -427,12 +502,20 @@ binary in an evidence folder before the second build overwrites the output.
   measured, because its map could already be on screen.
 
 **Runs.** One round of five pairs, alternating reference and new. Each run is
-the reference run's procedure: `Capture.ps1 -Review performance-selection
--Configuration Release -MapDetail cities -ArcLimit 1000 -InputOnly`, visible,
-with native clicks. Replay is not enough, because it bypasses the hit test,
-and the hit test is part of the cost. Before each run, record whether a build
-or another benchmark was running. A difference counts only when all five pairs
-agree in direction. A mixed result is reported as mixed and not run again.
+`Capture.ps1 -Review performance-selection -Configuration Release -MapDetail
+cities -ArcLimit 1000 -InputOnly -Replay`, on the display other than the main
+one. The owner ruled on 9 November that a benchmark never takes the owner's
+keyboard, mouse or focus; native clicks need all three. The same day one pair
+of each placement compared the two Step 1 builds: on the other display, replay
+showed the same map stalls, map pictures, dots and memory as native clicks, but
+about half of a click's UI-thread cost, because it skips the pointer path and
+the hit test. So the click endpoints below measure the work after a press
+reaches the table, and the two press endpoints that need a hit test, lost
+presses and presses handled after a view change, are checked by source review.
+Round 5 began with native clicks; its pair 1 is replaced by a replayed pair.
+Before each run, record whether a build or another benchmark was running. A
+difference counts only when all five pairs agree in direction. A mixed result
+is reported as mixed and not run again.
 
 **Ticks first.** The owner asked for the benchmark in ticks: the UI thread's
 own CPU cycles (`QueryThreadCycleTime`), which other programs on the laptop do
@@ -464,6 +547,25 @@ Round 4's predictions, for steps 2 and 3 without Step 1:
 worse. If an endpoint misses its prediction, its cause is found from the code
 and the saved records first, as round 3's late arcs were; a correction then
 gets one more round.
+
+Round 5's predictions, for Step 1 against round 4's new build
+(`V:\artifacts\TinyTorrent2\evidence\keep-up-new4_capture`, commit `d72c4d5`)
+as the reference. Neither build adds a harness record, so one build is needed.
+Each of the 21 clicks switches the peers table to another torrent, and today
+each switch builds and animates every row on screen, so the work the step
+removes is in every click:
+
+| Endpoint | Prediction |
+| --- | --- |
+| UI-thread ticks from the first to the last press | lower in every pair |
+| UI-thread ticks per click, median, over the clicks both builds selected | lower in every pair |
+| UI-thread ticks per click, worst | not more |
+| Click to rendered selection, median and worst | lower; the reference's median varied from 67 to 112 ms between round 4's runs, more than the expected gain, so mixed is possible |
+| UI-thread response in `torrent-clicks`, p95 and worst | not slower |
+| Presses that selected nothing; presses lost on a leaving row; selections cleared by a press | not more |
+| `firstSubjectPictureMs`, `firstConnectionsMs` | not later |
+| Marquee sample gap; map draw gaps | not worse |
+| Peak and end private commitment; peak working set | not higher |
 
 **Where runs go after round 1.** The owner asked for the benchmark window on
 the other monitor. The capture app now opens a visible performance run on a
@@ -741,3 +843,79 @@ endpoint is mixed, so none is worse by the rule above, except the worst ticks
 per click over all clicks. That one counts presses the reference never handled;
 over the clicks both builds selected it is mixed. The click itself is not
 faster, because the step that aimed at it is removed.
+
+**Round 5, 9 November.** Builds: round 4's new build as the reference, and new
+`V:\artifacts\TinyTorrent2\evidence\keep-up-new5_capture` with Step 1. Every
+run replayed its input on the other display (see Runs), with no build or other
+benchmark running before it. Values are the five pairs in order.
+
+| Endpoint | Reference | New | Verdict |
+| --- | --- | --- | --- |
+| UI-thread ticks from the first to the last press (G) | 4.29, 4.49, 4.84, 4.48, 4.63 | 4.27, 4.84, 4.42, 4.26, 4.57 | missed: lower in 4 pairs |
+| Ticks per click, median, common clicks (M) | 29.1, 17.4, 34.2, 31.8, 29.7 | 17.2, 88.4, 19.7, 34.3, 34.6 | missed: lower in 2 pairs |
+| Ticks per click, worst, all clicks (M) | 609, 499, 640, 555, 546 | 413, 734, 334, 499, 562 | met: more in 2 pairs |
+| Click to rendered selection, median, common clicks (ms) | 58, 19, 64, 42, 56 | 38, 58, 30, 59, 81 | mixed: higher in 3 pairs |
+| Click to rendered selection, worst, common clicks (ms) | 229, 59, 369, 285, 322 | 181, 430, 194, 255, 356 | mixed: higher in 2 pairs |
+| UI-thread response in `torrent-clicks`, p95 / worst (ms) | 168/290, 42/237, 233/315, 140/342, 185/237 | 109/253, 276/409, 91/223, 149/238, 272/309 | met: slower in 3 and 2 pairs |
+| Selected but never observed rendered | 2, 1, 4, 2, 3 | 3, 6, 1, 1, 2 | met: more in 2 pairs |
+| `firstSubjectPictureMs` | 108, 135, 375, 658, 312 | 215, 108, 636, 265, 309 | met: later in 2 pairs |
+| `firstConnectionsMs` | 1190, 1667, 1517, 2241, 2098 | 1765, 1553, 2594, 2101, 1280 | met: later in 2 pairs |
+| Marquee gap, worst (ms) | 303, 444, 595, 277, 277 | 344, 255, 433, 229, 875 | met: worse in 2 pairs |
+| Stationary map draw gap, worst (ms) | 135, 142, 117, 87, 278 | 166, 410, 95, 228, 92 | met: worse in 3 pairs |
+| Peak private commitment (MiB) | 1133, 1237, 1275, 1201, 1147 | 1143, 1139, 1186, 1373, 1240 | met: higher in 3 pairs |
+| Peer table switches seen during the clicks | 10, 17, 9, 13, 13 | 14, 5, 14, 10, 8 | — |
+
+The presses lost on a leaving row and the presses handled after a view change
+need a hit test, which replay does not make; both were 0 in every run.
+
+**Cause of the miss.** The predictions assumed that each of the 21 clicks
+switches the peers table. The records show otherwise: of the 20 presses that
+select another torrent, the table was seen switching 5 to 17 times, because the
+inspector merges selections while the UI thread is busy. Step 1 saves its work
+per switch, and the number of switches differs between runs, so the per-click
+ticks mix clicks that switched with clicks that did not. Pair 2's new run, with
+the fewest switches, has the highest median. The click benchmark therefore
+cannot show Step 1's effect. The peer table switch capture (`Capture.ps1
+-Review peer-switch`) switches the table between two 200-peer torrents twelve
+times per measure and counts UI-thread cycles, so it measures Step 1's work
+alone; five pairs of it decide Step 1.
+
+**Peer table switch, 9 November.** Five pairs of `-Review peer-switch` with the
+same two builds, the reference first in each pair, without input. Each value is
+the median of 12 steps, in megacycles on the UI thread; the five pairs in order.
+
+| Step | Reference | New | Verdict |
+| --- | --- | --- | --- |
+| Switch, table and map | 363, 363, 319, 322, 349 | 140, 115, 145, 140, 105 | met: lower in every pair |
+| Busiest frame of a switch | 119, 130, 122, 125, 126 | 55, 49, 61, 68, 43 | met: lower in every pair |
+| Switch, table alone | 591, 348, 670, 720, 336 | 141, 121, 114, 178, 113 | met: lower in every pair |
+| Switch, sorted table | 472, 330, 389, 688, 370 | 140, 108, 114, 121, 134 | met: lower in every pair |
+| Poll: five peers leave, five join | 154, 113, 132, 173, 149 | 169, 148, 169, 174, 122 | higher in 4 pairs |
+| Idle, no change | 55, 69, 44, 40, 46 | 60, 40, 53, 58, 50 | higher in 4 pairs |
+
+Step 1 is met: a switch costs about 40% of its earlier cycles (median 140
+against 349), and its busiest frame less than half. The poll is higher in four
+pairs. So is idle, which does no work, and another session's compiler and tests
+ran just before the new runs of pairs 3 and 4, so this round cannot tell a
+poll cost from the load on the second run of each pair. Batch 2 of the
+[rendering plan](17-rendering-and-selection.md) replaces the table's poll path,
+and its round measures the poll again.
+
+**The rendering plan's batch round, 10 November.**
+[That round](17-rendering-and-selection.md#round-of-batches-1-to-5) used this
+round's new build as its reference. It cannot measure the poll again: its
+reference's map did not follow the peers the capture gave the inspector, while
+the new build's map follows them and animates their traffic. The median click
+is slower in every pair, while the press itself is handled faster in every
+pair. In the one pair that recorded the tables' changes, 4 of 21 presses
+waited behind a peers table switch that was already writing its rows, for
+example 8,700 removals in 48 ms. The work in the other waits is not
+attributed.
+
+**The rendering plan's batch 6 round, 10 November.**
+[That round](17-rendering-and-selection.md#round-of-batch-6) measured `new8`
+against `new7`. The median press waits 41 ms instead of 68 ms before the UI
+thread handles it. The UI thread is stalled for 1.3 to 1.6 s of each 3 s of
+clicks instead of 1.6 to 1.8 s, and lower in every pair. The table's row
+notices are gone from the stalls. What remains is WinUI's own layout and the
+table's cell layout after each switch.

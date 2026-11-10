@@ -231,13 +231,10 @@ internal sealed class TorrentSource : IAsyncDisposable
                     failed = true;
                     System.Diagnostics.Debug.WriteLine(error);
                 }
+                // The pipe could not carry the read; the next snapshot
+                // starts collection again.
                 if (detail is null && !failed)
-                {
-                    // Foreground demand yields the connection without ending collection.
-                    if (!_client.IsConnected)
-                        return;
-                    continue;
-                }
+                    return;
                 lock (_gate)
                 {
                     if (!_connected || revision != _revision)

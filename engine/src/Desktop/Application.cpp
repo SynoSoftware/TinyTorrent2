@@ -343,7 +343,13 @@ void Application::Receive(std::shared_ptr<Pipe::Connection> const& client, Json 
         {
             Refresh();
             reply(std::move(response));
-        });
+        }, Push{[client](std::string key, Json message)
+        {
+            client->Replace(std::move(key), std::move(message));
+        }, [client](std::string const& key)
+        {
+            client->Withdraw(key);
+        }});
         return;
     }
     // Reading a missing field, or one of the wrong type, throws; like the

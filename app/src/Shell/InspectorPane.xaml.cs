@@ -19,6 +19,7 @@ public sealed partial class InspectorPane : UserControl
     private InspectorSection _section;
     private bool _refreshing;
     private bool _rowsQueued;
+    private bool _factsQueued;
     private bool _tracking;
     private bool _composing;
     private (Torrent Target, int Index)? _fileReveal;
@@ -107,7 +108,7 @@ public sealed partial class InspectorPane : UserControl
             Model.TextChanged += OnText;
             Model.PropertyChanged += OnModel;
             Model.RowsUpdated += OnRows;
-            Model.PeersReleased += OnPeersReleased;
+            Model.PeersWithdrawn += OnPeersWithdrawn;
             Model.RecoveryRequested += OnRecovery;
             Model.LibraryChanged += OnLibrary;
             ShowLibrary(Model.Library);
@@ -122,7 +123,7 @@ public sealed partial class InspectorPane : UserControl
             Model.TextChanged -= OnText;
             Model.PropertyChanged -= OnModel;
             Model.RowsUpdated -= OnRows;
-            Model.PeersReleased -= OnPeersReleased;
+            Model.PeersWithdrawn -= OnPeersWithdrawn;
             Model.RecoveryRequested -= OnRecovery;
             Model.LibraryChanged -= OnLibrary;
             ClearLibraryActions();
@@ -189,21 +190,20 @@ public sealed partial class InspectorPane : UserControl
                 FileContent.Content = _files;
                 break;
             case InspectorSection.Peers:
-                Peers
-                    .Schema<Peer>()
-                    .Key(peer => peer.Key)
-                    .SortKey(AddressColumn, peer => peer.Address)
-                    .SortKey(PortColumn, peer => peer.Port)
-                    .SortKey(ClientColumn, peer => peer.Client)
-                    .SortKey(CountryColumn, peer => peer.CountryText)
-                    .SortKey(CityColumn, peer => peer.CityText)
-                    .SortKey(PeerStateColumn, peer => peer.State)
-                    .SortKey(ConnectionColumn, peer => peer.ConnectionHint)
-                    .SortKey(PeerProgressColumn, peer => peer.Progress)
-                    .SortKey(PeerDownColumn, peer => peer.DownloadRate)
-                    .SortKey(PeerUpColumn, peer => peer.UploadRate)
-                    .SortKey(PeerDownloadedColumn, peer => peer.Downloaded)
-                    .SortKey(PeerUploadedColumn, peer => peer.Uploaded);
+                // A swarm keeps one peer object per endpoint, so a row is its peer.
+                var schema = Peers.Schema<Peer>();
+                SortPeers(schema, AddressColumn, peer => peer.Address, Peer.Properties.None);
+                SortPeers(schema, PortColumn, peer => peer.Port, Peer.Properties.None);
+                SortPeers(schema, ClientColumn, peer => peer.Client, Peer.Properties.Client);
+                SortPeers(schema, CountryColumn, peer => peer.CountryText, Peer.Properties.CountryText);
+                SortPeers(schema, CityColumn, peer => peer.CityText, Peer.Properties.CityText);
+                SortPeers(schema, PeerStateColumn, peer => peer.State, Peer.Properties.State);
+                SortPeers(schema, ConnectionColumn, peer => peer.Connection, Peer.Properties.Connection);
+                SortPeers(schema, PeerProgressColumn, peer => peer.Progress, Peer.Properties.Progress);
+                SortPeers(schema, PeerDownColumn, peer => peer.DownloadRate, Peer.Properties.DownloadRate);
+                SortPeers(schema, PeerUpColumn, peer => peer.UploadRate, Peer.Properties.UploadRate);
+                SortPeers(schema, PeerDownloadedColumn, peer => peer.Downloaded, Peer.Properties.Downloaded);
+                SortPeers(schema, PeerUploadedColumn, peer => peer.Uploaded, Peer.Properties.Uploaded);
                 if (_layout.Peers is { } peers)
                     Peers.Layout = peers;
                 SetupPeers();
@@ -293,20 +293,22 @@ public sealed partial class InspectorPane : UserControl
 
     private void OnRows(object? sender, InspectorSection section)
     {
-        if (_library is not null || !Model.IsVisible || Model.IsReplacing || section != Model.Section || _rowsQueued)
+        if (_library is not null || !Model.IsVisible || Model.IsReplacing || section != Model.Section)
+            return;
+        // The map takes the peers' changes from the inspector once per round.
+        if (section == InspectorSection.Peers)
+        {
+            QueuePeerRows();
+            return;
+        }
+        if (_rowsQueued)
             return;
         _rowsQueued = DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
         {
             _rowsQueued = false;
             if (!IsLoaded || _library is not null || !Model.IsVisible || Model.IsReplacing)
                 return;
-            if (Model.Section == InspectorSection.Peers)
-            {
-                if (_layout.View.Layout != PeerLayout.Map && Peers?.Sort is not null)
-                    Peers.RefreshView();
-                RefreshMap();
-            }
-            else if (Model.Section == InspectorSection.Trackers && TrackerTable?.Sort is not null)
+            if (Model.Section == InspectorSection.Trackers && TrackerTable?.Sort is not null)
                 TrackerTable.RefreshView();
         });
     }
@@ -320,6 +322,11 @@ public sealed partial class InspectorPane : UserControl
         }
         if (args.PropertyName == nameof(Inspector.PeerSummary))
             return;
+        if (Inspector.IsFact(args.PropertyName))
+        {
+            QueueFacts();
+            return;
+        }
         if (args.PropertyName == nameof(Inspector.IsActive) && Model.IsActive)
             ShowLibrary(Model.Library);
         if (_library is null || args.PropertyName is nameof(Inspector.IsActive) or nameof(Inspector.IsReplacing))
@@ -426,7 +433,7 @@ public sealed partial class InspectorPane : UserControl
         Sections.IsEnabled = Model.IsVisible;
         foreach (var section in _torrentSections)
             section.IsEnabled = Model.CanShow((InspectorSection)section.Tag);
-        Sections.SelectedItem = Sections.Items.First(item => Equals(item.Tag, Model.Section));
+        Sections.SelectedItem = _torrentSections[(int)Model.Section];
         _refreshing = false;
         ShowActions(Model.Section == InspectorSection.Peers ? _peerMore : null);
         if (Model.Section == InspectorSection.Peers || sectionChanged)
@@ -437,7 +444,8 @@ public sealed partial class InspectorPane : UserControl
         var loading = Model.IsAvailable && Model.IsLoading;
         if (Peers is not null && Model.Section == InspectorSection.Peers)
         {
-            Peers.ItemsSource = Model.ShownPeers;
+            if (!Model.FindsShownPeers)
+                Peers.ItemsSource = Model.ShownPeers;
             Peers.Placeholder =
                 Model.Peers is null && loading
                     ? Syno.TableView.Placeholder.Loading
@@ -465,23 +473,52 @@ public sealed partial class InspectorPane : UserControl
             Speed.Samples = Model.History;
         if (Model.Section == InspectorSection.Pieces)
             Map?.Show(Model.Pieces, Model.Text, Model.Cancellation);
-        if (General is not null && Model.Section == InspectorSection.General)
-        {
-            Progress.Style = Controls.Progress.SelectStyle(
-                Model.Target is { IsProgressMuted: true }
-            );
-            VisualStateManager.GoToState(
-                this,
-                Model.Target switch
-                {
-                    { CanRetry: true } => "RetryableError",
-                    { IsError: true } => "Error",
-                    _ => "Transferring",
-                },
-                false
-            );
-        }
+        ShowGeneral();
         RevealFile();
+    }
+
+    // A poll that changed only the target's facts updates what the bindings do
+    // not reach, without rebuilding the pane. The facts arrive as one notice
+    // each, so they are shown once, after the input already queued.
+    private void QueueFacts()
+    {
+        if (_factsQueued)
+        {
+            return;
+        }
+        _factsQueued = DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            _factsQueued = false;
+            if (!IsLoaded || _library is not null || !Model.IsActive || Model.IsReplacing)
+            {
+                return;
+            }
+            EmptyText.Text = Model.EmptyText;
+            ShowGeneral();
+            if (ShowsMap)
+            {
+                ShowTransfer();
+            }
+        });
+    }
+
+    private void ShowGeneral()
+    {
+        if (General is null || Model.Section != InspectorSection.General)
+        {
+            return;
+        }
+        Progress.Style = Controls.Progress.SelectStyle(Model.Target is { IsProgressMuted: true });
+        VisualStateManager.GoToState(
+            this,
+            Model.Target switch
+            {
+                { CanRetry: true } => "RetryableError",
+                { IsError: true } => "Error",
+                _ => "Transferring",
+            },
+            false
+        );
     }
 
     internal void RefreshText()

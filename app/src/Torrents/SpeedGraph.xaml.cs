@@ -57,9 +57,23 @@ public sealed partial class SpeedGraph : UserControl
     private Average[] _averages = [];
     private Extent? _extent;
 
+    // The geometries live as long as the control, and each draw rewrites them,
+    // so a draw creates no WinUI objects while the number of runs and ticks
+    // stays the same. _traces holds one entry per figure of the three paths.
+    private readonly PathGeometry _area = new();
+    private readonly PathGeometry _downloadPath = new();
+    private readonly PathGeometry _uploadPath = new();
+    private readonly List<Trace> _traces = [];
+    private readonly GeometryGroup _tickLines = new();
+    private readonly List<Tick> _ticks = [];
+
     public SpeedGraph()
     {
         InitializeComponent();
+        DownloadArea.Data = _area;
+        DownloadLine.Data = _downloadPath;
+        UploadLine.Data = _uploadPath;
+        Ticks.Data = _tickLines;
         FiveMinutes.Tag = 300L;
         Hour.Tag = 3600L;
         SixHours.Tag = 21600L;
@@ -344,30 +358,37 @@ public sealed partial class SpeedGraph : UserControl
 
     private void Draw(List<List<Average>> runs, Extent extent)
     {
-        var area = new PathGeometry();
-        var download = new PathGeometry();
-        var upload = new PathGeometry();
-        foreach (var run in runs)
+        for (var index = 0; index < runs.Count; index++)
         {
+            var run = runs[index];
             var downloads = Points(run, extent, average => average.Download);
             var uploads = Points(run, extent, average => average.Upload);
-            var fill = new PathFigure
+            if (index == _traces.Count)
             {
-                StartPoint = new Point(downloads[0].X, extent.Height),
-                IsClosed = true,
-            };
-            fill.Segments.Add(new LineSegment { Point = downloads[0] });
-            fill.Segments.Add(Curve(downloads));
-            fill.Segments.Add(
-                new LineSegment { Point = new Point(downloads[^1].X, extent.Height) }
-            );
-            area.Figures.Add(fill);
-            download.Figures.Add(Line(downloads));
-            upload.Figures.Add(Line(uploads));
+                var added = new Trace();
+                _traces.Add(added);
+                _area.Figures.Add(added.Area);
+                _downloadPath.Figures.Add(added.Download);
+                _uploadPath.Figures.Add(added.Upload);
+            }
+            var trace = _traces[index];
+            trace.Area.StartPoint = new Point(downloads[0].X, extent.Height);
+            trace.AreaStart.Point = downloads[0];
+            Curve(trace.AreaCurve, downloads);
+            trace.AreaEnd.Point = new Point(downloads[^1].X, extent.Height);
+            trace.Download.StartPoint = downloads[0];
+            Curve(trace.DownloadCurve, downloads);
+            trace.Upload.StartPoint = uploads[0];
+            Curve(trace.UploadCurve, uploads);
         }
-        DownloadArea.Data = area;
-        DownloadLine.Data = download;
-        UploadLine.Data = upload;
+        while (_traces.Count > runs.Count)
+        {
+            var last = _traces.Count - 1;
+            _area.Figures.RemoveAt(last);
+            _downloadPath.Figures.RemoveAt(last);
+            _uploadPath.Figures.RemoveAt(last);
+            _traces.RemoveAt(last);
+        }
     }
 
     private static Point[] Points(List<Average> run, Extent extent, Func<Average, double> rate)
@@ -408,8 +429,7 @@ public sealed partial class SpeedGraph : UserControl
                 break;
             }
         }
-        var ticks = new GeometryGroup();
-        TickLabels.Children.Clear();
+        var count = 0;
         var offset = (long)
             TimeZoneInfo
                 .Local.GetUtcOffset(DateTimeOffset.FromUnixTimeSeconds(extent.Start))
@@ -419,32 +439,38 @@ public sealed partial class SpeedGraph : UserControl
         for (var time = first; time <= extent.Start + extent.Length; time += interval)
         {
             var x = extent.At(time, 0).X;
-            ticks.Children.Add(
-                new LineGeometry
-                {
-                    StartPoint = new Point(x, 0),
-                    EndPoint = new Point(x, extent.Height),
-                }
-            );
-            var label = new TextBlock
+            if (count == _ticks.Count)
             {
-                Text = Time(time, "t"),
-                Style = (Style)Resources["SpeedGraphTickStyle"],
-                HorizontalAlignment = HorizontalAlignment.Left,
-            };
-            TickLabels.Children.Add(label);
+                var added = new Tick((Style)Resources["SpeedGraphTickStyle"]);
+                _ticks.Add(added);
+                _tickLines.Children.Add(added.Line);
+                TickLabels.Children.Add(added.Label);
+            }
+            var tick = _ticks[count++];
+            tick.Line.StartPoint = new Point(x, 0);
+            tick.Line.EndPoint = new Point(x, extent.Height);
+            var label = tick.Label;
+            label.Text = Time(time, "t");
+            label.Margin = default;
+            label.Visibility = Visibility.Visible;
             label.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
             var width = label.DesiredSize.Width;
             var left = Math.Clamp(x - width / 2, 0, Math.Max(0, extent.Width - width));
             if (left < right + 8)
             {
-                TickLabels.Children.Remove(label);
+                label.Visibility = Visibility.Collapsed;
                 continue;
             }
             label.Margin = new Thickness(left, 0, 0, 0);
             right = left + width;
         }
-        Ticks.Data = ticks;
+        while (_ticks.Count > count)
+        {
+            var last = _ticks.Count - 1;
+            _tickLines.Children.RemoveAt(last);
+            TickLabels.Children.RemoveAt(last);
+            _ticks.RemoveAt(last);
+        }
     }
 
     private void DrawMarker(Extent extent, Average? marked)
@@ -466,39 +492,49 @@ public sealed partial class SpeedGraph : UserControl
         Marker.Visibility = Visibility.Visible;
     }
 
-    private static PathFigure Line(Point[] points)
-    {
-        var figure = new PathFigure
-        {
-            StartPoint = points[0],
-            IsClosed = false,
-            IsFilled = false,
-        };
-        figure.Segments.Add(Curve(points));
-        return figure;
-    }
-
-    // A monotone cubic curve: each section stays between its two averages, so
-    // the curve shows no peak or dip that the averages do not have.
-    private static PolyBezierSegment Curve(Point[] points)
+    // Writes a monotone cubic curve into the segment: each section stays between
+    // its two averages, so the curve shows no peak or dip that the averages do
+    // not have. The segment's points change in place and keep their count when
+    // the number of averages stays the same.
+    private static void Curve(PolyBezierSegment segment, Point[] points)
     {
         var slopes = Slopes(points);
-        var segment = new PolyBezierSegment();
+        var target = segment.Points;
         for (var index = 0; index < points.Length - 1; index++)
         {
             var third = (points[index + 1].X - points[index].X) / 3;
-            segment.Points.Add(
+            Put(
+                target,
+                index * 3,
                 new Point(points[index].X + third, points[index].Y + slopes[index] * third)
             );
-            segment.Points.Add(
+            Put(
+                target,
+                index * 3 + 1,
                 new Point(
                     points[index + 1].X - third,
                     points[index + 1].Y - slopes[index + 1] * third
                 )
             );
-            segment.Points.Add(points[index + 1]);
+            Put(target, index * 3 + 2, points[index + 1]);
         }
-        return segment;
+        var length = (points.Length - 1) * 3;
+        while (target.Count > length)
+        {
+            target.RemoveAt(target.Count - 1);
+        }
+    }
+
+    private static void Put(PointCollection target, int index, Point point)
+    {
+        if (index < target.Count)
+        {
+            target[index] = point;
+        }
+        else
+        {
+            target.Add(point);
+        }
     }
 
     // Fritsch-Butland tangents: zero where the line turns, and otherwise a
@@ -768,6 +804,42 @@ public sealed partial class SpeedGraph : UserControl
         public string Value => graph._value;
 
         public void SetValue(string value) => throw new InvalidOperationException();
+    }
+
+    // The figures and segments that draw one run: the filled area under the
+    // download line, the download line and the upload line.
+    private sealed class Trace
+    {
+        public PathFigure Area { get; } = new() { IsClosed = true };
+        public LineSegment AreaStart { get; } = new();
+        public PolyBezierSegment AreaCurve { get; } = new();
+        public LineSegment AreaEnd { get; } = new();
+        public PathFigure Download { get; } = new() { IsClosed = false, IsFilled = false };
+        public PolyBezierSegment DownloadCurve { get; } = new();
+        public PathFigure Upload { get; } = new() { IsClosed = false, IsFilled = false };
+        public PolyBezierSegment UploadCurve { get; } = new();
+
+        public Trace()
+        {
+            Area.Segments.Add(AreaStart);
+            Area.Segments.Add(AreaCurve);
+            Area.Segments.Add(AreaEnd);
+            Download.Segments.Add(DownloadCurve);
+            Upload.Segments.Add(UploadCurve);
+        }
+    }
+
+    // A tick's dashed line and its time label. A label that would touch the
+    // previous one is collapsed, not removed, so the next draw can show it again.
+    private sealed class Tick
+    {
+        public LineGeometry Line { get; } = new();
+        public TextBlock Label { get; }
+
+        public Tick(Style style)
+        {
+            Label = new TextBlock { Style = style, HorizontalAlignment = HorizontalAlignment.Left };
+        }
     }
 
     private sealed record Average(double Time, double Download, double Upload)

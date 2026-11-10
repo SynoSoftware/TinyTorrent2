@@ -338,7 +338,7 @@ function Send-Timed([hashtable] $fields, [int] $seconds = 300) {
         $elapsed = $clock.ElapsedMilliseconds
         Assert ($size -gt 0 -and $size -le 16MB) 'Reply frame violates its limit'
         $reply = [Text.Encoding]::UTF8.GetString((Read-Within $size $seconds)) | ConvertFrom-Json
-    } while ($reply.type -eq 'detail')
+    } while ($reply.type -eq 'observation')
     Assert ($reply.request_id -eq $fields.request_id) 'Reply belongs to another request'
     return [pscustomobject]@{ reply = $reply; bytes = $size; milliseconds = $elapsed }
 }

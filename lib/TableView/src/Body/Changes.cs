@@ -1,70 +1,172 @@
-using System.Collections.ObjectModel;
+using System.Buffers;
 
 namespace Syno.TableView.Body;
 
 /// <summary>Plans collection edits without touching the live view or its native observers.</summary>
-internal sealed class Changes : Collection<object>
+/// <remarks>
+/// Rows are named by their slot (<see cref="Slots"/>), so where a row stands in either order is
+/// read from an array instead of found by its key. The plan works on a copy of the view taken
+/// from shared pools and given back when the plan is made; the edits stay in a pooled buffer until
+/// the view has applied them and the table calls <see cref="Return"/>.
+/// </remarks>
+internal sealed class Changes
 {
-    private readonly ItemIdentity _identity;
-    private readonly List<Edit> _edits = [];
+    private Edit[] _edits = [];
+    private int _count;
+    private int[] _slots = [];
+    private object?[] _rows = [];
+    private int _length;
+    private Func<int, object> _row = _ => throw new InvalidOperationException();
 
-    internal Changes(IReadOnlyList<object> rows, ItemIdentity identity)
-    {
-        _identity = identity;
-        foreach (var row in rows)
-            Items.Add(row);
-    }
+    /// <summary>
+    /// One edit to the view, in the order the view applies them. A removal and a resize carry no
+    /// row; a resize's index is the view's new length.
+    /// </summary>
+    internal readonly record struct Edit(EditKind Kind, int Index, object? Row);
 
-    internal abstract record Edit(int Index);
-    internal sealed record Insertion(int Index, object Item) : Edit(Index);
-    internal sealed record Removal(int Index) : Edit(Index);
-    internal sealed record Replacement(int Index, object Item) : Edit(Index);
-    internal IReadOnlyList<Edit> Edits => _edits;
+    /// <summary>What the list holds of the view while an update is prepared.</summary>
+    /// <param name="Realized">The view positions the list holds a container for.</param>
+    /// <param name="Reach">
+    /// How many leading positions its cache reaches: the visible rows and the cache around them,
+    /// without a pinned container far from them.
+    /// </param>
+    internal readonly record struct Screen(IReadOnlyList<int> Realized, int Reach);
+
+    internal ReadOnlySpan<Edit> Edits => _edits.AsSpan(0, _count);
     internal bool Changed { get; private set; }
 
-    internal void Prepare(IReadOnlyList<object> snapshot, IReadOnlyList<int> realized, IReadOnlySet<object> pinned) =>
-        Changed = Reconcile(snapshot, realized, pinned);
+    /// <summary>The order shares no row with the view, and <see cref="Flip"/> swapped it in.</summary>
+    internal bool IsDifferentList { get; private set; }
 
-    protected override void InsertItem(int index, object item)
+    /// <param name="view">The rows the view shows, in order.</param>
+    /// <param name="shown">The slot of each row of <paramref name="view"/>.</param>
+    /// <param name="order">The slots to show, in order.</param>
+    /// <param name="targets">Each slot's index in <paramref name="order"/>, or -1.</param>
+    /// <param name="row">The current row of a slot in <paramref name="order"/>.</param>
+    /// <param name="screen">What the list holds of the view.</param>
+    /// <param name="pinned">
+    /// Rows that stand at the same index in the view and the order and must keep their
+    /// containers, so they do not animate out and back in under the pointer.
+    /// </param>
+    internal void Prepare(
+        IReadOnlyList<object> view,
+        ArraySegment<int> shown,
+        ArraySegment<int> order,
+        int[] targets,
+        Func<int, object> row,
+        Screen screen,
+        IReadOnlySet<int> pinned
+    )
     {
-        base.InsertItem(index, item);
-        _edits.Add(new Insertion(index, item));
+        // Membership announces arrivals before the view shrinks to the order's length.
+        int length = view.Count + order.Count;
+        _slots = ArrayPool<int>.Shared.Rent(length);
+        _rows = ArrayPool<object?>.Shared.Rent(length);
+        _row = row;
+        shown.AsSpan().CopyTo(_slots);
+        for (int i = 0; i < view.Count; i++)
+        {
+            _rows[i] = view[i];
+        }
+
+        _length = view.Count;
+        try
+        {
+            Changed = Reconcile(order, targets, screen, pinned);
+        }
+        finally
+        {
+            ArrayPool<int>.Shared.Return(_slots);
+            ArrayPool<object?>.Shared.Return(_rows, clearArray: true);
+            _slots = [];
+            _rows = [];
+        }
     }
 
-    protected override void RemoveItem(int index)
+    /// <summary>Give the edit buffer back to its pool, once the view has applied the edits.</summary>
+    internal void Return()
     {
-        base.RemoveItem(index);
-        _edits.Add(new Removal(index));
+        if (_edits.Length > 0)
+        {
+            ArrayPool<Edit>.Shared.Return(_edits, clearArray: true);
+        }
+
+        _edits = [];
+        _count = 0;
     }
 
-    private void Put(int index, object item)
+    private void Add(EditKind kind, int index, object? row)
     {
-        if (ReferenceEquals(Items[index], item))
+        if (_count == _edits.Length)
+        {
+            Edit[] larger = ArrayPool<Edit>.Shared.Rent(Math.Max(16, _count * 2));
+            Array.Copy(_edits, larger, _count);
+            if (_edits.Length > 0)
+            {
+                ArrayPool<Edit>.Shared.Return(_edits, clearArray: true);
+            }
+
+            _edits = larger;
+        }
+
+        _edits[_count++] = new(kind, index, row);
+    }
+
+    private void Insert(int index, int slot)
+    {
+        object row = _row(slot);
+        Array.Copy(_slots, index, _slots, index + 1, _length - index);
+        Array.Copy(_rows, index, _rows, index + 1, _length - index);
+        _slots[index] = slot;
+        _rows[index] = row;
+        _length++;
+        Add(EditKind.Insert, index, row);
+    }
+
+    private void RemoveAt(int index)
+    {
+        _length--;
+        Array.Copy(_slots, index + 1, _slots, index, _length - index);
+        Array.Copy(_rows, index + 1, _rows, index, _length - index);
+        _rows[_length] = null;
+        Add(EditKind.Remove, index, null);
+    }
+
+    private void Put(int index, int slot)
+    {
+        object row = _row(slot);
+        if (_slots[index] == slot && ReferenceEquals(_rows[index], row))
+        {
             return;
-        Items[index] = item;
-        _edits.Add(new Replacement(index, item));
+        }
+
+        _slots[index] = slot;
+        _rows[index] = row;
+        Add(EditKind.Replace, index, row);
     }
 
-    /// <summary>Bring the view to <paramref name="snapshot"/>.</summary>
+    /// <summary>Bring the view to <paramref name="order"/>.</summary>
     /// <remarks>
     /// The owner's requirement: when the view is repopulated, the rows that leave animate out and
     /// the rows that arrive animate in, and the table is never empty in between. Only per-row
     /// notifications give the list that; a reset drops every container and shows the new rows in
     /// one step. So every change comes through here as removals and insertions, a sort included.
     /// <para>
-    /// A snapshot that is already the view, the same rows in the same order, costs one comparison
+    /// An order that is already the view, the same rows in the same order, costs one comparison
     /// per row and raises nothing; a new instance of a row takes its place quietly. The host
-    /// re-projects after ticks that changed nothing visible, and this is what keeps that free. A
-    /// snapshot that shares no row with the view is a different list, and <see cref="Flip"/>
+    /// re-projects after ticks that changed nothing visible, and this is what keeps that free. An
+    /// order that shares no row with the view is a different list, and <see cref="Flip"/>
     /// replaces it in one step.
     /// </para>
     /// <para>
-    /// Otherwise four passes, and the order of them is the point. Membership first, raised where it
-    /// happens, because the count is the one thing the list keeps for a row it has not realized.
-    /// Then every row leaving a run of realized positions, highest first. Then every position
-    /// outside those runs, set without a notification. Last, what each run is missing, ascending.
-    /// Removing before placing and placing before inserting is what keeps a row from being in the
-    /// view twice at any moment, which the list is never asked to make sense of.
+    /// Otherwise five passes, and the order of them is the point. Membership first, raised where
+    /// it happens within the list's cache. Then the view takes the order's length without a
+    /// notification, and the view announces that change in count at its end, after the update
+    /// (<see cref="View.CatchUp(long)"/>). Then every row leaving a run of realized positions,
+    /// highest first. Then every position outside those runs, set without a notification. Last,
+    /// what each run is missing, ascending. Removing before placing and placing before inserting is what
+    /// keeps a row from being in the view twice at any moment, which the list is never asked to
+    /// make sense of.
     /// </para>
     /// <para>
     /// The list realizes only the rows on screen, a small cache around them, and whatever it has
@@ -78,163 +180,160 @@ internal sealed class Changes : Collection<object>
     /// removes.
     /// </para>
     /// </remarks>
-    /// <param name="pinned">
-    /// Rows that stand at the same index in the view and the snapshot and must keep their
-    /// containers, so they do not animate out and back in under the pointer.
-    /// </param>
     private bool Reconcile(
-        IReadOnlyList<object> snapshot,
-        IReadOnlyList<int> realized,
-        IReadOnlySet<object> pinned
+        ReadOnlySpan<int> order,
+        int[] targets,
+        Screen screen,
+        IReadOnlySet<int> pinned
     )
     {
-        if (IsAlready(snapshot))
+        if (IsAlready(order))
         {
             return false;
         }
 
-        Dictionary<object, int> place = new(snapshot.Count, _identity);
-        for (int i = 0; i < snapshot.Count; i++)
+        if (_length > 0 && order.Length > 0 && !SharesRow(targets))
         {
-            place[snapshot[i]] = i;
-        }
-
-        List<int> held = new(realized);
-        held.Sort();
-
-        if (Count > 0 && snapshot.Count > 0 && !this.Any(place.ContainsKey))
-        {
-            Flip(snapshot, held);
+            Flip(order);
+            IsDifferentList = true;
             return true;
         }
 
-        Membership(snapshot, place, held);
+        // A container on a vacant position shows no row and takes no part.
+        List<int> held = screen.Realized.Where(index => index < _length).ToList();
+        held.Sort();
+
+        Membership(order, targets, held, Math.Min(screen.Reach, _length));
+        Resize(order.Length);
+        for (int i = 0; i < held.Count; i++)
+        {
+            if (held[i] >= _length)
+            {
+                held[i] = -1;
+            }
+        }
 
         List<(int Start, int End)> runs = Runs(held);
-        List<int> removed = RemoveFromRuns(place, runs, pinned);
-        PlaceQuietly(snapshot, runs, removed);
-        InsertIntoRuns(snapshot, runs);
+        List<int> removed = RemoveFromRuns(targets, runs, pinned);
+        PlaceQuietly(order, runs, removed);
+        InsertIntoRuns(order, runs);
 
         return true;
     }
 
-    /// <summary>
-    /// A snapshot that shares no row with the view: a different list. The rows on screen animate
-    /// out and the new rows at their positions animate in, and every other position takes its new
-    /// row without a notification, so the list is told only about its containers and the change
-    /// in count. Raising every row's removal and arrival instead costs 6 to 9 microseconds of
-    /// native work per row however far off screen it is, about 90 ms for 5,000 rows each way.
-    /// </summary>
-    /// <param name="realized">The positions the list holds a container for, ascending.</param>
-    private void Flip(IReadOnlyList<object> snapshot, List<int> realized)
+    private bool SharesRow(int[] targets)
     {
-        for (int r = realized.Count - 1; r >= 0; r--)
+        for (int i = 0; i < _length; i++)
         {
-            RemoveAt(realized[r]);
+            if (targets[_slots[i]] >= 0)
+            {
+                return true;
+            }
         }
 
-        // Every new row except the ones inserted with a notification below is placed quietly, so
-        // the count before those inserts is the new count less their number.
-        List<int> shown = ShownAfterFlip(realized, snapshot.Count);
-        int quiet = snapshot.Count - shown.Count;
-        while (Count > quiet)
+        return false;
+    }
+
+    /// <summary>
+    /// An order that shares no row with the view: a different list, such as another torrent's
+    /// peers. Every position takes its new row without a notification, and only the change in
+    /// count is raised, at the end, by the view. The containers the list holds stay and show the
+    /// new rows (<c>Table.RebindRows</c>), so a switch builds no row and plays no animation;
+    /// contract section 5.3 records why.
+    /// </summary>
+    private void Flip(ReadOnlySpan<int> order)
+    {
+        Resize(order.Length);
+        for (int i = 0; i < _length; i++)
         {
-            RemoveAt(Count - 1);
-        }
-
-        int at = 0;
-        int next = 0;
-        for (int i = 0; i < snapshot.Count; i++)
-        {
-            if (next < shown.Count && shown[next] == i)
-            {
-                next++;
-                continue;
-            }
-
-            if (at < Count)
-            {
-                Put(at, snapshot[i]);
-            }
-            else
-            {
-                Insert(at, snapshot[i]);
-            }
-
-            at++;
-        }
-
-        foreach (int i in shown)
-        {
-            Insert(i, snapshot[i]);
+            Put(i, order[i]);
         }
     }
 
     /// <summary>
-    /// The positions whose new rows <see cref="Flip"/> inserts with a notification, ascending:
-    /// every realized position the new list still has, and for each realized position past its
-    /// end, one counted back from the end, where the list's offset lands once it clamps to the
-    /// shorter list. Without those, a list scrolled past the new end would show the new rows with
-    /// no arrival.
+    /// Rows joining or leaving within the first <paramref name="head"/> positions, raised where
+    /// they happen, which leaves the panel's scroll anchoring around the rows it holds as it was.
+    /// Past the head the list holds no container and keeps nothing but the count, so a row that
+    /// joins or leaves there changes only the count: <see cref="Resize"/> takes it, and the view
+    /// announces it at its end.
     /// </summary>
-    private static List<int> ShownAfterFlip(List<int> realized, int count)
+    /// <param name="head">
+    /// The positions the list's cache reaches. It moves with each change raised inside it, so it
+    /// always ends at the same row.
+    /// </param>
+    private void Membership(ReadOnlySpan<int> order, int[] targets, List<int> held, int head)
     {
-        HashSet<int> shown = new(realized.Where(index => index < count));
-        int beyond = realized.Count - shown.Count;
-        for (int i = count - 1; beyond > 0 && i >= 0; i--)
+        for (int i = head - 1; i >= 0; i--)
         {
-            if (shown.Add(i))
-            {
-                beyond--;
-            }
-        }
-
-        List<int> ascending = new(shown);
-        ascending.Sort();
-        return ascending;
-    }
-
-    /// <summary>
-    /// Rows joining or leaving, raised where they happen. The count is the one thing the list keeps
-    /// for a row it has not realized, so this pass is announced in full however far off screen it
-    /// is, and raising it at the true index leaves the panel's scroll anchoring as it is today.
-    /// </summary>
-    private void Membership(
-        IReadOnlyList<object> snapshot,
-        Dictionary<object, int> place,
-        List<int> held
-    )
-    {
-        for (int i = Count - 1; i >= 0; i--)
-        {
-            if (!place.ContainsKey(this[i]))
+            if (targets[_slots[i]] < 0)
             {
                 RemoveAt(i);
                 Shift(held, i, -1);
+                head--;
             }
         }
 
-        bool[] present = new bool[snapshot.Count];
-        for (int i = 0; i < Count; i++)
+        bool[] present = ArrayPool<bool>.Shared.Rent(order.Length);
+        try
         {
-            present[place[this[i]]] = true;
-        }
-
-        for (int i = 0; i < snapshot.Count; i++)
-        {
-            if (present[i])
+            Array.Clear(present, 0, order.Length);
+            for (int i = 0; i < _length; i++)
             {
-                continue;
+                // Rows past the head that leave are still here, and are in no place of the order.
+                if (targets[_slots[i]] >= 0)
+                {
+                    present[targets[_slots[i]]] = true;
+                }
             }
 
-            // The snapshot's index, clamped: the view is still in its old order here, so this is
-            // where the row belongs at the end rather than where it belongs now. The passes below
-            // put every row in its place; this one only has to get the membership and the count
-            // right, and to leave the index it inserted at valid.
-            int at = Math.Min(i, Count);
-            Insert(at, snapshot[i]);
-            Shift(held, at, 1);
+            for (int i = 0; i < order.Length; i++)
+            {
+                if (present[i])
+                {
+                    continue;
+                }
+
+                // The order's index, clamped: the view is still in its old order here, so this is
+                // where the row belongs at the end rather than where it belongs now. The passes
+                // below put every row in its place; this one only has to get the membership right
+                // inside the head, and to leave the index it inserted at valid.
+                int at = Math.Min(i, _length);
+                if (at >= head)
+                {
+                    break;
+                }
+
+                Insert(at, order[i]);
+                Shift(held, at, 1);
+                head++;
+            }
         }
+        finally
+        {
+            ArrayPool<bool>.Shared.Return(present);
+        }
+    }
+
+    /// <summary>
+    /// Make the view as long as the order without a notification: past the last position the
+    /// list holds a container for, a change in count is all the list needs to learn, and the view
+    /// tells it after the update. A new position is placed by the passes that follow.
+    /// </summary>
+    private void Resize(int length)
+    {
+        if (length == _length)
+        {
+            return;
+        }
+
+        for (int i = Math.Min(length, _length); i < Math.Max(length, _length); i++)
+        {
+            _slots[i] = -1;
+            _rows[i] = null;
+        }
+
+        _length = length;
+        Add(EditKind.Resize, length, null);
     }
 
     /// <summary>
@@ -307,9 +406,9 @@ internal sealed class Changes : Collection<object>
     /// overwritten, and a focused row pinned far from the viewport makes a second run ordinary.
     /// </remarks>
     private List<int> RemoveFromRuns(
-        Dictionary<object, int> place,
+        int[] targets,
         List<(int Start, int End)> runs,
-        IReadOnlySet<object> pinned
+        IReadOnlySet<int> pinned
     )
     {
         List<int> removed = new();
@@ -317,7 +416,7 @@ internal sealed class Changes : Collection<object>
         for (int r = runs.Count - 1; r >= 0; r--)
         {
             (int start, int end) = runs[r];
-            bool[] stays = RunSurvivors(place, start, end, pinned);
+            bool[] stays = RunSurvivors(targets, start, end, pinned);
 
             for (int i = end - 1; i >= start; i--)
             {
@@ -339,7 +438,7 @@ internal sealed class Changes : Collection<object>
     /// row if it ever scrolls there.
     /// </summary>
     private void PlaceQuietly(
-        IReadOnlyList<object> snapshot,
+        ReadOnlySpan<int> order,
         List<(int Start, int End)> runs,
         List<int> removed
     )
@@ -348,7 +447,7 @@ internal sealed class Changes : Collection<object>
         int next = 0;
         int run = 0;
 
-        for (int j = 0; j < snapshot.Count; j++)
+        for (int j = 0; j < order.Length; j++)
         {
             while (next < removed.Count && removed[next] < j)
             {
@@ -367,7 +466,7 @@ internal sealed class Changes : Collection<object>
             }
 
             // Its place right now is its final one less the removals the runs made below it.
-            Put(j - gone, snapshot[j]);
+            Put(j - gone, order[j]);
         }
     }
 
@@ -376,49 +475,47 @@ internal sealed class Changes : Collection<object>
     /// filled is already final by the time it is reached, so the row standing there can be read
     /// directly.
     /// </summary>
-    private void InsertIntoRuns(IReadOnlyList<object> snapshot, List<(int Start, int End)> runs)
+    private void InsertIntoRuns(ReadOnlySpan<int> order, List<(int Start, int End)> runs)
     {
         foreach ((int start, int end) in runs)
         {
             for (int i = start; i < end; i++)
             {
-                object next = snapshot[i];
-
-                if (i < Count && _identity.Equals(this[i], next))
+                if (i < _length && _slots[i] == order[i])
                 {
-                    // Same row, new instance. A notification would make the list build a new
-                    // container and fade it in, so the row would blink although it stays; the
+                    // Same row, perhaps a new instance. A notification would make the list build a
+                    // new container and fade it in, so the row would blink although it stays; the
                     // table rebinds the existing container instead.
-                    Put(i, next);
+                    Put(i, order[i]);
                 }
                 else
                 {
-                    Insert(i, next);
+                    Insert(i, order[i]);
                 }
             }
         }
     }
 
     /// <summary>
-    /// The snapshot is the view as it stands: the same rows in the same order. A new instance of
-    /// a row takes its place without a notification, also when a later row differs, because the
-    /// passes after this one compare rows by identity and carry the new instance where they move.
+    /// The order is the view as it stands: the same rows in the same order. A new instance of a
+    /// row takes its place without a notification, also when a later row differs, because the
+    /// passes after this one compare rows by slot and carry the new instance where they move.
     /// </summary>
-    private bool IsAlready(IReadOnlyList<object> snapshot)
+    private bool IsAlready(ReadOnlySpan<int> order)
     {
-        if (snapshot.Count != Count)
+        if (order.Length != _length)
         {
             return false;
         }
 
-        for (int i = 0; i < Count; i++)
+        for (int i = 0; i < _length; i++)
         {
-            if (!_identity.Equals(this[i], snapshot[i]))
+            if (_slots[i] != order[i])
             {
                 return false;
             }
 
-            Put(i, snapshot[i]);
+            Put(i, order[i]);
         }
 
         return true;
@@ -426,9 +523,9 @@ internal sealed class Changes : Collection<object>
 
     /// <summary>
     /// Which rows of the run at [<paramref name="start"/>, <paramref name="end"/>) already stand in
-    /// the snapshot's order and can stay where they are: a longest run of rows whose places in the
-    /// snapshot increase. A row whose place in the snapshot is outside this run cannot stay in it at
-    /// all, and every other row that is not in that longest run has to move.
+    /// the order and can stay where they are: a longest run of rows whose places in the order
+    /// increase. A row whose place in the order is outside this run cannot stay in it at all, and
+    /// every other row that is not in that longest run has to move.
     /// </summary>
     /// <remarks>
     /// Per run, never over the whole view. With one survivor set for the whole view, the single row
@@ -443,18 +540,13 @@ internal sealed class Changes : Collection<object>
     /// pinned row is never removed.
     /// </para>
     /// </remarks>
-    private bool[] RunSurvivors(
-        Dictionary<object, int> place,
-        int start,
-        int end,
-        IReadOnlySet<object> pinned
-    )
+    private bool[] RunSurvivors(int[] targets, int start, int end, IReadOnlySet<int> pinned)
     {
         int count = end - start;
         int[] target = new int[count];
         for (int row = 0; row < count; row++)
         {
-            int to = place[this[start + row]];
+            int to = targets[_slots[start + row]];
             target[row] = to >= start && to < end ? to : -1;
         }
 
@@ -468,7 +560,7 @@ internal sealed class Changes : Collection<object>
                     continue;
                 }
 
-                if (pinned.Contains(this[start + row]))
+                if (pinned.Contains(_slots[start + row]))
                 {
                     above = target[row];
                 }
@@ -486,7 +578,7 @@ internal sealed class Changes : Collection<object>
                     continue;
                 }
 
-                if (pinned.Contains(this[start + row]))
+                if (pinned.Contains(_slots[start + row]))
                 {
                     below = target[row];
                 }
@@ -507,7 +599,7 @@ internal sealed class Changes : Collection<object>
         {
             if (target[row] < 0)
             {
-                // Its place in the snapshot is outside this run, so it leaves whatever else happens.
+                // Its place in the order is outside this run, so it leaves whatever else happens.
                 before[row] = -1;
                 continue;
             }
@@ -543,5 +635,4 @@ internal sealed class Changes : Collection<object>
 
         return stays;
     }
-
 }

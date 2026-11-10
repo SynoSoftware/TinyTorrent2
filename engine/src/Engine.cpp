@@ -121,6 +121,22 @@ Json Failure(ErrorCode code, std::string detail)
     return {{"ok", false}, {"error", {{"code", ToString(code)}, {"detail", std::move(detail)}}}};
 }
 
+namespace
+{
+// Marks the binary values that hold JSON text; the engine sends no other binary.
+constexpr std::uint64_t fragmentSubtype = 'J';
+}
+
+Json Fragment(std::vector<std::uint8_t> text)
+{
+    return Json::binary(std::move(text), fragmentSubtype);
+}
+
+bool IsFragment(Json const& value)
+{
+    return value.is_binary() && value.get_binary().has_subtype() && value.get_binary().subtype() == fragmentSubtype;
+}
+
 std::wstring Executable()
 {
     // Windows paths are at most 32,767 characters.
@@ -199,11 +215,11 @@ std::vector<Setting> Engine::NotificationSettings()
 Engine::Engine(std::filesystem::path directory, std::function<void()> wake) :
     state_(std::make_unique<State>(std::move(directory), std::move(wake))) {}
 Engine::~Engine() = default;
-void Engine::Execute(Json const& request, std::string const& connectionId, Reply reply)
+void Engine::Execute(Json const& request, std::string const& connectionId, Reply reply, Push push)
 {
     try
     {
-        state_->Execute(request, connectionId, reply);
+        state_->Execute(request, connectionId, reply, std::move(push));
     }
     catch (std::exception const& error)
     {

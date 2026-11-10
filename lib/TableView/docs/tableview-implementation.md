@@ -14,9 +14,11 @@ for this documentation review.
 | Public control, template lifetime, composition | [Table](../src/Table.cs) and its parts in [Table/](../src/Table/). |
 | Source subscription and coherent source capture | [Body.Source](../src/Body/Source.cs). |
 | Optional child membership and subscriptions | [Hierarchy](../src/Hierarchy.cs), configured by `Schema<TRow>.Hierarchy`. |
-| Worker key and sort-key capture, ordering, holds, hierarchy projection and position indices | [Body.Projection](../src/Body/Projection.cs), from the source snapshot and UI state captured by [Table/View](../src/Table/View.cs). |
-| Worker collection-edit planning | [Body.Changes](../src/Body/Changes.cs). |
-| Displayed sequence, applying prepared edits and the selected state the list reads | [Body.View](../src/Body/View.cs). |
+| Worker ordering, holds, sorted merge and hierarchy projection for one update | [Body.Projection](../src/Body/Projection.cs), from the source snapshot and UI state captured by [Table/View](../src/Table/View.cs). |
+| Each row's slot and what updates keep by slot: view index, sibling place, source numbering, stale sort keys; committed on the UI thread, or, for a list that shares no row with the view, swapped for a key map the worker built | [Body.Slots](../src/Body/Slots.cs); the column's kept sort keys are [Body.SortKeys](../src/Body/SortKeys.cs). |
+| Worker collection-edit planning, from what the list holds (`Changes.Screen`) | [Body.Changes](../src/Body/Changes.cs). |
+| Displayed sequence, applying prepared edits and the selected state the list reads | [Body.View](../src/Body/View.cs). It has two faces: `Rows`, every row the table shows, and the collection itself, the positions the list has been told of. |
+| Telling the list a change in count in slices, and showing a different list's rows in the containers below the screen | `CatchUp` and `QueueRebind` in [Table/View](../src/Table/View.cs). |
 | Effective layout | [EffectiveLayout](../src/EffectiveLayout.cs). |
 | Realized items reported to the host | `RealizedItems` in [Table/View](../src/Table/View.cs), read from the row panel's cache range; the panel's `CacheLength` in [Generic.xaml](../src/Themes/Generic.xaml) sets the margin. |
 | Shared header and row arrangement | [CellsPanel](../src/CellsPanel.cs). |
@@ -71,8 +73,9 @@ The private view sends native bindable-vector insert, remove and replacement
 events. The nongeneric sender uses a fixed interface ID instead of generating a
 generic vector ID for every callback. It also avoids projecting .NET
 collection-event arguments and their item lists for every membership change,
-a measured cost on large Library searches. The reconciliation algorithm and
-the positions it announces remain unchanged.
+a measured cost on large Library searches. It raises every event with one
+reused arguments object, as WinUI's own vectors do, and takes a new one only
+when a listener still holds the last.
 
 The private view also implements `ISelectionInfo`, answering from the table's
 selection model. The list reads a row's selected state from it when it builds
@@ -85,7 +88,12 @@ notes describing a `Committed` phase and calling the marquee during a row drag
 are stale; inspect the current transitions before proposing a fix. Deferred click
 decisions preserve the press/release contract, not an accidental processing delay.
 
-Keep reconciliation bounded by the containers the list actually holds. The
+Keep reconciliation bounded by the containers the list actually holds, and
+membership by the positions its cache reaches; past them the view tells the list
+only the change in count, after the update (contract section 5.3). The positions
+the list holds are read once and kept until `ContainerContentChanging` or a view
+change can have moved them, because each read walks the panel with two native
+calls per container. The
 implementation uses remove/insert notifications rather than `Move`, and avoids
 clearing the displayed collection. Earlier work observed whole-list flashing on
 `ObservableCollection.Move`; preserve this constraint. If new evidence differs,

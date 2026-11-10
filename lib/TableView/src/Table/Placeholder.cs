@@ -125,7 +125,7 @@ public sealed partial class Table
             return;
         }
 
-        if (_view.Count > 0)
+        if (View.Count > 0)
         {
             _placeholderPresenter.Content = null;
             _placeholderPresenter.ContentTemplate = null;

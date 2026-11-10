@@ -192,7 +192,6 @@ public enum Consumer
     Summary,
     Inspector,
     Draft,
-    Files,
 }
 
 // Who requested an engine command. Only an accepted command the person

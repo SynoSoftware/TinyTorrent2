@@ -105,6 +105,10 @@ public sealed partial class LibraryTable : UserControl
             if (_model.RowsSearched && table.ItemsSource is IReadOnlyList<LibraryRow> shown)
                 table.Release([.. shown.Except(_model.Rows), .. _model.Rows.Except(shown)]);
             table.ItemsSource = _model.Rows;
+            // A row keeps its object across searches, so the table reads its
+            // new sort key only when named.
+            if (_model.UpdatedRows.Count > 0)
+                table.RefreshView(_model.UpdatedRows);
         }
         table.Selection = selection;
         if (created)

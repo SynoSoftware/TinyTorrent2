@@ -87,6 +87,41 @@ internal enum HitTarget
     EmptySurface,
 }
 
+/// <summary>
+/// Where a change the person caused stands after the host withdrew its source
+/// (<see cref="Table.Withdraw"/>).
+/// </summary>
+internal enum PersonChange
+{
+    /// <summary>No change of the person's is on its way.</summary>
+    None,
+
+    /// <summary>The host withdrew its source, and the next source it sets is the person's change.</summary>
+    Expected,
+
+    /// <summary>The table holds the person's source and has not shown it yet; it applies whole.</summary>
+    Pending,
+}
+
+/// <summary>What one of <see cref="Body.Changes"/>' edits does to the view.</summary>
+internal enum EditKind
+{
+    /// <summary>Insert a row, with a notification, so the list animates it in.</summary>
+    Insert,
+
+    /// <summary>Remove a row, with a notification, so the list animates it out.</summary>
+    Remove,
+
+    /// <summary>Set a row without a notification; the list holds no container there or the table rebinds it.</summary>
+    Replace,
+
+    /// <summary>
+    /// Make the view as many rows long as the edit's index, without a notification. The list
+    /// learns the change in count at the end of the view, from <see cref="Body.View.CatchUp(long)"/>.
+    /// </summary>
+    Resize,
+}
+
 /// <summary>The gesture on the header, from press to release.</summary>
 internal enum HeaderGesture
 {

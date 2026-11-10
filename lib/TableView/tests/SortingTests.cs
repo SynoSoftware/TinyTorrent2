@@ -149,9 +149,11 @@ public class SortingTests
             await h.Table.ViewReady;
             fails = true;
 
-            // The release re-projects the accepted sort, so its keys are read on the worker:
-            // the failure faults ViewReady and reaches the UI exception boundary.
+            // The release re-projects the accepted sort with a row named as changed, so that row's
+            // key is read on the worker: the failure faults ViewReady and reaches the UI exception
+            // boundary.
             var failure = TestHost.TrapAsync();
+            h.Table.RefreshView(new object[] { h.Rows[0] });
             h.Table.Release(new object[] { removed });
             Assert.IsInstanceOfType<InvalidOperationException>(await failure.WaitAsync(TimeSpan.FromSeconds(5)));
             Assert.IsTrue(h.Table.ViewReady.IsFaulted);
@@ -227,6 +229,23 @@ public class SortingTests
                 h.ViewKeys(),
                 "natural order returns"
             );
+        });
+
+    [TestMethod]
+    public Task ARowThatJoinsAfterASortChangeTakesItsSortedPlace() =>
+        TestHost.RunAsync(async () =>
+        {
+            SortHarness h = await SortHarness.LoadAsync(
+                new[] { 3, 1, 2 },
+                configure: table => table.SortInterval = TimeSpan.Zero
+            );
+
+            // The sort change is the view's second order, after the load's.
+            await h.Activate(0);
+            h.Rows.Add(new SortRow("arrival", 0));
+            await h.Table.ViewReady;
+
+            CollectionAssert.AreEqual(new[] { "arrival", "k1", "k2", "k0" }, h.ViewKeys());
         });
 
     [TestMethod]
@@ -401,6 +420,31 @@ public class SortingTests
             await h.Table.ViewReady;
 
             CollectionAssert.AreEqual(new[] { "k0", "k1", "k2" }, h.ViewKeys());
+        });
+
+    /// <summary>
+    /// A refresh that names the rows whose values changed reads only their keys and places each
+    /// among the other rows, which keep the order the last sort gave them. Equal keys keep source
+    /// order, as a sort of every row would.
+    /// </summary>
+    [TestMethod]
+    public Task Section9_RefreshViewOfNamedRowsPlacesThemAmongTheOthers() =>
+        TestHost.RunAsync(async () =>
+        {
+            SortHarness h = await SortHarness.LoadAsync(
+                new[] { 5, 1, 4, 2, 3 },
+                configure: table => table.SortInterval = TimeSpan.Zero
+            );
+            await h.Activate(0);
+            CollectionAssert.AreEqual(new[] { "k1", "k3", "k4", "k2", "k0" }, h.ViewKeys());
+
+            h.Rows[0].Rank = 0;
+            h.Rows[2].Rank = 3;
+            h.Table.RefreshView(new object[] { h.Rows[0], h.Rows[2] });
+            await h.Table.ViewReady;
+
+            // k2 now has k4's rank and comes first, because the source has it first.
+            CollectionAssert.AreEqual(new[] { "k0", "k1", "k3", "k2", "k4" }, h.ViewKeys());
         });
 
     /// <summary>

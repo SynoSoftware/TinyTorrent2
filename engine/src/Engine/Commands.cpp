@@ -24,6 +24,7 @@ constexpr CommandEntry commands[] = {
     {"add", Command::Add, Publication::Execute},
     {"merge_trackers", Command::MergeTrackers, Publication::Execute},
     {"torrent", Command::Torrent, Publication::None},
+    {"subscribe", Command::Subscribe, Publication::None},
     {"files", Command::Files, Publication::None},
     {"tree", Command::Tree, Publication::None},
     {"edit", Command::Edit, Publication::Execute},
@@ -131,7 +132,7 @@ std::optional<ErrorCode> Engine::State::Refusal() const
 
 // Reads each request into typed values; the operations it calls never see
 // the request.
-void Engine::State::Execute(Json const& request, std::string const& connectionId, Reply reply)
+void Engine::State::Execute(Json const& request, std::string const& connectionId, Reply reply, Push push)
 {
     auto name = request.at("command").get<std::string>();
     auto entry = std::ranges::find(commands, std::string_view(name), &CommandEntry::name);
@@ -139,7 +140,7 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
     if (command == Command::Snapshot)
     {
         if (request.value("subscribe", false))
-            snapshotSubscribers[connectionId] = reply;
+            snapshotSubscribers[connectionId] = push;
         reply(Success(Snapshot()));
         RequestStatus();
         return;
@@ -341,12 +342,6 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
     }
     case Command::Torrent:
     {
-        if (request.value("release", false))
-        {
-            ReleaseReading(connectionId);
-            reply(Success());
-            break;
-        }
         std::optional<TorrentView> view;
         if (request.contains("view"))
         {
@@ -357,7 +352,7 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
                 return;
             }
         }
-        Reading::Read read{connectionId, request.at("torrent_id").get<std::string>(), view, reply};
+        Reader read{connectionId, request.at("torrent_id").get<std::string>(), view, reply};
         if (request.contains("folders") || request.contains("files"))
         {
             auto files = request.value("files", std::vector<int>());
@@ -366,18 +361,40 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
                 reply(Failure(ErrorCode::InvalidRequest));
                 return;
             }
-            read.loaded = Reading::Loaded{ReadPaths(request, "folders"), {files.begin(), files.end()}};
+            read.loaded = Loaded{ReadPaths(request, "folders"), {files.begin(), files.end()}};
         }
-        if (request.contains("context"))
+        ReadDetail(std::move(read));
+        break;
+    }
+    case Command::Subscribe:
+    {
+        auto ids = TorrentIds(request);
+        if (ids.empty())
         {
-            if (!view || !request.at("context").is_number_integer())
+            ReleaseReading(connectionId);
+            reply(Success());
+            break;
+        }
+        auto section = request.at("section").get<std::string>();
+        auto view = Parse(views, section);
+        if (!view || !request.at("context").is_number_integer())
+        {
+            reply(Failure(ErrorCode::InvalidRequest));
+            return;
+        }
+        std::optional<Loaded> loaded;
+        if (request.contains("folders") || request.contains("files"))
+        {
+            auto files = request.value("files", std::vector<int>());
+            if (view != TorrentView::Files || ids.size() != 1 || files.size() > fileWindow)
             {
                 reply(Failure(ErrorCode::InvalidRequest));
                 return;
             }
-            read.context = request.at("context").get<std::int64_t>();
+            loaded = Loaded{ReadPaths(request, "folders"), {files.begin(), files.end()}};
         }
-        ReadDetail(std::move(read));
+        Subscribe(connectionId, request.at("context").get<std::int64_t>(), *view, section, ids, loaded, push);
+        reply(Success());
         break;
     }
     case Command::Files:
@@ -489,8 +506,6 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
             reply(Failure(ErrorCode::InvalidRequest));
             return;
         }
-        if (request.value("release_detail", false))
-            ReleaseReading(connectionId);
         auto const* history = &this->history;
         Json data{{"session_id", sessionId}};
         if (request.contains("torrent_id"))

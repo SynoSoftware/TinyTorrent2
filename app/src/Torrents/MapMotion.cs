@@ -64,6 +64,7 @@ internal sealed class MapMotion : IDisposable
     // Render worker only.
     private CanvasDevice? _device;
     private float _dpi;
+    private Sprites? _sprites;
     private Completed? _completed;
 
     // The game loop owns simulation and publishes detached display state.
@@ -402,8 +403,21 @@ internal sealed class MapMotion : IDisposable
                 picture.Dispose();
                 continue;
             }
-            return new(device, view, _dpi);
+            return new(SpritesFor(device), view);
         }
+    }
+
+    private Sprites SpritesFor(CanvasDevice device)
+    {
+        if (_sprites is null || !ReferenceEquals(_sprites.Device, device) || _sprites.Dpi != _dpi)
+        {
+            _sprites?.Release();
+            // A failed creation leaves no released set for a later call to
+            // release again.
+            _sprites = null;
+            _sprites = new Sprites(device, _dpi);
+        }
+        return _sprites;
     }
 
     private void Return(Picture picture)
@@ -517,7 +531,7 @@ internal sealed class MapMotion : IDisposable
                     try
                     {
                         RenderMap(request);
-                        delay = _again || _renderer?.HasStaleBorders == true ? TimeSpan.Zero : _renderer?.Delay;
+                        delay = _again || _renderer?.HasStaleStrokes == true ? TimeSpan.Zero : _renderer?.Delay;
                     }
                     catch (OperationCanceledException) when (request.Cancellation.IsCancellationRequested)
                     {
@@ -553,6 +567,8 @@ internal sealed class MapMotion : IDisposable
                 Return(pending.Picture);
             while (_free.TryDequeue(out var picture))
                 picture.Dispose();
+            _sprites?.Release();
+            _sprites = null;
             _changed.Dispose();
             _shutdown.Dispose();
         }
@@ -750,8 +766,8 @@ internal sealed class MapMotion : IDisposable
             else
                 Draw(raster, input.Background, (geography, arcs) => renderer.Draw(geography, arcs, input.Palette, highlight, cancellation), request);
         }
-        else if (renderer.HasStaleBorders)
-            renderer.StrokeBorders(cancellation);
+        else if (renderer.HasStaleStrokes)
+            renderer.RebuildStrokes(cancellation);
         if (!draw && _completed is { } completed
             && (!ReferenceEquals(renderer.Scene, completed.Scene) || !ReferenceEquals(input.Model, completed.Input?.Model)))
         {
@@ -769,7 +785,7 @@ internal sealed class MapMotion : IDisposable
         cancellation.ThrowIfCancellationRequested();
         _highlight = highlight;
         var ready = Volatile.Read(ref _ready);
-        if (!_again && !renderer.HasStaleBorders && !ready.Task.IsCompleted)
+        if (!_again && !renderer.HasStaleStrokes && !ready.Task.IsCompleted)
             _dispatcher.TryEnqueue(() =>
             {
                 if (!_disposed && ReferenceEquals(input, _input) && view == _view)
@@ -1183,19 +1199,65 @@ internal sealed class MapMotion : IDisposable
     /// </summary>
     private sealed class Picture : IDisposable
     {
+        private readonly Sprites _sprites;
         private int _references = 1;
-        internal CanvasDevice Device { get; }
-        internal float Dpi { get; }
+        internal CanvasDevice Device => _sprites.Device;
+        internal float Dpi => _sprites.Dpi;
 
-        internal Picture(CanvasDevice device, MapView view, float dpi)
+        internal Picture(Sprites sprites, MapView view)
+        {
+            _sprites = sprites;
+            sprites.Retain();
+            Size = view.Size;
+            try
+            {
+                Bitmap = new(sprites.Device, (float)view.Size.Width, (float)view.Size.Height, sprites.Dpi);
+                Arcs = new(sprites.Device, (float)view.Size.Width, (float)view.Size.Height, sprites.Dpi);
+            }
+            catch
+            {
+                Dispose();
+                throw;
+            }
+        }
+
+        /// <summary>The size in DIPs it was made for, which its pixels round.</summary>
+        internal Size Size { get; }
+
+        internal CanvasRenderTarget Bitmap { get; }
+        internal CanvasRenderTarget Arcs { get; }
+        internal CanvasRenderTarget Mark => _sprites.Mark;
+        internal CanvasRenderTarget Dot => _sprites.Dot;
+        internal CanvasRenderTarget Halo => _sprites.Halo;
+        internal void Retain() => Interlocked.Increment(ref _references);
+        internal bool Release() => Interlocked.Decrement(ref _references) == 0;
+
+        public void Dispose()
+        {
+            Bitmap?.Dispose();
+            Arcs?.Dispose();
+            _sprites.Release();
+        }
+    }
+
+    /// <summary>
+    /// The dot, mark and halo sprites for one device and DPI. Every picture of
+    /// that device and DPI draws the same pixels, so they share one set. The
+    /// render worker owns the current set and each picture holds a reference,
+    /// because the game loop draws with the sprites of the picture it shows
+    /// after the worker has moved on to another device or DPI. The last
+    /// reference disposes the set, and every picture is disposed on the worker.
+    /// </summary>
+    private sealed class Sprites
+    {
+        private int _references = 1;
+
+        internal Sprites(CanvasDevice device, float dpi)
         {
             Device = device;
             Dpi = dpi;
-            Size = view.Size;
-            Bitmap = new(device, (float)view.Size.Width, (float)view.Size.Height, dpi);
             try
             {
-                Arcs = new(device, (float)view.Size.Width, (float)view.Size.Height, dpi);
                 Mark = new(device, 13, 8, dpi);
                 DrawMark(Mark, device);
                 Dot = new(device, 2 * (MarkerRadius + 1), 2 * (MarkerRadius + 1), dpi);
@@ -1210,21 +1272,24 @@ internal sealed class MapMotion : IDisposable
             }
         }
 
-        /// <summary>The size in DIPs it was made for, which its pixels round.</summary>
-        internal Size Size { get; }
-
-        internal CanvasRenderTarget Bitmap { get; }
-        internal CanvasRenderTarget Arcs { get; }
+        internal CanvasDevice Device { get; }
+        internal float Dpi { get; }
         internal CanvasRenderTarget Mark { get; }
         internal CanvasRenderTarget Dot { get; }
         internal CanvasRenderTarget Halo { get; }
-        internal void Retain() => Interlocked.Increment(ref _references);
-        internal bool Release() => Interlocked.Decrement(ref _references) == 0;
 
-        public void Dispose()
+        internal void Retain() => Interlocked.Increment(ref _references);
+
+        internal void Release()
         {
-            Bitmap.Dispose();
-            Arcs?.Dispose();
+            if (Interlocked.Decrement(ref _references) == 0)
+            {
+                Dispose();
+            }
+        }
+
+        private void Dispose()
+        {
             Mark?.Dispose();
             Dot?.Dispose();
             Halo?.Dispose();

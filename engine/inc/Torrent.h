@@ -650,6 +650,8 @@ struct Torrent
     std::map<DetailKind, std::uint64_t> queries;
 
     std::string Name() const;
+    // The name for the torrent's `hashes`, for a caller that already holds them.
+    std::string Name(std::vector<std::string> const& hashes) const;
     // Every hash the torrent is known by: its own and those the document saved.
     std::vector<std::string> Hashes() const;
     std::string Folder() const;
@@ -744,10 +746,10 @@ struct Torrent
     Json DescribeFilePage(std::shared_ptr<lt::torrent_info const> const& metadata, int offset, bool paths) const;
     // The file's current name on disk, or null until its names are read.
     Json DiskPath(lt::file_index_t index) const;
-    // `queue` is the torrent's place in the download queue, or -1 outside it.
-    // `moveProgress` replaces the progress while the torrent's files move.
-    // `retry` offers the person's Retry.
-    Json Row(bool sessionPaused, int queue, std::optional<double> moveProgress, DriveWait const& wait,
+    // `shown` is the torrent's Classify. `queue` is the torrent's place in the
+    // download queue, or -1 outside it. `moveProgress` replaces the progress
+    // while the torrent's files move. `retry` offers the person's Retry.
+    Json Row(Status shown, int queue, std::optional<double> moveProgress, DriveWait const& wait,
         bool retry) const;
     // The priority each file downloads with: the saved choice, or the
     // default with the skip patterns applied while none is saved. Every file

@@ -26,6 +26,10 @@ public sealed partial class Row : ContentControl
 
     private Table? _owner;
 
+    // The states last applied. The table asks every realized row to refresh
+    // after each selection commit, and most rows' states stay the same.
+    private (bool Dragging, bool Held, bool Draggable)? _applied;
+
     public Row()
     {
         DefaultStyleKey = typeof(Row);
@@ -46,7 +50,8 @@ public sealed partial class Row : ContentControl
             cells.Attach(owner);
         }
 
-        UpdateStates(useTransitions: false);
+        _applied = null;
+        UpdateStates(DataContext, useTransitions: false);
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
@@ -62,7 +67,7 @@ public sealed partial class Row : ContentControl
             _owner.RowVisualsChanged += OnVisualsChanged;
         }
 
-        UpdateStates(useTransitions: false);
+        UpdateStates(DataContext, useTransitions: false);
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
@@ -83,11 +88,19 @@ public sealed partial class Row : ContentControl
     }
 
     /// <summary>A recycled container gets a new row item and must repaint before it is shown.</summary>
-    private void OnItemChanged(FrameworkElement sender, DataContextChangedEventArgs args) =>
-        UpdateStates(useTransitions: false);
+    private void OnItemChanged(FrameworkElement sender, DataContextChangedEventArgs args)
+    {
+        object? item = args.NewValue;
+        if (Content is CellsPanel cells)
+        {
+            cells.ShowItem(item);
+        }
+
+        UpdateStates(item, useTransitions: false);
+    }
 
     private void OnVisualsChanged(object? sender, EventArgs e) =>
-        UpdateStates(useTransitions: true);
+        UpdateStates(DataContext, useTransitions: true);
 
     /// <summary>
     /// This control paints the drag cue and the dimming of a held row; selection and keyboard focus
@@ -96,13 +109,17 @@ public sealed partial class Row : ContentControl
     /// withholds the drag, says so before the press. Without the move cursor a
     /// drag from the row is section 14's sweep.
     /// </summary>
-    private void UpdateStates(bool useTransitions)
+    private void UpdateStates(object? item, bool useTransitions)
     {
-        object? item = DataContext;
         bool dragging = _owner is not null && _owner.IsDragging(item);
         bool draggable = _owner is not null && item is not null && _owner.CanStartDrag(item);
         bool held = _owner is not null && _owner.ShowsHeld(item);
+        if (_applied == (dragging, held, draggable))
+        {
+            return;
+        }
 
+        _applied = (dragging, held, draggable);
         VisualStateManager.GoToState(this, dragging ? "Dragging" : "NotDragging", useTransitions);
         VisualStateManager.GoToState(this, held ? "Held" : "NotHeld", useTransitions);
         ProtectedCursor = draggable ? MoveCursor : null;

@@ -301,6 +301,8 @@ void Engine::State::On(lt::state_update_alert const& alert)
             snapshotAt += interval * (elapsed / interval);
         if (std::exchange(snapshotPending, false) || due)
             PublishSnapshot();
+        if (due)
+            RefreshSubscriptions();
         if (statusPending)
             RequestStatus();
     }
@@ -370,6 +372,10 @@ void Engine::State::UpdateProblems()
         // the probe, not the error, shows that the torrent waits for its
         // location.
         bool absent = torrent.control.AwaitsLocation();
+        // This runs at every turn of the engine, and a torrent's root and key
+        // matter only when its location is absent or a root hangs.
+        if (!absent && hung.empty())
+            continue;
         auto root = NoticeRootOf(torrent);
         auto key = RootKey(Wide(root));
         bool waits = hung.contains(key) && torrent.facts.intent != Intent::Paused;

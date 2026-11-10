@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.IO.Compression;
 using System.Net;
@@ -39,6 +40,12 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
     // alone, because Windows refuses to replace an open file.
     private readonly ReaderWriterLockSlim _file = new();
 
+    // Every lookup decodes new places with their names in every language, and
+    // thousands of peers share a few hundred places, so peers in one place
+    // share one location and one country. Cleared when the data changes.
+    private readonly ConcurrentDictionary<string, Place> _countryPlaces = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<(string Code, GeoPoint? Point, string? City), Location> _locations = new();
+
     /// <summary>Changes when the city data is installed, deleted or detached, so a kept location is looked up again.</summary>
     internal int Version { get; private set; }
 
@@ -79,7 +86,7 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
             _directory = directory;
             _policy = policy;
             _cities = Open(Path.Combine(directory, CityFileName));
-            Version++;
+            NewVersion();
         }
         finally
         {
@@ -99,7 +106,7 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
             _cities = null;
             _directory = null;
             _policy = null;
-            Version++;
+            NewVersion();
         }
         finally
         {
@@ -117,9 +124,16 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
             var country = _countries?.Find<Record>(address);
             var city = _cities?.Find<Record>(address);
             var place = country?.Country ?? city?.Country;
-            return place?.Code is { } code
-                ? new Location(code, place, city?.City, city?.Coordinates?.Point)
-                : null;
+            if (place?.Code is not { } code)
+            {
+                return null;
+            }
+            var point = city?.Coordinates?.Point;
+            return _locations.GetOrAdd(
+                (code, point, city?.City?.Name("en")),
+                static (key, found) => new Location(key.Code, found.Country, found.City, key.Point),
+                (Country: _countryPlaces.GetOrAdd(code, place), City: city?.City)
+            );
         }
         // A damaged file gives no locations, as a missing one does.
         catch (InvalidDatabaseException)
@@ -377,9 +391,17 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
         {
             if (_directory is { } directory)
                 _cities = Open(Path.Combine(directory, CityFileName));
-            Version++;
+            NewVersion();
             _file.ExitWriteLock();
         }
+    }
+
+    // Called under the write lock, when the data lookups read has changed.
+    private void NewVersion()
+    {
+        _countryPlaces.Clear();
+        _locations.Clear();
+        Version++;
     }
 
     // A build that another program holds is deleted by the next build.

@@ -97,7 +97,7 @@ public sealed partial class Table
 
             _sortInterval = value;
             if (_preparingView)
-                _viewVersion++;
+                Supersede();
 
             // Turning settling off is a request to see the sorted order, not a request to see it
             // whenever the source next moves.
@@ -163,7 +163,7 @@ public sealed partial class Table
 
             // Complete presentation before selection handlers can run or throw.
             _headerStrip?.Panel?.RefreshHeader();
-            RebuildView(sortChanged: true, preparedSort: keys);
+            RebuildView(sortChanged: true, readKeys: keys);
 
             RaiseLayoutChanged(LayoutChange.Sort);
         }
@@ -171,15 +171,17 @@ public sealed partial class Table
 
     /// <summary>
     /// Reads the requested column's sort keys on the UI thread, so a request whose selector
-    /// fails throws here and leaves the table unchanged. Later projections read them on the
-    /// worker.
+    /// fails throws here and leaves the table unchanged. The preparation keeps these keys; later
+    /// ones read on the worker only the keys of rows that arrived or that the host named.
     /// </summary>
-    private IComparer<object>? CaptureSort(EffectiveColumn? column)
+    private Body.SortKeys? CaptureSort(EffectiveColumn? column)
     {
         if (_sortMode == SortMode.External || column is null)
             return null;
         IReadOnlyCollection<object> rows = _hierarchy is null ? _source.Snapshot : CaptureHierarchy(_source.Snapshot).Nodes.Keys;
-        return column.Column.CaptureSort!(rows);
+        var keys = column.Column.SortKeys!();
+        keys.ReadAll(rows);
+        return keys;
     }
 
     private Sort? PendingSort()

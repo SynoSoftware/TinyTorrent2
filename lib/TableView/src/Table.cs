@@ -41,7 +41,7 @@ public sealed partial class Table : Control
     {
         DefaultStyleKey = typeof(Table);
         _selection = new SelectionState(_identity, IndexInView) { CanInteract = IsInteractive };
-        _view = new Body.View(_selection.IsSelected);
+        _view = new Body.View(_selection.IsSelected, () => _selection.Items.Select(IndexInView));
         _held = new HashSet<object>(_identity);
         _released = new Dictionary<object, (bool Present, long Named)>(_identity);
         _source = new Body.Source(DispatcherQueue);
@@ -215,6 +215,8 @@ public sealed partial class Table : Control
             _surface.LostFocus -= OnRowsFocus;
         }
 
+        _realized = null;
+
         // A settle waiting to fire would rebuild a view whose template parts have just been taken
         // away, and would hold this table alive to do it.
         StopSettling();
@@ -233,7 +235,7 @@ public sealed partial class Table : Control
         }
 
         CancelPreparation();
-        _viewVersion++;
+        Supersede();
         _viewReady?.TrySetCanceled();
         _detached = true;
         QueueRealized();
@@ -245,9 +247,12 @@ public sealed partial class Table : Control
         _pointerOver = false;
         _pointedRow = null;
         _menuRow = null;
+        _scrolling = false;
+        _ownScroll = false;
         _source.Suspend();
         if (_surface is not null)
             _surface.ItemsSource = null;
+        _realized = null;
         foreach (Column column in Columns)
             column.TextChanged -= OnColumnTextChanged;
         StopSettling();
@@ -348,6 +353,7 @@ public sealed partial class Table : Control
         // Install identity before resolving the pending initial selection.
         _identity.KeySelector = ItemKey;
         _identity.KeyComparer = KeyComparer;
+        _slots = new Body.Slots(_identity, _view.Rows);
         _selection.RehashIdentity();
 
         EffectiveLayout.SetOrder(_baselineOrder);
@@ -562,7 +568,7 @@ public sealed partial class Table : Control
         // SetOrder republishes the layout, which re-applies each header cell's sort indicator.
         EffectiveLayout.SetOrder(ordered);
         if (rebuild && moved)
-            RebuildView(sortChanged: true, preparedSort: keys);
+            RebuildView(sortChanged: true, readKeys: keys);
     }
 
     // ---------------------------------------------------------------- source
@@ -578,7 +584,18 @@ public sealed partial class Table : Control
     public IEnumerable? ItemsSource
     {
         get => (IEnumerable?)GetValue(ItemsSourceProperty);
-        set => SetValue(ItemsSourceProperty, value);
+        set
+        {
+            // After Withdraw the property still holds the withdrawn source, so setting it again
+            // changes nothing the property can see, and the table takes it here instead.
+            if (_personChange == PersonChange.Expected && ReferenceEquals(ItemsSource, value))
+            {
+                SetItemsSource(value);
+                return;
+            }
+
+            SetValue(ItemsSourceProperty, value);
+        }
     }
 
     private static void OnItemsSourceChanged(
@@ -586,10 +603,47 @@ public sealed partial class Table : Control
         DependencyPropertyChangedEventArgs e
     ) => ((Table)d).SetItemsSource(e.NewValue as IEnumerable);
 
-    private void SetItemsSource(IEnumerable? source) => _source.Set(source);
+    private void SetItemsSource(IEnumerable? source)
+    {
+        // Only the host's set is the person's change. A hierarchy table that loads again raises
+        // the snapshot it already shows.
+        if (_personChange == PersonChange.Expected)
+        {
+            _personChange = PersonChange.Pending;
+        }
+
+        _source.Set(source);
+    }
 
     private void OnSnapshotChanged(object? sender, IReadOnlyList<object> snapshot) =>
         RebuildView(snapshot);
+
+    /// <summary>Where the person's change stands after <see cref="Withdraw"/>.</summary>
+    private PersonChange _personChange;
+
+    /// <summary>The source snapshot the view shows, which <see cref="Withdraw"/> goes back to.</summary>
+    private IReadOnlyList<object> _shownSource = Array.Empty<object>();
+
+    /// <summary>
+    /// Drop the source the table has accepted and not yet shown, because the person changed what
+    /// the table is to show, such as another torrent. The rows on screen stay. The next source the
+    /// host sets is the person's change: it applies whole, even with the pointer over the rows,
+    /// as a change named by <see cref="Release"/> does.
+    /// </summary>
+    /// <remarks>
+    /// Until then the table no longer follows the withdrawn source's collection notifications, and
+    /// <see cref="ItemsSource"/> still returns it; setting the same instance again is taken as the
+    /// next source.
+    /// </remarks>
+    public void Withdraw()
+    {
+        _personChange = PersonChange.Expected;
+        _source.Withdraw(_shownSource);
+        if (_preparingView)
+        {
+            Supersede();
+        }
+    }
 
     // -------------------------------------------------------- scroll offset
 
@@ -623,6 +677,8 @@ public sealed partial class Table : Control
             return;
         }
 
+        // The offset can lie in rows the list has not been told of yet.
+        CatchUp(long.MaxValue);
         _surface.UpdateLayout();
         if (InnerScrollViewer() is not ScrollViewer scroller)
         {

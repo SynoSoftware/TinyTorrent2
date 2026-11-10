@@ -20,6 +20,7 @@ public sealed class FileSelection : INotifyPropertyChanged
     private readonly Strings _strings;
     private readonly Dictionary<string, FileNode> _folders = [];
     private readonly Dictionary<int, FileNode> _files = [];
+    private FileKeys? _keys;
 
     // The folders an ordinary open listed, oldest first, which a full window
     // collapses in this order. A whole tree and a search's own folders are
@@ -127,9 +128,9 @@ public sealed class FileSelection : INotifyPropertyChanged
     private int Rows => _folders.Count - 1 + _files.Count;
 
     // The rows the inspector's refresh names, so the Files view gives their
-    // values.
+    // values. They are made again only after the rows change.
     internal FileKeys Keys =>
-        new([.. _folders.Keys.Where(path => path.Length > 0)], [.. _files.Keys]);
+        _keys ??= new([.. _folders.Keys.Where(path => path.Length > 0)], [.. _files.Keys]);
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler<bool>? Changed;
 
@@ -189,6 +190,7 @@ public sealed class FileSelection : INotifyPropertyChanged
     private void Build(JsonElement? reply, CancellationToken cancellation = default)
     {
         _generation++;
+        _keys = null;
         _folders.Clear();
         _files.Clear();
         _opened.Clear();
@@ -265,6 +267,7 @@ public sealed class FileSelection : INotifyPropertyChanged
             folder.Close(keep is null ? FolderState.Unloaded : FolderState.TooMany);
             return false;
         }
+        _keys = null;
         foreach (var entry in folders.EnumerateArray())
         {
             cancellation.ThrowIfCancellationRequested();
@@ -297,6 +300,7 @@ public sealed class FileSelection : INotifyPropertyChanged
     // engine's current values.
     private void Forget(FileNode folder)
     {
+        _keys = null;
         foreach (var node in folder.Children.SelectMany(child => child.Nodes()))
         {
             if (node.IsFolder)
@@ -701,7 +705,7 @@ public sealed class FileSelection : INotifyPropertyChanged
 public sealed class FileNode : INotifyPropertyChanged
 {
     private readonly FileSelection _owner;
-    private readonly List<FileNode> _children = [];
+    private List<FileNode>? _children;
 
     // A file's own values. A folder's are those the engine reported.
     private long _size;
@@ -714,7 +718,7 @@ public sealed class FileNode : INotifyPropertyChanged
     private long? _downloaded;
     private FolderState _state = FolderState.Loaded;
     private (long, long, long, int, long?, FolderState) _shown;
-    public IReadOnlyList<FileNode> Children => _children;
+    public IReadOnlyList<FileNode> Children => _children ?? [];
     public string Name { get; }
     public string Path { get; }
     public FileNode? Parent { get; }
@@ -819,7 +823,7 @@ public sealed class FileNode : INotifyPropertyChanged
         folder.Length == 0 ? name : folder + "/" + name;
 
     internal IEnumerable<FileNode> Nodes() =>
-        new[] { this }.Concat(_children.SelectMany(child => child.Nodes()));
+        new[] { this }.Concat(Children.SelectMany(child => child.Nodes()));
 
     internal IEnumerable<FileNode> Ancestors()
     {
@@ -830,7 +834,7 @@ public sealed class FileNode : INotifyPropertyChanged
     // The node and its ancestors.
     internal IEnumerable<FileNode> Lineage() => new[] { this }.Concat(Ancestors());
 
-    internal void Add(FileNode child) => _children.Add(child);
+    internal void Add(FileNode child) => (_children ??= []).Add(child);
 
     internal void Open()
     {
@@ -840,7 +844,7 @@ public sealed class FileNode : INotifyPropertyChanged
 
     internal void Close(FolderState state)
     {
-        _children.Clear();
+        _children = null;
         _state = state;
         IsExpanded = false;
     }
@@ -889,7 +893,7 @@ public sealed class FileNode : INotifyPropertyChanged
         if (!IsFolder)
             return;
         (_wantedCount, _wantedSize) = action is FileAction.Set { Priority: 0 } ? (0, 0) : (_count, _size);
-        foreach (var child in _children)
+        foreach (var child in Children)
             child.Choose(action);
     }
 
@@ -901,7 +905,7 @@ public sealed class FileNode : INotifyPropertyChanged
             (_wantedCount, _wantedSize) = _priority > 0 ? (1, _size) : (0, 0);
         }
         var changed = false;
-        foreach (var child in _children)
+        foreach (var child in Children)
             changed |= child.Refresh(notify);
         var shown = (_size, _count, _wantedCount, _priority, _downloaded, _state);
         var updated = shown != _shown;

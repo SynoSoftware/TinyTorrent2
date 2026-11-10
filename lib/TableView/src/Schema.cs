@@ -114,9 +114,10 @@ public sealed class Schema<TRow>
 
     /// <summary>
     /// Make this column sortable. A sort request reads its keys once on the UI thread, so a
-    /// failing selector rejects the request; every later projection reads them once per row on
-    /// the preparation worker and compares there. The selector therefore reads only state the
-    /// host publishes safely, keys stay stable and the comparer does not access UI state.
+    /// failing selector rejects the request; the table keeps those keys, and later reads them on
+    /// the preparation worker only for rows that arrive or that a refresh names, and compares
+    /// there. The selector therefore reads only state the host publishes safely, keys stay stable
+    /// and the comparer does not access UI state.
     /// </summary>
     public Schema<TRow> SortKey<TKey>(
         Column column,
@@ -127,14 +128,8 @@ public sealed class Schema<TRow>
         ArgumentNullException.ThrowIfNull(column);
         ArgumentNullException.ThrowIfNull(key);
         _table.RequireSetup();
-        column.CaptureSort = items =>
-        {
-            var keys = new Dictionary<object, TKey>(items.Count, ReferenceEqualityComparer.Instance);
-            foreach (var item in items)
-                keys[item] = key((TRow)item);
-            var comparison = comparer ?? Comparer<TKey>.Default;
-            return Comparer<object>.Create((left, right) => comparison.Compare(keys[left], keys[right]));
-        };
+        var comparison = comparer ?? Comparer<TKey>.Default;
+        column.SortKeys = () => new Body.SortKeys<TRow, TKey>(key, comparison);
         return this;
     }
 

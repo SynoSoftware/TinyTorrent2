@@ -149,7 +149,8 @@ public sealed partial class Table
     /// Bring the table-owned state to the view a snapshot left, and put row focus back where it
     /// was: the framework moves it when the focused container leaves.
     /// </summary>
-    private void ReconcileSelection(FocusState rowFocus, object? focusedItem = null)
+    /// <param name="visuals">The update may have changed what the rows show besides the selection.</param>
+    private void ReconcileSelection(FocusState rowFocus, object? focusedItem, bool visuals)
     {
         SyncSelectionPolicy();
 
@@ -174,7 +175,7 @@ public sealed partial class Table
 
         if (!_detached)
             RestoreRowFocus(rowFocus, focusedItem);
-        CommitSelection();
+        CommitSelection(visuals);
         if (_hierarchy is not null && _surface is { } surface)
             surface.RefreshHierarchy();
     }
@@ -194,19 +195,30 @@ public sealed partial class Table
     /// Publish after compound model updates, so observers see only the final packet
     /// and current item.
     /// </summary>
-    private Selection CommitSelection()
+    /// <param name="visuals">
+    /// Something besides the selection may have changed what the rows show, so they read it again
+    /// even when the selection stands.
+    /// </param>
+    private Selection CommitSelection(bool visuals = true)
     {
         _pendingSelection = null;
         Selection previous = _publishedSelection;
-        Selection next = new(BuildSelectedPacket(), _selection.Current);
+        Selection next = new(BuildSelectedPacket(out int[] shown), _selection.Current);
         bool changed = !SameSelection(previous, next);
         _publishedSelection = next;
         if (changed)
             CancelPreparation();
         if (!_detached)
         {
-            RefreshContainers(previous);
-            RowVisualsChanged?.Invoke(this, EventArgs.Empty);
+            if (changed)
+            {
+                RefreshContainers(previous, shown);
+            }
+
+            if (changed || visuals)
+            {
+                RowVisualsChanged?.Invoke(this, EventArgs.Empty);
+            }
             if (changed && _surface is not null && Body.Surface.SelectionListens)
                 _surface.RaiseSelectionEvents(
                     Except(next, previous),
@@ -242,9 +254,36 @@ public sealed partial class Table
         return true;
     }
 
-    private IReadOnlyList<object> BuildSelectedPacket()
+    /// <summary>
+    /// The selected rows in view order, after those the view does not show, and in
+    /// <paramref name="shown"/> the view positions of the shown ones, ascending.
+    /// </summary>
+    private object[] BuildSelectedPacket(out int[] shown)
     {
-        return _selection.Items.OrderBy(IndexInView).ToArray();
+        object[] packet = _selection.Items.ToArray();
+        // Each key holds a row's position and, below it, the row's place in the set, so the
+        // sort keeps the set's order among the rows the view does not show.
+        long[] keys = new long[packet.Length];
+        int hidden = 0;
+        for (int index = 0; index < packet.Length; index++)
+        {
+            int position = IndexInView(packet[index]);
+            if (position < 0)
+            {
+                hidden++;
+            }
+
+            keys[index] = ((long)position << 32) | (uint)index;
+        }
+
+        Array.Sort(keys, packet);
+        shown = new int[packet.Length - hidden];
+        for (int index = 0; index < shown.Length; index++)
+        {
+            shown[index] = (int)(keys[hidden + index] >> 32);
+        }
+
+        return packet;
     }
 
     /// <summary>
@@ -254,22 +293,53 @@ public sealed partial class Table
     /// is. The list's own gestures also end in a range call, and the view answers those with the
     /// state the table has already settled, so the list corrects itself.
     /// </summary>
-    private void RefreshContainers(Selection previous)
+    /// <param name="shown">The view positions of the selected rows, ascending.</param>
+    private void RefreshContainers(Selection previous, int[] shown)
     {
         if (_detached || _surface is null || View.Count == 0)
         {
             return;
         }
 
-        var wanted = _selection.Items.Select(IndexInView).Where(index => index >= 0).ToHashSet();
-        var changed = previous.Items.Select(IndexInView).Where(index => index >= 0).ToHashSet();
-        changed.SymmetricExceptWith(wanted);
+        int[] before = new int[previous.Items.Count];
+        int count = 0;
+        foreach (object item in previous.Items)
+        {
+            int position = IndexInView(item);
+            if (position >= 0)
+            {
+                before[count++] = position;
+            }
+        }
+
+        Array.Sort(before, 0, count);
         int start = -1;
         int last = -1;
         bool selecting = false;
-        foreach (int index in changed.Order())
+        int now = 0;
+        int then = 0;
+        // Both lists ascend, so one merge meets the rows that changed state in view order.
+        while (now < shown.Length || then < count)
         {
-            bool select = wanted.Contains(index);
+            int index;
+            bool select;
+            if (then == count || (now < shown.Length && shown[now] < before[then]))
+            {
+                index = shown[now++];
+                select = true;
+            }
+            else if (now == shown.Length || before[then] < shown[now])
+            {
+                index = before[then++];
+                select = false;
+            }
+            else
+            {
+                now++;
+                then++;
+                continue;
+            }
+
             if (start >= 0 && (index != last + 1 || select != selecting))
             {
                 ApplyRange(start, last - start + 1, selecting);

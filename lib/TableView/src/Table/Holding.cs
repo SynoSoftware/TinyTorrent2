@@ -89,7 +89,10 @@ public sealed partial class Table
 
     private void QueueRelease(IEnumerable<object> items, bool waitingOnly)
     {
-        _releases.Add(new(items.ToArray(), _source.Snapshot, _displayed, Stopwatch.GetTimestamp())
+        _releases.Add(new(
+            items.Select(item => (item, IndexInView(item) >= 0)).ToArray(),
+            _source.Snapshot,
+            Stopwatch.GetTimestamp())
         {
             WaitingOnly = waitingOnly,
         });
@@ -100,7 +103,7 @@ public sealed partial class Table
     private void PointAt(object? row)
     {
         if (_preparingView && (!_pointerOver || !ReferenceEquals(_pointedRow, row)))
-            _viewVersion++;
+            Supersede();
         bool pointed = IsPointed;
         _pointerOver = true;
         _pointedRow = row;
@@ -126,7 +129,7 @@ public sealed partial class Table
     private void StopPointing()
     {
         if (_preparingView && IsPointed)
-            _viewVersion++;
+            Supersede();
         _pointerOver = false;
         _pointedRow = null;
         ReleaseHold();
@@ -190,7 +193,7 @@ public sealed partial class Table
 
         bool pointed = IsPointed;
         if (_preparingView)
-            _viewVersion++;
+            Supersede();
         _menuRow = row;
         ShowHeldLook(pointed);
         menu.Closed += OnMenuClosed;
@@ -206,7 +209,7 @@ public sealed partial class Table
             }
 
             if (_preparingView)
-                _viewVersion++;
+                Supersede();
             _menuRow = null;
             StopPointing();
         }
@@ -229,7 +232,7 @@ public sealed partial class Table
         // Under a sort that reorders, the pointed row kept its index, so it takes its sorted place
         // now, or at the settle inside the interval, rather than at the next update, which a quiet
         // source may never send.
-        if (_held.Count == 0 && _view.Count == _source.Snapshot.Count && !Reorders)
+        if (_held.Count == 0 && View.Count == _source.Snapshot.Count && !Reorders)
         {
             return;
         }

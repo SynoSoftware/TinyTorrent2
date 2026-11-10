@@ -54,59 +54,83 @@ int AlertType(DetailKind kind)
 }
 }
 
-void Engine::State::ReadDetail(Reading::Read read)
+std::chrono::steady_clock::time_point Engine::State::Reader::Since() const
 {
-    if (read.context && reading)
+    return context ? started : started - answerAge;
+}
+
+bool Engine::State::Reader::Complete(Detail const& detail, bool metadata) const
+{
+    auto since = Since();
+    auto kinds = Kinds(view, metadata);
+    return std::all_of(kinds.begin(), kinds.end(), [&](DetailKind kind) { return detail.Has(kind, since); });
+}
+
+void Engine::State::Subscribe(std::string const& connectionId, std::int64_t context, TorrentView view,
+    std::string const& section, std::vector<std::string> const& ids, std::optional<Loaded> const& loaded,
+    Push const& push)
+{
+    // The key holds the context, so an earlier subscription's late message
+    // never replaces this one's unsent observation of the same torrent.
+    auto key = [](std::string const& id, std::int64_t context) { return id + ':' + std::to_string(context); };
+    for (auto const& id : ids)
     {
-        auto replaced = [&read](Reading::Read const& previous)
+        auto reply = [push, key, session = sessionId, id, context, section](Json response)
         {
-            return previous.context && previous.connectionId == read.connectionId;
+            response["type"] = "observation";
+            response["session_id"] = session;
+            response["context"] = context;
+            response["torrent_id"] = id;
+            response["section"] = section;
+            push.replace(key(id, context), std::move(response));
         };
-        std::erase_if(reading->held, replaced);
-        std::erase_if(reading->waiting, replaced);
-        if (reading->held.empty() && !reading->waiting.empty())
-            EndReading();
+        ReadDetail(Reader{connectionId, id, view, std::move(reply), {}, context, loaded});
     }
+    // The earlier subscription's reads go only now, so no collection that
+    // both show is ever without a read, and none loses its facts. Their
+    // unsent observations go with them, because the window drops each one
+    // it reads, and the new subscription's observations would wait behind
+    // them.
+    for (auto& [id, collection] : collections)
+    {
+        std::erase_if(collection.held, [&](Reader const& read)
+        {
+            if (read.connectionId != connectionId || !read.context || *read.context == context)
+                return false;
+            push.withdraw(key(read.torrentId, *read.context));
+            return true;
+        });
+    }
+    EndIdleCollections();
+}
+
+void Engine::State::ReadDetail(Reader read)
+{
+    // A display read answers at once with the facts the engine holds, which
+    // are ready when they are recent enough for a complete read.
     if (read.context && !Refusal())
     {
         auto found = torrents.find(read.torrentId);
         if (found != torrents.end() && !found->second.waiting)
         {
             auto& torrent = found->second;
-            read.started = std::chrono::steady_clock::now();
             auto metadata = torrent.handle.torrent_file();
-            auto kinds = Kinds(read.view, bool(metadata));
-            bool current = reading && reading->torrentId == read.torrentId;
-            bool ready = current && std::all_of(kinds.begin(), kinds.end(),
-                [this, &read](DetailKind kind)
-                {
-                    return reading->detail.Has(kind, read.started - Reading::answerAge);
-                });
+            auto collection = collections.find(read.torrentId);
             Detail empty;
-            auto const& detail = current ? reading->detail : empty;
+            auto const& detail = collection != collections.end() ? collection->second.detail : empty;
+            auto recent = std::chrono::steady_clock::now() - answerAge;
+            auto kinds = Kinds(read.view, bool(metadata));
             auto data = torrent.Describe(*read.view, detail, metadata);
-            data["session_id"] = sessionId;
-            data["context"] = *read.context;
-            data["ready"] = ready;
+            data["ready"] = std::all_of(kinds.begin(), kinds.end(),
+                [&](DetailKind kind) { return detail.Has(kind, recent); });
             Respond(torrent, read, detail, std::move(data));
-
-            read.reply = [reply = std::move(read.reply), session = sessionId,
-                torrentId = read.torrentId, context = *read.context](Json response)
-            {
-                response["type"] = "detail";
-                response["session_id"] = session;
-                response["torrent_id"] = torrentId;
-                response["context"] = context;
-                reply(std::move(response));
-            };
         }
     }
     CollectDetail(std::move(read));
 }
 
-void Engine::State::CollectDetail(Reading::Read read)
+void Engine::State::CollectDetail(Reader read)
 {
-    // A waiting read starts later, when the engine may have begun to close.
     if (auto refusal = Refusal())
     {
         read.reply(Failure(*refusal));
@@ -119,49 +143,60 @@ void Engine::State::CollectDetail(Reading::Read read)
         return;
     }
     auto& torrent = found->second;
+    // A display read of a torrent that cannot be read yet keeps its place in
+    // the subscription, and each refresh reads it again.
+    if (auto failure = Unreadable(torrent))
+    {
+        read.reply(*failure);
+        if (read.context)
+        {
+            collections[torrent.torrentId].held.push_back(std::move(read));
+        }
+        return;
+    }
+    read.started = std::chrono::steady_clock::now();
+    auto& collection = collections[torrent.torrentId];
+    collection.held.push_back(std::move(read));
+    if (collecting.contains(torrent.torrentId))
+    {
+        Collect(torrent.torrentId);
+        return;
+    }
+    Demand(torrent.torrentId, collection);
+    Admit();
+}
+
+void Engine::State::Demand(std::string const& torrentId, Collection& collection)
+{
+    if (collection.queued && std::erase(refreshing, torrentId) == 0)
+    {
+        return;
+    }
+    collection.queued = true;
+    demanded.push_back(torrentId);
+}
+
+std::optional<Json> Engine::State::Unreadable(Torrent const& torrent) const
+{
     // libtorrent holds a torrent's detail, so one that waits for its add is
     // still starting.
     if (torrent.AwaitsAdd())
     {
-        read.reply(Failure(ErrorCode::Starting));
-        return;
+        return Failure(ErrorCode::Starting);
     }
     if (torrent.HeldByAlias())
     {
-        read.reply(Failure(ErrorCode::AliasConflict, torrent.conflict));
-        return;
+        return Failure(ErrorCode::AliasConflict, torrent.conflict);
     }
     // libtorrent refused the add, and the person's Retry adds it again.
     if (torrent.waiting)
     {
-        read.reply(Failure(ErrorCode::AddFailed, torrent.waiting->refusal->detail));
-        return;
+        return Failure(ErrorCode::AddFailed, torrent.waiting->refusal->detail);
     }
-    if (reading && reading->torrentId != torrent.torrentId)
-    {
-        reading->waiting.push_back(std::move(read));
-        if (reading->held.empty())
-        {
-            EndReading();
-        }
-        return;
-    }
-    if (!reading)
-    {
-        reading = Reading{.torrentId = torrent.torrentId};
-    }
-    // Each read refreshes what it shows, so the detail stays current while the
-    // window reads, and no query starts once it stops.
-    for (auto kind : Kinds(read.view, bool(torrent.handle.torrent_file())))
-    {
-        Query(torrent, kind);
-    }
-    read.started = std::chrono::steady_clock::now();
-    reading->held.push_back(std::move(read));
-    ContinueReading();
+    return std::nullopt;
 }
 
-void Engine::State::Respond(Torrent const& torrent, Reading::Read const& read, Detail const& detail, Json data)
+void Engine::State::Respond(Torrent const& torrent, Reader const& read, Detail const& detail, Json data)
 {
     if (!read.loaded)
     {
@@ -225,9 +260,10 @@ std::expected<Listing, Outcome> Engine::State::Listed(Torrent const& torrent) co
         return std::unexpected(Outcome{ErrorCode::MetadataUnavailable});
     }
     std::optional<std::vector<std::int64_t>> progress;
-    if (reading && reading->torrentId == torrent.torrentId && reading->detail.Has(DetailKind::Progress))
+    auto collection = collections.find(torrent.torrentId);
+    if (collection != collections.end() && collection->second.detail.Has(DetailKind::Progress))
     {
-        progress = reading->detail.progress;
+        progress = collection->second.detail.progress;
     }
     return Listing{metadata, Layout::Keep, torrent.ChosenPriorities(metadata), std::move(progress), true};
 }
@@ -296,49 +332,159 @@ void Engine::State::Query(Torrent& torrent, DetailKind kind)
     }
 }
 
-// Contextual reads receive available facts while collection continues;
-// action reads wait for complete detail before using it.
-void Engine::State::ContinueReading(bool changed)
+void Engine::State::Admit()
 {
-    if (!reading)
+    while (collecting.size() < collectionLimit)
+    {
+        auto& queue = !demanded.empty() ? demanded : refreshing;
+        if (queue.empty())
+        {
+            return;
+        }
+        auto id = std::move(queue.front());
+        queue.pop_front();
+        auto found = collections.find(id);
+        if (found == collections.end())
+        {
+            continue;
+        }
+        found->second.queued = false;
+        collecting.insert(id);
+        Collect(id);
+    }
+}
+
+void Engine::State::Collect(std::string const& torrentId)
+{
+    auto found = torrents.find(torrentId);
+    if (found == torrents.end())
+    {
+        FailReading(Failure(ErrorCode::TorrentRemoved), torrentId);
+        return;
+    }
+    auto& torrent = found->second;
+    if (auto failure = Unreadable(torrent))
+    {
+        // Each refresh tells the display reads again, so the window's round
+        // does not wait for them; they stay for a later refresh.
+        auto& held = collections.at(torrentId).held;
+        for (auto const& read : held)
+            read.reply(*failure);
+        std::erase_if(held, [](Reader const& read) { return !read.context; });
+        collecting.erase(torrentId);
+        if (held.empty() && !collections.at(torrentId).queued)
+            collections.erase(torrentId);
+        Admit();
+        return;
+    }
+    auto const& collection = collections.at(torrentId);
+    auto metadata = bool(torrent.handle.torrent_file());
+    for (auto const& read : collection.held)
+    {
+        auto since = read.Since();
+        for (auto kind : Kinds(read.view, metadata))
+        {
+            if (!collection.detail.Has(kind, since))
+                Query(torrent, kind);
+        }
+    }
+    ContinueCollection(torrentId, false);
+}
+
+// Display reads receive the available facts whenever they change; complete
+// reads are answered once their facts are complete.
+void Engine::State::ContinueCollection(std::string const& torrentId, bool changed)
+{
+    auto found = collections.find(torrentId);
+    if (found == collections.end())
     {
         return;
     }
-    auto& torrent = torrents.at(reading->torrentId);
-    auto const& detail = reading->detail;
-    auto metadata = torrent.handle.torrent_file();
-    for (auto& read : std::exchange(reading->held, {}))
+    auto present = torrents.find(torrentId);
+    if (present == torrents.end())
     {
-        auto since = read.context ? read.started : read.started - Reading::answerAge;
-        bool complete = true;
-        for (auto kind : Kinds(read.view, bool(metadata)))
-        {
-            if (!detail.Has(kind, since))
-            {
-                complete = false;
-                Query(torrent, kind);
-            }
-        }
-        if (complete || (changed && read.context))
+        FailReading(Failure(ErrorCode::TorrentRemoved), torrentId);
+        return;
+    }
+    auto& collection = found->second;
+    auto& torrent = present->second;
+    auto const& detail = collection.detail;
+    auto metadata = torrent.handle.torrent_file();
+    bool collects = collecting.contains(torrentId);
+    bool waits = false;
+    for (auto& read : std::exchange(collection.held, {}))
+    {
+        bool complete = read.Complete(detail, bool(metadata));
+        if (read.context ? changed : complete)
         {
             auto data = read.view ? torrent.Describe(*read.view, detail, metadata)
                                   : torrent.Describe(detail, metadata);
-            if (read.view)
-                data["session_id"] = sessionId;
             if (read.context)
-            {
-                data["context"] = *read.context;
                 data["ready"] = complete;
-            }
+            else if (read.view)
+                data["session_id"] = sessionId;
             Respond(torrent, read, detail, std::move(data));
         }
-        if (!complete)
-            reading->held.push_back(std::move(read));
+        if (!complete && collects)
+        {
+            // A query given up, or answered before an edit made it obsolete,
+            // is asked again.
+            auto since = read.Since();
+            for (auto kind : Kinds(read.view, bool(metadata)))
+            {
+                if (!detail.Has(kind, since))
+                    Query(torrent, kind);
+            }
+        }
+        waits |= !complete;
+        if (read.context || !complete)
+            collection.held.push_back(std::move(read));
     }
-    if (reading->held.empty() && !reading->waiting.empty())
+    bool empty = collection.held.empty();
+    if (empty && !collection.queued)
     {
-        EndReading();
+        collections.erase(found);
     }
+    if ((empty || !waits) && collecting.erase(torrentId))
+    {
+        Admit();
+    }
+}
+
+void Engine::State::PublishDetail()
+{
+    std::vector<std::string> due;
+    for (auto& [id, collection] : collections)
+    {
+        if (collection.changed || collecting.contains(id))
+            due.push_back(id);
+    }
+    for (auto const& id : due)
+    {
+        auto found = collections.find(id);
+        if (found != collections.end())
+            ContinueCollection(id, std::exchange(found->second.changed, false));
+    }
+}
+
+void Engine::State::RefreshSubscriptions()
+{
+    auto now = std::chrono::steady_clock::now();
+    for (auto& [id, collection] : collections)
+    {
+        bool displayed = false;
+        for (auto& read : collection.held)
+        {
+            if (read.context)
+            {
+                read.started = now;
+                displayed = true;
+            }
+        }
+        if (displayed && !collecting.contains(id) && !std::exchange(collection.queued, true))
+            refreshing.push_back(id);
+    }
+    Admit();
 }
 
 void Engine::State::Invalidate(std::string const& torrentId)
@@ -351,11 +497,29 @@ void Engine::State::Invalidate(std::string const& torrentId)
         return;
     }
     ++found->generation;
-    if (reading && reading->torrentId == torrentId)
+    auto collection = collections.find(torrentId);
+    if (collection == collections.end())
     {
-        reading->detail = {};
-        reading->changed = false;
-        ContinueReading();
+        return;
+    }
+    // The subscription reads the torrent again, so the window never sees it
+    // as it was before the change.
+    collection->second.detail = {};
+    collection->second.changed = false;
+    auto now = std::chrono::steady_clock::now();
+    for (auto& read : collection->second.held)
+    {
+        if (read.context)
+            read.started = now;
+    }
+    if (collecting.contains(torrentId))
+    {
+        Collect(torrentId);
+    }
+    else
+    {
+        Demand(torrentId, collection->second);
+        Admit();
     }
 }
 
@@ -378,64 +542,67 @@ bool Engine::State::Receive(lt::torrent_handle const& handle, DetailKind kind,
     if (current && observe)
         observe(*torrent);
     current &= generation == torrent->generation;
-    if (!reading || reading->torrentId != torrent->torrentId)
+    auto collection = collections.find(torrent->torrentId);
+    if (current && collection != collections.end())
     {
-        return current;
-    }
-    if (current)
-    {
-        store(reading->detail);
-        reading->detail.received[kind] = std::chrono::steady_clock::now();
-        reading->changed = true;
+        store(collection->second.detail);
+        collection->second.detail.received[kind] = std::chrono::steady_clock::now();
+        collection->second.changed = true;
     }
     return current;
 }
 
-void Engine::State::FailReading(Json const& failure)
+void Engine::State::FailReading(Json const& failure, std::optional<std::string> const& torrentId)
 {
-    if (!reading)
+    for (auto& [id, collection] : collections)
     {
-        return;
+        if (!torrentId || id == *torrentId)
+        {
+            for (auto& read : std::exchange(collection.held, {}))
+                read.reply(failure);
+        }
     }
-    for (auto& read : std::exchange(reading->held, {}))
-    {
-        read.reply(failure);
-    }
-    EndReading();
+    EndIdleCollections();
 }
 
 void Engine::State::ReleaseReading(std::string const& connectionId, bool disconnected)
 {
-    if (!reading)
-    {
-        return;
-    }
-    auto client = [&connectionId, disconnected](Reading::Read const& read)
+    auto client = [&connectionId, disconnected](Reader const& read)
     {
         return read.connectionId == connectionId && (disconnected || read.context.has_value());
     };
-    std::erase_if(reading->held, client);
-    std::erase_if(reading->waiting, client);
-    if (reading->held.empty())
-    {
-        EndReading();
-    }
+    for (auto& [id, collection] : collections)
+        std::erase_if(collection.held, client);
+    EndIdleCollections();
 }
 
-void Engine::State::EndReading()
+void Engine::State::EndIdleCollections()
 {
-    auto waiting = std::move(reading->waiting);
-    reading.reset();
-    for (auto& read : waiting)
+    bool ended = false;
+    for (auto found = collections.begin(); found != collections.end();)
     {
-        CollectDetail(std::move(read));
+        if (!found->second.held.empty())
+        {
+            ++found;
+            continue;
+        }
+        collecting.erase(found->first);
+        found = collections.erase(found);
+        ended = true;
+    }
+    if (ended)
+    {
+        std::erase_if(demanded, [this](std::string const& id) { return !collections.contains(id); });
+        std::erase_if(refreshing, [this](std::string const& id) { return !collections.contains(id); });
+        Admit();
     }
 }
 
 // The alert names only the kinds dropped, so a query of a dropped kind may
-// never be answered: it is given up, and each held read still waiting for one
-// fails, to be read again. An answer that was not lost after all can then be
-// taken as the next query's; that rare error is accepted rather than prevented.
+// never be answered: it is given up. Each complete read still waiting for one
+// fails, to be read again, and display reads have it asked again. An answer
+// that was not lost after all can then be taken as the next query's; that
+// rare error is accepted rather than prevented.
 void Engine::State::RecoverDetail(lt::alerts_dropped_alert const& alert)
 {
     auto lost = [&alert](DetailKind kind) { return alert.dropped_alerts[AlertType(kind)]; };
@@ -443,26 +610,35 @@ void Engine::State::RecoverDetail(lt::alerts_dropped_alert const& alert)
     {
         std::erase_if(torrent.queries, [&lost](auto const& query) { return lost(query.first); });
     }
-    if (!reading)
+    std::vector<std::string> affected(collecting.begin(), collecting.end());
+    for (auto const& id : affected)
     {
-        return;
-    }
-    auto metadata = bool(torrents.at(reading->torrentId).handle.torrent_file());
-    for (auto& read : std::exchange(reading->held, {}))
-    {
-        auto kinds = Kinds(read.view, metadata);
-        auto since = read.context ? read.started : read.started - Reading::answerAge;
-        if (std::any_of(kinds.begin(), kinds.end(),
-            [this, since, &lost](DetailKind kind) { return lost(kind) && !reading->detail.Has(kind, since); }))
+        auto found = collections.find(id);
+        auto torrent = torrents.find(id);
+        if (found == collections.end() || torrent == torrents.end())
         {
-            read.reply(Failure(ErrorCode::RecoveryRequired));
+            // ContinueCollection settles the reads of a torrent that is gone.
+            ContinueCollection(id, false);
+            collecting.erase(id);
+            continue;
         }
-        else
+        auto& collection = found->second;
+        auto metadata = bool(torrent->second.handle.torrent_file());
+        std::erase_if(collection.held, [&](Reader const& read)
         {
-            reading->held.push_back(std::move(read));
-        }
+            if (read.context)
+                return false;
+            auto since = read.Since();
+            auto kinds = Kinds(read.view, metadata);
+            bool failed = std::any_of(kinds.begin(), kinds.end(),
+                [&](DetailKind kind) { return lost(kind) && !collection.detail.Has(kind, since); });
+            if (failed)
+                read.reply(Failure(ErrorCode::RecoveryRequired));
+            return failed;
+        });
+        ContinueCollection(id, false);
     }
-    ContinueReading();
+    Admit();
 }
 
 void Engine::State::On(lt::tracker_list_alert const& alert)

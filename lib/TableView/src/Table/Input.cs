@@ -651,6 +651,12 @@ public sealed partial class Table
         List<object> items = new();
         foreach (int index in _marquee.CoveredIndices)
         {
+            // A vacant position the list has not been told is gone covers no row.
+            if (index >= View.Count)
+            {
+                continue;
+            }
+
             object item = View[index];
             if (_selection.IsInteractive(item))
             {
@@ -679,7 +685,7 @@ public sealed partial class Table
         }
 
         int low = Math.Min(anchor, _marquee.LowestCovered);
-        int high = Math.Max(anchor, _marquee.HighestCovered);
+        int high = Math.Min(Math.Max(anchor, _marquee.HighestCovered), View.Count - 1);
 
         List<object> items = new();
         for (int i = low; i <= high; i++)
@@ -892,7 +898,7 @@ public sealed partial class Table
         }
 
         Point point = _surface.TransformToVisual(rows).TransformPoint(position);
-        int last = Math.Min(rows.LastVisibleIndex, _view.Count - 1);
+        int last = Math.Min(rows.LastVisibleIndex, View.Count - 1);
         for (int index = rows.FirstVisibleIndex; index <= last; index++)
         {
             if (_surface.ContainerFromIndex(index) is not FrameworkElement container)
@@ -909,7 +915,7 @@ public sealed partial class Table
                 && point.X < slot.Left + container.ActualWidth
             )
             {
-                return _view[index];
+                return View[index];
             }
         }
 
@@ -1275,8 +1281,13 @@ public sealed partial class Table
     /// </summary>
     public void ScrollIntoView(object item)
     {
-        if (!_preparingView && IndexInView(item) < 0 && _sourceKeys.Contains(KeyOf(item)))
+        if (!_preparingView && _slots?.IsWaiting(item) == true)
             QueueRelease([item], waitingOnly: true);
+
+        if (!_preparingView)
+        {
+            CatchUpTo(item);
+        }
 
         if (_preparingView || _layoutPending)
         {

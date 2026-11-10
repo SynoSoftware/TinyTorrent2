@@ -17,16 +17,128 @@ public sealed partial class MainWindow
     private RectInt32[]? _dragRegions;
     private readonly TextBlock _measureProbe = new();
 
+    // The text each ReserveDigits panel was last sized for, with every digit
+    // as 8. QueueStatus clears it, because a text scale or language change
+    // gives the same text another width.
+    private readonly Dictionary<StackPanel, string> _reservedDigits = [];
+
     private void OnTextScaling(UISettings sender, object args) =>
         DispatcherQueue.TryEnqueue(() =>
         {
-            UpdateStatus();
+            QueueStatus();
             UpdateChrome();
         });
 
     private bool _statusPending;
 
+    // The content and width the status bar was last laid out for; null when
+    // something the content does not hold has changed since.
+    private (StatusContent Content, double Width)? _laidOutStatus;
+
+    // The model's values that the status bar shows. LayoutStatus reads the
+    // model only through this, so the bar is laid out again only when one of
+    // these or its width changed. Words from the language catalogue are read
+    // where they show, because a language change lays the bar out anyway.
+    private readonly record struct StatusContent
+    {
+        internal WindowPage Page { get; init; }
+        internal bool IsAbout { get; init; }
+        internal bool IsRunning { get; init; }
+        internal bool HasTransfers { get; init; }
+        internal bool HasWork { get; init; }
+        internal int SelectedCount { get; init; }
+        internal string StatusGlyph { get; init; }
+        internal string CountStatus { get; init; }
+        internal string InformationStatus { get; init; }
+        internal string DownloadStatus { get; init; }
+        internal string UploadStatus { get; init; }
+        internal string DownloadTip { get; init; }
+        internal string UploadTip { get; init; }
+        internal string DownloadSpeed { get; init; }
+        internal string UploadSpeed { get; init; }
+        internal string LifetimeDownloaded { get; init; }
+        internal string LifetimeUploaded { get; init; }
+        internal string MoveSpeed { get; init; }
+        internal string MoveTip { get; init; }
+        internal string CheckSpeed { get; init; }
+        internal string CheckTip { get; init; }
+        internal string EngineMemory { get; init; }
+        internal string UiMemory { get; init; }
+        internal string RestrictionStatus { get; init; }
+        internal string RestrictionTip { get; init; }
+        internal string FreeSpaceStatus { get; init; }
+        internal string? Destination { get; init; }
+        internal string ExternalIp { get; init; }
+        internal string IncomingStatus { get; init; }
+        internal string Incoming { get; init; }
+        internal bool ShowsMemory { get; init; }
+        internal bool HasRestriction { get; init; }
+        internal bool HasCaps { get; init; }
+        internal bool ShowsAlternativeLimits { get; init; }
+        internal bool IsSessionPaused { get; init; }
+        internal bool ShowsFreeSpace { get; init; }
+        internal bool ShowsExternalIp { get; init; }
+        internal bool HasUpdate { get; init; }
+    }
+
+    private StatusContent ReadStatus() =>
+        new()
+        {
+            Page = Model.Page,
+            IsAbout = Model.IsAbout,
+            IsRunning = Model.IsRunning,
+            HasTransfers = Model.Torrents.Count > 0 || Model.IsLoading,
+            HasWork = Model.Work.Items.Count > 0,
+            SelectedCount =
+                Model.Page == WindowPage.Library
+                    ? Model.Library.Selection.Items.Count
+                    : Model.Selected.Count,
+            StatusGlyph = Model.Library.StatusGlyph,
+            CountStatus = Model.CountStatus,
+            InformationStatus = Model.Library.InformationStatus,
+            DownloadStatus = Model.DownloadStatus,
+            UploadStatus = Model.UploadStatus,
+            DownloadTip = Model.DownloadTip,
+            UploadTip = Model.UploadTip,
+            DownloadSpeed = Model.DownloadSpeed,
+            UploadSpeed = Model.UploadSpeed,
+            LifetimeDownloaded = Model.LifetimeDownloaded,
+            LifetimeUploaded = Model.LifetimeUploaded,
+            MoveSpeed = Model.MoveSpeed,
+            MoveTip = Model.MoveTip,
+            CheckSpeed = Model.CheckSpeed,
+            CheckTip = Model.CheckTip,
+            EngineMemory = Model.EngineMemory,
+            UiMemory = Model.UiMemory,
+            RestrictionStatus = Model.RestrictionStatus,
+            RestrictionTip = Model.RestrictionTip,
+            FreeSpaceStatus = Model.FreeSpaceStatus,
+            Destination = Model.Settings.Destination.ConfirmedText,
+            ExternalIp = Model.ExternalIp,
+            IncomingStatus = Model.IncomingStatus,
+            Incoming = Model.Incoming,
+            ShowsMemory = Model.ShowsMemory,
+            HasRestriction = Model.HasRestriction,
+            HasCaps = Model.HasCaps,
+            ShowsAlternativeLimits = Model.ShowsAlternativeLimits,
+            IsSessionPaused = Model.IsSessionPaused,
+            ShowsFreeSpace = Model.ShowsFreeSpace,
+            ShowsExternalIp = Model.ShowsExternalIp,
+            HasUpdate = Model.HasUpdate,
+        };
+
+    // Lays the status bar out after this turn, also when its content is
+    // unchanged, for what the content does not hold: background work, focus
+    // in the work list, the language and the text scale.
     private void QueueStatus()
+    {
+        _laidOutStatus = null;
+        _reservedDigits.Clear();
+        ObserveStatus();
+    }
+
+    // Lays the status bar out after this turn when its content changed.
+    private void ObserveStatus()
     {
         if (_statusPending || _allowClose)
             return;
@@ -42,10 +154,14 @@ public sealed partial class MainWindow
     {
         if (_allowClose || StatusBar.ActualWidth <= 0)
             return;
+        var status = (Content: ReadStatus(), Width: StatusBar.ActualWidth);
+        if (_laidOutStatus is { } laidOut && laidOut == status)
+            return;
         RefreshWork();
         try
         {
-            LayoutStatus();
+            LayoutStatus(status.Content);
+            _laidOutStatus = status;
         }
         finally
         {
@@ -66,46 +182,46 @@ public sealed partial class MainWindow
         }
     }
 
-    private void LayoutStatus()
+    private void LayoutStatus(StatusContent content)
     {
-        var library = Model.Page == WindowPage.Library;
-        var about = Model.IsAbout;
-        var current = Model.IsRunning;
-        var transfers = Model.Torrents.Count > 0 || Model.IsLoading;
-        var work = Model.Work.Items.Count > 0;
-        var selected = library ? Model.Library.Selection.Items.Count : Model.Selected.Count;
+        var library = content.Page == WindowPage.Library;
+        var about = content.IsAbout;
+        var current = content.IsRunning;
+        var transfers = content.HasTransfers;
+        var work = content.HasWork;
+        var selected = content.SelectedCount;
         foreach (var label in new[] { CountLabel, InformationLabel, RestrictionLabel })
             label.MaxWidth = double.PositiveInfinity;
         TransferStatus.Spacing = 16;
         ContextIcon.Glyph =
             about ? Syno.Segoe.Info
-            : library ? Model.Library.StatusGlyph
-            : Model.Page == WindowPage.Settings ? Syno.Segoe.Settings
+            : library ? content.StatusGlyph
+            : content.Page == WindowPage.Settings ? Syno.Segoe.Settings
             : Syno.Segoe.List;
-        SetStatus(CountLabel, Model.CountStatus);
-        SetStatus(InformationLabel, Model.Library.InformationStatus);
+        SetStatus(CountLabel, content.CountStatus);
+        SetStatus(InformationLabel, content.InformationStatus);
         var downloadTip = about
-            ? Model.Text.Format("about", "downloaded_hint", Model.LifetimeDownloaded)
-            : Model.DownloadTip;
+            ? Model.Text.Format("about", "downloaded_hint", content.LifetimeDownloaded)
+            : content.DownloadTip;
         var uploadTip = about
-            ? Model.Text.Format("about", "uploaded_hint", Model.LifetimeUploaded)
-            : Model.UploadTip;
+            ? Model.Text.Format("about", "uploaded_hint", content.LifetimeUploaded)
+            : content.UploadTip;
         SetStatus(
             DownloadLabel,
             about
-                ? Model.Text.Format("about", "downloaded", Model.LifetimeDownloaded)
-                : Model.DownloadStatus,
+                ? Model.Text.Format("about", "downloaded", content.LifetimeDownloaded)
+                : content.DownloadStatus,
             downloadTip
         );
         SetStatus(
             UploadLabel,
             about
-                ? Model.Text.Format("about", "uploaded", Model.LifetimeUploaded)
-                : Model.UploadStatus,
+                ? Model.Text.Format("about", "uploaded", content.LifetimeUploaded)
+                : content.UploadStatus,
             uploadTip
         );
-        SetStatus(MoveLabel, Model.MoveSpeed, Model.MoveTip, MoveRate);
-        SetStatus(CheckLabel, Model.CheckSpeed, Model.CheckTip);
+        SetStatus(MoveLabel, content.MoveSpeed, content.MoveTip, MoveRate);
+        SetStatus(CheckLabel, content.CheckSpeed, content.CheckTip);
         SetStatus(
             TransferLabel,
             about
@@ -115,55 +231,55 @@ public sealed partial class MainWindow
         SetStatus(MemoryCaption, Model.Text.Get("about", "memory"));
         SetStatus(
             EngineMemoryLabel,
-            Model.Text.Format("about", "engine_memory", Model.EngineMemory),
-            Model.Text.Format("about", "engine_memory_hint", Model.EngineMemory)
+            Model.Text.Format("about", "engine_memory", content.EngineMemory),
+            Model.Text.Format("about", "engine_memory_hint", content.EngineMemory)
         );
         SetStatus(
             UiMemoryLabel,
-            Model.Text.Format("about", "ui_memory", Model.UiMemory),
-            Model.Text.Format("about", "ui_memory_hint", Model.UiMemory)
+            Model.Text.Format("about", "ui_memory", content.UiMemory),
+            Model.Text.Format("about", "ui_memory_hint", content.UiMemory)
         );
-        SetStatus(RestrictionLabel, Model.RestrictionStatus, Model.RestrictionTip);
+        SetStatus(RestrictionLabel, content.RestrictionStatus, content.RestrictionTip);
         SetStatus(LimitsLabel, Model.Text.Get("window", "limits_on"));
         SetStatus(
             FreeSpaceLabel,
-            Model.FreeSpaceStatus,
+            content.FreeSpaceStatus,
             Model.Text.Format(
                 "window",
                 "space_path",
-                Model.Settings.Destination.ConfirmedText ?? string.Empty,
-                Model.FreeSpaceStatus
+                content.Destination ?? string.Empty,
+                content.FreeSpaceStatus
             )
         );
-        SetStatus(ExternalIpLabel, Model.ExternalIp);
-        SetStatus(IncomingLabel, Model.IncomingStatus, Model.Incoming);
+        SetStatus(ExternalIpLabel, content.ExternalIp);
+        SetStatus(IncomingLabel, content.IncomingStatus, content.Incoming);
         SetStatus(
             UpdateLabel,
             Model.Text.Get("about", "available"),
             Model.Text.Get("about", "available_tip")
         );
 
-        ShowStatus(ContextStatus, Model.CountStatus.Length > 0);
+        ShowStatus(ContextStatus, content.CountStatus.Length > 0);
         ShowStatus(ContextIcon, true);
         ShowStatus(
             InformationStatus,
-            library && current && !work && Model.Library.InformationStatus.Length > 0
+            library && current && !work && content.InformationStatus.Length > 0
         );
-        ShowStatus(MemoryStatus, Model.ShowsMemory);
+        ShowStatus(MemoryStatus, content.ShowsMemory);
         ShowStatus(DownloadRate, about || transfers);
         ShowStatus(UploadRate, about || transfers);
-        ShowStatus(MoveRate, !about && current && Model.MoveSpeed.Length > 0);
-        ShowStatus(CheckRate, !about && current && Model.CheckSpeed.Length > 0);
-        ShowStatus(RestrictionStatus, !about && current && Model.HasRestriction);
+        ShowStatus(MoveRate, !about && current && content.MoveSpeed.Length > 0);
+        ShowStatus(CheckRate, !about && current && content.CheckSpeed.Length > 0);
+        ShowStatus(RestrictionStatus, !about && current && content.HasRestriction);
         ShowStatus(
             TransferLabel,
-            about || library && (transfers || current && Model.HasRestriction)
+            about || library && (transfers || current && content.HasRestriction)
         );
         ShowStatus(LimitsLabel, false);
-        ShowStatus(FreeSpaceStatus, !about && Model.ShowsFreeSpace);
-        ShowStatus(ExternalIpStatus, !about && current && Model.ShowsExternalIp);
-        ShowStatus(Incoming, current && Model.Page == WindowPage.Torrents);
-        ShowStatus(UpdateAvailable, !about && Model.HasUpdate);
+        ShowStatus(FreeSpaceStatus, !about && content.ShowsFreeSpace);
+        ShowStatus(ExternalIpStatus, !about && current && content.ShowsExternalIp);
+        ShowStatus(Incoming, current && content.Page == WindowPage.Torrents);
+        ShowStatus(UpdateAvailable, !about && content.HasUpdate);
         // MemoryStatus yields first, so while it shows, nothing after it
         // changes visibility and the divider can be decided here.
         ShowStatus(
@@ -200,13 +316,13 @@ public sealed partial class MainWindow
         FitWork();
         SetStatus(
             DownloadLabel,
-            about ? Model.LifetimeDownloaded : Model.DownloadSpeed,
+            about ? content.LifetimeDownloaded : content.DownloadSpeed,
             downloadTip
         );
-        SetStatus(UploadLabel, about ? Model.LifetimeUploaded : Model.UploadSpeed, uploadTip);
+        SetStatus(UploadLabel, about ? content.LifetimeUploaded : content.UploadSpeed, uploadTip);
         ShowStatus(
             LimitsLabel,
-            !about && transfers && Model.HasCaps && !Model.ShowsAlternativeLimits
+            !about && transfers && content.HasCaps && !content.ShowsAlternativeLimits
         );
         ReserveDigits(DownloadRate, DownloadLabel);
         ReserveDigits(UploadRate, UploadLabel);
@@ -238,11 +354,11 @@ public sealed partial class MainWindow
                 return;
         }
 
-        if (selected > 0 && Model.Page is WindowPage.Library or WindowPage.Torrents)
+        if (selected > 0 && content.Page is WindowPage.Library or WindowPage.Torrents)
             SetStatus(
                 CountLabel,
                 Model.Text.Format("window", "selected", selected),
-                Model.CountStatus
+                content.CountStatus
             );
         else
             ShowStatus(ContextStatus, false);
@@ -258,15 +374,15 @@ public sealed partial class MainWindow
         ShowStatus(TransferLabel, false);
         if (RestrictionStatus.Visibility == Visibility.Visible)
         {
-            var compact = Model.IsSessionPaused
+            var compact = content.IsSessionPaused
                 ? Model.Text.Get("status", "paused")
                 : Model.Text.Get("window", "alternative");
             SetStatus(
                 RestrictionLabel,
                 library ? Model.Text.Format("window", "torrent_status", compact) : compact,
                 library
-                    ? Model.Text.Format("window", "torrent_status", Model.RestrictionTip)
-                    : Model.RestrictionTip
+                    ? Model.Text.Format("window", "torrent_status", content.RestrictionTip)
+                    : content.RestrictionTip
             );
         }
         if (StatusFits())
@@ -312,9 +428,14 @@ public sealed partial class MainWindow
         var text = new string(
             label.Text.Select(character => char.IsDigit(character) ? '8' : character).ToArray()
         );
+        if (_reservedDigits.TryGetValue(panel, out var reserved) && reserved == text)
+        {
+            return;
+        }
         var icon = (FrameworkElement)panel.Children[0];
         icon.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
         panel.Width = MeasureText(label, text) + panel.Spacing + icon.DesiredSize.Width;
+        _reservedDigits[panel] = text;
     }
 
     private double MeasureText(TextBlock label, string text)
@@ -521,8 +642,14 @@ public sealed partial class MainWindow
 
     private static void NameButton(Button button, string text)
     {
-        AutomationProperties.SetName(button, text);
-        ToolTipService.SetToolTip(button, text);
+        if (AutomationProperties.GetName(button) != text)
+        {
+            AutomationProperties.SetName(button, text);
+        }
+        if (!Equals(ToolTipService.GetToolTip(button), text))
+        {
+            ToolTipService.SetToolTip(button, text);
+        }
     }
 
     private void RefreshText()

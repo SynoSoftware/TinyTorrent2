@@ -158,9 +158,14 @@ because it may predate the command. Routine engine ticks and history sampling
 keep their own cadence. The window has no summary timer or post-command polls;
 explicit refresh and reconnect reads remain available.
 
-Each connection retains one undelivered summary, replacing it with the latest.
-The writer alternates ordered frames with optional updates, and alternates summary
-and detail updates when both are pending, so none can starve the others. Every
+Each connection retains one undelivered summary and one undelivered detail
+observation per subscription and torrent, each replaced by the latest for its
+key, so an earlier subscription's late message never replaces a newer
+subscription's. A new subscription withdraws the earlier subscription's
+undelivered observations, which the window would drop, so the new view's
+first observation does not wait behind them. The writer
+alternates ordered frames with these pushed messages, and sends pushed messages
+in the order their keys arrived, so none can starve the others. Every
 snapshot, including an explicit reply, carries a sequence number assigned when
 built within its engine session. Successful mutation replies identify the summary
 published after that command when subscribers exist. The window can therefore use
@@ -176,12 +181,15 @@ If the torrent was removed, recover focus predictably and mark its draft target
 unavailable; never attach that draft to a re-added torrent with the same hashes.
 The window owns those presentation states, not another torrent database.
 
-A detail reply also belongs to the engine session, torrent, and inspector context
-that requested it. Apply it on the UI dispatcher only while that same consumer
-and context remain current. If selection, section, or consumer lifetime changed,
-request current visible detail without waiting for the obsolete read; discard
-that read's eventual reply.
-Correct transport correlation alone does not make a reply current for the view.
+A detail observation belongs to the engine session, torrent, and inspector
+context of the subscription that requested it. Apply it on the UI dispatcher
+only while that same context remains current. If selection, section, or
+consumer lifetime changed, subscribe to the current visible detail without
+waiting for the obsolete subscription; discard its eventual observations.
+Correct transport correlation alone does not make an observation current for
+the view. The window's receive thread drops an observation whose context is
+not the subscription it last requested and returns its buffer at once, so an
+abandoned view's peer list costs only its parse.
 
 **Owner requirement: display available facts immediately, even when they are
 not current; fresh facts follow in a later packet and the UI never waits.**
@@ -190,32 +198,52 @@ Slow collection, file I/O and lookup must not occupy that dispatch path. Actions
 such as Open may asynchronously await their own complete-data reply; this never
 holds the pipe or another request. Successful saves still require persistence.
 
-Inspector reads return immediately with available facts and a readiness flag;
-they never hold the request slot for libtorrent. Retained facts remain available
-for display regardless of age, until their torrent or generation is invalidated;
-readiness still requires recent, complete facts. Missing values remain unknown,
-not zero or empty sets. The existing detail collector pushes partial updates as
-queries answer, then a complete fresh result when all have answered. All messages carry the
-inspector context, and the pushed result also identifies its session and torrent.
-The immediate reply's readiness describes available facts, not completion of the
-fresh demand. Views apply those facts immediately and retain known values while
-missing ones arrive. Peer rows are matched within the affected torrent, so an
-ordinary rate or state change updates existing rows and keeps their identity
-instead of rebuilding the whole list. PipeClient keeps background file reads behind that demand until
-its matching complete push arrives or the demand ends through failure, replacement,
-release or disconnect, so a Library read cannot replace Inspector's awaited update.
-PipeClient forwards only the current Inspector push to the window's coalesced
-detail update; background file results settle their own wait inside PipeClient,
-so they cannot overwrite an Inspector result awaiting the UI dispatcher.
-The window invalidates that context on command replies before applying later
-pushed data, so a queued pre-command result cannot overwrite a confirmed edit.
-Tree and file-page requests keep independent replies in the existing command
-queue; they do not coalesce, invalidate the Inspector's context or replace its
-pending fresh-detail demand.
-Reads used by actions such as Open retain their complete-data replies because
-they need confirmed disk paths. They use the same collector.
+The Inspector subscribes to one detail section of the torrents it shows: one
+torrent, the selected group, or all torrents. A subscription replaces the
+connection's earlier one and never holds the request slot for libtorrent. Each
+torrent has one detail collection, shared by every reader of that torrent. The
+engine collects at most eight torrents at a time, and a torrent that a new
+subscription or read asks for goes before the refresh of torrents already
+shown. For each subscribed torrent the engine pushes the available facts at
+once with a readiness flag, then pushes again whenever new facts arrive.
+Retained facts remain available for display regardless of age, until their
+torrent or generation is invalidated. At once, readiness means complete facts
+no older than three seconds; afterwards it means complete facts that arrived
+after the subscription or its latest refresh. Missing values remain unknown,
+not zero or empty sets. At each refresh interval the engine reads every
+subscribed torrent again. A torrent that cannot be read, such as one still
+starting, answers each refresh with its failure and stays subscribed, so the
+window's refresh round never waits for it. A new subscription keeps the
+collected facts of the torrents both subscriptions show, so its first
+observation shows them.
 
-Immediate inspector replies and command replies answer within 50 ms at p95 and
+Views apply those facts immediately and retain known values while missing ones
+arrive. The window keeps the newest undelivered observation per subscription
+and torrent, and applies all waiting observations in one UI pass. Peer rows are matched within
+the affected torrent, so an ordinary rate or state change updates existing rows
+and keeps their identity instead of rebuilding the whole list.
+
+The window parses each observation once, into pooled buffers, and keeps it
+there until the inspector has applied it. A worker reads the peer list from
+that parse, so a large swarm's push is neither copied nor parsed again. Once
+the receive thread has passed an observation on, only the inspector returns
+its buffers, after every reader of its batch, that worker included, has
+finished, because a buffer returned while something still reads it shows
+wrong peers without an error. An observation dropped earlier, because it was
+stale or a newer one replaced it, is left to the garbage collector. The other sections are small, and the inspector applies a
+copy of their values, because it keeps parts of them. The window
+invalidates its context on command replies before applying later pushed data,
+so a queued pre-command result cannot overwrite a confirmed edit.
+
+Tree and file-page requests, and `torrent` reads by actions such as Open and by
+Library, keep independent replies in the existing command queue. They do not
+coalesce, change the Inspector's context or replace its subscription. A
+`torrent` read replies once its facts are complete and no older than three
+seconds, because actions need confirmed disk paths. It uses the torrent's
+shared collection, and releasing the Inspector's subscription does not cancel
+it.
+
+Immediate inspector observations and command replies arrive within 50 ms at p95 and
 100 ms at p99 under active Release load of 100 or more peers, also at the
 longest refresh interval and after invalidation. No request dispatch or reply
 callback makes a synchronous libtorrent call on the engine owner; workers may
@@ -225,10 +253,10 @@ priorities keep their completion semantics. The cost of the Pieces reply is
 unmeasured: a stall of 50–100 ms of the engine thread on every read would
 justify sending `verified` as a bit string; a few milliseconds would not.
 
-Each endpoint retains at most one undelivered detail update per connection or
-window, replacing it with the latest. Replies and control messages take priority
-over that optional update. Closing or changing the inspector releases its old
-demand; no refresh timer runs in the engine for a hidden inspector.
+The subscriptions' torrents bound the undelivered observations, so a large
+scope is never refused: refusing it would hide every torrent's peers instead of
+showing them as they arrive. Closing or changing the inspector releases its old
+subscription; the engine refreshes no detail for a hidden inspector.
 
 Bound payload size and retained snapshots. Never silently truncate a set or
 publish a partial copy as complete. A summary row is a few hundred bytes of JSON,
@@ -421,9 +449,9 @@ isolation guarantee; an extra token would not create a stronger boundary.
 
 ## Wire representation
 
-Protocol version 38 uses a four-byte little-endian UTF-8 JSON frame length,
+Protocol version 39 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:38,session_id:"...",data_directory:"..."}`. The absolute data directory
+client first receives `{type:"hello",version:39,session_id:"...",data_directory:"..."}`. The absolute data directory
 keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
 `{request_id:signed-64-bit-integer,command:string,...}`. Replies repeat `request_id` and have
@@ -470,8 +498,7 @@ disconnect. Pushes use the same snapshot data as replies, including `session_id`
 and a signed 64-bit `sequence` that increases whenever the engine builds a
 snapshot. The client discards a snapshot whose sequence is not newer than the
 last received on that connection. One replaceable summary slot bounds unsent
-pushes. The writer alternates ordered frames with optional updates and alternates
-summary and detail when both are pending. Routine publication follows
+summary pushes. Routine publication follows
 `refresh_interval` on one-second engine ticks, preserving the interval's phase
 instead of rounding every interval up; a connection test publishes each second.
 Successful mutation replies include `data.snapshot_sequence` when subscribers
@@ -480,6 +507,18 @@ Consumers use it to recognize a qualifying summary that arrived before the reply
 or retain their optimistic state until its push arrives. Commands also post a
 status query; fresh status is pushed on arrival. The window retains explicit
 refreshes but no summary timer or post-command polls.
+
+`subscribe` takes `context`, a signed 64-bit integer the window chooses,
+`section` (`general`, `files`, `peers`, `trackers` or `pieces`) and
+`torrent_ids`. A Files subscription to one torrent may also name `folders` and
+`files`, with the [Files view](#files-view)'s limits and values. An empty
+`torrent_ids` array releases the connection's subscription and needs no other
+field. The reply is an empty success. Each torrent's observation is
+`{type:"observation",session_id,context,torrent_id,section,ok,data}`, where
+`data` holds the section's view values and `ready`; a torrent that cannot be
+read has `ok:false` and `error` instead. A removed torrent answers
+`torrent_removed` once and leaves the subscription. `torrent` with a `view`
+answers one complete read and subscribes to nothing.
 
 Snapshots include `transfers: {session: {downloaded, uploaded}, all_time:
 {downloaded, uploaded}}`, with nonnegative signed 64-bit payload byte counts.
@@ -493,7 +532,8 @@ sequential, first_last and queue_top booleans that default to false; the files
 download with the preview's choices, which `edit` sets; an edit counts once
 it has replied),
 `cancel_preview` (preview_id), `merge_trackers` (preview_id,
-torrent_id), `torrent` (torrent_id), `files` (torrent_id and offset, as
+torrent_id), `torrent` (torrent_id), `subscribe` (context, section and
+torrent_ids, as above), `files` (torrent_id and offset, as
 [file pages](#file-pages) describes), `tree` and `edit` (as the
 [file browser](#file-browser) describes), `pause`, `resume`, `force`, `verify`, and
 `remove` (torrent_ids), `retry` (torrent_ids: clears each torrent's problems as

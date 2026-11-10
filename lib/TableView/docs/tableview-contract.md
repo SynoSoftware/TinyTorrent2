@@ -243,8 +243,10 @@ public sealed class Table : Control
     public Sort? Sort { get; set; }
     public TimeSpan SortInterval { get; set; }
     public void RefreshView();
+    public void RefreshView(IEnumerable<object> changed);
     public Task ViewReady { get; }
     public void Release(IEnumerable<object> items);
+    public void Withdraw();
     public void ScrollIntoView(object item);
     public void ScrollIntoView(object item, IEnumerable<object> arrivals);
     public double VerticalOffset { get; }
@@ -417,9 +419,9 @@ The control deliberately has two extension mechanisms, with no overlap:
 Policy callbacks MUST be pure, synchronous, and cheap. The table never calls
 them per render frame. A sort or layout request reads its sort keys once on the
 UI thread, so a request whose selector fails throws there and changes nothing.
-Every projection reads identity on the worker at the start of preparation, and
-sort keys when it sorts rather than keeping the view's order, once per row,
-from the source snapshot the UI captured; selection
+The table keeps those keys. A projection reads identity on the worker once per
+row of a source snapshot it has not seen, and a sort key only for a row that
+arrived, came back as a new instance, or was named by `RefreshView`; selection
 and hierarchy capture still read identity on the UI thread. Key and sort-key
 selectors and comparisons therefore must not access UI state; captured key values must remain stable. `Comparer<TKey>.Default` supplies normal .NET ordering, including enums
 and nullable keys; default nulls come first ascending. An optional comparer
@@ -509,16 +511,22 @@ updates.
 Source capture, hierarchy capture and the policy selectors other than key and
 sort-key selectors stay on the UI thread because the host's collections may be
 UI-owned. TableView then reads identity
-and sort keys once per row and prepares validation, sorting, membership holds,
-pinning, hierarchy projection, position indices and collection edits on a
-worker. Key selectors run on that worker for every projection, sort-key
-selectors for every projection that sorts, and they run
+and sort keys at most once per row and prepares validation, sorting, membership
+holds, pinning, hierarchy projection, position indices and collection edits on
+a worker. It gives each row a slot, a small number the row keeps while the view
+shows it or the source has it, and keeps by slot between updates where each row
+stands and each row's sort key, so an update does work in proportion to the
+rows that arrived, left or were named, not to every row. Key selectors run on that worker for every new source snapshot,
+sort-key selectors for the rows a sort must place again, and they run
 on the UI thread for the read that validates a sort or layout request and for
 selection and hierarchy identity: they read only state the host publishes
 safely, such as immutable fields, snapshots or volatile values, and never UI
 objects, because reading every row on the UI thread blocks input for the whole
 population on every capture. One preparation runs per table and later requests coalesce to
-the latest source and sort. An obsolete result cannot publish. A change in which
+the latest source and sort. A preparation starts after the UI turn that requested it, so
+the requests of one turn, such as a new `ItemsSource` and the `RefreshView` that names the
+rows whose values changed, reach the view in one update. An obsolete result cannot publish,
+and the newer request stops its work on the worker. A change in which
 positions have native containers causes preparation again for those positions,
 so an edit sequence never targets containers different from the ones it captured.
 The UI applies prepared edits and performs native input, focus, control creation,
@@ -542,22 +550,69 @@ later source update.
 The private view is handed to the native row surface in full. That surface
 reads a row only when it realizes the row's position, and for every other
 position it keeps nothing but the count. A source update or sort therefore
-raises a collection notification for two things and nothing else: every
-membership change, at its true position, and every position the surface
-currently holds a container for, pinned and not-yet-recycled containers
-included. Every other position takes its new row without a notification. The
-observable result is the one this section already requires: the count is
-always right, a row that leaves or arrives at a held position animates, and a
-container never shows a row other than the view's row at its index. A
-membership-only update, such as a host filter over an already-ordered source,
-raises exactly the notifications it raised before this rule and no others.
+raises a collection notification only where the surface can show a row: every
+membership change inside the positions its cache reaches, which are the visible
+rows and about half a viewport around them, at its true position, and every
+position the surface currently holds a container for, pinned and
+not-yet-recycled containers included. Every other position takes its new row
+without a notification, and a membership change past the cache changes only
+the count. The observable result is the one this section already requires: a
+row that leaves or arrives at a held position animates, and a container never
+shows a row other than the view's row at its index.
+
+The table tells the surface a change in count at the end of the list, one
+notification per position. The first slice of a few milliseconds runs in the
+update; the rest run in slices of the same length below input priority, so
+input waits at most one slice however much the count changes. A newer update
+replaces what is left. A notification per row in the update held the UI thread
+for every row: a switch between torrents with 159,810 peers told the list of
+each one. A row that arrives this way is announced as the platform's
+placeholder item, null, and the surface reads the row when it realizes the
+position, because the list wraps every row it reads during a notification for
+COM: it kept 165,559 wrappers for 159,810 peers. While the count is still being
+told:
+
+- Rows still to arrive lie past the end of the scroll range, which grows as the
+  slices run. While the rows scroll, arrivals wait and continue when the scroll
+  ends, because the list plays its insert animation on every row it builds in
+  the layout pass of an insertion, and the rows a scroll brings in would stay
+  blank for 300 ms.
+- When the count shrinks, positions past the last row hold no row. A container
+  already there shows nothing, and one the list builds there shows the
+  platform's placeholder. Such a position has no selection, and a press there is
+  a press on empty surface. The scroll range shrinks as the slices remove them.
+  So when the rows end inside the positions the cache reaches, the update tells
+  the list the whole change in count, because removals on screen would bring
+  such positions into it. A different list that arrives while the rows are at
+  the top is the exception: it keeps every container where it is.
+- `ScrollIntoView` to a row the list has not been told of tells the list of the
+  rows up to it at once and scrolls a frame later. `ScrollTo` tells the list the
+  whole count first, because its offset can lie in any row.
+
 An update that shares no row with the view, a different list, is the one
-exception: the rows at held positions animate out and the new rows at those
-positions animate in, counted back from the new end where a held position is
-past it, every other position takes its new row without a
-notification, and the change in count is raised at the end. Raising each of
-5,000 removals and arrivals at its true position costs about 90 ms of native
-work for rows that are not on screen.
+exception: every position takes its new row without a notification, only the
+change in count is told, at the end, and each held container shows the row now
+at its index. The containers on screen show their new rows in the update. The
+containers the list holds below the screen, about a third of them, show theirs
+after the layout that shows the screen, or at once when the rows start to
+scroll, because showing a row costs every cell its content and a measure: cell
+layout and fill took about 490 ms of a 3,159 ms click phase. A switch to another
+torrent's peers therefore builds no row and animates nothing but rows that join
+or leave at the end. Raising each of 5,000 removals and arrivals at its true
+position costs about 90 ms of native work for rows that are not on screen, and
+building a new row for every held position is the work a click made during the
+switch waits for.
+**Owner ruling: the table never flashes.** Animating a different list's rows
+out and in shows no rows in between, because the list's removals finish before
+its delayed arrivals.
+**Owner ruling: a different list starts at the top.** After that switch the
+table scrolls to the first row without animation, because the new rows at the
+old offset show the person an arbitrary middle of a list they have not seen. A
+host's `ScrollTo` that waits for the view keeps the host's offset. The list's
+own record of a held container's row still names the old list's row, so the
+table finds a container's row and its automation row by position, and, when
+the old list had selected rows, asks the list to read every held container's
+selection again.
 What falsifies the rule is a container whose content differs from the view's
 row at its index after a sort, a scroll, or `ScrollIntoView`; the reference
 host's diagnostics section J checks exactly that.
@@ -599,6 +654,15 @@ moving while they work.
   other update stays held. A row stays named for one settling interval, and at
   least the default one, so a named change that never comes, such as a refused
   removal, cannot let a later background change through.
+- A change of what the table shows, such as another torrent's peers, is the
+  person's change as a whole. The host calls `Withdraw()` when the person makes
+  it, then sets the new source. `Withdraw()` drops a source the table has
+  accepted and not yet shown, and the rows on screen stay until the new source
+  arrives, which applies whole, as a change named with `Release` does. Until
+  then the table follows no notification of the withdrawn source, and
+  `ItemsSource` still returns it, so setting the same instance again is taken as
+  the new source. One call replaces naming every row of both lists, which looked
+  up each row on the UI thread at every switch.
 - A held row that comes back into the source stops being held.
 - Inside a sort's settling interval the same hold keeps membership, with the
   pointer anywhere, until the settle; section 9 states when. With the pointer
@@ -614,7 +678,17 @@ It does not automatically re-sort or re-evaluate interactivity.
 After a batch changes any value used by the active sort or the schema's
 interaction predicate, the host calls `RefreshView()` once.
 `RefreshView()` re-evaluates the current source snapshot, applies the current
-sort, and does not re-enumerate or fetch a non-notifying source. When rows are
+sort, and does not re-enumerate or fetch a non-notifying source. A host that
+knows which rows changed calls `RefreshView(changed)` instead: the table reads
+the sort keys of only those rows again and places them among the others, which
+keep the order the last sort gave them, so the work follows the rows named.
+A row named twice is read once, and a row the source does not have is ignored:
+naming adds no membership. The host names every row whose sort value changed;
+a row it leaves out keeps its place until a refresh names it or `RefreshView()`.
+The table keeps the names until the rows take their sorted places, so a refresh
+the host skips loses none. A source change alone reads keys only for rows that
+arrive or come back as a new instance, because a value change reaches the table
+only through `RefreshView`. When rows are
 then allowed to trade places is section 9's settling question, not this one.
 Display-only updates need no call.
 
@@ -1029,8 +1103,8 @@ Sorting requirements:
   header is the only place the sort shows and the only place it is changed, so
   a sort by a hidden column would be one the user can neither see nor undo;
 - normal property notification redraws cells but does not continuously resort;
-- the host calls `RefreshView()` after a batch changes any active
-  view-affecting value;
+- the host calls `RefreshView()`, or `RefreshView(changed)` with the rows it
+  changed, after a batch changes any active view-affecting value;
 - while a sort is applied, the view converges on the sorted order within a
   bounded interval, the settling interval. `SortInterval` sets it, and
   `TimeSpan.Zero` restores immediate re-sorting. A sort by the column

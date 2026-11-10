@@ -1,6 +1,9 @@
 param(
     [string] $ArtifactsPath = (Join-Path $PSScriptRoot '../../artifacts'),
-    [int] $Samples = 120
+    [int] $Samples = 120,
+    # Torrent counts whose all-torrents Peers refresh is timed, and how often.
+    [int[]] $Scopes = @(10, 100, 120),
+    [int] $Rounds = 10
 )
 
 $ErrorActionPreference = 'Stop'
@@ -17,32 +20,90 @@ $load = [Collections.Generic.List[object]]::new()
 $pending = @{}
 $context = 0
 
-function Receive-Detail($frame) {
-    Assert ($frame.type -eq 'detail') 'Unexpected unsolicited frame'
-    $key = [string]$frame.context
-    if (-not $pending.ContainsKey($key)) { return }
-    $sample = $pending[$key]
-    Assert $frame.ok 'Complete detail failed'
+function Receive-Observation($frame) {
+    Assert ($frame.type -eq 'observation') 'Unexpected unsolicited frame'
+    $sample = $pending[[string]$frame.torrent_id]
+    if (-not $sample -or $sample.Context -ne $frame.context) { return }
+    Assert $frame.ok 'Observation failed'
+    $elapsed = $sample.Watch.Elapsed.TotalMilliseconds
+    if (-not $sample.Seen) {
+        $sample.Seen = $true
+        $measurements.Add([pscustomobject]@{ phase = $sample.Phase; kind = 'immediate'; operation = $sample.View; milliseconds = $elapsed })
+    }
+    # A later partial observation means the answers arrived in more than one alert batch.
+    elseif (-not $frame.data.ready) { $sample.Partials++ }
     if (-not $frame.data.ready) { return }
     $measurements.Add([pscustomobject]@{
-        phase = $sample.Phase; kind = 'complete'; operation = $sample.View
-        milliseconds = $sample.Watch.Elapsed.TotalMilliseconds
+        phase = $sample.Phase; kind = 'complete'; operation = $sample.View; milliseconds = $elapsed; partials = $sample.Partials
     })
-    $pending.Remove($key)
+    $pending.Remove([string]$frame.torrent_id)
+}
+
+# Subscribes to the torrents' section and waits for every torrent's ready
+# observation.
+function Measure-Subscription([string[]] $ids, [string] $view, [string] $phase) {
+    $context = ++$script:context
+    $watch = [Diagnostics.Stopwatch]::new()
+    $pending.Clear()
+    foreach ($id in $ids) {
+        $pending[$id] = @{ Watch = $watch; Context = $context; Phase = $phase; View = $view; Seen = $false; Partials = 0 }
+    }
+    # Timing starts at the request, as each reply's does.
+    $watch.Start()
+    $null = Measure-Reply @{ command = 'subscribe'; context = $context; section = $view; torrent_ids = $ids } $phase 'subscribe'
+    while ($pending.Count) { Receive-Observation (Read-Frame $script:pipe) }
+}
+
+# The window subscribes to an all-torrents Peers scope at once. Each round
+# starts cold, as the baseline's reads did, because a release ends the
+# subscription's collections.
+function Measure-Scope([string[]] $ids) {
+    $phase = "scope-$($ids.Count)"
+    for ($round = 0; $round -lt $Rounds; ++$round) {
+        $released = Send-Command @{ command = 'subscribe'; torrent_ids = @() }
+        Assert $released.ok 'Release was refused'
+        $watch = [Diagnostics.Stopwatch]::StartNew()
+        Measure-Subscription $ids 'peers' $phase
+        $measurements.Add([pscustomobject]@{
+            phase = $phase; kind = 'refresh'; operation = 'peers'; milliseconds = $watch.Elapsed.TotalMilliseconds
+        })
+    }
+}
+
+# The reply's bytes, the time until they arrive, which includes the engine's
+# build and write, and the window's parse with System.Text.Json.
+function Measure-Snapshot {
+    for ($round = 0; $round -lt $Rounds; ++$round) {
+        $id = ++$script:sequence
+        $bytes = [Text.Encoding]::UTF8.GetBytes((@{ command = 'snapshot'; request_id = $id } | ConvertTo-Json -Compress))
+        $watch = [Diagnostics.Stopwatch]::StartNew()
+        $script:pipe.Write([BitConverter]::GetBytes([int]$bytes.Length), 0, 4)
+        $script:pipe.Write($bytes, 0, $bytes.Length)
+        do {
+            $size = [BitConverter]::ToInt32((Read-Bytes $script:pipe 4), 0)
+            $body = Read-Bytes $script:pipe $size
+            $arrived = $watch.Elapsed.TotalMilliseconds
+            $parse = [Diagnostics.Stopwatch]::StartNew()
+            $document = [Text.Json.JsonDocument]::Parse([ReadOnlyMemory[byte]]$body, [Text.Json.JsonDocumentOptions]::new())
+            $parsed = $parse.Elapsed.TotalMilliseconds
+            $request = [Text.Json.JsonElement]::new()
+            $answers = $document.RootElement.TryGetProperty('request_id', [ref]$request) -and $request.GetInt64() -eq $id
+            $document.Dispose()
+        } while (-not $answers)
+        $measurements.Add([pscustomobject]@{ phase = 'snapshot'; kind = 'reply'; operation = 'arrived'; milliseconds = $arrived; bytes = $size })
+        $measurements.Add([pscustomobject]@{ phase = 'snapshot'; kind = 'reply'; operation = 'parsed'; milliseconds = $parsed; bytes = $size })
+    }
 }
 
 function Measure-Reply([hashtable] $fields, [string] $phase, [string] $kind) {
     $fields.request_id = ++$script:sequence
     $watch = [Diagnostics.Stopwatch]::StartNew()
-    if ($fields.ContainsKey('context')) {
-        $pending[[string]$fields.context] = @{ Watch = $watch; Phase = $phase; View = $fields.view }
-    }
     $bytes = [Text.Encoding]::UTF8.GetBytes(($fields | ConvertTo-Json -Depth 20 -Compress))
     $script:pipe.Write([BitConverter]::GetBytes([int]$bytes.Length), 0, 4)
     $script:pipe.Write($bytes, 0, $bytes.Length)
     do {
         $frame = Read-Frame $script:pipe
-        if ($frame.type -eq 'detail') { Receive-Detail $frame; continue }
+        if ($frame.type -eq 'observation') { Receive-Observation $frame; continue }
         Assert ($frame.request_id -eq $fields.request_id) 'Reply belongs to another request'
         if (-not $frame.ok) { throw ('Command failed: ' + ($frame | ConvertTo-Json -Depth 20 -Compress)) }
         $measurements.Add([pscustomobject]@{
@@ -89,6 +150,15 @@ try {
     Assert ($peers -ge 100) 'Fewer than 100 live peer connections; measurement did not start'
     Assert (@($before.torrents | Where-Object status -EQ 'seeding').Count -gt 0) 'No finished seed for policy-query measurement'
     $torrentId = ($before.torrents | Where-Object { $_.peer_count -gt 0 -and $_.progress -lt 1 } | Select-Object -First 1).torrent_id
+    $ids = @($before.torrents.torrent_id)
+    foreach ($count in $Scopes) {
+        Assert ($ids.Count -ge $count) "Fewer than $count torrents for the scope refresh"
+        Measure-Scope $ids[0..($count - 1)]
+    }
+    # The scope's refresh observations would share the pipe with the snapshots.
+    $released = Send-Command @{ command = 'subscribe'; torrent_ids = @() }
+    Assert $released.ok 'Release was refused'
+    Measure-Snapshot
     $views = 'general', 'files', 'peers', 'trackers', 'pieces'
     foreach ($interval in 1000, 10000) {
         $configured = Send-Command @{ command = 'settings'; changes = @{ refresh_interval = $interval } }
@@ -105,8 +175,7 @@ try {
             }
             $null = Measure-Reply $command $phase 'command'
             $view = $views[$index % $views.Count]
-            $null = Measure-Reply @{ command = 'torrent'; torrent_id = $torrentId; view = $view; context = ++$context } $phase 'immediate'
-            while ($pending.Count) { Receive-Detail (Read-Frame $script:pipe) }
+            Measure-Subscription @($torrentId) $view $phase
             if ($index % 25 -eq 0) {
                 $snapshot = (Send-Command @{ command = 'snapshot' }).data
                 $live = ($snapshot.torrents | Measure-Object -Property peer_count -Sum).Sum
@@ -127,14 +196,20 @@ try {
         $values = @($group.Group.milliseconds | Sort-Object)
         [pscustomobject]@{
             path = $group.Name; count = $values.Count
+            median = $values[[Math]::Ceiling($values.Count * .5) - 1]
             p95 = $values[[Math]::Ceiling($values.Count * .95) - 1]
             p99 = $values[[Math]::Ceiling($values.Count * .99) - 1]
             maximum = $values[-1]
         }
     }
-    @{ before = $before; after = $after; load = $load; samples = $measurements; summary = @($summary) } |
+    $batches = foreach ($group in $measurements | Where-Object { $_.kind -eq 'complete' -and $_.operation -in 'files', 'pieces' } |
+        Group-Object operation) {
+        [pscustomobject]@{ view = $group.Name; reads = $group.Count; one_batch = @($group.Group | Where-Object partials -EQ 0).Count }
+    }
+    @{ before = $before; after = $after; load = $load; samples = $measurements; summary = @($summary); batches = @($batches) } |
         ConvertTo-Json -Depth 30 | Set-Content -LiteralPath (Join-Path $directory 'measurement.json') -Encoding utf8
     $summary | Format-Table -AutoSize
+    $batches | Format-Table -AutoSize
     Write-Output "Evidence: $directory"
 }
 finally {

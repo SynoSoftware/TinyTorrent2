@@ -20,6 +20,14 @@ namespace tt
 {
 using Json = nlohmann::json;
 using Reply = std::function<void(Json)>;
+// One client's pushed messages. A message replaces the client's unsent message
+// with the same key, so a reader that falls behind receives only the latest of
+// each. Withdrawing a key drops its unsent message.
+struct Push
+{
+    std::function<void(std::string key, Json message)> replace;
+    std::function<void(std::string const& key)> withdraw;
+};
 
 constexpr wchar_t productName[] = L"TinyTorrent";
 // The window process sets the same AppUserModelID, so Windows treats the
@@ -151,7 +159,7 @@ public:
     Engine(Engine const&) = delete;
     Engine& operator=(Engine const&) = delete;
 
-    void Execute(Json const& request, std::string const& connectionId, Reply reply);
+    void Execute(Json const& request, std::string const& connectionId, Reply reply, Push push);
     void Tick();
     void Disconnect(std::string const& connectionId);
     // Cancels the file work, saves it as tasks for the next start, and saves
@@ -274,4 +282,10 @@ char const* ToString(ToastKind kind);
 char const* ToString(ErrorCode code);
 Json Success(Json data = Json::object());
 Json Failure(ErrorCode code, std::string detail = {});
+// A JSON value already written as text, which the pipe writes as it is, so a
+// long list needs no JSON object per item. It is only ever an object's member,
+// never an array's item, so the pipe never searches the long arrays of a
+// snapshot for one.
+Json Fragment(std::vector<std::uint8_t> text);
+bool IsFragment(Json const& value);
 }

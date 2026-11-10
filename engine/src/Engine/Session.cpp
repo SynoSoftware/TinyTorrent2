@@ -647,7 +647,7 @@ Json Engine::State::Snapshot()
         auto status = torrent.Classify(paused.has_value());
         auto wait = status == Status::WaitingCheck || status == Status::WaitingMove ?
             WaitOf(torrent, status, inUse) : DriveWait{};
-        rows.push_back(torrent.Row(paused.has_value(), queued == queue.end() ? -1 : queued->second,
+        rows.push_back(torrent.Row(status, queued == queue.end() ? -1 : queued->second,
             MoveProgress(torrent), wait, OffersRetry(torrent)));
     }
     auto current = settings.ToJson();
@@ -929,8 +929,8 @@ void Engine::State::Tick()
                 failed(error);
             }
         }
-        if (reading && !alerts.empty())
-            ContinueReading(std::exchange(reading->changed, false));
+        if (!alerts.empty())
+            PublishDetail();
         std::vector<std::string> renaming;
         for (auto const& [root, rename] : renames)
             renaming.push_back(root);
@@ -1052,8 +1052,16 @@ void Engine::State::PublishSnapshot()
         return;
     auto message = Success(Snapshot());
     message["type"] = "snapshot";
-    for (auto const& [connectionId, send] : snapshotSubscribers)
-        send(message);
+    // The last subscriber, usually the only one, takes the message itself
+    // instead of a copy of every torrent's row.
+    for (auto subscriber = snapshotSubscribers.begin(); subscriber != snapshotSubscribers.end(); ++subscriber)
+    {
+        auto const& push = subscriber->second;
+        if (std::next(subscriber) == snapshotSubscribers.end())
+            push.replace("snapshot", std::move(message));
+        else
+            push.replace("snapshot", message);
+    }
 }
 
 void Engine::State::RequestStatus(bool immediate)

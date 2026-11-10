@@ -25,6 +25,9 @@ public sealed partial class MainWindow
     private RelayCommand? _switchInspector;
     private bool _menusPending;
     private int _menuVersion;
+    // Whether the queued fill also fills the View menu, which a selection
+    // change leaves as it is.
+    private bool _fillsView;
     private IReadOnlyList<MenuEntry> _torrentCommands = [];
 
     private IReadOnlyList<MenuEntry> WorkspaceMenu(string group) =>
@@ -106,6 +109,39 @@ public sealed partial class MainWindow
         HelpMenu.Title = Model.Text.Get("menus", "help");
         HelpMenu.AccessKey = MenuKey("help");
         AutomationProperties.SetName(Menus, Model.Text.Get("commands", "menu"));
+        // File and Help hold only commands, whose items follow the commands'
+        // enabled state, so only the language changes them.
+        MenuItems.Fill(
+            FileMenu.Items,
+            [
+                Command("add_file", Model.Add, Syno.Segoe.FilePlus),
+                Command("add_magnet", Model.AddMagnet, Syno.Segoe.Link),
+                new MenuSeparator(),
+                Command("settings", Model.ShowSettings, Syno.Segoe.Settings),
+                new MenuSeparator(),
+                Command("close", Model.CloseWindow, Syno.Segoe.X),
+                Command("exit", Model.Exit, Syno.Segoe.Power),
+            ],
+            Model.Text
+        );
+        MenuItems.Fill(
+            HelpMenu.Items,
+            [
+                new MenuCommand(
+                    Model.UpdateText,
+                    Syno.Segoe.CircleFadingArrowUp,
+                    Model.Updates.Check
+                )
+                {
+                    AccessKey = MenuKey("update"),
+                },
+                new MenuCommand(Model.Text.Get("about", "title"), Syno.Segoe.Info, Model.ShowAbout)
+                {
+                    AccessKey = MenuKey("about"),
+                },
+            ],
+            Model.Text
+        );
         _torrentCommands = Selection(properties: true, includeRetry: true).ToArray();
         QueueMenus();
         ClearFiltersButton.Text = Model.Text.Get("window", "clear_filters");
@@ -178,9 +214,36 @@ public sealed partial class MainWindow
         }
     }
 
+    // Fills again the menus that show this model property. An item's enabled
+    // state follows its command and the window's accelerators run commands,
+    // not items, so a menu whose content is unchanged needs no fill.
+    private void ObserveMenus(string? property)
+    {
+        switch (property)
+        {
+            case null
+                or ""
+                or nameof(MainViewModel.ShowsFilters)
+                or nameof(MainViewModel.HasInspector)
+                or nameof(MainViewModel.IsToolbarOpen):
+                QueueMenus();
+                break;
+            case nameof(MainViewModel.Selected):
+                QueueTorrentMenu();
+                break;
+        }
+    }
+
+    // Queues a fill of the View menu as well as the Torrent menu.
+    private void QueueMenus()
+    {
+        _fillsView = true;
+        QueueTorrentMenu();
+    }
+
     // One update raises several changes in the same turn, so the menus refill once
     // after it.
-    private void QueueMenus()
+    private void QueueTorrentMenu()
     {
         _menuVersion++;
         if (_menusPending || _allowClose)
@@ -300,19 +363,6 @@ public sealed partial class MainWindow
             MenuItems.Refresh(_selectionMenu);
         var library = Model.Page == WindowPage.Library;
         MenuItems.Fill(
-            FileMenu.Items,
-            [
-                Command("add_file", Model.Add, Syno.Segoe.FilePlus),
-                Command("add_magnet", Model.AddMagnet, Syno.Segoe.Link),
-                new MenuSeparator(),
-                Command("settings", Model.ShowSettings, Syno.Segoe.Settings),
-                new MenuSeparator(),
-                Command("close", Model.CloseWindow, Syno.Segoe.X),
-                Command("exit", Model.Exit, Syno.Segoe.Power),
-            ],
-            Model.Text
-        );
-        MenuItems.Fill(
             TorrentMenu.Items,
             library
                 ? [.. LibraryMenu()]
@@ -326,6 +376,9 @@ public sealed partial class MainWindow
                 ],
             Model.Text
         );
+        if (!_fillsView)
+            return;
+        _fillsView = false;
         List<MenuEntry> view =
         [
             .. WorkspaceMenu("WorkspaceView"),
@@ -366,24 +419,6 @@ public sealed partial class MainWindow
         view.Add(Command("selected_map", SelectedMap, Syno.Segoe.GraphStar));
         view.Add(Command("all_map", AllMap, Syno.Segoe.Globe2));
         MenuItems.Fill(ViewMenu.Items, view, Model.Text);
-        MenuItems.Fill(
-            HelpMenu.Items,
-            [
-                new MenuCommand(
-                    Model.UpdateText,
-                    Syno.Segoe.CircleFadingArrowUp,
-                    Model.Updates.Check
-                )
-                {
-                    AccessKey = MenuKey("update"),
-                },
-                new MenuCommand(Model.Text.Get("about", "title"), Syno.Segoe.Info, Model.ShowAbout)
-                {
-                    AccessKey = MenuKey("about"),
-                },
-            ],
-            Model.Text
-        );
     }
 
     private void ShowSelectionMenu(FrameworkElement target, Point? position)

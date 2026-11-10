@@ -22,15 +22,20 @@ namespace Syno.TinyTorrent.Shell;
 public sealed partial class MainWindow
 {
     private static MapModel.Population CapturePopulation(MapModel model, IEnumerable<Peer> peers) =>
-        new(model.Subject, peers.Select(peer => new MapModel.Observation(peer.Capture(), peer.Location)).ToArray());
+        new(model.Subject, peers.ToArray());
 
     private static MapMotion.Displayed? CaptureDisplay(PeerMap map) =>
         (MapMotion.Displayed?)typeof(PeerMap).GetProperty("Displayed", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(map);
 
-    private static void CaptureRates(Peer peer, double download, double? upload = null)
+    private static Peer.Change CaptureRates(Peer peer, double download, double? upload = null)
     {
         var before = peer.Capture();
-        peer.Apply(Peer.Prepare(before, before with { DownloadRate = download, UploadRate = upload ?? before.UploadRate }));
+        var values = before.Values;
+        values.DownloadRate = download;
+        values.UploadRate = upload ?? values.UploadRate;
+        var change = new Peer.Change(new(values, before.Client), peer.Location, Peer.Compare(before, values, before.Client));
+        peer.Apply(change);
+        return change;
     }
 
     private static MapRenderer? CaptureRenderer(PeerMap map)
@@ -38,6 +43,21 @@ public sealed partial class MainWindow
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
         var motion = (MapMotion?)typeof(PeerMap).GetField("_motion", flags)!.GetValue(map);
         return motion?.Renderer;
+    }
+
+    /// <summary>Waits for something the map makes off the UI thread, such as its renderer or the places it shows.</summary>
+    private static async Task<T> CaptureMapValue<T>(Func<T?> read, string missing)
+        where T : class
+    {
+        var waiting = Stopwatch.StartNew();
+        while (true)
+        {
+            if (read() is { } value)
+                return value;
+            if (waiting.Elapsed > TimeSpan.FromSeconds(10))
+                throw new TimeoutException(missing);
+            await Task.Delay(16);
+        }
     }
 
     private static bool CaptureMapIdle(PeerMap map)
@@ -637,15 +657,12 @@ public sealed partial class MainWindow
             && inspector.IsAvailable && !inspector.IsLoading);
         var invalidate = typeof(Inspector).GetMethod("Invalidate", Flags)!;
         var fetching = typeof(Inspector).GetField("_fetching", Flags)!;
-        var context = typeof(Inspector).GetField("_context", Flags)!;
-        var apply = typeof(Inspector).GetMethod("ApplyPeers", Flags)!;
         void StopReading()
         {
             invalidate.Invoke(inspector, null);
             fetching.SetValue(inspector, true);
         }
-        Task<bool> Apply(JsonElement rows) => (Task<bool>)apply.Invoke(inspector,
-            ["peer-check", rows, context.GetValue(inspector)!])!;
+        Task<bool> Apply(JsonElement rows) => inspector.ApplyCapturedPeers("peer-check", rows);
         StopReading();
         typeof(Inspector).GetProperty(nameof(Inspector.Peers))!.SetValue(inspector, null);
         try
@@ -693,7 +710,7 @@ public sealed partial class MainWindow
             };
             await Apply(PeerRows(3));
             if (!ReferenceEquals(inspector.Peers, peers) || !ReferenceEquals(inspector.Peers[0], peers[0])
-                || captured.State != PeerState.Known || peers[0].State != before.State || !notified)
+                || captured.Values.State != PeerState.Known || peers[0].State != before.Values.State || !notified)
                 throw new InvalidOperationException("Prepared peer changes lost row identity or mutated a captured record.");
             var locating = typeof(Inspector).GetField("_locating", Flags)!;
             var lookup = Stopwatch.StartNew();
@@ -734,9 +751,16 @@ public sealed partial class MainWindow
         if (targets.Length != 2)
             throw new InvalidOperationException("Selection review requires two torrents.");
         Torrents.Selection = new Syno.TableView.Selection([targets[0]], targets[0]);
+        await SelectTorrent();
         Run(Model.Properties);
         var inspector = Model.Inspector;
         await CaptureLayout();
+        // A hidden inspector does not follow the selection, which this review measures.
+        if (!inspector.IsVisible)
+            throw new InvalidOperationException(
+                $"The selection review needs a visible inspector: open={Model.HasInspector}, "
+                    + $"compact={Model.IsInspectorCompact}, minimized={Model.IsMinimized}, page={Model.Page}."
+            );
         var preparingSelection = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var preparedInBackground = false;
         var preparation = Torrents.PrepareSelection(async (_, cancellation) =>
@@ -788,7 +812,10 @@ public sealed partial class MainWindow
                     if (notifications != 0 || windowNotifications != 0)
                         throw new InvalidOperationException("Selection ran inspector or window bindings inline.");
                 }
-                await CaptureReady(inspector, () => !inspector.IsLoading && !inspector.HasError);
+                // The inspector follows the selection on a later frame, so the
+                // wait names the final row.
+                await CaptureReady(inspector,
+                    () => inspector.Target == targets[0] && !inspector.IsLoading && !inspector.HasError);
                 await CaptureLayout();
                 if (inspector.Target != targets[0] || notifications == 0)
                     throw new InvalidOperationException("Deferred inspector refresh lost the final selection.");
@@ -811,9 +838,7 @@ public sealed partial class MainWindow
 
         var flags = BindingFlags.Instance | BindingFlags.NonPublic;
         var invalidate = typeof(Inspector).GetMethod("Invalidate", flags)!;
-        var context = typeof(Inspector).GetField("_context", flags)!;
         var fetching = typeof(Inspector).GetField("_fetching", flags)!;
-        var apply = typeof(Inspector).GetMethod("ApplyPeers", flags)!;
         invalidate.Invoke(inspector, null);
         fetching.SetValue(inspector, true);
         var rows = PeerRows(10000);
@@ -833,8 +858,7 @@ public sealed partial class MainWindow
             inspector.PropertyChanged += published;
             try
             {
-                preparing = (Task<bool>)apply.Invoke(inspector,
-                    [targets[0].TorrentId, rows, context.GetValue(inspector)!])!;
+                preparing = inspector.ApplyCapturedPeers(targets[0].TorrentId, rows);
                 await preparing;
                 cold.Stop();
                 inspector.Refresh();
@@ -851,8 +875,7 @@ public sealed partial class MainWindow
             var first = peers[0];
             first.Update(new Peer(Model.Text, targets[0].TorrentId, first.Endpoint, null,
                 JsonSerializer.SerializeToElement(new { state = "known", role = "leecher", sources = new[] { "dht" } })));
-            await (Task<bool>)apply.Invoke(inspector,
-                [targets[0].TorrentId, rows, context.GetValue(inspector)!])!;
+            await inspector.ApplyCapturedPeers(targets[0].TorrentId, rows);
             if (!ReferenceEquals(inspector.Peers![0], first) || first.Role != PeerRole.Seed)
                 throw new InvalidOperationException("Background refresh replaced a live peer or lost its update.");
             inspector.Refresh();
@@ -878,8 +901,7 @@ public sealed partial class MainWindow
             Task<bool> applying;
             try
             {
-                applying = (Task<bool>)apply.Invoke(inspector,
-                    [targets[0].TorrentId, rows, context.GetValue(inspector)!])!;
+                applying = inspector.ApplyCapturedPeers(targets[0].TorrentId, rows);
                 await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
                 Torrents.Selection = new Syno.TableView.Selection([targets[1]], targets[1]);
                 var changed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -907,8 +929,7 @@ public sealed partial class MainWindow
                 || ((TextBlock)pane.FindName("HeadingName")).Text != heading)
                 throw new InvalidOperationException("Pending inspector work cleared the displayed detail.");
             await CaptureUi("selection-peers-waiting");
-            await (Task<bool>)apply.Invoke(inspector,
-                [targets[1].TorrentId, PeerRows(128), context.GetValue(inspector)!])!;
+            await inspector.ApplyCapturedPeers(targets[1].TorrentId, PeerRows(128));
             inspector.Refresh();
             await CaptureReady(inspector, () => ReferenceEquals(table.ItemsSource, inspector.ShownPeers));
             await CaptureLayout();
@@ -1790,12 +1811,13 @@ public sealed partial class MainWindow
             table.Selection = new Syno.TableView.Selection(several, several[0]);
             await CaptureUi("peers-selection-several");
             completed.Add("peers-selection-several");
-            var isMarked = typeof(PeerMap).GetMethod(
-                "IsMarked",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            )!;
+            var drawn = CaptureDisplay(chooser)
+                ?? throw new InvalidOperationException("The map showed no destinations to mark.");
+            var highlight = (MapRenderer.Highlight)typeof(PeerMap)
+                .GetMethod("Highlight", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .Invoke(chooser, [drawn])!;
             var ranks = inspector.Map.Destinations
-                .Where(destination => (bool)isMarked.Invoke(chooser, [destination])!)
+                .Where(highlight.IsMarked)
                 .Select(destination => destination.Rank)
                 .ToArray();
             if (ranks.Count(rank => rank == 0) != 2 || ranks.Any(rank => rank > 1))
@@ -1836,7 +1858,6 @@ public sealed partial class MainWindow
             var owner = inspector.Map;
             var activeRenderer = CaptureRenderer(chooser)!;
             var routes = typeof(MapRenderer).GetField("_routes", BindingFlags.Instance | BindingFlags.NonPublic)!;
-            var pending = typeof(PeerMap).GetField("_preparationQueued", BindingFlags.Instance | BindingFlags.NonPublic)!;
             object[] Arcs() => ((System.Collections.IEnumerable)routes.GetValue(activeRenderer)!)
                 .Cast<object>().Select(route => route.GetType()
                     .GetProperty("Arc", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(route))
@@ -1844,15 +1865,19 @@ public sealed partial class MainWindow
 
             async Task DrawMap(Func<bool> ready)
             {
+                // The map draws only a changed picture, so once it has
+                // prepared what it was given, the wait asks for one more.
+                await chooser.Ready.WaitAsync(TimeSpan.FromSeconds(20));
                 var drawn = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 chooser.FrameMeasured = _ =>
                 {
-                    if (!(bool)pending.GetValue(chooser)! && ready())
+                    if (ready())
                         drawn.TrySetResult();
                 };
                 try
                 {
-                    invalidateMap.Invoke(chooser, null);
+                    ((MapMotion)typeof(PeerMap).GetField("_motion", BindingFlags.Instance | BindingFlags.NonPublic)!
+                        .GetValue(chooser)!).CaptureRedraw();
                     await drawn.Task.WaitAsync(TimeSpan.FromSeconds(20));
                     await inspector.PeersReady;
                 }
@@ -1862,18 +1887,28 @@ public sealed partial class MainWindow
                 }
             }
 
+            // A poll round gives the map a rate change as a change of that peer.
+            var mapReplies = typeof(Inspector).GetField("_mapReplies", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var endMapRound = typeof(Inspector).GetMethod("EndMapRound", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            void DeliverRate(Peer peer, double download)
+            {
+                var change = CaptureRates(peer, download);
+                var replies = (List<Swarm.Reply>?)mapReplies.GetValue(inspector)
+                    ?? throw new InvalidOperationException("The map takes no changes for this view.");
+                replies.Add(new(new Swarm(peer.TorrentId, []), [(peer, change)], [], [], 0, 0));
+                endMapRound.Invoke(inspector, null);
+            }
+
             inspector.UpdateMap(false);
             await DrawMap(() => true);
             var arcs = Arcs();
             var active = peers.First(peer => peer.DownloadRate > 0);
             var download = active.DownloadRate;
-            CaptureRates(active, download * 1.1);
-            inspector.UpdateMap(false);
+            DeliverRate(active, download * 1.1);
             await DrawMap(() => true);
             if (arcs.Length == 0 || !arcs.SequenceEqual(Arcs()))
                 throw new InvalidOperationException("A rate-only update replaced route geometry.");
-            CaptureRates(active, download);
-            inspector.UpdateMap(false);
+            DeliverRate(active, download);
             await DrawMap(() => true);
             var notifications = 0;
             System.ComponentModel.PropertyChangedEventHandler changed = (_, _) => notifications++;
@@ -1913,8 +1948,10 @@ public sealed partial class MainWindow
                 throw new InvalidOperationException("Hiding the map retained native resources.");
             host.Content = chooser;
             await CaptureLayout();
+            // The shown map loads its geography on the pool before it makes a
+            // renderer, and its readiness covers only a map that has one.
+            activeRenderer = await CaptureMapValue(() => CaptureRenderer(chooser), "The shown map made no renderer.");
             await chooser.Ready.WaitAsync(TimeSpan.FromSeconds(10));
-            activeRenderer = CaptureRenderer(chooser)!;
             if (Arcs().Length != arcs.Length || inspector.Place != retainedPlace)
                 throw new InvalidOperationException("Resource recreation changed the place or lost routes.");
             if (!ReferenceEquals(owner, inspector.Map) || inspector.Place != retainedPlace)
@@ -1931,12 +1968,9 @@ public sealed partial class MainWindow
             foreach (var count in new[] { 100, 1000, 10000 })
             {
                 var rows = PeerRows(count);
-                var apply = typeof(Inspector).GetMethod("ApplyPeers", BindingFlags.Instance | BindingFlags.NonPublic)!;
                 typeof(Inspector).GetProperty(nameof(Inspector.Peers))!.SetValue(inspector, null);
-                var context = typeof(Inspector).GetField("_context", BindingFlags.Instance | BindingFlags.NonPublic)!
-                    .GetValue(inspector)!;
                 var started = Stopwatch.GetTimestamp();
-                await (Task<bool>)apply.Invoke(inspector, [target.TorrentId, rows, context])!;
+                await inspector.ApplyCapturedPeers(target.TorrentId, rows);
                 var create = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
                 var known = inspector.Peers!;
                 var lookup = await Task.Run(() =>
@@ -1986,7 +2020,7 @@ public sealed partial class MainWindow
                 for (var sample = 0; sample < 30; sample++)
                 {
                     started = Stopwatch.GetTimestamp();
-                    await (Task<bool>)apply.Invoke(inspector, [target.TorrentId, rows, context])!;
+                    await inspector.ApplyCapturedPeers(target.TorrentId, rows);
                     inspector.Map.Update(CapturePopulation(inspector.Map, known), null, Model.Text);
                     unchanged.Add(Stopwatch.GetElapsedTime(started).TotalMilliseconds);
                 }
@@ -2115,13 +2149,16 @@ public sealed partial class MainWindow
                         foreach (var point in new[] { mapViewport.Screen(place.Point), new Vector2(2, 2) })
                         {
                             await CaptureLayout();
+                            // A person clicks the places the map shows, so the
+                            // click waits until the map has drawn them.
+                            var displayed = await CaptureMapValue(
+                                () => CaptureDisplay(drawing), "The map showed no places to click.");
                             var mapFrames = 0;
                             drawing.FrameMeasured = _ => mapFrames++;
                             var layerBefore = drawing.MotionFrames;
                             stamps.Clear();
                             var clickedAt = Stopwatch.GetTimestamp();
                             var clickStart = CaptureCycles.Current();
-                            var displayed = CaptureDisplay(drawing)!;
                             var hit = displayed.Inspection.HitTest(point, displayed.View);
                             selectPeers.Invoke(drawing, [Array.Empty<object>()]);
                             choose.Invoke(drawing, [hit, displayed]);

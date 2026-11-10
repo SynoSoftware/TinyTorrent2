@@ -29,8 +29,6 @@ public sealed partial class MainWindow
         await SelectTorrent();
         var inspector = Model.Inspector;
         var flags = BindingFlags.Instance | BindingFlags.NonPublic;
-        var cache = (List<(string TorrentId, IReadOnlyList<Peer> Peers)>)typeof(Inspector)
-            .GetField("_peerCache", flags)!.GetValue(inspector)!;
         var locating = typeof(Inspector).GetField("_locating", flags)!;
         var click = typeof(Syno.TableView.Table).GetMethod("SelectItem", flags)!;
 
@@ -68,9 +66,8 @@ public sealed partial class MainWindow
         // so lookups stay off.
         void Seed()
         {
-            cache.RemoveAll(entry => targets.Any(target => target.TorrentId == entry.TorrentId));
             for (var index = 0; index < targets.Length; index++)
-                cache.Insert(0, (targets[index].TorrentId, peers[index]));
+                inspector.CaptureSwarm(targets[index].TorrentId, peers[index]);
         }
 
         var frames = new List<ulong>();

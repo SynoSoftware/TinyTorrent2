@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <deque>
 #include <filesystem>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <set>
@@ -55,7 +56,7 @@ class Pipe
 {
 public:
     // One client's connection. Its writer sends replies and control messages
-    // in order, and keeps only the latest unsent detail update and snapshot.
+    // in order, and keeps only the latest unsent pushed message of each key.
     class Connection
     {
     public:
@@ -65,6 +66,11 @@ public:
         Connection& operator=(Connection const&) = delete;
         // Queues a control message, unless the same message is still unsent.
         void Send(Json message);
+        // Replaces the unsent message with the same key, or queues the message
+        // after the other keys. The key only pairs messages; it is not sent.
+        void Replace(std::string key, Json message);
+        // Drops the unsent message with the key, if one waits.
+        void Withdraw(std::string const& key);
 
         // Read when the client connects, because the pipe instance serves
         // other clients after this one disconnects.
@@ -73,9 +79,6 @@ public:
 
     private:
         friend class Pipe;
-        // Answers request `requestId`. The engine pushes a detail update or a
-        // snapshot through the reply of the request that asked for it, so
-        // these replace the unsent one instead of queueing.
         void Answer(std::int64_t requestId, Json message);
         // Each of these requires the lock.
         void Queue(Json message);
@@ -85,13 +88,14 @@ public:
         std::mutex mutex_;
         std::condition_variable changed_;
         std::deque<Json> output_;
-        std::optional<Json> detail_;
-        std::optional<Json> snapshot_;
+        // Pushed messages by key, and their keys in the order they arrived.
+        std::map<std::string, Json> pushed_;
+        std::deque<std::string> pushOrder_;
         bool closed_ = false;
         std::set<std::int64_t> requests_;
     };
     // The protocol version that the hello message announces.
-    static constexpr int version = 38;
+    static constexpr int version = 39;
     // Receives each request with the reply that answers it, and a null request
     // with no reply when a client that sent a request disconnects.
     using Dispatch = std::function<void(std::shared_ptr<Connection>, Json, Reply)>;

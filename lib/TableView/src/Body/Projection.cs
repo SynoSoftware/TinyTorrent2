@@ -1,26 +1,36 @@
+using System.Buffers;
 using System.Diagnostics;
 
 namespace Syno.TableView.Body;
 
-/// <summary>Prepares the table's display projection from captured values, without accessing WinUI.</summary>
+/// <summary>
+/// Prepares one update of the table's display projection from captured values and the rows'
+/// <see cref="Slots"/>, without accessing WinUI.
+/// </summary>
 internal sealed class Projection
 {
     internal sealed record Rows
     {
         internal required IReadOnlyList<object> Source { get; init; }
-        internal required IReadOnlyList<object> Displayed { get; init; }
         internal required ItemIdentity Identity { get; init; }
         internal Type? RowType { get; init; }
         internal Hierarchy.Snapshot? Hierarchy { get; init; }
         internal Hierarchy.Snapshot? PreviousHierarchy { get; init; }
-        internal IReadOnlySet<object> Expanded { get; init; } = new HashSet<object>(ReferenceEqualityComparer.Instance);
-        internal IReadOnlySet<object> Expandable { get; init; } = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        /// <summary>The set a table without a hierarchy passes; nothing writes to it.</summary>
+        internal static readonly IReadOnlySet<object> None = new HashSet<object>(ReferenceEqualityComparer.Instance);
+
+        internal IReadOnlySet<object> Expanded { get; init; } = None;
+        internal IReadOnlySet<object> Expandable { get; init; } = None;
     }
 
     internal sealed record Ordering
     {
-        internal IComparer<object>? Comparer { get; init; }
-        internal Func<IReadOnlyCollection<object>, IComparer<object>>? Capture { get; init; }
+        /// <summary>Creates the sort column's key store; null when the table does not sort locally.</summary>
+        internal Func<SortKeys>? Keys { get; init; }
+
+        /// <summary>The keys a sort or layout request read on the UI thread for that column.</summary>
+        internal SortKeys? Read { get; init; }
+
         internal SortDirection Direction { get; init; }
         internal bool Local { get; init; }
         internal bool Reorders { get; init; }
@@ -35,26 +45,45 @@ internal sealed class Projection
         internal bool Pointed { get; init; }
         internal object? PointedRow { get; init; }
         internal object? MenuRow { get; init; }
+
+        /// <summary>The keys of the rows the view holds now.</summary>
+        internal required HashSet<object> Held { get; init; }
+
         internal required IReadOnlyDictionary<object, (bool Present, long Named)> Released { get; init; }
         internal TimeSpan Lifetime { get; init; }
         internal IReadOnlyList<Release> Releases { get; init; } = [];
+
+        /// <summary>
+        /// The source carries a change the person caused (<c>Table.Withdraw</c>), so it applies
+        /// whole.
+        /// </summary>
+        internal bool Caused { get; init; }
     }
 
-    internal sealed record Release(IReadOnlyList<object> Items, IReadOnlyList<object> Source,
-        IReadOnlyList<object> Displayed, long Named)
+    /// <summary>
+    /// Rows <c>Table.Release</c> named, each with whether the view showed it then, and the source
+    /// as it was then.
+    /// </summary>
+    internal sealed record Release(IReadOnlyList<(object Row, bool Shown)> Items, IReadOnlyList<object> Source, long Named)
     {
         internal bool WaitingOnly { get; init; }
     }
 
-    internal sealed record Input(Rows Rows, Ordering Ordering, Holding Holding, IReadOnlyList<int> Realized);
+    /// <summary>
+    /// The rows <c>Table.RefreshView</c> named as changed since a preparation last took them, or,
+    /// with <see cref="All"/>, a refresh that named none, so every row may have changed.
+    /// </summary>
+    internal sealed record Refresh(IReadOnlyList<object> Rows, bool All);
+
+    internal sealed record Input(Rows Rows, Ordering Ordering, Holding Holding, Changes.Screen Screen)
+    {
+        internal Refresh Refresh { get; init; } = new([], false);
+    }
 
     internal sealed record Prepared
     {
-        internal required IReadOnlyList<object> Order { get; init; }
         internal required HashSet<object> Held { get; init; }
-        internal required HashSet<object> SourceKeys { get; init; }
         internal required IReadOnlyDictionary<object, (bool Present, long Named)> Released { get; init; }
-        internal required Dictionary<object, (int Index, int Sibling)> Positions { get; init; }
         internal required Changes Changes { get; init; }
         internal bool Settles { get; init; }
         internal TimeSpan? SettleAfter { get; init; }
@@ -62,54 +91,32 @@ internal sealed class Projection
         internal bool HasChildren { get; init; }
     }
 
+    private static readonly HashSet<int> NoPins = [];
+
     private readonly Input _input;
-    private readonly IReadOnlyList<object> _view;
+    private readonly Slots _slots;
     private readonly ItemIdentity _identity;
-    private IComparer<object>? _comparer;
+    private readonly Comparison<int> _compare;
     private readonly Dictionary<object, (bool Present, long Named)> _released;
-    private readonly HashSet<object> _held;
+    private HashSet<object> _held;
     private readonly Hierarchy.Snapshot? _hierarchy;
     private readonly IReadOnlyDictionary<object, Hierarchy.Node>? _nodes;
+    private IReadOnlyList<object> _source = [];
     private long? _orderSettledAt;
     private TimeSpan? _settleAfter;
+    private CancellationToken _cancellation;
 
-    internal Projection(Input input)
+    internal Projection(Input input, Slots slots)
     {
         _input = input;
-        _view = input.Rows.Displayed;
+        _slots = slots;
+        _identity = input.Rows.Identity;
+        _compare = Compare;
         _hierarchy = input.Rows.Hierarchy;
-        _identity = CaptureKeys(input.Rows, input.Holding);
         _released = new(input.Holding.Released, _identity);
-        _held = new(_identity);
+        _held = input.Holding.Held;
         _nodes = _hierarchy?.Nodes.Values.ToDictionary(node => node.Item, ReferenceEqualityComparer.Instance);
         _orderSettledAt = input.Ordering.SettledAt;
-    }
-
-    /// <summary>
-    /// Reads the host's row key once for every row preparation can touch, so identity
-    /// comparisons never call the selector again. Without a key selector, identity is the row
-    /// reference and nothing is read.
-    /// </summary>
-    private static ItemIdentity CaptureKeys(Rows rows, Holding holding)
-    {
-        if (rows.Identity.KeySelector is not { } key)
-            return rows.Identity;
-        IReadOnlyCollection<object> keyed = rows.Hierarchy is { } hierarchy ? hierarchy.Nodes.Keys : rows.Source;
-        var keys = new Dictionary<object, object>(
-            Math.Max(keyed.Count, rows.Displayed.Count), ReferenceEqualityComparer.Instance);
-        var all = keyed.Concat(rows.Displayed)
-            .Concat(rows.PreviousHierarchy?.Nodes.Keys ?? Enumerable.Empty<object>()).Concat(holding.Released.Keys)
-            .Concat(holding.Releases.SelectMany(release => release.Items.Concat(release.Source).Concat(release.Displayed)));
-        foreach (var item in all)
-        {
-            if (keys.ContainsKey(item))
-                continue;
-            // Checked before the selector casts the row, so a wrong row type reports itself.
-            if (rows.RowType is not null && !rows.RowType.IsInstanceOfType(item))
-                throw new InvalidOperationException($"The source contains a row outside {rows.RowType}.");
-            keys[item] = key(item);
-        }
-        return new ItemIdentity { KeySelector = item => keys[item], KeyComparer = rows.Identity.KeyComparer };
     }
 
     private bool SortsLocally => _input.Ordering.Local;
@@ -120,76 +127,83 @@ internal sealed class Projection
     private object? _menuRow => _input.Holding.MenuRow;
     private TimeSpan ReleaseLifetime => _input.Holding.Lifetime;
 
-    internal Prepared Prepare()
+    /// <param name="cancellation">
+    /// Cancelled by a newer request, which makes this result obsolete. A cancelled preparation
+    /// leaves the slots as a discarded one does.
+    /// </param>
+    internal Prepared Prepare(CancellationToken cancellation)
     {
+        _cancellation = cancellation;
         var rows = _input.Rows;
-        var source = _hierarchy is null ? rows.Source : Project(null);
-        var unique = new HashSet<object>(_hierarchy is null ? source.Count : _nodes!.Count, _identity);
-        foreach (var item in _hierarchy is null ? source : _nodes!.Keys)
-        {
-            if (rows.RowType is not null && !rows.RowType.IsInstanceOfType(item))
-                throw new InvalidOperationException($"The source contains a row outside {rows.RowType}.");
-            if (_identity.KeySelector is not null && _identity.KeySelector(item) is null)
-                throw new InvalidOperationException("The schema key selector returned null.");
-            if (!unique.Add(item))
-                throw new InvalidOperationException("The source contains duplicate row identities.");
-        }
-        foreach (var release in _input.Holding.Releases)
-        {
-            var live = new HashSet<object>(release.Source, _identity);
-            var shown = new HashSet<object>(release.Displayed, _identity);
-            foreach (var item in release.Items)
-            {
-                bool present = live.Contains(item);
-                bool displayed = shown.Contains(item);
-                if (!release.WaitingOnly || present && !displayed)
-                    _released[item] = (present == displayed ? !present : present, release.Named);
-            }
-        }
+        _source = _hierarchy is null ? rows.Source : Project(null);
+        _slots.Begin();
+        _slots.Number(_source, rows.RowType, cancellation);
+        cancellation.ThrowIfCancellationRequested();
+        _slots.SortBy(_input.Ordering.Keys, _input.Ordering.Read, _input.Ordering.Direction);
+        if (_input.Refresh.All)
+            _slots.NameEvery();
+        else
+            _slots.Name(_input.Refresh.Rows);
+        AddReleases();
         bool structureChanged = _hierarchy is not null && !SameStructure();
         if (structureChanged)
             _orderSettledAt = null;
-        (IReadOnlyList<object> order, IReadOnlySet<object> pinned, bool settles) = _input.Ordering.Changed
-            ? ChangedOrder(source)
-            : ViewOrder(source);
-        var changes = new Changes(_view, _identity);
-        changes.Prepare(order, _input.Realized, pinned);
-        var comparer = _identity.KeySelector is null ? ReferenceEqualityComparer.Instance : _identity.KeyComparer;
-        var positions = new Dictionary<object, (int Index, int Sibling)>(order.Count, comparer);
-        var counts = new Dictionary<object, int>(_identity);
-        int roots = 0;
-        for (int index = 0; index < order.Count; index++)
+        (bool arranged, IReadOnlySet<int> pinned, bool settles) = _input.Ordering.Changed
+            ? ChangedOrder()
+            : ViewOrder();
+        cancellation.ThrowIfCancellationRequested();
+        var changes = new Changes();
+        // A kept order of the source the view already shows has nothing to change.
+        if (arranged || !_slots.Shows(_source))
         {
-            var item = order[index];
-            var sibling = 0;
-            if (_nodes is not null)
-            {
-                var parent = _nodes[item].Parent;
-                sibling = parent is null ? ++roots : counts.GetValueOrDefault(parent) + 1;
-                if (parent is not null)
-                    counts[parent] = sibling;
-            }
-            positions.Add(KeyOf(item), (index, sibling));
+            changes.Prepare(_slots.View, _slots.Shown, arranged ? _slots.Order : _slots.Shown,
+                _slots.Targets, _slots.Row, _input.Screen, pinned);
         }
-        var sourceKeys = new HashSet<object>(source.Count, comparer);
-        foreach (var item in source)
-            sourceKeys.Add(KeyOf(item));
+        _slots.Remap();
         return new Prepared
         {
-            Order = order,
-            Held = _held.Select(KeyOf).ToHashSet(comparer),
-            SourceKeys = sourceKeys,
+            Held = _held,
             Released = _released,
-            Positions = positions,
             Changes = changes,
             Settles = settles,
             SettleAfter = _settleAfter,
             StructureChanged = structureChanged,
-            HasChildren = order.Any(rows.Expandable.Contains),
+            HasChildren = _hierarchy is not null && HasChildren(arranged ? _slots.Order : _slots.Shown),
         };
     }
 
+    /// <summary>
+    /// Record what each new <see cref="Release"/> expects: a row the view showed as the source had
+    /// it is to leave, a row it did not show is to arrive, and a held or waiting row is to end as
+    /// the source had it.
+    /// </summary>
+    private void AddReleases()
+    {
+        foreach (var release in _input.Holding.Releases)
+        {
+            HashSet<object>? live = ReferenceEquals(release.Source, _source) ? null : new(release.Source, _identity);
+            foreach ((object row, bool shown) in release.Items)
+            {
+                bool present = live?.Contains(row) ?? InSource(row);
+                if (!release.WaitingOnly || present && !shown)
+                    _released[row] = (present == shown ? !present : present, release.Named);
+            }
+        }
+    }
+
     private object KeyOf(object item) => _identity.KeySelector?.Invoke(item) ?? item;
+
+    private bool InSource(object row) => _slots.SlotOf(row) is var slot && slot >= 0 && _slots.InSource(slot);
+
+    private bool HasChildren(ReadOnlySpan<int> order)
+    {
+        foreach (int slot in order)
+        {
+            if (_input.Rows.Expandable.Contains(_slots.Row(slot)))
+                return true;
+        }
+        return false;
+    }
 
     private bool SameStructure()
     {
@@ -205,33 +219,173 @@ internal sealed class Projection
             && node.Children.SequenceEqual(before.Children, _identity));
     }
 
-    private (IReadOnlyList<object> Order, IReadOnlySet<object> Pinned, bool Settles) ChangedOrder(IReadOnlyList<object> source)
+    private (bool Arranged, IReadOnlySet<int> Pinned, bool Settles) ChangedOrder()
     {
-        var (_, held, released) = Hold(source, sortChanged: true);
-        var order = SortedSnapshot(source);
+        var (_, held, released) = Hold(sortChanged: true);
+        Arrange(Sorted(staying: false, full: true));
         AcceptHold(held, released);
-        return (order, held, true);
+        return (true, NoPins, true);
+    }
+
+    /// <summary>The slots' order buffer holds <paramref name="count"/> rows to show; make them the prepared order.</summary>
+    private void Arrange(int count)
+    {
+        _slots.Arrange(count, sorted: _slots.Keys is not null);
+        if (_nodes is null)
+            return;
+        var counts = new Dictionary<object, int>(_identity);
+        int roots = 0;
+        foreach (int slot in _slots.Order)
+        {
+            var parent = _nodes[_slots.Row(slot)].Parent;
+            int sibling = parent is null ? ++roots : counts.GetValueOrDefault(parent) + 1;
+            if (parent is not null)
+                counts[parent] = sibling;
+            _slots.SetSibling(slot, sibling);
+        }
     }
 
     /// <summary>
-    /// A sort request read its keys on the UI thread so a failing selector rejects the
-    /// request before the table changes; a later projection reads them here, and only when
-    /// it sorts, because an update that keeps the view's order never compares rows.
+    /// Write the rows to show into the slots' order buffer, sorted when the table sorts, and
+    /// return how many there are: every row of the source, or, when <paramref name="staying"/>,
+    /// only the rows the view already shows.
     /// </summary>
-    private IComparer<object>? Comparer => _comparer ??= _input.Ordering.Comparer
-        ?? _input.Ordering.Capture?.Invoke(_hierarchy is null ? _input.Rows.Source : _hierarchy.Nodes.Keys);
-
-    private IReadOnlyList<object> SortedSnapshot(IReadOnlyList<object> source)
+    /// <remarks>
+    /// A sort reads a row's key only when the row is not in the view or the host named it as
+    /// changed (<see cref="Slots.IsStale"/>), because every other row's key is the one the last
+    /// sort placed it by. So a sort that can trust the view's order merges: the rows that need a
+    /// place are sorted on their own and each is placed into the view's order by binary search,
+    /// which compares about <c>C log N</c> times for C such rows instead of <c>N log N</c>.
+    /// </remarks>
+    private int Sorted(bool staying, bool full)
     {
         if (_hierarchy is not null)
-            return Project(Comparer);
-        return Order(source, Comparer).ToArray();
+            return Tree();
+        ReadOnlySpan<int> source = _slots.Source;
+        int[] order = _slots.OrderBuffer(source.Length);
+        int count = 0;
+        if (_slots.Keys is null)
+        {
+            foreach (int slot in source)
+            {
+                if (!staying || _slots.InView(slot))
+                    order[count++] = slot;
+            }
+            return count;
+        }
+        if (!full && !_slots.Unsorted && _slots.Shown.Count > 0)
+            return Merge(staying, order);
+        foreach (int slot in source)
+        {
+            if (staying && !_slots.InView(slot))
+                continue;
+            // Reading a key calls the host's selector, the longest part of a full sort.
+            if ((count & 4095) == 0)
+            {
+                _cancellation.ThrowIfCancellationRequested();
+            }
+
+            ReadKey(slot);
+            order[count++] = slot;
+        }
+        order.AsSpan(0, count).Sort(_compare);
+        return count;
     }
 
-    private IEnumerable<object> Order(IReadOnlyList<object> rows, IComparer<object>? comparer) =>
-        comparer is null ? rows
-        : _input.Ordering.Direction == SortDirection.Ascending ? rows.OrderBy(item => item, comparer)
-        : rows.OrderByDescending(item => item, comparer);
+    private int Merge(bool staying, int[] order)
+    {
+        int count = 0;
+        foreach (int slot in _slots.Shown)
+        {
+            if (_slots.InSource(slot) && !_slots.IsStale(slot))
+                order[count++] = slot;
+        }
+        ReadOnlySpan<int> source = _slots.Source;
+        int[] placing = ArrayPool<int>.Shared.Rent(source.Length);
+        try
+        {
+            int placed = 0;
+            foreach (int slot in source)
+            {
+                if (_slots.InView(slot) ? !_slots.IsStale(slot) : staying)
+                    continue;
+                _slots.Keys!.Read(slot, _slots.Row(slot));
+                placing[placed++] = slot;
+            }
+            placing.AsSpan(0, placed).Sort(_compare);
+
+            // From the back, so each row of the view's order moves once.
+            int end = count;
+            int write = count + placed;
+            for (int i = placed - 1; i >= 0; i--)
+            {
+                int slot = placing[i];
+                int low = 0;
+                int high = end;
+                while (low < high)
+                {
+                    int middle = (low + high) >>> 1;
+                    if (Compare(order[middle], slot) > 0)
+                        high = middle;
+                    else
+                        low = middle + 1;
+                }
+                write -= end - low;
+                Array.Copy(order, low, order, write, end - low);
+                order[--write] = slot;
+                end = low;
+            }
+            return count + placed;
+        }
+        finally
+        {
+            ArrayPool<int>.Shared.Return(placing);
+        }
+    }
+
+    /// <summary>
+    /// A hierarchy's visible rows, ordered within each parent. The tree is captured again for
+    /// every update, so it is projected again from that capture.
+    /// </summary>
+    private int Tree()
+    {
+        ReadOnlySpan<int> source = _slots.Source;
+        int[] order = _slots.OrderBuffer(source.Length);
+        if (_slots.Keys is null)
+        {
+            source.CopyTo(order);
+            return source.Length;
+        }
+        var slots = new Dictionary<object, int>(source.Length, ReferenceEqualityComparer.Instance);
+        for (int position = 0; position < source.Length; position++)
+        {
+            slots[_source[position]] = source[position];
+            ReadKey(source[position]);
+        }
+        var sorted = Project(Comparer<object>.Create((left, right) => Compare(slots[left], slots[right])));
+        for (int index = 0; index < sorted.Count; index++)
+            order[index] = slots[sorted[index]];
+        return sorted.Count;
+    }
+
+    private void ReadKey(int slot)
+    {
+        if (_slots.IsStale(slot) || !_slots.InView(slot))
+            _slots.Keys!.Read(slot, _slots.Row(slot));
+    }
+
+    /// <summary>
+    /// The sort column's order, and the source's order between rows whose keys are equal, so the
+    /// result is the one a stable sort of the source gives. A descending sort swaps the keys
+    /// rather than negating the result, which would leave <see cref="int.MinValue"/> negative.
+    /// </summary>
+    private int Compare(int left, int right)
+    {
+        int order = _input.Ordering.Direction == SortDirection.Descending
+            ? _slots.Keys!.Compare(right, left)
+            : _slots.Keys!.Compare(left, right);
+        return order != 0 ? order : _slots.SourceAt(left).CompareTo(_slots.SourceAt(right));
+    }
 
     private IReadOnlyList<object> Project(IComparer<object>? comparer)
     {
@@ -262,8 +416,11 @@ internal sealed class Projection
         return visible;
     }
 
+    private static IEnumerable<object> Order(IReadOnlyList<object> rows, IComparer<object>? comparer) =>
+        comparer is null ? rows : rows.OrderBy(item => item, comparer);
+
     /// <summary>
-    /// The order the rows are actually shown in: the sorted snapshot, except that rows already on
+    /// The order the rows are actually shown in: the sorted source, except that rows already on
     /// screen are left where they are between reorders, and that held rows and the pointed row keep
     /// their index.
     /// </summary>
@@ -289,17 +446,23 @@ internal sealed class Projection
     /// <see cref="Hold"/> names the changes that apply at once. When the rows do take their sorted
     /// places, the pointed row keeps its own (section 9).
     /// </para>
+    /// <para>
+    /// Inside the interval, a refresh of the source the view already shows changes nothing: the
+    /// rows, their instances and the held rows are those of the last update. It only records the
+    /// rows the host named, so it costs work in proportion to them.
+    /// </para>
     /// </remarks>
     /// <returns>
-    /// The order; the rows that keep their index, whose containers the reconcile keeps; and
-    /// whether this publish is a settle.
+    /// Whether the slots hold a new order; the rows that keep their index, whose containers the
+    /// reconcile keeps; and whether this update is a settle.
     /// </returns>
-    private (IReadOnlyList<object> Order, IReadOnlySet<object> Pinned, bool Settles) ViewOrder(
-        IReadOnlyList<object> snapshot
-    )
+    private (bool Arranged, IReadOnlySet<int> Pinned, bool Settles) ViewOrder()
     {
         if (_hierarchy is not null && !SortsLocally)
-            return (snapshot, _held, true);
+        {
+            Arrange(Sorted(staying: false, full: false));
+            return (true, NoPins, true);
+        }
         TimeSpan elapsed = _orderSettledAt is long settledAt
             ? Stopwatch.GetElapsedTime(settledAt)
             : TimeSpan.MaxValue;
@@ -307,56 +470,43 @@ internal sealed class Projection
         // Natural order belongs to the host, which reorders when it means to, and the row-order
         // column shows that same order, so holding it would delay the person's own reorder; an
         // empty view has no established order to preserve; and a zero interval is the host asking
-        // for none of this. Until a frame shows the last settle, every publish is one, so the
+        // for none of this. Until a frame shows the last settle, every update is one, so the
         // changes of one turn land in one update.
-        bool settles = _sortInterval <= TimeSpan.Zero || _view.Count == 0 || _settleShowing
+        bool settles = _sortInterval <= TimeSpan.Zero || _slots.Shown.Count == 0 || _settleShowing
             || elapsed >= _sortInterval;
-        var (shown, held, released) = Hold(snapshot, waits: !settles);
-        if (settles)
+        if (!settles && _hierarchy is null && _input.Holding.Releases.Count == 0 && _slots.Shows(_source))
         {
-            return Finish(SortedSnapshot(shown), settled: true);
+            _settleAfter = _sortInterval - elapsed;
+            return (false, NoPins, false);
         }
+        var (staying, held, released) = Hold(waits: !settles);
 
-        // The base sequence, not the sorted one: a kept update keeps the order the view already
-        // has, so all it needs from the snapshot is which rows are in it, and sorting to answer a
-        // question about membership is work thrown away. At the default interval against a host
-        // that publishes about once a second, that is two publishes in three, and a name sort of
-        // 2,002 rows is roughly 22,000 culture-aware string comparisons.
+        // A kept update keeps the order the view already has, so all it needs from the source is
+        // which rows are in it, and sorting to answer a question about membership is work thrown
+        // away.
         //
         // A membership change the hold let through is never kept back, so it is also never
-        // settled: KeptOrder returns null for one, and the sorted order is what the arriving row
-        // needs anyway.
-        if (KeptOrder(shown, held) is not List<object> kept)
-        {
-            return Finish(SortedSnapshot(shown), settled: true);
-        }
-
-        return Finish(kept, settled: false);
-
-        (IReadOnlyList<object> Order, IReadOnlySet<object> Pinned, bool Settles) Finish(
-            IReadOnlyList<object> order,
-            bool settled
-        )
-        {
-            var (pinnedOrder, pinned) = Pin(order, held);
-            // A failed comparison must not consume a release or change held-row interactivity.
-            AcceptHold(held, released);
-            if (!settled)
-                _settleAfter = _sortInterval - elapsed;
-            return (pinnedOrder, pinned, settled);
-        }
+        // settled: Kept refuses it, and the sorted order is what the arriving row needs anyway.
+        bool keeps = !settles && Kept(staying);
+        IReadOnlySet<int> pinned = NoPins;
+        if (!keeps)
+            Arrange(Pin(Sorted(staying, full: false), staying, held, out pinned));
+        // A failed comparison must not consume a release or change held-row interactivity.
+        AcceptHold(held, released);
+        if (keeps)
+            _settleAfter = _sortInterval - elapsed;
+        return (!keeps, pinned, !keeps);
     }
 
     /// <summary>
-    /// The rows the view already shows, held rows aside, in the order it already shows them, or
-    /// null when <paramref name="shown"/> is not that same set of rows.
+    /// The view's order can stay: the rows it shows, held rows aside, are exactly the rows to
+    /// show. Keeping it then costs nothing but the instance swaps the reconcile makes.
     /// </summary>
     /// <remarks>
-    /// A kept order never merges membership: a snapshot that adds or removes a row is not kept, and
+    /// A kept order never merges membership: a source that adds or removes a row is not kept, and
     /// the caller takes the sorted order for it, which puts the arrival where it belongs straight
-    /// away. Only a snapshot of exactly the same rows can be kept, and keeping it is then a copy
-    /// rather than a merge. While the rows are pointed at, and inside the settling interval, the
-    /// hold has already deferred every membership change, so the rows are always the same.
+    /// away. While the rows are pointed at, and inside the settling interval, the hold has already
+    /// deferred every membership change, so the rows are always the same.
     /// <para>
     /// This is also what keeps the cost bounded. An earlier version placed each arrival into the
     /// held order by scanning it, which is fine for a row or two and is not fine for a filter
@@ -366,59 +516,35 @@ internal sealed class Projection
     /// membership to the hold removes the merge, the cost and the arbitrary placement together.
     /// </para>
     /// </remarks>
-    private List<object>? KeptOrder(IReadOnlyList<object> shown, IReadOnlySet<object> held)
+    private bool Kept(bool staying)
     {
-        if (shown.Count + held.Count != _view.Count)
+        if (staying)
+            return true;
+        if (_slots.Source.Length != _slots.Shown.Count)
+            return false;
+        foreach (int slot in _slots.Shown)
         {
-            return null;
+            if (!_slots.InSource(slot))
+                return false;
         }
-
-        // Always the snapshot's instances, never the view's: the host may have replaced a row with
-        // an equal-identity instance, and keeping the old one would leave its container bound to an
-        // object nothing updates any more.
-        Dictionary<object, object> live = new(shown.Count, _identity);
-        foreach (object row in shown)
-        {
-            live[row] = row;
-        }
-
-        List<object> order = new(shown.Count);
-        foreach (object row in _view)
-        {
-            if (held.Contains(row))
-            {
-                continue;
-            }
-
-            if (!live.TryGetValue(row, out object? current))
-            {
-                return null;
-            }
-
-            order.Add(current);
-        }
-
-        return order;
+        return true;
     }
 
     /// <summary>
-    /// The snapshot rows to show. While the rows are pointed at, or while the change
-    /// <paramref name="waits"/> for the settle, that is only the rows already shown, and every
-    /// shown row the snapshot no longer has becomes a held row.
+    /// Whether only the rows the view already shows are shown. While the rows are pointed at, or
+    /// while the change <paramref name="waits"/> for the settle, that is so, and every shown row
+    /// the source no longer has becomes a held row.
     /// </summary>
     /// <remarks>
-    /// An empty view takes its rows at once: nothing is on screen to be moved. So does a snapshot
-    /// that carries a change named by <see cref="Release"/>, and, with the pointer away, a snapshot
+    /// An empty view takes its rows at once: nothing is on screen to be moved. So does a source
+    /// that carries a change named by <see cref="Release"/>, the source a host set after
+    /// withdrawing one (<see cref="Holding.Caused"/>), and, with the pointer away, a source
     /// that shares no row with the view: a different list, or an emptied one, does not wait.
     /// </remarks>
-    private (
-        IReadOnlyList<object> Shown,
-        HashSet<object> Held,
-        IReadOnlyList<object> Released
-    ) Hold(IReadOnlyList<object> snapshot, bool sortChanged = false, bool waits = false)
+    private (bool Staying, List<int> Held, List<object> Released) Hold(bool sortChanged = false, bool waits = false)
     {
-        HashSet<object> held = new(_identity);
-        bool holds = !sortChanged && _hierarchy is null && _view.Count > 0 && (IsPointed || waits);
+        bool holds = !sortChanged && !_input.Holding.Caused && _hierarchy is null
+            && _slots.Shown.Count > 0 && (IsPointed || waits);
 
         // An entry whose change did not come within its lifetime ends here, so it cannot let a
         // later background change through the hold.
@@ -431,111 +557,125 @@ internal sealed class Projection
 
         if (!holds && _released.Count == 0)
         {
-            return (snapshot, held, Array.Empty<object>());
+            return (false, [], []);
         }
 
-        HashSet<object> live = new(snapshot, _identity);
         List<object> released = _released
-            .Where(entry => live.Contains(entry.Key) == entry.Value.Present)
+            .Where(entry => InSource(entry.Key) == entry.Value.Present)
             .Select(entry => entry.Key)
             .ToList();
         if (released.Count > 0 || !holds)
         {
-            return (snapshot, held, released);
+            return (false, [], released);
         }
 
-        HashSet<object> shown = new(_view, _identity);
-        List<object> staying = snapshot.Where(shown.Contains).ToList();
-        if (staying.Count == 0 && !IsPointed)
+        List<int> held = [];
+        int staying = 0;
+        foreach (int slot in _slots.Shown)
         {
-            return (snapshot, held, released);
+            if (_slots.InSource(slot))
+                staying++;
+            else
+                held.Add(slot);
         }
 
-        foreach (object row in _view)
+        if (staying == 0 && !IsPointed)
         {
-            if (!live.Contains(row))
-            {
-                held.Add(row);
-            }
+            return (false, [], released);
         }
 
-        return (staying, held, released);
+        return (true, held, released);
     }
 
-    private void AcceptHold(IReadOnlySet<object> held, IReadOnlyList<object> released)
+    private void AcceptHold(List<int> held, List<object> released)
     {
-        _held.Clear();
-        _held.UnionWith(held);
+        _held = new HashSet<object>(held.Count,
+            _identity.KeySelector is null ? ReferenceEqualityComparer.Instance : _identity.KeyComparer);
+        foreach (int slot in held)
+            _held.Add(KeyOf(_slots.Row(slot)));
         foreach (object row in released)
             _released.Remove(row);
     }
 
     /// <summary>
     /// Put every held row back at the index it has, and, under a sort that reorders, the pointed row
-    /// and the row whose menu is open at theirs; every other row takes the next free place in
-    /// <paramref name="order"/>. Also reports those rows, so the reconcile keeps their containers.
+    /// and the row whose menu is open at theirs; every other row takes the next free place in the
+    /// <paramref name="count"/> sorted rows of the order buffer. Also reports those rows, so the
+    /// reconcile keeps their containers, and returns the order's new length.
     /// </summary>
     /// <remarks>
     /// While the rows are pointed at, the hold keeps membership unchanged, so the result has exactly
     /// the view's count and every pinned index is a place in it.
     /// </remarks>
-    private (IReadOnlyList<object> Order, IReadOnlySet<object> Pinned) Pin(
-        IReadOnlyList<object> order,
-        IReadOnlySet<object> held
-    )
+    private int Pin(int count, bool staying, List<int> held, out IReadOnlySet<int> pinned)
     {
+        pinned = NoPins;
         bool reorders = _hierarchy is null && _input.Ordering.Reorders;
-        object? menu = reorders ? _menuRow : null;
-        object? pointed = reorders ? _pointedRow : null;
-        if (held.Count == 0 && menu is null && pointed is null)
+        int menu = reorders ? _slots.SlotOf(_menuRow) : -1;
+        int pointed = reorders ? _slots.SlotOf(_pointedRow) : -1;
+        if (held.Count == 0 && menu < 0 && pointed < 0)
         {
-            return (order, held);
+            return count;
         }
 
-        HashSet<object> pinned = new(_identity);
-        object?[] slots = new object?[order.Count + held.Count];
-        for (int i = 0; i < _view.Count && i < slots.Length; i++)
+        ReadOnlySpan<int> shown = _slots.Shown;
+        int length = count + held.Count;
+        int[] at = ArrayPool<int>.Shared.Rent(length);
+        int[] sorted = ArrayPool<int>.Shared.Rent(count);
+        try
         {
-            object row = _view[i];
-            if (held.Contains(row))
+            HashSet<int> pins = [];
+            for (int i = 0; i < length; i++)
             {
-                slots[i] = row;
-                pinned.Add(row);
+                at[i] = -1;
+                if (i >= shown.Length)
+                    continue;
+                int slot = shown[i];
+                if (staying && !_slots.InSource(slot)
+                    || (slot == menu || slot == pointed) && _slots.InSource(slot))
+                {
+                    at[i] = slot;
+                    pins.Add(slot);
+                }
             }
-            else if (
-                (_identity.Equals(row, menu) || _identity.Equals(row, pointed))
-                && order.FirstOrDefault(candidate => _identity.Equals(candidate, row))
-                    is { } current
-            )
-            {
-                slots[i] = current;
-                pinned.Add(row);
-            }
-        }
 
-        if (pinned.Count == 0)
+            if (pins.Count == 0)
+            {
+                return count;
+            }
+
+            Array.Copy(_slots.OrderBuffer(count), sorted, count);
+            int[] order = _slots.OrderBuffer(length);
+            int next = 0;
+            for (int i = 0; i < length; i++)
+            {
+                if (at[i] >= 0)
+                {
+                    order[i] = at[i];
+                    continue;
+                }
+
+                while (pins.Contains(sorted[next]))
+                {
+                    next++;
+                }
+
+                order[i] = sorted[next++];
+            }
+
+            foreach (int slot in pins)
+            {
+                if (slot == menu || slot == pointed)
+                    _slots.Pin(slot);
+            }
+
+            pinned = pins;
+            return length;
+        }
+        finally
         {
-            return (order, pinned);
+            ArrayPool<int>.Shared.Return(at);
+            ArrayPool<int>.Shared.Return(sorted);
         }
-
-        List<object> result = new(slots.Length);
-        int next = 0;
-        foreach (object? slot in slots)
-        {
-            if (slot is not null)
-            {
-                result.Add(slot);
-                continue;
-            }
-
-            while (pinned.Contains(order[next]))
-            {
-                next++;
-            }
-
-            result.Add(order[next++]);
-        }
-
-        return (result, pinned);
     }
 }

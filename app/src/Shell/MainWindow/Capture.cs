@@ -88,15 +88,25 @@ public sealed partial class MainWindow
         {
             ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).SetBorderAndTitleBar(false, false);
             AppWindow.ResizeClient(new SizeInt32(1920, 1080));
-            if (!IsPerformanceReplay)
+            var display = PerformanceDisplay();
+            var main = Microsoft.UI.Windowing.DisplayArea.Primary.OuterBounds;
+            // Native input needs the window in front. A replay drives the window in-process, so it
+            // shows on another display without taking the owner's focus, and goes off-screen only
+            // when there is none, because off-screen the map skips drawing that a display shows.
+            if (!IsPerformanceReplay || display.X != main.X || display.Y != main.Y)
             {
                 // The borderless window keeps an invisible resize frame, so the client area goes
                 // to the display's origin, and a 1920x1080 display holds it.
-                var display = PerformanceDisplay();
                 AppWindow.Move(new PointInt32(display.X, display.Y));
                 var client = PerformanceInput.Screen(WinRT.Interop.WindowNative.GetWindowHandle(this), default);
                 AppWindow.Move(new PointInt32(2 * display.X - (int)client.X, 2 * display.Y - (int)client.Y));
-                Activate();
+                if (!IsPerformanceReplay)
+                {
+                    Activate();
+                    return;
+                }
+                AppWindow.IsShownInSwitchers = false;
+                AppWindow.Show(false);
                 return;
             }
         }
@@ -106,8 +116,8 @@ public sealed partial class MainWindow
     }
 
     /// <summary>
-    /// The display a visible performance run uses: one other than the main display when one
-    /// holds the 1920x1080 client area, so the owner keeps the main display.
+    /// The display a performance run uses: one other than the main display when one holds the
+    /// 1920x1080 client area, so the owner keeps the main display.
     /// </summary>
     private static RectInt32 PerformanceDisplay()
     {

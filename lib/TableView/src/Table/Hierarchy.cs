@@ -51,13 +51,13 @@ public sealed partial class Table
 
     private object? CollapsedAncestor(object? item)
     {
-        if (item is null || _hierarchy is null || _positions is null)
+        if (item is null || _hierarchy is null || _slots is null)
             return null;
-        if (_positions.ContainsKey(KeyOf(item)) || _hierarchy.Find(item) is not { } node)
+        if (_slots.IndexOf(item) >= 0 || _hierarchy.Find(item) is not { } node)
             return null;
         while (node.Parent is { } parent && _hierarchy.Find(parent) is { } ancestor)
         {
-            if (_positions.ContainsKey(KeyOf(parent)) && IsInteractive(parent))
+            if (_slots.IndexOf(parent) >= 0 && IsInteractive(parent))
                 return ancestor.Item;
             node = ancestor;
         }
@@ -86,12 +86,11 @@ public sealed partial class Table
             int firstIndex = int.MaxValue;
             foreach (object child in node.Children)
             {
-                if (_positions is null || !_positions.TryGetValue(KeyOf(child), out var position))
-                    continue;
-                if (!IsInteractive(child) || position.Index >= firstIndex)
+                int index = _slots?.IndexOf(child) ?? -1;
+                if (index < 0 || !IsInteractive(child) || index >= firstIndex)
                     continue;
                 target = child;
-                firstIndex = position.Index;
+                firstIndex = index;
             }
         }
         else
@@ -111,7 +110,7 @@ public sealed partial class Table
         return true;
     }
 
-    internal int HierarchyPosition(object item) => _positions?.GetValueOrDefault(KeyOf(item)).Sibling ?? 0;
+    internal int HierarchyPosition(object item) => _slots?.SiblingOf(item) ?? 0;
 
     internal int HierarchyCount(object item)
     {
