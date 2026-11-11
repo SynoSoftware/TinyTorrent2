@@ -67,23 +67,23 @@ The contract also owns moving dots, activity fades, the configurable fastest-arc
 limit and retained, budgeted map preparation. GitHub tracks remaining map defects.
 
 The [rendering and selection plan](plans/17-rendering-and-selection.md) holds
-the open responsiveness work: the preserved map handoff and settled decisions,
-acceptance on the harness's existing response and draw endpoints, a time budget
-of what fills each endpoint's worst gaps, the fix list of work redone or made
-only to be dropped and how changes pass from stage to stage, and links to the
-recorded comparisons.
-Responsiveness acceptance is open.
+the open responsiveness work. Its goal is that each input is answered at once,
+that what was asked for starts to show at once and fills in best effort, that
+motion stays smooth while it fills, and that no hard line in the architecture
+wastes memory or CPU. It sets no time limit at the stress load. It holds the
+preserved map handoff and settled decisions, the questions already
+investigated, how a change is judged, what still interrupts the person, the
+hard lines, the steps and the recorded comparisons.
 
 The [keep-up plan](plans/18-keep-up-with-the-person.md) holds the click-first
-work: a switch to another torrent's peers in place, the map drawn land first,
-then connections, then unconnected places, and the lost presses.
+work. Its steps are built, and round 24 found the click no slower than its
+reference build; closing it is the owner's decision.
+
+The [close destinations plan](plans/20-close-destinations.md) merges map
+destinations that lie close together at the shown zoom into one arc.
 
 [Licences](contracts/licences.md) holds release rights, provider attribution and the
 unresolved distribution questions.
-
-The [ring copy research](plans/ring-copy-plan.md) keeps the evidence and the
-design of a copy engine of the engine's own, for moves between hard disks. It
-will not be implemented.
 
 For TableView work, continue with the [table glossary](../lib/TableView/CONTEXT.md),
 [TableView contract](../lib/TableView/docs/tableview-contract.md), and

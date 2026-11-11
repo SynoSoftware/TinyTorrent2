@@ -148,9 +148,12 @@ torrent's move.
   volume without the space its copies need. An unfinished download therefore
   cannot fill the destination.
 
-The [ring copy research](../../plans/ring-copy-plan.md) keeps the evidence and
-the design of a copy engine of the engine's own, which will not be
-implemented.
+The engine writes no moved file with a copy engine of its own. A move is not
+verified afterwards, so a defect in such an engine would show only when a
+Verify found bad pieces, and the torrent would download data the person
+already had. Such an engine is clearly faster only in cases that are rare for
+torrent payload, such as thousands of small files between two partitions of
+one hard disk.
 
 Each member of a move moves on its own, in this order: its files are placed,
 libtorrent takes the new folder, the folder is saved with its marker cleared,

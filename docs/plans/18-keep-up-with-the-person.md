@@ -1,5 +1,38 @@
 # Keep up with the person
 
+**Open, 11 November 2026.** All three steps are committed (Steps 2 and 3 at
+`d72c4d5`, Step 1 at `bfc54dc`), but the plan is not complete: its purpose is a
+faster click, and the median click to rendered selection was 10 to 30 ms slower
+than the reference `2967cdd` in all 10 pairs of rounds 3 and 4. Batch 6 of the
+[rendering plan](17-rendering-and-selection.md) later cut the median wait
+before a press is handled from 68 to 41 ms, but no round has compared the
+current code with `2967cdd` since. The built steps' rules live in the
+contracts.
+
+That median left out the presses the reference lost, and those were its slow
+ones: with every press counted, rounds 1 to 4 were mixed (Fable 5.2's review
+of the saved runs, 11 November).
+
+**Round 24, 11 November: the reference against `73189ff`.** The reference ran
+under its own commit's harness, both in replay, five pairs (a sixth replaced
+pair 1, which another session's helper disturbed). Values: reference against
+current, pairs in order.
+
+| Endpoint | Reference | Current | Current higher in |
+| --- | --- | --- | ---: |
+| Click to rendered selection, median (ms) | 28.6, 49.9, 24.6, 30.8, 72.0 | 82.1, 27.3, 31.4, 33.5, 38.7 | 3 of 5 |
+| Presses not observed rendered, of 21 | 2, 5, 1, 2, 3 | 2, 0, 1, 1, 0 | |
+| Click to selection, median (ms) | 10.5, 22.6, 8.0, 10.3, 15.9 | 32.9, 13.5, 17.7, 14.0, 15.2 | 3 of 5 |
+| Click to selection, worst (median of runs, ms) | 316 | 149 | 0 of 5 |
+| Click to rendered selection, p95 (median of runs, ms) | 311 | 112 | 1 of 5 |
+| UI response, worst, every phase from map open to marquee | | | 0 of 5 |
+| Peak private memory (median of runs, MiB) | 1,242 | 918 | 0 of 5 |
+
+No click endpoint is higher in all five pairs, so by this plan's rule the
+current click is not slower than the reference; its worst and p95 are about
+half. Run logs and the full table: `round24.log` and `compare24.md` in the
+coordinating session's scratchpad.
+
 Status, 9 November 2026: revision 16. Steps 2 and 3 are committed at
 `d72c4d5` and met their predictions in every pair of rounds 2 to 4. Step 1 is
 redesigned: a table that switches to a different list keeps the rows on screen
@@ -143,7 +176,7 @@ and animates the old rows out while the new ones arrive.
 | Version | A switch to a different list | Why it ended |
 | --- | --- | --- |
 | `v0.9.1.2`, 31 October | One removal and one arrival per row for the whole list, animated. | Replaced by the rework. |
-| `42a815f`, 1 November | The same notifications, animation off. **Owner ruling: the table never flashes.** The list's own removals finish before its delayed arrivals, so an animated switch shows no rows in between. | The revert below. |
+| `42a815f`, 1 November | The same notifications, animation off. **Owner ruling: the table never flashes**, recorded the same day in `8c1aa93`. The list's own removals finish before its delayed arrivals, so an animated switch shows no rows in between. | The revert below. |
 | `ce8f6b6`, 3 November | Also scrolls to the first row. **Owner ruling: a different list starts at the top**, because the new rows at the old offset show "an arbitrary middle of a list they have not seen". It tracked every row each frame laid out. | The revert below. |
 | `25da2fe`, 3 November | Revert of all of TableView to `v0.9.1.2`. | Made for memory: the rework held about 788 bytes per row against 266. The two rulings above cost no memory per row; they left with the files that held them. |
 | `65c1473`, 3 November, today | `Flip`: rows on screen animate out and in, other positions change without a notification. | Builds every row on screen, the work the next click waits for. Neither ruling came back. |

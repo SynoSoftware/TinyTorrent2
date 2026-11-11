@@ -64,7 +64,9 @@ open, with the same submenu open, because a person often sets several choices in
 turn. A command closes the menu, and a click outside closes it.
 [MenuItems](ui/workspace.md#native-controls-and-visual-authority) applies this to
 every menu it builds. A menu bar menu closes after a choice, because WinUI does not
-let the app refuse its close. A button that picks one value, such as the language
+let the app refuse its close. A menu bar menu is filled when its inputs change,
+such as the selection, not when it opens, because `MenuBarItem` raises no
+opening event. A button that picks one value, such as the language
 or the workspace, closes after the choice, as a ComboBox does.
 
 The WinUI resource system is the visual authority. Reuse platform controls,

@@ -1,6 +1,6 @@
 # Rendering and selection
 
-Status, 9 November 2026. The map handoff from `e723ae6` is implemented and
+Status, 11 November 2026. The map handoff from `e723ae6` is implemented and
 functionally validated; the owner reports much better pan/zoom. Preserve it. At
 `4f069bb` every movable preparation already runs off the UI thread and the game
 loop: Inspector's peer capture runs inside its worker, `MapModel.Update` stores a
@@ -10,45 +10,31 @@ preparation runs in the render pass, `MapWork.Prepare` runs on the pool and
 `OnDraw` publishes one displayed value. No further "move it to a worker" task
 exists; what remains on those threads is presentation or WinUI-owned work.
 
-Batches 1 to 3 and 5 of the [fix list](#steps) were built and measured in one
-round, which showed a defect in the map's rounds; see
-[the batch round](#round-of-batches-1-to-3-and-5). The fix and batch 4 were
-built and measured on 10 November; see
-[the round of batches 1 to 5](#round-of-batches-1-to-5). Each click costs the UI
-thread less, but the median click is slower in every pair, because presses wait
-longer to be handled. [Batch 6](#batch-6-waste-found-on-10-november) removed
-the waste in those waits and was measured the same day; see
-[the round of batch 6](#round-of-batch-6). The stalled time, the working set and
-the map's first connections fell in every pair. The UI thread is still stalled
-for 1.3 to 1.6 s of each 3 s of clicks, in WinUI's own layout and the table's
-cell layout. [Batch 7](#batch-7-remaining-waste-on-10-november) removed the
-double parse of peer pushes and smaller waste in cell layout and snapshots.
-[Batch 8](#batch-8-forced-collections-and-per-update-allocations) found that
-the replay's own peer fixture caused WinUI's forced full collections, and
-removed smaller per-update allocations. Both batches were measured in
-[one round](#round-of-batches-7-and-8): the click medians did not change, and
-the worst click fell to 164 ms.
-[Batch 9](#batch-9-row-rebinds-map-redraws-and-engine-copies) removed the
-map's extra drawings during and after fades, the second managed event of each
-row rebind and several engine copies. [Its round](#round-of-batch-9) shows 5 or
-6 map drawings in the idle second instead of 54 to 59, and no change in
-clicks. [Batch 10](#batch-10-route-preparation-after-a-click) cut the map's
-route preparation after a click from 122 to 57 samples of the click phase, and
-the map now keeps its last picture while a new subject's rows are unread, as
-its contract says; clicks did not change.
+The batches of the earlier fix list (1 to 12) are built and measured. Their
+findings and the changes that were not made are in
+[Questions already investigated](#questions-already-investigated), and their
+rules are in the contracts.
 
-Responsiveness is not accepted. At `4f069bb` the worst navigation, marquee and
-stationary-dot draw gaps are 322, 266 and 225 ms against a 16.67 ms frame period.
-A blocking full collection fills only the stationary gap (210 ms of 225); the
-navigation gap holds 41 ms of collection, and the marquee gap and the two worst
-clicks hold none. Relocating work did not move those maxima. The
-[budget](#budget) splits each endpoint into the work that fills it; the
-[steps](#steps) first measure the unknown parts from saved traces, then change
-each part until the sum fits the target.
+The work is open.
+[What still interrupts the person](#what-still-interrupts-the-person) lists
+it, and the [hard lines](#hard-lines-that-waste-memory-and-cpu) list the waste
+that the architecture causes.
 
 Purpose, in the owner's words: "all I want is this to be as fast as possible."
-That means faster input response and smooth animation, shown by before/after
-evidence on the same workload. Scope: from a click or an update to the picture
+On 11 November the owner made it precise: "we're not looking here for faster
+execution but for less jagged movement and more responsive interface". On the
+same day the owner rejected the fixed limits at the stress load that this plan
+had carried, which agents had written: "my targets were never miliseconds at
+160k peers. my targets were smooth and immediate feedback of the user
+interface.... that is not impossible to achieve because I'm not asking to
+render what you cannot., I'm asking to start rendering immediatelly what I ask,
+best effort basis. I also ask to stop wasting memory and cpu because of
+architecture that draws hard lines when it shoudn't". So a change is judged by
+what the person feels: how soon the UI answers an input, whether what was asked
+for starts to show at once, and whether motion stays even while the content
+fills in. Execution time and memory count as causes of those, and as waste.
+The plan promises no time by which the stress load's 159,810 peers are
+complete. Scope: from a click or an update to the picture
 on screen, across the app, the pipe and the engine. The replay feeds the app
 from a synthetic peer source, so it never measures the engine or the pipe.
 Current behavior is owned by
@@ -58,22 +44,40 @@ Current behavior is owned by
 [TableView](../../lib/TableView/docs/tableview-contract.md). The
 [harness guide](../../app/tests/Performance.md) is the measurement entry point.
 
-## Outcome
+## Goal
 
-A torrent or peer selection acknowledges input without awaiting grouping,
-projection preparation, geometry, rasterization or a replacement picture. The
-map keeps presenting completed content while replacement content is prepared;
-new content appears when available, and a completed handoff may contain partial
-detail. Completing visual detail cannot delay input or presentation. Selection
-semantics and displayed interaction targets stay correct while refinement is
-incomplete.
+The person's own input is answered at once. What they asked for starts to show
+at once and fills in as it gets ready. Nothing that fills in stops the next
+input or the motion on screen.
 
-The goal: a torrent click is visibly reflected in the next displayed frame.
-Map navigation, stationary dot animation and marquee movement miss no
-presentation deadlines and show no uneven jumps. Measure each separately; smooth
-dots cannot compensate for stalled geography. Use the actual display refresh
-rate; at 60 Hz the frame period is 16.67 ms. This is the direction of the work,
-not a pass mark; [acceptance](#acceptance) says how a change is judged.
+1. **Feedback first.** A press, click, selection, drag, wheel step, key or
+   scroll shows its own answer in the next frame the display shows: the row
+   shows selected, the marquee follows the pointer, the map moves under the
+   hand. The answer waits for nothing that the input asks to be loaded,
+   grouped, sorted, laid out or drawn.
+2. **Start at once, best effort.** What the person asked for starts to appear
+   with whatever is ready: the kept rows of a torrent seen before, the land
+   before the arcs, part of a list before the whole. It then fills in. A
+   torrent or peer selection does not await grouping, projection preparation,
+   geometry, rasterization or a replacement picture. The map keeps presenting
+   completed content while replacement content is prepared, and a completed
+   handoff may contain partial detail. The plan promises that the start does
+   not wait for the whole. It does not promise a time by which a large content
+   is complete.
+3. **Smooth while it fills.** While content fills in and updates arrive, moving
+   content keeps moving evenly: map pan and zoom, the peer dots, row animations
+   and the marquee. The next input is answered as the first one was. Completing
+   visual detail cannot delay input or presentation, and selection semantics
+   and displayed interaction targets stay correct while refinement is
+   incomplete.
+4. **No waste from hard lines.** No part does its work whole, or hands over all
+   of its data, when only a part is seen or has changed.
+   [Hard lines](#hard-lines-that-waste-memory-and-cpu) names the ones found.
+
+The goal applies at every size. The stress load is where the failures show; it
+is not a size at which a time is promised.
+[How a change is judged](#how-a-change-is-judged) says how each point is
+measured.
 
 Native selection, accessibility, drag gestures, unfinished-edit protection and
 the retained Inspector remain intact. Native control updates still run on the UI
@@ -88,8 +92,8 @@ thread; detached calculation and native map rendering run elsewhere.
   then refines it. Blocked grouping leaves navigation over the last completed
   facts; blocked rendering leaves input and presentation over the last
   completed picture. Each drawing draws the whole map, so refinement that asks
-  for another drawing costs a whole map for the strokes it changed. Before
-  batch 9, fades did this 54 to 59 times in an idle second. Since batch 9, arc
+  for another drawing costs a whole map for the strokes it changed. Until 10
+  November, fades did this 54 to 59 times in an idle second. Since then, arc
   widths and borders that a drawing's budget refuses wait for a drawing that
   comes anyway or for passes that draw nothing. A zoom's guides, outlines and
   arc strokes still ask for another drawing each time the 6 ms budget runs
@@ -125,8 +129,9 @@ thread; detached calculation and native map rendering run elsewhere.
   alone does not make work cheaper: moved work still allocates, a collection
   stops every thread, and WinUI's forced full collection runs on the UI
   thread. At `4f069bb` every movable preparation already ran off the UI thread,
-  and the worst gaps stayed at 322, 266 and 225 ms. Plan 18 split the row work
-  into pieces, and the median click was slower in all 15 pairs.
+  and the worst gaps stayed at 322, 266 and 225 ms. An attempt to split the
+  table's row work into pieces made the median click slower in all 15 pairs (see
+  the questions below).
 - **Owner ruling, 9 November: a TableView change starts from the table's
   history.** TableView work is open. Before designing a change, read every
   TableView commit since the `v0.9.1.2` release
@@ -141,11 +146,312 @@ thread; detached calculation and native map rendering run elsewhere.
   memory. The next commit then built the opposite behavior.
 - Memory growth causes freezes. WinUI asks for a blocking full collection
   after the working set grows by 50 MiB, with a median pause of 162 ms in the
-  [budget](#budget), and every collection pauses every thread: 13% of the
+  [record of 7 November](#record-of-7-november-what-filled-the-worst-gaps),
+  and every collection pauses every thread: 13% of the
   `4f069bb` run, and a third of the click time in the 9 November native trace.
   Allocations and live objects are reduced like any other waste.
 - Build, test and capture rules are owned by [testing](../agents/testing.md)
   and [compilation](../agents/compilation.md); this plan adds none.
+
+## Questions already investigated
+
+Read this list before you investigate a cause, so that nobody repeats the
+work. It starts with the pan-back review of 10 November, and the groups after
+the tables answer the questions of the batches before it. "Review" means an independent agent
+session that read saved runs and traces. Add each new answer here.
+
+**Map**
+
+- *Why does the map freeze during pans while the UI thread is free?* The
+  render worker draws on the game loop's `CanvasDevice`, and Win2D's
+  `CanvasSwapChain` takes that device's Direct2D factory lock to start each
+  frame and to present it (`CreateDrawingSession` and
+  `PresentWithSyncInterval`). A long Direct2D call on the worker therefore holds
+  the game loop's next frame: in 83 of 99 such freezes the game loop drew
+  nothing. Render-thread input cannot help these freezes, because the newer
+  view was already in `MapMotion`. Review and source check, 10 November;
+  [batch 12](#batch-12-pan-effects-notices-on-screen-only-and-two-findings).
+  Open: which worker step holds the lock. The capture records step durations,
+  not their start times.
+- *Do the UI probes show every UI-thread wait?* No. A probe is a sent message,
+  and Windows delivers it before posted work, so a posted replay step can wait
+  20 to 90 ms while the probes answer at once. Review, 10 November.
+- *Why did the glow cost about 7 ms in each pan drawing?* The view is one of
+  its inputs, so a pan recorded it again at each step. Fixed in batch 12:
+  0.1 ms median per pan drawing.
+- *Why did no peer dots fly in the pan back?* The dot size fell only after
+  10 s of lower traffic, and a new subject kept the old subject's size. Review,
+  10 November; fixed in batch 12; see
+  [the pan back during churn](#pan-back-during-churn).
+- *What else would shorten pan and zoom freezes?* A review on 10 November
+  read the saved runs of `bfc54dc` (20.7 s frozen of 49.9 s of pans and zooms:
+  13.8 s with the UI thread busy, 4.7 s tied to the worker's drawings) and
+  proposed five changes. None is built or measured yet.
+  1. Hold the tables' new sort order while a map gesture is active, and apply
+     it once when the gesture rests (`Peers.RefreshView` and
+     `Torrents.RefreshView`). This removes the new-order blocks from the
+     gesture, which are the 13.8 s. It changes what the person sees, so it is
+     the owner's decision.
+  2. During a pan, draw a new picture only when the view nears the edge of the
+     last one's margin, and once more at rest, as the glow does since batch 12.
+     In 73.2% of pan frames the view was within half the margin of its
+     picture. Predicted: about 12 pictures per pan phase instead of 30 to 59.
+  3. Draw each picture for the view expected at its publish: the view's speed
+     times the last drawing's time. At publish a picture was a median 0.10
+     margins behind the view (worst 1.28), and in zoom-out the view was wider
+     than the picture in 77.9% of frames.
+  4. Arc guide refinement takes about 20 times its 6 ms budget. Drawings that
+     refine 30 or more guides take 131 to 175 ms, against 41 ms. Each refined
+     route disposes its gradient brush (`Route.Release`), and the same drawing
+     builds it again with no budget check, although the brush depends only on
+     the end points, colour and scale (checked in code). A zoom discards the
+     refined guides at the next power of two, so refining while the scale
+     changes is wasted.
+  5. The render worker runs at below-normal priority (`MapMotion.cs:516`)
+     while it holds the Direct2D lock the game loop needs, and Windows locks
+     do not raise a holder's priority. Code only; no run shows it.
+
+  Checked and dropped by the same review: keeping the game loop awake between
+  pan frames (a picture published during a UI block was drawn after a median
+  of 7.7 ms, as with a free UI thread), and sorting arcs by brush (each arc has
+  its own gradient, so Direct2D cannot batch them).
+- *What are the whole-process pauses?* Every pause over 64 ms in the traced run
+  `cpu19` was a blocking full collection that WinUI requested (71 to 153 ms).
+  Collections that allocation started stayed at or under 64 ms. The heap held
+  40 MiB in generation 2 and 164 MiB of large objects. Review, 10 November.
+  *What holds the large objects, and what makes private memory climb?* (`new22`,
+  11 November: an allocation trace of one replay, `mem22`, and a heap snapshot
+  12 s after the window was ready.) The managed heap reaches 245 MiB while the
+  all-peers map opens and then stays at 205 to 250 MiB, so the later climb of 3
+  to 4 MiB/s in private memory is native. The live large objects (180 MB) have
+  no single owner: 45 MB of free fragments, 28 MB of byte buffers, 23 MB each of
+  `int` and object arrays, 21 MB for the map's contributions of 160,000 peers, 13
+  MB in 20 kept `Body.Changes.Edit` arrays and 8 MB of the location cache. While
+  the map opens, 38 MiB of small temporaries come from COM marshalling in
+  `Body.View.Raise` for the table's count-change notices. Open: what native
+  memory grows; it needs a native heap trace, which needs elevation.
+
+**Tables**
+
+- *What does a new sort order cost the UI thread?* From the native trace of
+  8 November (blocks 2 to 3 times longer than now): WinUI draws each row in a
+  transition again from nothing (31.9%), draws the other rows (19.8%) and lays
+  out (31.5%, of it 19.3% filling a container for each inserted position).
+  Text drawn into textures is 25.8%, and the colour flag glyph is 6.3%.
+  `Changes.Reconcile` is under 2 ms. The list has no move, so a moved row is
+  built a second time. No change in `Reconcile` gets under that floor. Review,
+  10 November. Candidates: the flag as a shared picture, fewer pieces of text
+  per row (each needs proof that it looks the same), or a body based on
+  `ItemsRepeater` with a transition provider. The last one is a major change,
+  is not measured and waits for the owner's decision.
+- *Why is the first sort of the all-peers list slow?* No row on screen keeps
+  its place, so every row the list holds leaves and a new one arrives: about
+  twice the work of a later sort. Half of the 316 ms block is
+  `CellsPanel.MeasureOverride`; the sort itself runs on the worker. Batch 12
+  lowered its worst UI response from 417 to 231 ms.
+- *What does the list do with its containers below the screen after a sort?*
+  In a 60-row test it dropped them in the layout after the sort and made them
+  again, with the right rows and selection, within 1.5 s. Batch 12.
+- *Why do both tables sometimes show a new order in one frame?* Chance. Each
+  table schedules its own settle, and the benchmark's peer interval is 1 s. No
+  mechanism is needed. Review, 10 November.
+- *Does a new order cost less when only the containers on screen get notices?*
+  Only for the first sort of the all-peers list (295 to 156 ms). Pans froze
+  32.1% of the moving time against 24.8%, torrent-table blocks grew from 143
+  to 228 ms, and 15 extra UI blocks appeared; see
+  [the round of batch 12](#round-of-batch-12).
+- *Is the queued rebind of containers off screen (`FlushRebind`) a UI block?*
+  No. In a traced run of `new20` (61 s) it had 15 samples, about 30 ms in all,
+  and none inside a UI block of 100 ms or more. The blocks that end near no
+  new order (34 in `new19`'s runs against 3 in `new18`'s) are 71% WinUI with no
+  app frame and 22% cell measure and arrange, with almost no row content
+  change. Batch 12.
+- *Can a `Field` cell be plain text?* No. It draws an icon and highlighted
+  text. Batch 12.
+- *Can a new sort order reuse the rows as a switch to another torrent does?*
+  The owner declined, because the animation shows where each row went. See
+  [the owner's answers](#the-owners-answers-to-the-pan-back-review).
+
+**Clicks and the UI thread**
+
+- *Is the UI thread waiting during the click stalls?* No, it is busy. `new8`'s
+  cycle counter shows 2.74 s of CPU in its 3.0 s click phase, and in each press
+  that waited 30 ms or more it ran for nearly the whole wait. The managed trace
+  of `new8` holds 1,461 samples in the phase, 948 with no app code; of the rest,
+  cell layout and fill hold 261, the table's catch-up of a count change 93,
+  `ApplyProjection` 54 and the status bar 29. The native trace of 8 November (an
+  earlier build) puts 2,300 of 4,836 stall samples in the render walk, mostly
+  rasterising the text of changed `TextBlock`s, 556 in layout-transition copies
+  of animating rows, 576 in the list's container preparation and 1,022 in hit
+  testing, which is almost all layout that WinUI runs before it can test. An
+  unelevated sampler on `new9` (118 stall samples): forced full collection 20,
+  render walk 27, text measure 18, layout transitions 5. So the native work is
+  layout and drawing of rows whose content changed, and the owner's row
+  transitions. Saved traces, 10 November.
+- *What does a click phase hold now?* `cpu19` (the build with every change of
+  10 November) holds 1,543 UI-thread samples in the click phase: 977 in WinUI
+  with no app frame, 230 in cell measure (202 of them WinUI measuring a cell),
+  115 in count notices, 59 applying prepared projections, 54 in cell arrange and
+  20 in row rebinds. All 151 samples in the cells' own measure are one line,
+  WinUI's `child.Measure` of each cell; the panel adds nothing. A selection
+  change measures no cells: a row answers it only in `Row.UpdateStates`, which
+  changes visual states only when the row's drag or held state changes. About 42
+  of the 59 projection samples are the notices `View.Apply` raises for the
+  realized rows; `Slots.Commit` holds 3. Six collections paused the UI thread
+  for 112 ms.
+- *Can the count-change notices be made cheaper?* No, they are the platform's.
+  `IBindableObservableVector` has no range notice, so a list that changes by
+  1,000 rows takes 1,000 notices, and the owner's ruling forbids a Reset of a
+  displayed list. Each notice reaches .NET through `Surface`, a managed
+  `ListView` subclass that exists for its automation peer, and makes four
+  `ComWrappers` calls. The table's own is the check in `View.Raise` that no
+  listener kept the reused arguments: 2 of 1,560 samples in `new17`'s trace,
+  against 32 for WinUI's handler beside it, so it stays. The other three
+  marshal the delegate's arguments and the override's round trip. `new17`'s
+  122 notice samples split by their innermost managed frame: WinUI's list inside
+  the base `OnItemsChanged` 45, WinUI's native handler inlined into `View.Raise`
+  and `CatchUpSlice` 54, `Surface`'s round trip 13, marshalling the arguments 7,
+  GC polls 3. The only alternative that removes work is a list that is not a
+  managed subclass, which saves at most 13 samples and loses the automation
+  peer, so `Surface` stays. Holding the arguments' COM pointer would save one
+  lookup per notice at the cost of a reference the view must release; not done.
+  Notices run in slices of at most 4 ms below input, so a click waits for one
+  slice at most. `View.CatchUp` raises only the notices the list is still owed,
+  so a click that selects a torrent without kept peers, which goes to no rows
+  and then to the new rows, announces only the difference when the new rows
+  arrive before the removals. Review of 10 November.
+- *Why did the table's row notices keep every peer alive, and what did they
+  cost?* WinUI reads each inserted row back (`IList.GetAt`) and wraps it for COM
+  (`ComWrappers.CreateManagedObjectWrapper`), so every peer the table ever
+  inserted stayed held. `new7` held 385,341 GC handles before the clicks,
+  159,810 of them on `Peer`, with 165,559 managed-object wrappers and 205,873
+  finalizable wrapper releasers; after the clicks 143,542 handles, 27,397 on
+  `Peer`. A switch from all 159,810 peers to a 9,000-peer torrent raised 150,810
+  removals in 1,506 ms, showing all peers raised 20,895 to 57,492 insertions per
+  publish in 187 to 581 ms each, and a marquee selection raised 21,015 in 246 ms.
+  Since a row that arrives off screen is announced as null (TableView contract
+  5.3), a dump of `new8` at the same point holds 6,584 managed-object wrappers
+  and 19,195 dependent handles against 165,559 and 178,409: 0.19 wrappers per
+  live `Peer` against 1.04. Batch 6, 10 November.
+- *Why was the median click slower while each click cost the UI thread less?* The
+  press waited longer to be handled, behind UI-thread stalls. In `new7` against
+  `new5` the handled press to its selection took under 1 ms against 1.7 to
+  3.7 ms, and the wait before the handling was longer. Removing the waste in
+  those stalls (`new8`) lowered the median press wait from 68 to 41 ms over 97
+  common clicks and the stalled time from 1.6 to 1.8 s to 1.3 to 1.6 s of each
+  3 s of clicks, lower in every pair; what remains is WinUI's own layout and the
+  table's cell layout after each switch.
+- *Can the row work of a switch be split into pieces that fill later?* No. The
+  first design of an in-place switch filled rows in phases, and the median click
+  was slower in all 15 pairs of three rounds. During fast clicking the UI thread
+  is busy most of the time, so each piece ran where the next press landed and
+  added its own layout pass; filling one row per Low-priority item also kept the
+  window drawing about twice as many frames for 1 to 2 s after the clicks. It was
+  removed. A different list now switches in place (TableView contract 5.3), and
+  five pairs of the peer table switch capture show a switch at about 40% of its
+  earlier cycles (median 140 against 349 megacycles) and its busiest frame at
+  less than half. Rounds 1 to 3 and the switch capture of
+  [plan 18](18-keep-up-with-the-person.md), 9 November.
+
+**Allocation and engine copies**
+
+- *What does the click phase allocate, and who owns it?* `new10`'s allocation
+  trace puts 40 MiB in the 3 s phase. The largest app sites are the peers
+  worker's `Swarm.Read`, 8.6 MiB, which allocates only for peers that join and
+  finds a held peer by its endpoint text without allocating; the map's groups
+  for each new subject, about 5 MiB; and the `ComWrappers` object that .NET
+  makes for each notice crossing, 5.4 MiB. Each serves the click. Reusing map
+  groups between subjects would save at most about an eighth of the phase's
+  allocation, and a reused group would have to keep its point and its name's
+  language exactly, so it is not done. Small sets, arrays and LINQ objects per
+  click hold 0.0 MiB, so removing them cannot be measured. Of the six
+  collections in `new17`'s click phase, all started by allocation (three of
+  generation 0, three of generation 1), none is WinUI's forced collection.
+- *Where does the map's render thread spend a click phase?* In `cpu19`'s trace
+  it is busy in 393 of its 1,508 samples: 255 drawing, 56 of them rebuilding
+  strokes for a new subject's arcs, and 122 preparing routes. Source lines put
+  99 of those in `PrepareRoutes`: 37 adding the previous routes to the lookup by
+  key, 27 checking whether the destinations are unchanged, 17 in the loop over
+  destinations and 13 parking arcs that stop showing. The sorting phase holds 1
+  sample of it and the idle second none, so the cost comes with a change of
+  subject; the lookup lets a new subject's places reuse the arcs of places the
+  previous subject shared. Route preparation then fell from 122 samples
+  (`new12`) to 79, 68 and 57 (`new15`) and to 41 in `new17`, where parking no
+  longer appears; the 41 are matching the previous subject's routes by key (26)
+  and the loop over the new destinations (14). Single traces differ by about 10
+  samples. Batch 10.
+- *Does the map need its glow brush per arc?* Not the halo's. It depends only
+  on its colour, and the map draws at most four colours per palette, so the map
+  keeps one brush per colour and sets each arc's centre, radius, opacity and
+  scale before it draws the arc; a command list keeps a radial brush by value
+  and references only its gradient stops. The core brush stays one per arc,
+  because its stops put the landing fade 30 pixels from the destination and so
+  depend on the arc's length on screen. A new map made 2,001 brushes alive at
+  1,000 arcs and spent 590 render-thread samples in
+  `CanvasRadialGradientBrush.CreateWithStops` when the 159,810-peer list opened.
+  No capture has counted the brushes after the change. Batch 11 (`new18`).
+- *Why was batch 7's first push slower, and does the capture show it?* The cause
+  given at the time, location lookups, does not hold: the capture's `PeerRows`
+  use `10.x` addresses, which the location data does not hold, while `lookupMs`
+  times public `87.68.x` addresses in a separate loop. `createMs` is one sample
+  per capture and has been 9 to 45 ms across captures of the same code, so the
+  capture cannot show a change of a few milliseconds. Parsing a new peer's
+  endpoint once saves about 1 to 2 ms per 10,000 new peers, which source review
+  shows and the capture cannot.
+- *Which copies and scans were left in place?* Skipping unchanged peer lists:
+  connected peers' rates change at every refresh, so an unchanged list is rare.
+  Copying piece bitfields: libtorrent copies them inside `3rdParty`, which
+  agents do not change. One snapshot for several commands: a command's reply
+  promises a published snapshot that holds its result. Describing a view once for
+  several kinds of observation: the owner's ruling shows each available fact at
+  once, and how often the kinds arrive apart is not measured. Shrinking pooled
+  buffers: WinUI's forced collection follows working-set growth, not size, and
+  shrinking would add work. Not copying each new row list in TableView: the copy
+  is the library's documented behavior and costs about 1 ms per update only at
+  160,000 peers. That answer weighed its time only; its memory is open again
+  as [hard line 1](#hard-lines-that-waste-memory-and-cpu). The scans that every drawing repeats in `DrawScene` and
+  `MapMotion.RenderMap` (the marked routes, the estimated countries, the chosen
+  destination and a new `Highlight`): since the fades stopped forcing drawings,
+  an idle second draws 5 to 6 times, so each scan passes over about 1,000 routes
+  a few times per second. `Swarm.Join` copies only for a scope of several
+  torrents, and a swarm rebuilds its endpoint index only for a reply that adds or
+  removes a peer; the index holds positions, so a leave shifts every later
+  position and an update in place still touches most peers, and the new swarm
+  keeps a worker that reads the old one safe. TableView's `Slots.Number` reads
+  each row's key once, only for a list it has not numbered; `ClearNext` is one
+  fill of an integer array, about 640 KB at 160,000 rows; `Flip` writes each row
+  of a different list into the view once and raises no notice per row. Batches 9
+  and 11.
+- *What owns about 800 MB of native memory at the stress load?* Not known. Only
+  a native heap trace of a running build can name it. Batch 11.
+- *Does `Field` cost more than a native cell?* Of 1,574 click-phase samples,
+  about 2 are the crossing into .NET. `Field` is a managed control, so WinUI
+  reaches each cell's measure and arrange through .NET: 57 samples sit under its
+  base `MeasureOverride` and `ArrangeOverride`. Below them the native samples
+  show `CTextBlock::MeasureOverride` and `CIconElement::MeasureOverride`, the
+  measure of the cell's text and icon, which a cell built from native elements
+  also does. Replacing the control in nine templates would not remove the
+  measured work and would change what Narrator reads from those cells. Batches 7
+  and 9.
+
+**Decisions of the click-first work, not to change**
+
+- *Should the old display freeze at the click?* No. A new map subject cancels the
+  old render, but freezing the old display at the click would need its own state
+  in the table, the map and the inspector, because more than seven paths
+  restart work for the old torrent.
+- *Should publications run at Low dispatcher priority?* No. The table's
+  notifications cost 19 samples of 4,836 in the stalls, and a hit test runs any
+  waiting layout before the click, so a lower priority cannot protect a click.
+  Only a smaller pending layout can.
+- *Should `Torrent` raise per-property change notices?* It does now: `Raise`
+  names the properties whose input fields changed, through a table of inputs per
+  notice (`Torrent.cs`). The click work left it alone, because in the reference
+  trace the whole-row notices came from the harness's summary feed
+  (`ApplySummaries`, 198 samples), not from a click, and many bound properties
+  are computed from several fields, so per-property notices need a dependency
+  map. `RefreshText` still raises one notice for the whole row, for a language
+  change.
 
 ## Workload
 
@@ -163,65 +469,87 @@ map are grouped places and arcs, built from detached facts off the UI thread.
 Rows exposed to XAML are the peers table's rows, published through TableView on
 the UI thread. A cost belongs to one of them; name which.
 
-Since batch 6, `Swarm.Read` looks up the joined peers on its worker, so the
-benchmark's switches include the lookups: about 4.6 µs per peer in the peers
-capture's 10,000-peer journey. Inspector's `_locating` flag guards only the
-public address's lookup. This removes the two whole-population sets per pass of
-[issue 578](https://github.com/SynoSoftware/TinyTorrent2/issues/578), which
-closes with the commit.
+`Swarm.Read` looks up the joined peers on its worker, so the benchmark's
+switches include the lookups: about 4.6 µs per peer in the peers capture's
+10,000-peer journey. Inspector's `_locating` flag guards only the public
+address's lookup. This removed the two whole-population sets per pass of
+[issue 578](https://github.com/SynoSoftware/TinyTorrent2/issues/578), which is
+closed.
+
+The fixture answers one torrent at a time when all peers open
+(`Inspector/Peers.cs`), so `inspector-all-map-open` joins and publishes a
+growing list about 50 times, where the product joins once per batch of
+replies. In the 10 November traces `Swarm.Join` allocated 31 to 32 MiB of
+`Peer[]` there. Pairs of builds still compare fairly, but that phase's time and
+memory do not describe what the product does when all peers open.
 
 Ordinary use is a separate expectation: hundreds of rows, sometimes thousands,
 rarely ten thousand. A correction that helps only at stress size and adds code,
 state or memory at ordinary size is not retained.
 
-## Acceptance
+## How a change is judged
 
-A change is judged first by counts of the work it removes, and then by the
-harness's response and draw endpoints on the stress workload. Examples of
-counts are the drawings in the idle second, the row notices of a click, the
-messages parsed and the working-set growth. A count needs one run, does not
-vary between runs, and names the code that does the work. The endpoints vary
-between runs of one build by more than most changes move them: `new10`'s
-median click was 43.6 ms in one round and 27.9 ms in the next. GC duration
-explains a stall; it is not an acceptance endpoint, because a GC rule alone
-would again leave responsiveness unverified.
+No measure has a limit in milliseconds at the stress load. Until 11 November
+this plan carried such limits: p95 within one frame and worst within three,
+for clicks, navigation, the marquee and the dots. Every round against them
+ended "not accepted", whatever it changed, so they told nobody whether a
+change was good. No further round runs against them.
 
-The targets below are the goal, not a pass mark. At the stress load every
-round ended "not accepted", whatever it changed.
+A change is judged by three things, in this order:
 
-| Endpoint (existing) | Target |
-| --- | --- |
-| Click-to-XAML completion, per click | p95 within one frame period; worst within three. The interval covers the whole UI turn after the click, including the selected torrent's peer-table publication; the click follow-up attributes what is inside it. |
-| Navigation draw gap | p95 within one frame period; worst within three |
-| Marquee sample gap | p95 within one frame period; worst within three |
-| Stationary dot draw gap | p95 within one frame period; worst within three |
-| Command-delivery worst | within three frame periods |
-| First selected connections, first aggregate connections, post-click map settlement | not worse than the reference |
-| Peak and end private commitment, peak working set | not above the reference |
+1. **A count of the work it removes.** Examples are the drawings in the idle
+   second, the row notices of a click, the messages parsed, the bytes one
+   update allocates and the working-set growth. A count needs one run, does
+   not vary between runs, and names the code that does the work.
+2. **One round of five matched pairs** against the preserved reference binary,
+   for the phases the change touches. The change stays when no measure is
+   worse in five of five pairs. The measures vary between runs of one build by
+   more than most changes move them: `new10`'s median click was 43.6 ms in one
+   round and 27.9 ms in the next. So a mixed result is explained from the code
+   and the saved records, and is not run again.
+   [Testing](../agents/testing.md#verification-must-answer-a-question) decides
+   whether a change needs a round at all.
+3. **The owner's look on screen,** beside the reference build, for every
+   change to motion or to what an input shows. No measure shows whether motion
+   looks even.
 
-The three-frame worst allowance is the default, not the outcome. The goal says
-no missed deadline, which is one frame; three tolerates the
-isolated misses that a full collection currently makes unavoidable, until a
-round shows what one frame would cost.
+The harness already records these measures. Each is read with the point of
+the [goal](#goal) that it shows.
 
-These endpoints cannot certify the physical display. Displayed frame rate and
+| Goal point | Measure | What it shows, and what it misses |
+| --- | --- | --- |
+| Feedback first | Click to selection, and click to XAML completion, per click | How late the person's own click shows. The second covers the whole UI turn after the click, including the selected torrent's peer-table update. |
+| Feedback first; smooth while it fills | UI response per phase: the delay of a message sent to the window about every 16 ms, p95 and worst. The count of UI blocks of 100 ms or more. Command delivery, worst | Whether the UI thread lets input through while work continues. Windows delivers a sent message before posted work, so the probe misses waits of posted work. |
+| Start at once | First picture of each map opening | When the picture with the requested connections is drawn. For a large content this is its completion, which has no promised time. The saved runs hold the time of each published picture but not its subject, so they cannot say when the first part of the new content showed. Until they can, the owner's look judges this point. |
+| Smooth while it fills | The share of the moving time with the map frozen, split by UI thread busy or free; navigation updates per second and the worst navigation gap; the marquee sample gap; the stationary dot draw gap; the length of a table's new-order block | A freeze is 50 ms or more between two drawn views that differ. |
+| No waste | The counts of point 1 above; peak and end private memory and peak working set; forced full collections per run | What the work costs. GC duration explains a stall; it is not judged for itself. |
+
+These measures cannot certify the physical display. Displayed frame rate and
 next-displayed-frame selection stay recorded as unverified until a
-presented-frame endpoint exists; they are not a gate, because an unmeasurable
-gate kept every round "not accepted" regardless of what changed.
+presented-frame endpoint exists.
+
+The plan ends when
+[what still interrupts the person](#what-still-interrupts-the-person) holds no
+entry that the app can change, and the owner has looked at ordinary use and at
+the stress replay and accepts both. Each entry that stays names the platform
+limit that keeps it.
 
 ### Deciding a correction
 
-- Before building, the correction names the count or endpoint it predicts to
-  change and the direction. A change without a predicted count or endpoint is
-  not a performance correction and is judged as code only.
-- One matched comparison against the preserved reference binary. Predicted
-  count or endpoint improved and no endpoint worse than the reference:
-  retained, and the reference moves to it. Predicted count or endpoint not
-  improved: not retained, because it did not deliver its intended result.
-- Predicted count or endpoint improved but another endpoint worse: one more matched
-  pair, and that pair decides. Worse again on that endpoint: not retained.
-  Otherwise retained. No third run, no retry for a favorable maximum.
-- Corrections already retained stay unless a matched comparison attributes a
+- Before building, the correction names the goal point it serves, the count or
+  measure it predicts to change, and the direction. A change without a
+  predicted count or measure is not a performance correction and is judged as
+  code only.
+- Predicted count or measure improved, and no measure worse in five of five
+  pairs: retained, and the reference moves to it. Predicted count or measure
+  not improved: not retained, because it did not deliver its intended result.
+- Predicted count or measure improved, but another measure worse in five of
+  five pairs: find the cause in the code and the saved records before any new
+  run. The correction stays when the cause is fixed, or when the owner accepts
+  the trade. No retry for a favorable maximum.
+- A measure that is worse in fewer than five pairs is recorded as borderline
+  and is not run again.
+- Corrections already retained stay unless a matched round attributes a
   regression to them. A worse single run is not a confirmed regression; it
   prevents an unjustified revert and nothing more.
 - Record every adverse observation. Keep UI elapsed time distinct from worker
@@ -229,16 +557,76 @@ gate kept every round "not accepted" regardless of what changed.
   need matched diagnostic builds of both revisions; external recording may use
   the preserved binary directly.
 
-## Budget
+## What still interrupts the person
 
-The targets are the [acceptance](#acceptance) table's: p95 within one frame
-(16.7 ms) and worst within three (50 ms). Each endpoint lists today's value,
-the work inside its worst gaps, and the change that removes each piece. Values
-come from the latest profiled build `4f069bb` (replay, its evidence folder
+This is the plan's working list. Each entry is something the person sees at
+the stress load, with its latest recorded size, its cause and what changes it.
+An entry leaves the list when its change is retained. An entry that the app
+cannot change stays and names the platform limit.
+
+1. **A pan or zoom stops while a table shows a new sort order.** Size: the map
+   is frozen with the UI thread busy for 22.9% of the moving time
+   ([third round](#third-round-the-border-stall)). One new-order block is a
+   median of 98 ms for the torrent table and 106 ms for the peer table with
+   the notices bounded to the cache, against 132 and 135 ms without
+   ([fifth round](#fifth-round-notices-bounded-to-the-cache)). Cause: one
+   table update is one UI block that lays out the rows and starts their
+   animations. The map gets its view through the UI thread, so during that
+   block the map has no new view. The owner keeps the row animation. Change:
+   the bounded notices are built and not committed. Reading the map's input
+   off the UI thread is hard line 4 below. What then stays in the block is
+   WinUI's layout and drawing of the rows that changed.
+2. **Going from all peers to one torrent's peers blocks the UI, and that
+   torrent's map opens later.** Size: worst UI response 230 ms when the
+   selected torrent's map opens with the bounded notices, against 160 ms
+   without. This block and the first sort of all peers take 342 to 421 ms
+   together with the bounded notices, against 455 to 522 ms without (fifth
+   round). Cause and change: hard line 2 below.
+3. **The first sort of the all-peers list blocks the UI.** Size: 316 ms in the
+   traced run of batch 12. Cause: no row on screen keeps its place, so every
+   row the list holds leaves and a new one arrives, and half of the block is
+   cell measure. Change: none selected. The candidates are in the table
+   questions above; one of them, a body based on `ItemsRepeater`, waits for
+   the owner's decision.
+4. **Everything stops for 0.1 to 0.2 s several times in a run: the UI, the map
+   and the dots.** Size: WinUI's forced full collection, 71 to 153 ms each in
+   the traced run `cpu19`, five of them in `new10`'s run, 2.4 to 3.5 s apart
+   while the map opens. Cause: WinUI asks
+   .NET for a blocking full collection each time the working set has grown by
+   50 MiB ([what forces them](#what-forces-winuis-full-collections)), and a
+   blocking collection stops every thread that runs .NET code, the map's game
+   loop included. The app cannot turn this off. Change: the working set grows
+   less, which is the [hard lines](#hard-lines-that-waste-memory-and-cpu) and
+   the other waste listed with them.
+5. **The dots jump by about 50 ms.** Size: at `4f069bb` each dot gap of 55 to
+   67 ms held a gen 0 or gen 1 pause of 45 to 55 ms, and the median gen 0
+   pause was 23.5 ms. In `cpu19` every collection that allocation started
+   stayed at or under 64 ms. Cause: not known. The candidate is objects that
+   WinUI and .NET both hold (step 6). Change: after the cause is known. One
+   idea is not designed: the dot motion as Composition animations, which the
+   system compositor runs outside the app's threads.
+6. **A pan or zoom stops while the UI thread is free.** Size: 2.0% of the
+   moving time since the border fix (third round). Cause: the render worker
+   draws on the game loop's device and holds its Direct2D lock during a long
+   call. Change: fewer drawings during a gesture, hard line 3 below.
+7. **The worst click of the click phase waits 137 to 259 ms.** In all ten runs
+   of round 32 (`7b34517` against `20ea1bc`; `compare32.md` in the session
+   scratchpad) it is one UI block in the first 0.55 s of the phase, and the
+   block ends when the torrent table goes from 29 to 39 row containers. Cause:
+   not established. Change: after one traced run of that phase (step 6).
+8. **The marquee stalled** at `4f069bb`: sample gap p95 142 ms, worst 266 ms.
+   This plan holds no later marquee figure. Before any work on it, read the
+   marquee phases of the latest saved runs.
+
+### Record of 7 November: what filled the worst gaps
+
+The two tables show where the time was at `4f069bb`. The rounds recorded
+below changed most of these paths, so the tables do not show where the time is
+now. Values come from the profiled build `4f069bb` (replay, its evidence folder
 `artifacts/evidence/ui-profile-map-defined-changes-20261107-4f069bb`, joined
 with its `gc-intervals.json`), and for clicks from the native 9 November trace
-of plan 18's reference build. "Unknown" marks time no saved record attributes;
-step 1 attributes it.
+of the click benchmark's reference build (run `557407bf`). "Unknown" marks
+time that no saved record attributes.
 
 **Collections, which every endpoint shares.** In the 59.5 s `4f069bb` run:
 
@@ -249,1067 +637,525 @@ step 1 attributes it.
 | Full, requested by WinUI (induced, blocking) | 6 | 162 ms | 218.6 ms | 0.9 s |
 | Full, background, large allocations | 19 | 34.8 ms | 49.3 ms | 0.66 s |
 
-A gen 0 pause of 23.5 ms alone breaks the one-frame target, and each requested
-full collection breaks the three-frame worst. The requested ones come from
+A gen 0 pause of 23.5 ms is longer than one frame of a 60 Hz display, so it
+shows as a jump in moving content, and each requested full collection stops
+everything for 0.1 to 0.2 s. The requested ones come from
 WinUI: `CCoreServices::TrackMemory` is on the UI stack for the 262 ms collection
 in the native click trace, and
 `ReferenceTrackerHost.IReferenceTrackerHost_DisconnectUnusedReferenceSources` on
 the UI stack of another. WinUI asks after the working set grows by 50 MiB
-(step 2); what grows it is step 3, and why a gen 0 collection takes 23.5 ms is
-step 4.
+([what forces WinUI's full collections](#what-forces-winuis-full-collections)).
+What grows it is in the [hard lines](#hard-lines-that-waste-memory-and-cpu),
+and why a gen 0 collection takes 23.5 ms is step 6.
 
-| Endpoint | Today, p95 / worst | Inside the worst gaps | Change |
-| --- | --- | --- | --- |
-| Click to rendered selection | native: median 41–100 ms, worst 156–505 ms (plan 18 round 4 reference) | Native trace, 12 clicks, 1,364 ms: collections 34%, WinUI drawing 30%, app code 17%, input 8%, layout 4%; in the long pauses, cell measuring and row building lead. `4f069bb`: the two worst (229 and 193 ms after selection) hold no collection; unknown | Plan 18 Step 1 removes row building on a peers switch; collections below; the rest after step 1 |
-| Map navigation draw gap | 54–184 / 208–322 ms | 41 ms of collection at most. The gap coincides with the UI thread not delivering the next view change (worst command gap 332 ms in the same window); in a later managed trace the UI thread spent 60–70% in WinUI frames and 10–17% in `CellsPanel.MeasureOverride`. Unknown for `4f069bb` | After step 1 |
-| Marquee sample gap | 142 / 266 ms | No collection. At `75af850`: 234 ms of native WinUI work, `CellsPanel.MeasureOverride` 81 ms forced by `Marquee.Track`'s `TransformToVisual`. Unknown for `4f069bb` | After step 1 |
-| Stationary dot draw gap | 42 / 225 ms | 210 ms of one requested full collection; the 55–67 ms gaps each hold a 45–55 ms gen 0 or gen 1 pause. The dots draw on Win2D's own thread, but in C#, and a blocking collection stops every thread that runs .NET code | Collections below. If gaps remain after batches 1 to 3, the dot motion moves to Composition animations, which the system compositor runs outside the app's threads |
-| Command delivery | 171 / 325 ms | Same stall as navigation; at `75af850`, `View.Apply` 112 ms in one click and the fixture's own summary feed 150 ms in another | After step 1 |
+| Endpoint | 7 November, p95 / worst | Inside the worst gaps |
+| --- | --- | --- |
+| Click to rendered selection | native: median 41–100 ms, worst 156–505 ms (round 4 of the 9 November click comparison) | Native trace, 12 clicks, 1,364 ms: collections 34%, WinUI drawing 30%, app code 17%, input 8%, layout 4%; in the long pauses, cell measuring and row building lead. `4f069bb`: the two worst (229 and 193 ms after selection) hold no collection; unknown |
+| Map navigation draw gap | 54–184 / 208–322 ms | 41 ms of collection at most. The gap coincides with the UI thread not delivering the next view change (worst command gap 332 ms in the same window); in a later managed trace the UI thread spent 60–70% in WinUI frames and 10–17% in `CellsPanel.MeasureOverride`. Unknown for `4f069bb` |
+| Marquee sample gap | 142 / 266 ms | No collection. At `75af850`: 234 ms of native WinUI work, `CellsPanel.MeasureOverride` 81 ms forced by `Marquee.Track`'s `TransformToVisual`. Unknown for `4f069bb` |
+| Stationary dot draw gap | 42 / 225 ms | 210 ms of one requested full collection; the 55–67 ms gaps each hold a 45–55 ms gen 0 or gen 1 pause. The dots draw on Win2D's own thread, but in C#, and a blocking collection stops every thread that runs .NET code |
+| Command delivery | 171 / 325 ms | Same stall as navigation; at `75af850`, `View.Apply` 112 ms in one click and the fixture's own summary feed 150 ms in another |
 
-The owner watched a round 5 run of plan 18 on 9 November: the transfer dots
+The owner watched a run of the click comparison on 9 November: the transfer dots
 move jaggedly, and the pan is slow and jagged. Those are the stationary dot and
 navigation rows. The owner judges them again live, beside the reference build,
-after batches 1 to 3.
+after the next change to them.
+
+## Hard lines that waste memory and CPU
+
+A hard line is a rule or a boundary in the design that makes one part do its
+work whole, or hand over all of its data, when only a part is seen or has
+changed. The part after the line then works out again what the part before it
+already knew, or makes what nobody sees. This is the plan's reading of the
+owner's words of 11 November, "architecture that draws hard lines when it
+shoudn't"; the owner is asked to confirm it. One such line is already gone:
+until `20ea1bc` the map built an arc for every destination, however close two
+of them were at the shown zoom
+([close destinations plan](20-close-destinations.md)).
+
+**Owner ruling, 9 November: every stage that redoes work an earlier stage
+already did, or makes an object only to drop it, is fixed; the collector is
+the evidence, not the target.** The same holds for WinUI objects that
+code-behind makes per update, row, draw or click instead of keeping one, and
+for copies made per element of an object that could be shared. The batches
+built from this ruling are recorded in the questions above, and the contracts
+hold their rules. Before them, the 21 clicks of the native reference trace
+allocated about 82 MB in 3.15 s, mostly on workers: about 20 MB for the
+table's row maps, built from nothing on every publish, and 13 to 24 MB for
+parsing every peer again into new records on each update.
+
+Each change is judged against the data-oriented form, because it removes the
+churn without the retained object-keyed state that made the reverted rework
+hold 788 bytes per row against 266: a row gets a small integer slot once,
+when it first appears; positions, membership and versions are arrays or bit
+sets indexed by that slot and kept between publishes, which the collector
+does not trace; the writer bumps a row's version or names the changed slots,
+so work follows what changed; a reply is parsed into the existing row,
+comparing bytes before making strings; buffers are sized once and reused.
+
+1. **The table is given a whole list for every change.** The peers worker
+   already knows which peers joined, left and changed (`Swarm.Read`). After a
+   join or a leave, a view of several torrents still builds its whole list
+   again (`Swarm.Join`), and the table copies every row reference of the list
+   on the UI thread (`Source.Set`). The table then compares the whole list
+   with the shown one to find the same joins and leaves (`Changes.Prepare`),
+   and makes a new position index for all rows (`Slots.Commit`). In one
+   replay of the 10 November traces these four allocated 31 to 32 MiB, 28 MiB,
+   18 to 21 MiB and 16.5 MiB of large objects, before `0a9df1e` reserved the
+   row map. The fixture answers one torrent at a time when all peers open
+   ([workload](#workload)), so these sizes overstate the product there. The
+   person pays through entry 4 of
+   [what still interrupts the person](#what-still-interrupts-the-person),
+   because this memory is working-set growth. How many forced collections it
+   causes is not measured. The table has compared whole lists since its first
+   commit, and `db6ec1d` made "assign a new list for each change" the app's
+   pattern. The owner's model on 11 November is a collection that the table
+   follows: "tableview is displaying peers of a torrent which are in an
+   observableconnection. if we switch the torrent we swich the observable
+   collection." Open: a design in which the host passes the changes it already
+   has. It changes TableView contract 5.3, so it starts from the table's
+   history (ruling of 9 November in the settled decisions) and needs the
+   owner's decision before it is built (step 5).
+2. **The table guessed from the rows whether it was given another list.** The
+   host knows that the person chose another torrent. The table was not told,
+   so it compared rows. A list that shares rows with the shown one, such as
+   one torrent's peers after all peers, was animated as a change of the same
+   list: every row the list held left with an animation, and the list built
+   other containers at once (fifth round). The owner, 11 November: "we
+   established that there's no need to animate when we change the datasource
+   so we flip it in place. u must not handle animation out of tableview".
+   Change: the host withdraws the shown list (`Table.Withdraw()`) before it
+   sets another one, and the table puts the new rows into the containers it
+   holds, without animation. The table part is written and not committed; the
+   peers pane's part is open (step 1).
+3. **The map draws a whole picture for each step of a zoom, and more pictures
+   than views.** Each drawing draws the whole map. A pan that the latest
+   picture still covers draws nothing new until the view rests (fourth
+   round). During a zoom every step has another scale, and the renderer
+   leaves a drawing to the rest only while the picture's scale still looks
+   the same (`MapRenderer.Postpone`), so a zoom draws as many pictures as the
+   worker can make. After `20ea1bc` made each drawing cheaper, the worker drew
+   152 to 172 pictures in a 2 s zoom-in phase in four of five runs, against 68
+   to 82 before (round 32; 66 in the fifth run, which a long UI block
+   disturbed). The map showed 117 to 122 frames in each of those phases,
+   before and after, with 45 to 46 new views per second, so the added pictures
+   did not become added frames. The second round saw the same effect: cheaper
+   drawings, more of them, fewer game-loop frames and more freezes with the UI
+   thread free. Open: a design that draws less during a zoom (step 4).
+4. **The map's view reaches its game loop through the UI thread.** A pan or a
+   zoom is the person's input to the map, and the map's own threads draw it.
+   The input is read on the UI thread, so a busy UI thread freezes a map that
+   could draw: 22.9% of the moving time (third round). WinUI's own scrolling
+   reads touch, pen, touchpad and wheel input off the UI thread, but not a
+   mouse drag. Change: the prototype the owner asked for on 11 November
+   (step 2).
+
+Two lines stay where they are. The engine sends each torrent's full peer list,
+by owner ruling ([pipe API](../contracts/pipe-api.md#snapshots-and-detail)). A
+new sort order keeps its row animation
+([the owner's answers](#the-owners-answers-to-the-pan-back-review)).
+
+Waste under the ruling of 9 November that is not a hard line:
+
+- **Collections that grow by doubling** make copies only to drop them. In one
+  heap dump of the replay, 40 of the 57 arrays of 1 MiB or more were such dead
+  copies: 72.5 MiB. The table's row map is reserved since `0a9df1e`. The map's
+  contributions are next (`MapModel`): the growth of their dictionary
+  allocated 38 to 40 MiB of large objects in one replay.
+- **Native memory with no named owner.** Private memory rises by 178 to
+  225 MiB within 1 s when the first arcs appear, and about 195 to 219 MiB of
+  it is committed pages that hold only zeros. `CanvasDevice.Trim()` does not
+  release it. One run of a build that called it when a map had settled and
+  after each click (`new27`, 11 November; runs in `mem27runs.txt` in the
+  session scratchpad) held 745 MiB after the all-peers map settled, against
+  763 to 794 MiB in five runs without it. The calls during the clicks freed
+  about 57 MiB, and the run still ended at 903 MiB, against 885 to 918 MiB.
+  The memory is not measured again since `20ea1bc`, which lowered peak private
+  memory from 903.5 to 714.9 MiB (round 32). Only a native heap trace can name
+  the owner, and that needs elevation.
 
 ## Steps
 
-Each step is done when its result is written into the budget above.
+The order is: what is built, then what the owner asked for, then the hard
+lines that need a design, then the causes that are not known. Each step is
+done when its result is written into
+[what still interrupts the person](#what-still-interrupts-the-person).
 
-1. **Attribute the unknown gaps from saved traces, without a run.** Run the
-   existing interval attribution over `4f069bb`'s `ui.nettrace` for these
-   windows, on the UI, game-loop and render-worker threads: clicks 4 and 17
-   (`raw-timing.json`), navigation 40,748–41,070 ms, marquee 36,037–36,304 ms,
-   stationary 17,762–17,987 ms, command delivery 40,739–41,065 ms. Done when
-   every unknown in the table is split by owner, in milliseconds.
-2. **What makes WinUI request a full collection: largely known.** WinUI's
-   source, read on 7 November: `CCoreServices::TrackMemory` runs in the render
-   walk, reads the process working set and, after growth above 50 MiB, asks the
-   runtime's tracker host for a collection, which calls `GC.Collect()`, a
-   blocking full collection. The traces show the tracker host and
-   `TrackMemory` on the UI stack of such collections, at intervals of 2.4 to
-   3.5 s while the map opens. Done when the collected trace of step 4 shows
-   `TrackMemory`'s caller for one requested collection; the budget then states
-   the working-set growth per second each phase may have.
-3. **Allocate only what is needed, when it is needed.** The 21 clicks of the
-   native reference trace allocated about 82 MB in 3.15 s, mostly on workers:
-   the table projection rebuilds its row maps from nothing on every publish
-   (about 20 MB), each peer update parses every peer again into new records
-   (13 to 24 MB), and the map rebuilds its inspection dictionary on every draw.
-   For each owner in that trace and in the `78fb43f` allocation trace, write
-   what it allocates per click and per update, what it must allocate, and the
-   change that keeps the rest: reuse, update in place, or not at all. Done when
-   every owner above 1 MB per phase has that line and the sum gives the
-   working-set growth per second against step 2's 50 MiB.
-
-   Each change is judged against the data-oriented form, because it removes the
-   churn without the retained object-keyed state that made the reverted rework
-   hold 788 bytes per row against 266: a row gets a small integer slot once,
-   when it first appears; positions, membership and versions are arrays or bit
-   sets indexed by that slot and kept between publishes, which the collector
-   does not trace; the writer bumps a row's version or names the changed slots,
-   so work follows what changed; a reply is parsed into the existing row,
-   comparing bytes before making strings; buffers are sized once and reused.
-
-   **Owner ruling, 9 November: every stage that redoes work an earlier stage
-   already did, or makes an object only to drop it, is fixed; the collector is
-   the evidence, not the target.** The same holds for WinUI objects that
-   code-behind makes per update, row, draw or click instead of keeping one, and
-   for copies made per element of an object that could be shared. Today each
-   stage of the per-update path receives everything and works out again what
-   changed. The fix list, in build order:
-
-   | Batch | Owner and files | Today, per update of one torrent with N peers | Change |
-   | --- | --- | --- | --- |
-   | 1 | App: `Inspector.ApplyPeers`, `Peer.Record.Parse` (`Shell/Inspector/Peers.cs`, `Torrents/Peer.cs`) | A new record and new strings for all N peers, a fresh endpoint dictionary and set of N | Read each peer's raw value (`JsonMarshal.GetRawUtf8Value`) with `Utf8JsonReader`; find the existing peer through a per-torrent endpoint index kept between replies, looked up without making a string; build a new record only for a changed peer, and a string only when its text changed |
-   | 1 | App: splice in `ApplyPeers` | Every reply scans every peer in scope to find this torrent's; a join or leave copies the scope four times, through a list, up to 159,810 peers | Each torrent's peers are kept with the torrent; a join or leave builds the view's list once at its exact size, about 80 KB at the 10,000 rows of the product's largest real use; a view of one torrent uses that torrent's array |
-   | 1 | App: `Inspector.Filter` | A new map observation for all N peers and a count of connected and active peers over the whole scope, per reply; a chosen place's rows found again over the whole scope | Counts come from each swarm's pass; a chosen place's rows are found again only when a join, a leave or a location can change them; the map takes the round's updates (batch 3). No released rows are worked out: the person's change of place or scope withdraws the table's source (batch 6) |
-   | 1 | App: `Geolocation.Find`, the peers' lookup (`Swarm.Read` since batch 6) | A new location, with its country and city places and their name dictionaries, for every located peer, about 1.2 to 2.3 KB each, kept as long as the peer; two whole-population sets per locating pass, which every join starts | One shared location per place until the location data changes; locate the joined peers, and every kept peer only when the location data changes |
-   | 1 | App: `Peer` | Each peer keeps its own port text and client name, and a known peer its own copy of the same few values | Port text made when a row shows it; one string per distinct client name; one shared record per role and source set for known peers |
-   | 1 | App: map selection marks (`PeerMap/Selection.cs`) | Recount on every `PeerVersion` change, which every rate change bumps | `PeerVersion` changes only when a location does, the one input of the count |
-   | 1 | App: `Peer.Prepare`, `Peer.Apply` | A set, an array and a change record per changed peer, and a new notice object per raised property | A bit mask per change, and one shared notice object per property |
-   | 1 | App: `Torrent.Update` | Any changed field raises one notice for the whole row, so each binding of every visible moving torrent runs again and formats about 20 strings per poll | Raise only the properties whose inputs changed |
-   | 1 | App: `Inspector.Refresh` | Raises one notice for the whole inspector per poll, per selection click and per peer reply that changes rows, so every binding of the pane runs again | Raise only the properties whose inputs changed |
-   | 2 | TableView: `Body.Projection`, `Table` | About six fresh N-sized hash tables, a sort-key map and a full re-sort per publish | The host names changed rows (`RefreshView(changed)`); the projection keeps a key-to-slot map and per-slot arrays between publishes, checks new rows only for duplicates, and moves only rows whose sort key changed |
-   | 2 | App: `InspectorPane` | `RowsUpdated` calls `RefreshView()` | Calls `RefreshView(changed)` with batch 1's changed peers |
-   | 2 | App: `Peer.Key` | A torrent id and endpoint string per peer, about 136 bytes, only for the table's row identity | The table identifies a peer by reference, because a swarm keeps one peer object per endpoint for as long as the torrent's peers are kept |
-   | 3 | Map: `MapRenderer.Inspect`, `MapWork.Prepare` | Rebuilds the destination dictionary every draw; regroups every observation per update | Keeps destinations between passes; adjusts places by the changed observations |
-   | 4 | Engine detail collector, `PipeClient`, [pipe contract](../contracts/pipe-api.md) | Collects one torrent per round trip through the engine's single detail reading, and builds a JSON object per peer before writing | The [communication plan](communication-plan.md)'s steps 1 to 3, which the owner asked on 9 November to implement: per-torrent collection, one subscription for the inspector's scope, and keyed delivery of full replies. Its step 4, incremental row application, is batches 1 and 2. Replies stay full: the 15 October review of that plan rejected change lists because the window would become a second authority that a single lost update makes wrong, and the [pipe contract](../contracts/pipe-api.md) asks for a measured payload problem first. The pause on 17 October rested on gain inferred, not measured, so the work starts with that plan's step 1 baseline, which also times the engine's per-peer JSON building. It mainly helps views of many torrents, which today cost one round trip per torrent |
-   | 5 | App: `SpeedGraph.Draw` | Three new path geometries with their figures and segments per draw, and a new geometry and text block per tick | Keep the geometries and tick labels, and update them |
-   | 5 | App: `PiecesMap` draw | A new pixel array the size of the whole map per draw | One pixel buffer per size, written in place |
-   | 5 | TableView: `Header.Strip` clip; row visual states | A new clip geometry per size change; every realized row updates its visual states on any selection change | One geometry whose bounds change; only rows whose selection or hold changed |
-   | 5 | App: `FileNode` (`Controls/FileSelection.cs`) | An empty child list for every file | A child list only for folders |
-
-   The 9 November sweeps of `app/src` and `lib/TableView/src`, one for work
-   redone and one for copies kept per element, found the rows above. The engine
-   also copies each peer's address into a set beside the JSON; batch 4's writer
-   ends that copy with the tree. The torrent table's status cell keeps three
-   icons per row, one shown, and stays: a row container makes them once and
-   reuses them, and each icon carries its own theme brush, which one icon could
-   follow only through brushes chosen in code or visual states in every row. The map's drawing keeps its Win2D brushes, geometries and bitmaps
-   between frames; its remaining copies (`Arrangement.Present`) belong to
-   batch 3. Batch 5 runs after batch 2, which owns the TableView files until
-   then.
-
-   Batches 1 to 3 share one build and one round; batch 4 has its own. Batch 2
-   starts from the TableView history rule above: `RefreshView(changed)` existed
-   before the 3 November revert. Batches 1 to 4 pass changes as
-   [one update, end to end](#one-update-end-to-end) describes.
-4. **Find the two-sided objects and why a gen 0 collection takes 23.5 ms.**
-   An object that WinUI and .NET both hold, a native WinUI or Win2D object and
-   its .NET wrapper, can only be freed by a full collection in which both take
-   part, and every one is scanned again in each collection. One collected trace
-   of the current build with a heap snapshot in the aggregate phase counts
-   them, with handles, finalizable objects and surviving bytes, by owner: table
-   rows and cells, event subscriptions on WinUI objects, map brushes and
-   geometry, and row objects handed to WinUI. Done when each owner is marked as
-   needed (rows on screen) or churn (created and dropped per click, per update
-   or per draw), and the gen 0 pause is split into those causes.
-5. **Write each change with the milliseconds it removes,** from steps 1 to 4,
-   and add them up per endpoint. Where the sum cannot reach a target, the plan
-   says so and names the reachable value for the owner. The finish date is the
-   number of changes left at this point.
-6. **Implement the changes in batches,** each batch with one build and one
+1. **Land the table changes that are built.** They are the notices bounded to
+   the cache (fifth round) and the different-list rule of hard line 2, with
+   the peers pane's part. One build pair and one round. The owner then looks
+   on screen at four cases: all peers to one torrent's peers, one torrent's
+   peers to all peers, one step of a multiple selection, and a new sort order
+   of a list longer than the screen.
+2. **Prototype the map's input off the UI thread** (hard line 4). The owner
+   asked for it on 11 November. Done when the questions in the
+   [third round](#third-round-the-border-stall) have answers and the owner has
+   seen a pan during table re-sorts.
+3. **Record what the start shows.** Capture builds add the subject to the
+   record of each published picture, so a saved run says when the first
+   picture of the requested content appeared. It joins the next build and
+   needs none of its own.
+4. **Draw less during a zoom** (hard line 3). First the design, with the
+   number of pictures it predicts for a 2 s zoom phase; then one batch.
+5. **The whole-list hard line** (hard line 1). First the table's history, as
+   the ruling of 9 November requires; then a design for the owner's decision.
+   Nothing is built before that decision.
+6. **One traced run for the causes that are not known.** A collected trace of
+   the current build with a heap snapshot in the aggregate phase answers two
+   questions. The first is why a gen 0 collection takes 23.5 ms. An object
+   that WinUI and .NET both hold, a native WinUI or Win2D object and its .NET
+   wrapper, can only be freed by a full collection in which both take part,
+   and every one is scanned again in each collection. The trace counts them,
+   with handles, finalizable objects and surviving bytes, by owner: table rows
+   and cells, event subscriptions on WinUI objects, map brushes and geometry,
+   and row objects handed to WinUI. Each owner is then marked as needed (rows
+   on screen) or churn (created and dropped per click, per update or per
+   draw). The second question is what fills the first UI block of the click
+   phase (entry 7 of the list). Naming the native memory needs an elevated
+   trace, which needs the owner's permission.
+7. **Implement the changes in batches,** each batch with one build and one
    matched round under [deciding a correction](#deciding-a-correction).
 
-The selection correction below and plan 18 Step 1 are already in progress and
-run alongside steps 1 to 4.
+## What forces WinUI's full collections
 
-## One update, end to end
-
-The stage that reads a reply knows which peers changed. Every later stage uses
-that knowledge and works nothing out again. Today the parser knows it and drops
-it, and then the filter, the table and the map each find the changes again over
-all rows. That handoff, not any one stage, is why the waste stayed hidden.
-
-The snapshots stay. Each update makes new row lists and peer records and never
-changes them afterwards, so worker threads read them without locks. The changes
-travel beside the snapshots.
-
-An independent architecture review on 9 November checked this flow against
-the code and settled it:
-
-| Boundary | What passes | Owner |
-| --- | --- | --- |
-| Engine to app | Every peer of the torrent: one complete reply, so a newer reply replaces an older one undelivered. Batch 4 writes it without an object per peer and without the copy `data.update` makes | Engine, `DescribePeers` |
-| Reply to swarm, on a worker | `Swarm.Read` looks up the joined peers' locations, and every peer's when the location data changed. It returns the swarm, which is the same object unless a peer joined or left; the changed peers with their new records and changed properties; the joined and left peers; the swarm's connected and active counts, counted in the same pass; and the view's new list when membership changed, built on the worker | `Swarm`, a torrent's peers kept between replies |
-| Swarm to view, on the UI thread | Applies the records, which raise only the changed properties of rows on screen. Publishes the swarm and the list. Sums the counts over the scope. Adds the update to the round's list for the map. Gives the table its one delivery. Recomputes a chosen place's rows only when a join, a leave or a location can change them | `Inspector` |
-| View to table | One delivery: the list, a new object only on a join or leave, and the changed rows. The table keeps changed rows until it settles, because the host skips deliveries while the layout is map-only or a replacement is pending | TableView, batch 2 |
-| View to map | Once per poll round, and per reply during a subject's first round: the subject, the view's list and the round's updates. The map's worker keeps, per peer, the contribution it last added and its groups, in a dictionary keyed by peer. It takes each listed peer off at that contribution and adds it at its current values, and takes off peers that left | `Inspector` gathers the round, `MapModel` hands it over, `MapWork` keeps the state |
-| Locations | Each location found is a changed peer on the same path, and the only change that recounts the map's selection marks | `Inspector` |
-
-The swarm keeps peers in the order they first appeared: a join appends and a
-leave removes. The engine lists connected peers first, so the reply's order
-changes whenever a peer connects or disconnects; following it would rebuild
-the table's rows each time and move rows in an unsorted table under the person.
-
-The map keeps its own copy of what it added, not the update an old record,
-because the map skips and merges updates: a superseded preparation, a hidden
-map and a cancelled worker all drop some. Taking off what it added and adding
-the current values gives the right totals however many updates it missed.
-Subtraction is exact: the engine sends rates as whole bytes per second.
-
-The map rebuilds from the view's list on a new subject, map detail, language
-or geography, when its worker holds no state for the subject, and when the
-round's updates name more peers than the view holds. A place's estimated flag,
-which an `|=` sets today, becomes a count of unlocated members, so taking a
-peer off can clear it.
-
-A dictionary keyed by peer in the map serves better than a slot number shared
-by every consumer: the table cannot use app slots, because the library knows
-only `peer.Key` and keeps its own key-to-slot map, so the map would be the one
-user. It also ends a defect: `Arrangement` indexes membership by position, so
-any join or leave regroups every peer.
-
-## Round of batches 1 to 3 and 5
-
-**9 November.** Builds: plan 18's round 5 new build as the reference
-(`keep-up-new5_capture`), and new `keep-up-new6_capture` with batches 1 to 3
-and 5. Five pairs of plan 18's replay on the benchmark display, the reference
-first. The Roslyn compiler server was busy before the reference runs of pairs
-1 and 2. Values are the five pairs in order.
-
-| Endpoint | Reference | New | Verdict |
-| --- | --- | --- | --- |
-| UI-thread ticks from the first to the last press (G) | 5.42, 4.92, 4.31, 4.98, 4.31 | 5.13, 5.54, 5.29, 5.36, 5.06 | worse: higher in 4 pairs |
-| Ticks per click, median, common clicks (M) | 73.7, 26.6, 21.1, 25.7, 59.7 | 34.5, 54.7, 28.8, 17.3, 31.9 | mixed: lower in 3 pairs |
-| Click to rendered selection, median, common clicks (ms) | 85, 45, 31, 46, 57 | 84, 82, 87, 27, 43 | mixed: higher in 2 pairs |
-| `firstSubjectPictureMs` | 242, 194, 147, 248, 131 | 195, 524, 338, 271, 198 | worse: later in 4 pairs |
-| `firstConnectionsMs` | 1908, 1915, 2118, 1870, 1748 | 4022, 3600, 3092, 1136, 2972 | worse: later in 4 pairs |
-| Marquee gap, worst (ms) | 404, 564, 348, 701, 283 | 1023, 555, 1062, 232, 514 | worse in 3 pairs |
-| Stationary map draw gap, worst (ms) | 402, 645, 216, 114, 77 | 115, 710, 116, 262, 106 | worse in 3 pairs |
-| Peak private commitment (MiB) | 1092, 1089, 1215, 1132, 1120 | 1094, 1177, 1123, 1245, 1094 | higher in 3 pairs |
-
-The build is not accepted. Its map waited for a poll round to end before
-grouping a new view, which made the peers capture fail on this build: a place
-the capture expected was missing. That wait can delay the first subject picture
-and the first connections, but the round does not prove it is the whole cause,
-and it does not explain the higher UI-thread ticks. The fix shows a new view at
-once and gives the map each later round's changes when the round ends. The next
-build holds it with batch 4, and its round decides batches 1 to 3 and 5; the
-capture fixture answers one torrent at a time, so the replay does not exercise
-batch 4.
-
-## Round of batches 1 to 5
-
-**10 November.** Builds: the same reference (`keep-up-new5_capture`), and new
-`keep-up-new7_capture` with batches 1 to 5 and the fix of the map's rounds. Five
-pairs of plan 18's replay on the benchmark display, the reference first, with
-no build or benchmark running before any run. The replay does not exercise
-batch 4; the [communication plan](communication-plan.md) records its own
-measurement. The peers capture passes on this build. Values are the five pairs
-in order; "common clicks" are the clicks both builds selected and rendered.
-
-| Endpoint | Reference | New | Verdict |
-| --- | --- | --- | --- |
-| UI-thread ticks from the first to the last press (G) | 4.75, 5.03, 4.79, 5.13, 5.06 | 5.15, 5.15, 4.80, 4.97, 4.85 | mixed: higher in 3 pairs |
-| Ticks per click, median, common clicks (M) | 39.5, 29.8, 41.9, 26.1, 25.7 | 66.5, 23.0, 21.1, 9.9, 22.3 | lower in 4 pairs; over all 82 common clicks 23.0 against 37.7 |
-| Ticks per click, p95, all clicks (M) | 783, 452, 398, 518, 538 | 546, 289, 326, 206, 190 | lower in every pair |
-| Click to rendered selection, median, common clicks (ms) | 38, 40, 44, 50, 61 | 82, 76, 74, 54, 68 | **higher in every pair** |
-| ... of which the press waited to be handled (ms) | 8.8, 25.4, 21.0, 17.8, 18.4 | 31.0, 47.3, 34.8, 21.5, 11.6 | higher in 4 pairs |
-| ... from the handled press to the selection (ms) | 3.7, 2.3, 1.7, 2.0, 1.9 | 0.9, 0.8, 0.8, 0.7, 0.7 | lower in every pair |
-| ... from the selection to its render (ms) | 18.5, 12.7, 19.8, 12.3, 25.5 | 29.1, 14.5, 16.3, 4.9, 19.5 | mixed: lower in 3 pairs |
-| Click to rendered selection, worst, common clicks (ms) | 617, 353, 277, 284, 288 | 280, 222, 203, 153, 243 | lower in every pair |
-| UI-thread response in `torrent-clicks`, p95 / worst (ms) | 383/488, 124/279, 116/296, 126/319, 150/271 | 133/384, 129/278, 103/292, 92/359, 104/330 | p95 lower in 4 pairs; worst lower in 3 |
-| Selected but never observed rendered | 8, 2, 2, 2, 4 | 1, 1, 2, 1, 2 | not more |
-| `firstSubjectPictureMs` | 327, 171, 207, 144, 158 | 242, 245, 137, 133, 236 | mixed: later in 2 pairs |
-| `firstConnectionsMs` | 1333, 2083, 1173, 1758, 1564 | 1638, 1436, 1674, 981, 1168 | mixed: later in 2 pairs |
-| Marquee gap, worst (ms) | 490, 500, 341, 358, 218 | 539, 394, 312, 387, 626 | mixed: worse in 3 pairs |
-| Stationary map draw gap, worst (ms) | 125, 158, 138, 100, 102 | 258, 118, 111, 138, 98 | mixed: worse in 2 pairs |
-| Peak private commitment (MiB) | 1308, 1278, 1134, 1275, 1263 | 1213, 1236, 1256, 1268, 1221 | lower in 4 pairs |
-| Peak working set (MiB) | 877, 859, 823, 848, 839 | 885, 926, 920, 932, 891 | **higher in every pair**, by 8 to 97 |
-| Peer table switches seen during the clicks | 6, 10, 11, 11, 10 | 13, 11, 12, 14, 13 | more in every pair |
-
-Five pairs of the peer table switch capture with the same builds. Each value
-is the median of 12 steps, in megacycles on the UI thread.
-
-| Step | Reference | New | Verdict |
-| --- | --- | --- | --- |
-| Switch, table and map | 92, 93, 95, 93, 93 | 98, 104, 104, 104, 105 | higher in every pair |
-| Switch, table alone | 94, 97, 95, 95, 95 | 93, 91, 93, 92, 93 | lower in every pair |
-| Switch, sorted table | 89, 91, 91, 90, 91 | 100, 103, 101, 101, 103 | higher in every pair |
-| Poll: five peers leave, five join | 113, 116, 114, 114, 113 | 131, 126, 125, 125, 132 | higher in every pair |
-| Idle, no change | 32, 36, 34, 35, 35 | 44, 46, 45, 45, 46 | higher in every pair |
-
-What the records show:
-
-- **The steps with the map shown compare different work.** A managed trace of
-  one pair of the switch capture shows the new build's map drawing the peers'
-  traffic dots in every second of the capture. The reference's map drew only at
-  the start, and it prepared no picture in the switch and poll steps, so it did
-  not follow the peers the capture gave the inspector. Every step with the map
-  shown, idle included, costs the new build about 10 megacycles more; the step
-  without the map costs it 2 to 5 less. At idle the new build's UI thread ran
-  app code in 2 of 4,275 samples, so the added cycles are WinUI's and Win2D's
-  while the dots fly; a managed trace cannot name native frames.
-- **The median click waits in the queue; it does not cost more.** From the
-  handled press to the selection takes under 1 ms in every pair, against 1.7 to
-  3.7 ms. The press waits longer to be handled. One pair recorded each table's
-  change notices (`TINYTORRENT_PERFORMANCE_CHANGES=1`). In it, the new build's
-  peers table switched 10 times during the clicks, and the reference's raised no
-  notice. Each switch to a torrent with a different number of peers raises one
-  notice per row added or removed, because WinUI's list has no notice for a
-  range and a reset makes the table flash (`Body.View.ClearItems`): 9,000 to
-  300 peers raised 8,700 removals in 48 ms, and 300 to 9,000 raised 8,700
-  insertions in 86 ms. Every switch started 10 to 110 ms after its own press
-  was handled and before the next press, so none was for a torrent the person
-  had already left. The next press came while 4 of the 10 switches were writing
-  rows, and waited 43, 17, 16 and 10 ms for the rest. The other 17 presses
-  waited up to 326 ms with no table notice in the wait; that work is not
-  attributed. The three longest of those waits, at the first clicks, show WinUI
-  work with cell measuring in a managed trace of another pair.
-- **Collections.** In the traced pair, the new build's animation phase had 2
-  collections pausing 112 ms in all, against 6 pausing 365 ms. One pair is not
-  a round.
-- The peak working set is not attributed.
-
-Under [deciding a correction](#deciding-a-correction), the batches are not
-accepted as built: the median click is slower and the peak working set higher
-in every pair. The click's own work is lower in every measure, so the cost is
-in other UI-thread work that runs while the person clicks. A peers switch that
-is already writing rows explains a few waits. The work in the other waits is
-named in [batch 6](#batch-6-waste-found-on-10-november).
-
-## Batch 6: waste found on 10 November
-
-**Evidence**, from the saved records of `new5` and `new7` and two heap dumps of
-`new7` (step 4):
-
-- **The UI thread is stuck for long stretches during the clicks.** In both
-  builds it spends over half of the clicks phase in stretches of 30 ms or more:
-  1,845 of 3,057 ms in `new7`, and 1,631 of 3,089 ms in `new5`. The replay's
-  driver pings the window every 16 ms, and in almost every click wait the
-  window answered nothing for 55 to 331 ms.
-  - The stretches hold WinUI layout with `CellsPanel` measuring, the peers
-    table's row notices, and collections of 26 to 93 ms.
-- **Row notices cost time in proportion to the count change.** The peers table
-  raises one notice per row it adds or removes:
-  - A switch from all 159,810 peers to the 9,000-peer torrent raised 150,810
-    removals in 1,506 ms. This is the freeze the owner sees when peers are
-    drawn.
-  - Showing all peers raised 20,895 to 57,492 insertions per publish, in 187 to
-    581 ms each.
-  - A marquee selection raised 21,015 insertions in 246 ms.
-- **WinUI wraps every row the table inserts.** Inside each insertion notice,
-  WinUI reads the row back (`IList.GetAt`) and wraps it for COM
-  (`ComWrappers.CreateManagedObjectWrapper`). So every peer the table ever
-  inserts stays held by WinUI.
-  - Before the clicks: 385,341 GC handles. 159,810 of them are on `Peer`,
-    which is every peer. There are also 165,559 managed-object wrappers and
-    205,873 finalizable wrapper releasers.
-  - After the clicks: 143,542 handles, 27,397 of them on `Peer`.
-  - During the clicks, Win2D radial gradient brushes rose from 6,003 to 12,171,
-    and geometries from 14,160 to 20,967.
-- **The map rebuilds what it drew before.** After the clicks, the map rebuilt
-  959 arcs in 662 ms, 387 ms of it glow, for places it had built before the
-  clicks. When the next torrent lacks a place, that place's route disposes its
-  arc and brushes (`MapRenderer.PrepareRoutes`).
-
-Two independent code reviews found the rest of the list below. The lead
-confirmed each item in the code.
-
-**Fix list.** One agent owns each piece's files, and no other agent edits them.
-
-| Piece | Files | Change |
-| --- | --- | --- |
-| T, table | `lib/TableView/src`, `lib/TableView/docs` | 1. The count change of a list costs what the screen needs. The positions the list can show change in the update. The remaining insertions and removals apply in slices of a few milliseconds, below input priority, and a newer list or view drops the rest. There is no reset; the `Body.View.ClearItems` refusal stands. 2. One reused args object per notice, if WinUI does not keep the args after the event. Check that first. 3. The host can withdraw a source the table has accepted but not applied, and the rows on screen stay. This replaces `Release(rows)` at retarget. "The next list is the person's change" is one call, not a list of rows. 4. `Source.Capture` sizes its copy from the count. 5. For a list that shares no row with the view, `Slots.Commit` swaps in a key map the worker built. 6. One cached set of realized rows, refreshed from `ContainerContentChanging`. 7. The selection is committed, and row visuals are raised, only when their inputs changed. 8. `Projection.Prepare` takes the cancellation that a newer request cancels. 9. `View.GetSelectedRanges` reads the selection, not every row. |
-| W, window | `Shell/MainViewModel.cs`, `Shell/MainViewModel/*.cs`, `Shell/MainWindow.cs`, `Shell/MainWindow/Chrome.cs`, `Shell/MainWindow/Actions.cs`, the `MenuItems` file | 1. `CountStatus` is raised only when its text changes. 2. The status bar is laid out only when a shown text changes. 3. The menus are filled only when their inputs change. A menu-bar menu cannot be filled when it opens, because `MenuBarItem` raises no opening event. 4. A selection change refreshes only the commands that read the selection. 5. The map commands refresh only on their own inputs. |
-| M, map drawing | `Torrents/MapRenderer.cs`, `Torrents/MapMotion.cs` | 1. A route that leaves keeps its arc, brushes and strokes in a cache keyed by destination, up to the arc limit, and the cache gives them back when the place returns. 2. The dot, mark and halo sprites are made once per device and DPI, not once per picture. |
-| C, peer path | `Shared/Engine/PipeClient*.cs`, `Torrents/Swarm.cs`, `Torrents/Peer.cs`, `Shell/Inspector.cs`, `Shell/Inspector/*.cs`, `Shell/InspectorPane.xaml`, `Shell/InspectorPane.xaml.cs`, `Shell/InspectorPane/*.cs`, `Torrents/MapModel.cs`, `Torrents/MapWork.cs`, `Controls/FileSelection.cs` | 1. A stale observation is dropped before it is copied, and a message is copied at most once. 2. One change record per round feeds both the table and the map, with no copies into further sets. 3. The table is told only about rows whose sorted value changed. The changed rows reset on retarget. The Connection column sorts by its raw values, not by display text. 4. `Swarm.Read` locates joined peers on the worker, so a click's cancellation also cancels the lookups, and only the view's peers feed the view. 5. The map is fed once per round. `RefreshMap` serves only view settings, and `MapModel.Update` raises only what changed. 6. A peer cell's tooltip text is made when the tooltip opens, not on every update, and a row holds no `ToolTip` it does not show. 7. `FileSelection` is made only while Files shows. The Files keys are not rebuilt per snapshot. `ArrangePeers` sets only what changed. `MapWork.Prepare` checks cancellation while it regroups. |
-
-A changed peer still gets a new record. The 9 November review chose immutable
-records so that the workers read them without locks; see
-[one update, end to end](#one-update-end-to-end).
-
-After T and C finish, the lead connects the inspector to T's new table calls,
-reviews every diff with the focused review passes and builds once. The lead
-then runs the affected tests and one round against `new7`.
-
-**Predicted endpoints**, each lower than `new7` in every pair:
-- the median click to rendered selection;
-- the UI thread's stalled time during the clicks;
-- the peak working set;
-- `firstConnectionsMs` after the clicks.
-
-The heap dump after the clicks should hold no more than a few thousand `Peer`
-handle targets.
-
-## Round of batch 6
-
-Batch 6 was built on 10 November as `new8` and measured in one round of five
-pairs against `new7`, on the benchmark display with no competing load. Before
-the round, every TableView test outside the interactive category (198) and
-every peers capture journey passed.
-
-**What changed beyond the fix list.**
-
-- **Table.** T also cut the two costs an independent review of `new7` found:
-  - Every held row container was rebound and measured after a switch. Now the
-    rows on screen are rebound in the update, and the rows below it later.
-  - Every inserted row was wrapped for COM. Now a row that arrives off screen is
-    announced as the platform's placeholder, null.
-- **Map.** The same review's map findings were fixed:
-  - `Paint.Core` allocated a closure on every call.
-  - `Inspect` made a new target for every route of every picture.
-  - Every drawn picture copied the arc routes into an array.
-  - A route that left the shown arcs lost its arc and brushes. These now go to
-    the same cache as the routes that leave the subject.
-- **Peer path.** C item 6 (tooltips) was left as it was, because a tooltip that
-  WinUI registers lazily cannot open on the hover that registers it, and
-  Narrator reads the hint text from `HelpText`.
-- **Connection sort order.** The Connection column now sorts by connection kind
-  rather than by its hint sentence: known peers first, then TCP, uTP, I2P and
-  HTTP, and outgoing before incoming. The order is now the same in every
-  language.
-
-**Results.** Ticks are the UI thread's cycles from a press reaching it to its
-rendered selection.
-
-| Endpoint | `new7` | `new8` | Lower in every pair |
-| --- | --- | --- | --- |
-| Ticks per click, median of 97 common clicks | 24.6 M | 18.0 M | 4 of 5 |
-| Press to handled, median of 97 common clicks | 67.7 ms | 41.3 ms | yes |
-| Click to rendered selection, median per run | 27 to 33 ms | 14 to 31 ms | 3 of 5 |
-| Click to rendered selection, p95 per run | 116 to 176 ms | 78 to 179 ms | 4 of 5 |
-| UI thread stalled during about 3 s of clicks | 1,569 to 1,773 ms | 1,295 to 1,603 ms | yes |
-| Peak working set | 905 to 934 MiB | 827 to 846 MiB | yes |
-| `firstConnectionsMs` after the clicks | 1,110 to 1,805 ms | 131 to 206 ms | yes |
-
-Three of the four predicted endpoints fell in every pair. The median click to
-rendered selection fell in three. `new8` also kept up with more switches: the
-peers table showed 13 to 17 subject changes, against 12 to 14. Its UI thread
-spent about 5% more cycles over the whole click phase.
-
-**Heap.** A dump of `new8` at the same point as `new7`'s first dump holds 6,584
-managed-object wrappers and 19,195 dependent handles, against 165,559 and
-178,409. That is 0.19 wrappers per live `Peer`, against 1.04. The dump after
-the clicks failed, because `new8` finished its clicks before the script's
-fixed wait ended.
-
-**What the stalls still hold.** A managed trace of one `new8` replay found 20
-stalls, 1,416 ms of 3,018. The samples inside them are about 2.25 ms each:
-
-| Work | `new7` | `new8` |
-| --- | --- | --- |
-| WinUI native work with no app frame | 466 | 497 |
-| Table cell layout (`CellsPanel` measure and arrange) | 157 | 169 |
-| Cell fill (`OnDataContextChanged`, `SyncChildren`) | 14 | about 20 |
-| Table row notices | 109 | 0 |
-| Collections | 9, 353 ms | 2, 35 ms |
-
-The next step is a native trace of the click stalls. The managed sampler cannot
-divide WinUI's layout and rendering, and an ETW trace needs the owner's
-elevation.
-
-## Batch 7: remaining waste on 10 November
-
-Built on 10 November. Every TableView test outside the interactive category
-(198) passed, and every peers capture journey passed before the table change.
-
-- **A peer push is parsed once.** Before, `PipeClient.Read` parsed each
-  observation, copied it whole with `Clone`, and `Swarm.Read` read the same
-  bytes again; at 9,000 peers the copy reached the large object heap every
-  second. Now the receive thread parses the message once into pooled buffers,
-  and `Inspector.ApplyObserved` returns them after every reader of the batch,
-  the peers worker included, has finished. An observation that is replaced or
-  dropped before it applies returns its buffers too.
-- **Torrent cell tooltips.** The status, added and completed cells hold one
-  `ToolTip` each and change only its content, instead of getting a new tooltip
-  object each time the text changes.
-- **The cells panel keeps its own list of cells.** `CellsPanel` is the only
-  writer of its children, so it keeps them, with their columns, in a list.
-  Measure, arrange and cell fill no longer fetch each cell back from WinUI and
-  look up its wrapper. In `new8`'s trace those fetches were about 15 of the 245
-  cell samples of the click phase.
-- **The torrent snapshot reuses its set of ids.** Each snapshot built a new
-  set of every torrent id and scanned every torrent and the selection for
-  removals. Now it clears one kept set, and scans only when the engine stopped
-  listing a torrent.
-- **The status bar measures a rate's width only when its digits change.**
-  `ReserveDigits` measured six texts on every status layout, which runs on
-  every selection change. It now keeps each panel's text with every digit as
-  8 and measures again only when that text changes, or after `QueueStatus`
-  for a language or text scale change. `NameButton` sets a name and tooltip
-  only when they differ, as `SetStatus` does, because each new tooltip text
-  made WinUI build a new tooltip. In `new8`'s trace the status bar held 29
-  samples of the click phase, 13 of them in `ReserveDigits`.
-
-**Peers capture**, at 10,000 peers: a push that changes no peer took 5.0 ms,
-median of 30, against 12.5 ms in the last capture. The first push, which
-creates every peer, took 40.5 and 44.9 ms in two captures, against 11.4 and
-20.3 ms before. The rise is the location lookups: creation now looks up each
-new peer on the worker, where `LocatePeers` did it later, and the same captures
-time 10,000 lookups alone at 36.6 and 39.2 ms. Creation without the lookups
-takes about 4 to 6 ms.
-
-The [round of batches 7 and 8](#round-of-batches-7-and-8) measured this batch
-as `new9`. The build after the status bar change had no warnings.
-
-**What the stalls are.** The UI thread is busy, not waiting. Its cycle counter
-in `new8`'s profiled replay shows 2.74 s of CPU in the 3.0 s click phase, and
-in each press that waited 30 ms or more it ran for nearly the whole wait.
-Two traces show what it runs:
-
-- The managed trace of `new8`: of 1,461 samples in the phase, 948 hold no app
-  code. Of the rest, cell layout and fill hold 261, the table's catch-up of a
-  count change 93, `ApplyProjection` 54 and the status bar 29.
-- The native trace of 8 November, of an earlier build: the render walk holds
-  2,300 of 4,836 stall samples, mostly rasterising the text of changed
-  `TextBlock`s; layout-transition copies of animating rows 556; and the
-  ListView's container preparation 576. Hit testing, 1,022, is almost all
-  layout that WinUI runs before it can test.
-
-So the native work is layout and drawing of rows whose content changed, and
-the owner's row transitions. Each notice of a count change costs WinUI's
-`OnItemsChanged`, reached through the managed `Surface`, which exists for its
-automation peer; the number of notices is the change in count.
-
-A sampler without elevation confirmed this on the current build. It suspends
-the UI thread about every 14 ms, copies its stack and walks it with DbgHelp.
-Of 118 stall samples in one `new9` replay, a forced full collection held 20,
-the render walk 27, text measure 18 and layout transitions 5.
-[Batch 8](#batch-8-forced-collections-and-per-update-allocations) found the
-source of the collection.
-
-**`Field` stays in the cell templates.** `Field` is a managed control, so WinUI
-reaches each cell's measure and arrange through .NET. `new8`'s managed trace
-puts 57 samples of the click phase under its base `MeasureOverride` and
-`ArrangeOverride`. The native samples show what runs below them:
-`CTextBlock::MeasureOverride` and `CIconElement::MeasureOverride`, the measure
-of the cell's text and icon, which a cell built from native elements also
-does. The crossing itself is a few JIT-compiled calls per cell, which neither
-sampler separates from that measure. Replacing the control in nine templates
-would not remove the measured work, and would change what Narrator reads from
-those cells.
-
-## Batch 8: forced collections and per-update allocations
-
-**What forces the full collections.** All 70 samples of the `new9` replay that
-hold `GCInterface_Collect` have one stack: `CCoreServices::TrackMemory` in
-`NWDrawTree`. Every 51 render walks, WinUI reads the process working set. When
-it has grown more than 50 MiB since its last trigger, WinUI calls
-`DisconnectUnusedReferenceSources`, and .NET runs a blocking full collection
-of about 100 ms on the UI thread. The app cannot turn this off
+All 70 samples of the `new9` replay that hold `GCInterface_Collect` have one
+stack: `CCoreServices::TrackMemory` in `NWDrawTree`. Every 51 render walks,
+WinUI reads the process working set. When it has grown more than 50 MiB since
+its last trigger, WinUI calls `DisconnectUnusedReferenceSources`, and .NET runs
+a blocking full collection of about 100 ms on the UI thread. The app cannot
+turn this off
 ([microsoft-ui-xaml#12113](https://github.com/microsoft/microsoft-ui-xaml/issues/12113)),
 so it can only grow its working set less.
 
-**Most of that growth was the replay's fixture.** A heap dump in the click
-phase held 137 MiB of dead large objects. 74 MiB of them were byte arrays: peer
-lists that `PerformanceSource.Peers` read into a new array, copied whole with
-`Deserialize<JsonElement>`, and parsed into new metadata, about 5.8 MiB for
-each fetch of a 3,000-peer torrent. The product reads engine messages into
-pooled buffers and copies nothing.
-
-- **The fixture reads like the product.** `PerformanceSource.Peers` parses the
-  reply into pooled buffers and returns the `JsonDocument`. `ReadPeers`
-  disposes it after `ApplyPeers`, which awaits the worker that reads it.
-- **A map group's name closure is made only for a new group.** `CountryOf` and
-  `PlaceOf` captured their `location` parameter in a lambda, so C# allocated
-  the closure on every call, once for each peer grouped. `NewCountry` and
-  `NewPlace` now hold the lambdas.
-- **`PrepareRoutes` keeps its working sets.** The previous routes by key and the
-  model's keys were a new dictionary and a new set on each update that changed
-  the destinations; they are now fields that are cleared and reused.
-- **A new peer's endpoint is parsed once.** The `Peer` constructor parsed it
-  for the address and port, and `Inspector.Locate` parsed it again for the
-  lookup. `Swarm.Read` now parses it once and gives the result to both; the
-  lookup takes an `IPAddress`. The replay's fixture looked locations up by
-  endpoint text, so this change shows only in the product.
-- **Only a `Field` that dims zeros follows its label.** The `Label` callback
-  called into .NET on every label change of all 60 fields; 4 of them dim zeros.
-
-The build had no warnings.
-
-## Round of batches 7 and 8
-
-One round of five sets on the benchmark display, each set running `new8` (batch
-6), `new9` (batch 7) and `new10` (batch 8), with no competing load except a
-compiler process before set 1's `new9` run. Every run passed.
-
-| Click to rendered selection | `new8` | `new9` | `new10` |
-| --- | --- | --- | --- |
-| Median, 94 common clicks | 38.3 ms | 36.7 ms | 43.6 ms |
-| p90 | 139 ms | 111 ms | 106 ms |
-| Worst | 413 ms | 265 ms | 164 ms |
-| Worst in each set | 139 to 413 ms | 114 to 265 ms | 116 to 164 ms |
-
-Click by click, the medians do not separate. `new10` was faster than `new9` on
-44 of 101 clicks and slower on 57, a median of 7.3 ms slower, with quartiles of
--29 and +43 ms; `new9` against `new8` split 47 to 48. The UI thread's cycles
-per click differ by less than 1 M between `new9` and `new10`.
-
-A gc-verbose trace of one replay of each build explains the tail:
-
-| Click phase | `new9` | `new10` |
-| --- | --- | --- |
-| Large object allocations | 40.5 MiB | 5.7 MiB |
-| Forced full collections | 1 | 0 |
-| Large object allocations, whole run | 599 MiB | 302 MiB |
-
-`new10`'s five forced collections come while the replay builds large peer
-views: two while the all-peers map opens with 159,810 peers, one at the
-9,000-peer view, one at the churn map and one in connection churn. That memory
-holds the views' peers.
-
-## Batch 9: row rebinds, map redraws and engine copies
-
-Built on 10 November with no warnings. Every TableView test outside the
-interactive category (198) passed, every peers capture journey passed, and the
-details capture passed with the real engine.
-
-- **A row rebind raises one managed event.** `Body.Row` and its `CellsPanel`
-  both handled `DataContextChanged`, so each rebind crossed from WinUI into
-  .NET twice, with a new event-argument object each time. `Row` now gives the
-  new item to `CellsPanel.ShowItem`. In `new8`'s managed trace the two handlers
-  held 126 of the 1,574 UI-thread samples of the click phase.
-- **Table updates make fewer throwaway objects.** A table without a hierarchy
-  shares one empty set for expanded and expandable rows, where each update made
-  four new ones. The check for changed visible rows reuses one list, and makes
-  the array it publishes only when the rows changed.
-- **A fade no longer forces extra redraws.** Arc strokes are rebuilt within a
-  6 ms budget per drawing, and a stroke the budget refused asked for a new
-  drawing at once. During a fade every step changes many widths, so the map
-  drew at every frame: 37 to 59 drawings in the idle second of the last round.
-  A width that a fade changed now waits for the fade's next step, which draws
-  anyway.
-- **The glow is recorded once per fade step.** It was recorded again on every
-  drawing while a fade ran. Its kept inputs now hold the fade's progress.
-- **Widths left at a fade's end are rebuilt without drawing.** After the two
-  changes above, `new11`'s idle second still drew 44 times. A CPU trace of its
-  render thread was busy in 467 of 503 samples, 275 drawing cached strokes and
-  89 creating them: the budget is a deadline, and recording the unchanged arcs
-  used most of it, so each drawing rebuilt a few strokes and drew the whole map
-  again. The arcs that the fade's last drawing leaves at an earlier width now
-  wait in a queue. Passes that draw nothing rebuild them, as they already did
-  for stale border strokes, and the map draws once when the queue is empty.
-- **The engine copies less.**
-  - A new view's observations no longer wait behind the old view's unsent
-    ones. `Detail.Subscribe` withdraws them, because the window drops them;
-    the [pipe API contract](../contracts/pipe-api.md) says so.
-  - A snapshot is moved into its last subscriber instead of copied.
-  - A torrent row reads its hashes and status once.
-  - A message reserves its full size before it is written, so a large peer
-    list is not copied as its text grows.
-  - The problem scan of each turn skips the folder-root work when no root
-    hangs, which is the normal case.
-
-**Measured and not changed.**
-
-- **`Field` in the cell templates.** Of the 1,574 click-phase samples, about 2
-  are the crossing into .NET. The rest is text measure, which native cells also
-  do; see [batch 7](#batch-7-remaining-waste-on-10-november).
-- **Small sets, arrays and LINQ objects per click.** The allocation trace of
-  the click phase holds 0.0 MiB of them, so removing them cannot be measured.
-- **Count-change notices.** Each costs 3 to 4 crossings between .NET and WinUI,
-  because the table's list is a .NET object that WinUI calls for its automation
-  peer.
-
-**Left out, with the reason.**
-
-- Skipping unchanged peer lists: connected peers' rates change at every
-  refresh, so an unchanged list is rare.
-- Copying piece bitfields: libtorrent copies them inside `3rdParty`, which
-  agents do not change.
-- One snapshot for several commands: a command's reply promises a published
-  snapshot that holds its result.
-- Describing a view once for several kinds of observation: the owner's
-  ruling shows each available fact at once, and how often the kinds arrive
-  apart is not measured.
-- Shrinking pooled buffers: WinUI's forced collection follows working-set
-  growth, not size, and shrinking would add work.
-- Not copying each new row list in TableView: the copy is the library's
-  documented behavior, and it costs about 1 ms per update only at 160,000
-  peers.
-
-**Correction to batch 7.** Batch 7 explained its slower first push by location
-lookups. That does not hold: the capture's `PeerRows` use `10.x` addresses,
-which the location data does not hold, while `lookupMs` times public `87.68.x`
-addresses in a separate loop. `createMs` is one sample per capture, and it has
-been 9 to 45 ms across captures of the same code, so the capture cannot show
-a change of a few milliseconds. Batch 8's single endpoint parse saves about 1
-to 2 ms per 10,000 new peers, which source review shows and this capture cannot.
-
-**The selection review failed on every build from `new7` on**, with "Deferred
-inspector refresh lost the final selection", and last passed on 30 October.
-The failure did not depend on batches 7 to 9; batch 10 found its causes.
-
-`new11` is the batch without the queue of arcs left at an earlier width;
-`new12` has every change.
-
-## Round of batch 9
-
-One round of five sets on the benchmark display, each set running `new10`
-(batch 8) and `new12` (batch 9), with no competing load except a compiler
-process before set 1's `new10` run. Every run passed.
-
-| Map drawings without dots, per set | `new10` | `new12` |
-| --- | --- | --- |
-| Idle second (`selected-map-baseline`) | 54 to 59 | 5 to 6 |
-| Peer sorting | 267 to 322 | 55 to 69 |
-| Torrent clicks | 71 to 104 | 67 to 92 |
-| Torrent marquee | 40 to 73 | 49 to 55 |
-
-| Click to rendered selection | `new10` | `new12` |
-| --- | --- | --- |
-| Median, 101 common clicks | 27.9 ms | 43.4 ms |
-| p90 | 87.5 ms | 87.3 ms |
-| Worst | 223 ms | 189 ms |
-
-Click by click, the builds do not separate. `new12` was faster on 45 of 101
-clicks and slower on 56, a median of 2.8 ms slower, with quartiles of -12.2 and
-+31.5 ms. The UI thread's cycles per click differ by a median of 0.0 M, so the
-map's extra drawings were not work of the click. The pooled medians move more
-than the paired clicks: `new10`'s median was 43.6 ms in the last round and is
-27.9 ms here.
-
-The peers capture of `new12` passed all 36 journeys. At 10,000 peers a push
-that changes no peer took 3.9 ms, median of 30, against 5.0 ms in batch 7.
-
-**What the click phase still does.** A sampled trace of one `new12` replay
-holds 1,508 UI-thread samples in the 3.2 s click phase:
-
-| UI-thread work | Samples | Why it stays |
-| --- | --- | --- |
-| WinUI's input, layout and rendering, no app frame | 960 | WinUI's own work |
-| Cell measure and arrange (`CellsPanel`) | 246 | The text and icon measure that native cells also do |
-| Count-change notices (`Table.CatchUpSlice`) | 114 | See below |
-| Applying a prepared projection (`PrepareView`) | 56 | Changes the rows the person sees |
-| Row rebinds (`Row.OnItemChanged`) | 20 | Shows each row's new item |
-| Inspector bindings, status bar, replay driver | under 15 each | |
-
-Six collections paused the UI thread for 132 ms in the phase, against 11 and
-323 ms in `new8`'s trace.
-
-The count-change notices are the platform's: `IBindableObservableVector` has
-no range notice, so a list that changes by 1,000 rows takes 1,000 notices, and
-the owner's ruling forbids a Reset of a displayed list. Of the 114 samples, 43
-are under WinUI's `OnItemsChanged`. The managed sampler does not split the rest
-between the list's native handling and CsWinRT's marshaling of each notice,
-which makes 4.9 of the 5.4 MiB of `ComWrappers` objects in batch 8's
-allocation trace of the phase. Each notice reaches .NET through `Surface`'s
-`OnItemsChanged`, because `Surface` is a managed `ListView` for its automation
-peer. The notices run in slices of at most 4 ms below input, so a click waits
-for at most one slice. Of the four `ComWrappers` calls each notice makes, the
-table's own is the check in `View.Raise` that no listener kept the reused
-arguments; the other three marshal the delegate's arguments and the override's
-round trip. Holding the arguments' COM pointer instead would save that one
-lookup per notice at the cost of a reference the view must release. In
-`new17`'s traced replay, source lines put that check at 2 of the click phase's
-1,560 UI-thread samples, and the call of WinUI's handler beside it at 32, so
-the check stays.
-
-The same trace splits the phase's 122 notice samples by their innermost
-managed frame:
-
-| Notice work | Samples |
-| --- | --- |
-| WinUI's list inside the base `OnItemsChanged` | 45 |
-| WinUI's native handler of the notice, inlined into `View.Raise` and `CatchUpSlice` | 54 |
-| `Surface`'s round trip as a managed subclass: WinUI's interface query and the override's marshaling | 13 |
-| Marshaling the arguments | 7 |
-| GC polls | 3 |
-
-The table's own code is not measurable here. The only alternative that removes
-work is a list that is not a managed subclass, which would save at most 13
-samples and lose `Surface`'s automation peer, so `Surface` stays. A click that
-selects a torrent without kept peers must show no rows until its peers arrive,
-as the [peer-location contract](../contracts/peer-location.md) says, so the
-peers table goes to no rows and then to the new rows. `View.CatchUp` raises
-only the notices the list is still owed, so when the new rows arrive before
-the removals are announced, only the difference is announced.
-
-All 151 samples in the cells' own measure are one line, WinUI's `child.Measure`
-of each cell; the panel adds nothing of its own.
-
-The six collections in `new17`'s click phase are all started by allocation,
-three of generation 0 and three of generation 1; WinUI's forced collections
-(`DisconnectUnusedReferenceSources`) all fall outside the clicks. `new10`'s
-allocation trace puts 40 MiB in the 3 s phase. Its largest app sites are the
-peers worker's `Swarm.Read`, 8.6 MiB, which allocates only for peers that join
-and finds a held peer by its endpoint text without allocating; the map's
-groups for each new subject, about 5 MiB; and the `ComWrappers` object .NET
-makes for each notice crossing, 5.4 MiB. Each serves the click. Reusing map
-groups between subjects would save at most about an eighth of the phase's
-allocation, and a reused group would have to keep its point and its name's
-language exactly, so it is not done.
-
-A traced replay of the build with every change of this round (`cpu19`) holds
-1,543 UI-thread samples in the click phase: 977 in WinUI with no app frame,
-230 in cell measure (202 of them WinUI measuring a cell), 115 in count
-notices, 59 applying prepared projections, 54 in cell arrange and 20 in row
-rebinds. A selection change measures no cells: a row answers it only in
-`Row.UpdateStates`, which changes visual states only when the row's drag or
-held state changes, so the measures are of rows whose values changed. About
-42 of the 59 projection samples are the notices `View.Apply` raises for the
-realized rows; `Slots.Commit` holds 3. Six collections paused the UI thread
-for 112 ms.
-
-The map's render thread was busy in 393 of its 1,508 samples: 255 drawing,
-including 56 rebuilding strokes for a new subject's arcs, and 122 preparing
-routes. Source lines put 99 of those in `PrepareRoutes` itself: 37 adding the
-previous routes to the lookup by key, 27 checking whether the destinations are
-unchanged, 17 in the loop over destinations and 13 parking arcs that stop
-showing. The sorting phase, which updates the same subject's 9,000 peers for
-6 s, holds 1 sample of it, and the idle second none, so the cost comes with
-the clicks' changes of subject. The lookup lets a new subject's places reuse
-the arcs of places the previous subject shared. Drawing reads each route's
-displayed strength by key in 1 sample of the phase.
-
-## Batch 10: route preparation after a click
-
-A click shows the new subject with no destinations until its peers arrive, and
-its peers then get their locations in batches. Each of those updates changed
-the destinations, so `PrepareRoutes` put every route into its lookup by key,
-also when the model had no destination to match, and rebuilt a set of every
-model key to drop the displayed strengths of routes that had left.
-
-- With no destinations, the routes leave without the lookup.
-- A route that leaves drops its own displayed strength. Countries keep theirs
-  in a dictionary by code, so their cleanup no longer scans every route's key.
-- The routes up to the first changed destination keep their positions, and
-  only the rest are matched by key. The check compares the destination objects
-  first, because the model reuses each destination that did not change, and a
-  place that gets its location is usually listed after the others.
-
-- **The map keeps its last picture while a new subject's rows are unread.**
-  The [peer-location contract](../contracts/peer-location.md) asks for this,
-  and `Inspector.GiveMap` followed it, but `Inspector.UpdateMap`, which the
-  pane's refresh calls after each click, gave the map an empty population and
-  so released every arc only to build them again. Both now ask `KeepsLastMap`.
-
-The builds had no warnings. In one traced replay of each build, route
-preparation held 122 samples of the click phase in `new12`, 79 after the first
-two changes above (`new13`), 68 after the third (`new14`) and 57 with the kept
-map (`new15`); rebuilding strokes fell from 53 to 43 samples between `new14` and
-`new15`. Single traces differ by about 10 samples from run to run. Every replay
-passed, and the peers captures of `new14` and `new15` passed every journey,
-including the retained route of "map retained aggregation and live fade".
-
-- **A kept arc returns only to a route that draws it.** `PrepareRoutes` took
-  every returning place's kept arc and, when the place did not draw, parked it
-  again at once, which also made an unused arc the newest, so the arc limit
-  released arcs used more recently first. The shown destinations are now chosen
-  before the loop, in a set kept between updates, and only their arcs return.
-
-In `new17`'s traced replay, parking no longer appears in route preparation. Its
-41 own samples are matching the previous subject's routes by key, so places
-the subjects share keep their arcs (26), and the loop over the new destinations
-(14). The replay and every peers capture journey passed.
-
-**Round of batch 10.** Five sets on the benchmark display, each running `new12`
-(batch 9) and `new15` (batches 9 and 10), with no competing load. Every run
-passed. Click by click the builds do not separate: `new15` was faster on 54 of
-103 clicks and slower on 49, a median of 0.4 ms slower, with quartiles of
--34.7 and +28.8 ms, and the UI thread's cycles per click differ by a median of
--1.6 M. The map's drawings per phase overlap between the builds, because these
-changes make each update cheaper, not fewer.
-
-**The selection review passes again**, in all six sections and in its peer
-refresh and shared-lifetime journeys. It had three faults:
-
-- Its check read the inspector's target after a wait that returns at once and
-  one Low-priority layout, before the frame-deferred `QueueSubject` follows the
-  selection. It now waits for the final row.
-- It set the table's selection while the table prepared the view of the new
-  filter, so the table held the selection as pending, the model's selection
-  stayed empty, and Properties could not open the inspector. A hidden
-  inspector does not follow the selection. The review now applies the
-  selection through `SelectTorrent`, as the other reviews do, and fails at once
-  when the inspector is hidden.
-- **Every engine snapshot queued an inspector read that did nothing.**
-  `Inspector.Observe` asks for a read once a second, and for every section but
-  Speed the read returned at once because the subscription already served the
-  view. While that read waited for its frame, `IsLoading` was true, and the
-  inspector's change notice runs just before it, so in the Peers section every
-  notice reported loading. `QueueRead` now asks whether the subscription
-  serves the view, so a served view queues no frame and reports no loading.
-
-## Batch 11: one halo brush per colour
-
-The second independent review of 10 November found that a new map creates two
-gradient brushes per arc in its first drawing. When the 159,810-peer list
-opened, the render thread spent 590 samples in
-`CanvasRadialGradientBrush.CreateWithStops`, and 2,001 brushes were alive at
-1,000 arcs.
-
-- **The glow's halo brush is shared by colour.** The brush depends only on its
-  colour, and the map draws at most four colours per palette: download,
-  upload, and the grey of each when a selection dims a route. Each arc made
-  its own brush. The map now keeps one brush per colour, and the glow sets each
-  arc's centre, radius, opacity and scale before it draws the arc. A command
-  list keeps a radial brush by value and only references its gradient stops,
-  which never change
-  ([ID2D1CommandList](https://learn.microsoft.com/windows/win32/api/d2d1_1/nn-d2d1_1-id2d1commandlist)),
-  so each arc still gets its own halo.
-- **The core brush stays one per arc.** Its stops put the landing fade 30
-  pixels from the destination, so they depend on the arc's length on screen.
-
-Built on 10 November with no warnings (`new18`). No capture has counted the
-brushes.
-
-**Left out, with the reason.** Batch 9 records the review's engine items and
-pooled buffers. The rest:
-
-- The scans that every drawing repeats in `DrawScene` and
-  `MapMotion.RenderMap` (the marked routes, the estimated countries, the chosen
-  destination and a new `Highlight`): since batch 9 an idle second draws 5 to 6
-  times, so each scan passes over about 1,000 routes a few times per second.
-- `Swarm.Join` copies only for a scope of several torrents; one torrent's
-  view is its swarm's own list. A swarm rebuilds its endpoint index only for a
-  reply that adds or removes a peer. The index holds positions, and a leave
-  shifts every later position, so an update in place still touches most
-  peers. The new swarm also keeps a worker that reads the old one safe. Both
-  run on the worker.
-- TableView's `Slots.Number` reads each row's key once, only for a list it has
-  not numbered; matching rows needs the key. `ClearNext` is one fill of an
-  integer array, about 640 KB at 160,000 rows. `Flip` writes each row of a
-  different list into the view once and raises no notice per row; the view
-  must hold every new row.
-- The owner of about 800 MB of native memory at the stress load is not known.
-  Only a native heap trace of a running build can name it.
-
-## Round: HEAD against the working tree
-
-On 10 November the owner asked for HEAD against the working tree. HEAD
-(`bef7363`) was built in a separate worktree and ran under its own harness,
-because its engine speaks pipe version 38. Its replay fixture is the one before
-batch 8, which leaves large arrays that the product does not make, so HEAD's
-collections are somewhat worse than its product code alone. The working tree
-is `new18` (batches 1 to 11). Five pairs on the benchmark display, alternating,
-with no competing load. One more pair replaced pair 2, whose working-tree run
-stopped before the benchmark: the harness read `ready.json` while the app was
-still writing it, and the file ended at byte 8,192.
-
-| Measure, median of five runs | HEAD | Working tree | Working tree better |
-| --- | ---: | ---: | ---: |
-| Click to rendered selection, median | 66.2 ms | 37.7 ms | 3 of 5 |
-| Click to rendered selection, worst | 452 ms | 153 ms | 5 of 5 |
-| UI-thread cycles per click, median | 54.8 M | 26.0 M | 4 of 5 |
-| All-peers map, first picture | 8,646 ms | 4,610 ms | 4 of 5 |
-| All-peers map, UI thread's worst response | 1,012 ms | 399 ms | 5 of 5 |
-| Selected torrent's map, first picture | 3,825 ms | 484 ms | 5 of 5 |
-| Map after the clicks, first picture | 1,596 ms | 212 ms | 5 of 5 |
-| Marquee, worst gap | 388 ms | 202 ms | 5 of 5 |
-| Peak private memory | 1,243 MiB | 964 MiB | 5 of 5 |
-| Peak working set | 843 MiB | 740 MiB | 5 of 5 |
-| Pan back during churn, UI thread's worst response | 224 ms | 287 ms | 0 of 5 |
-| Pan back during churn, worst navigation gap | 232 ms | 283 ms | 1 of 5 |
-
-The other docked zoom and pan phases are mixed. The pan back is worse in
-every pair. In 4 of the working tree's 5 runs private memory falls during that
-phase, by 4 to 11 MiB, so a collection freed memory there; HEAD's falls in 2 of
-5. The likely cause is that the lower memory moves WinUI's forced collection,
-which follows 50 MiB of working-set growth, into that phase. This is not
-proven: a collection trace of one run of each build would show it.
-
-## Committed: map selection preparation
-
-Source review at `4f069bb` found one population-sized UI path left: both map
-callers copied the table's selection on the UI thread, `PeerMap` compared every
-selected peer and location on every map update, and selecting all 159,810 peers
-made those UI operations population-sized. Ordinary torrent clicks do not take
-this path, so the standard click comparison cannot validate it.
-
-The correction is committed at `6f5f091`, and its conditions hold:
-
-- Conditions 1 and 2, by source review of the current code. Only the map
-  listens to the peers table's selection; `PeerMap.Select` stores the table's
-  `Selection.Items`, `PeerMap/Selection.cs` counts on the thread pool, and the
-  render thread's `Marks` reads destinations, not peers.
-- Condition 3, the map lifecycle capture with its stale-selection tripwire,
-  passes all 12 journeys. It had failed since 6 November before reaching the
-  tripwire, at "Equivalent peer facts redrew the same map": the rework that
-  moved the map's facts to its workers (`fc0916d`, `6528d57`) dropped the
-  comparison of a new snapshot's facts with the last, so every new population,
-  such as a return to a subject's peers, built a new presentation, and the
-  render thread inspected and published the same picture again.
-  `MapWork.Prepare` now keeps the last presentation when the new one draws the
-  same places with the same facts in the same language
-  (`Presentation.Matches`, which compares groups, not peers). The peers
-  capture passes all its journeys with it.
-- The select-all on the stress fixture. The selection replay now has a
-  `peer-select-all` phase: Ctrl+A's `SelectAllFromKeyboard` on all 159,810
-  peers, until the map has marked their 1,000 places and drawn them. In its
-  traced run the app's map code holds 3 of the phase's 165 UI-thread samples.
-  The rest was TableView's commit, which looked up every selected row's view
-  position three times and sorted the positions three times:
-  `BuildSelectedPacket` ordered the rows by position, `RefreshContainers`
-  looked the positions up again into hash sets to find the changed rows, and
-  the list's `GetSelectedRanges` reads them once more. The packet's sort now
-  hands its positions to `RefreshContainers`, which merges them with the
-  previous selection's sorted positions. The phase took 327 ms with 165
-  samples before and 225 ms with 114 after; position lookups fell from 43
-  samples to 15 and `RefreshContainers` from 38 to 16. The 25 selection tests
-  pass. What is left is one pass each: the selection's set, the packet's
-  lookup and sort, and the list's own request for the selected ranges, which
-  can come after the view has changed and so reads the positions itself.
-
-The conditions were:
-
-1. Source. Both map callers pass the table's immutable selection without a UI
-   copy. `PeerMap/Selection.cs` alone counts selected places on the thread pool
-   with one active task and one latest pending request, independent of
-   grouping. No `Peer` reference enters `MapMotion.Input`;
-   `Presentation.Marks` only resolves destinations and estimated regions. The
-   UI accepts a result only while the peer generation, selection reference,
-   subject, detail and map lifetime still match; clearing publishes empty at
-   once; unload never joins the task. TableView, geometry, the renderer and the
-   picture handoff are unchanged. The
-   [peer-location contract](../contracts/peer-location.md) carries the new
-   selection text in the same change.
-2. Review. No map-specific selected-peer enumeration remains in UI or
-   presentation callbacks, pending work is bounded, and rapid select/clear,
-   subject or detail replacement, location mutation during capture, blocked
-   grouping and unload are traced.
-3. Validation, one collected build. The existing map lifecycle capture passes
-   with its stale-selection tripwire: block the worker, replace and clear the
-   selection, release, and obsolete marks are rejected. A select-all in the
-   peers table on the stress fixture highlights the selected places with no
-   peer scan sampled on the UI or game-loop thread.
-
-The guaranteed result is the removal of these synchronous scans. It does not
-claim shorter GC pauses or a large-selection latency figure.
-
-## Committed: row keys and sort keys read on the worker
-
-What is established. A blocking full collection on the UI thread overlaps most
-of the worst stationary gap: 374 of 381 ms at `75af850` and 210 of 225 ms at
-`4f069bb`. At `555bd62` one overlapped 539 of 611 ms of the worst marquee gap;
-that run's stationary overlap was not saved.
-
-The trace identifies the collection's managed caller as the .NET
-reference-tracker host (`GC/Triggered` under
-`ReferenceTrackerHost.IReferenceTrackerHost_DisconnectUnusedReferenceSources`
-on the UI thread). Its native trigger is not confirmed; WinUI's working-set
-growth heuristic (`CCoreServices::TrackMemory`, 50 MiB) is a source-backed
-candidate. The 1,105,232 handles and 200,468 finalizable objects come from GC
-163 in the `555bd62` trace, before the runtime bookkeeping correction at
-`75af850`; they are a historical sample, not a current inventory, and do not
-show that every object is a COM wrapper.
-
-Allocation owners, from the `78fb43f` allocation trace (sampled tick amounts,
-not a census), read by owning frame from its raw ticks and by phase in its
-preserved [phase grouping](../../artifacts/evidence/ui-profile-alloc-current-20261106-78fb43f/phase-grouping.md).
+Most of that growth was the replay's fixture: a heap dump in the click phase
+held 137 MiB of dead large objects, 74 MiB of them byte arrays of peer lists
+that the fixture read into new arrays and copied. The fixture now reads like the
+product ([benchmark](../../app/tests/Performance.md)). In
+the click phase of `new10` large object allocations fell from 40.5 to 5.7 MiB
+and forced full collections from 1 to 0, against `new9`; over the whole run
+large object allocations fell from 599 to 302 MiB. `new10`'s five remaining
+forced collections come while the replay builds large peer views: two while the
+all-peers map opens with 159,810 peers, one at the 9,000-peer view, one at the
+churn map and one in connection churn. That memory holds the views' peers.
+
+## Pan back during churn
+
+On 10 November the owner asked for HEAD (`bef7363`) against the working tree
+(`new18`, batches 1 to 11), five pairs on the benchmark display, alternating,
+with no competing load. The working tree was better on clicks, memory and the
+maps' first pictures. It was worse at the pan back during churn: the UI thread's
+worst response was 287 ms against 224 ms (worse in 5 of 5 pairs) and the worst
+navigation gap 283 against 232 ms (worse in 4 of 5).
+
+The other docked zoom and pan phases are mixed. The pan back's worst response
+is worse in every pair, but its typical response is better: p95 15.4 to
+21.6 ms against 24.6 to 40.0 ms in 4 of 5 pairs. The fifth working-tree run
+was disturbed; its p95 was 274.7 ms.
+
+An independent review of the saved runs found what the worst response is. A
+zoom or pan phase lasts 2 seconds, and its longest freeze is the UI-thread
+block that ends in the frame where a table shows a new sort order: the peer
+table every 1 s in the benchmark, the torrent table about every 3 s. The
+render thread keeps drawing during the block, so it is not a collection. The
+block is not longer in the working tree: over the churn phases, a median of
+179 ms for the peer table against 206 ms at HEAD, and 170 against 201 ms for
+the torrent table. The working tree reaches the pan back earlier in the
+source's ticks, so a torrent-table block falls inside it in 4 of 5 runs,
+against 1 of 5 at HEAD. The block itself is the defect in both builds: the
+list is told about a new order with a Remove and an Insert notice for each
+row it holds, and the frame after the notices measures every visible cell
+again.
+
+The peer dots showed in 73% of the pan back's draws in two HEAD runs and in
+none of the working tree's. A second review found the cause: the dot size.
+`MapDots` lowers the size only after 10 s of lower traffic, and a new map
+subject kept the size of the subject before it while every route started again
+from zero bytes. After a change from a busy selection to a quieter one, each
+dot stood for the busy selection's bytes, so almost no dot flew for 10 s. In
+all 5 working-tree runs the first dot of the docked phases came 10.1 to 10.7 s
+after the peer table last changed to another torrent's list, inside the pan
+west. HEAD's map followed a smaller marquee selection (91 to 192 routes against
+627 to 833), so its size was likely smaller and its first dot came after 6.3 to
+8.0 s; the records hold no dot size, so this step is inferred. Batch 12 makes
+the first traffic after a new subject take its own size at once.
+
+## The owner's answers to the pan-back review
+
+- **A new sort order keeps its row animation.** The review proposed putting a
+  new order into the existing rows when most visible rows change, as a switch
+  to another torrent does. The owner declined: "the animations is there for a
+  purpose. it is acceptable to flip it when you change the torrent, but not
+  when you switch the sort order because the animation has a purpose and your
+  proposal invalidates the purpose of the animation". Its cost is therefore
+  reduced only by what the animation does not need.
+- **Pan and zoom draw without the full effects.** The owner: "on pan or zoom
+  we don't need full effects. the full effects can appear when we calmed
+  down."
+- **A cell shows plain text instead of `Field` only where that is proven to
+  look the same.** The owner rejected a guess as a hack.
+- **The cache rows beyond the screen get no notice.** Approved.
+- **Pan input on the render thread is measured before it is built.**
+- **The first sort of the all-peers list is investigated.**
+
+## Batch 12: pan effects, notices on screen only, and two findings
+
+- **The glow moves with the map while the view moves.** The glow was recorded
+  again whenever its inputs changed, and the view is one of them, so a pan
+  recorded it at every step: 481 of 527 pan drawings, 7.3 ms median. While the
+  view moves, `MapRenderer` now draws the glow it recorded last, moved from its
+  recorded view to the current one, and keeps its strengths and strokes. When
+  the view has not changed for a quarter second, the next drawing records the
+  full glow again.
+- **Only the containers on screen get notices.** `Changes.Reconcile` tells the
+  list of the positions it holds between the panel's first and last visible
+  index. A container it holds off screen takes its new row through
+  `Table.RebindRows` after the layout that shows the screen, or at once on a
+  scroll, and reads its selection again. The Jobs sample's reversal reports its
+  disagreements after it settles.
+- **A new map subject takes its own dot size at once.** `MapDots.Clear` keeps
+  the last size for the legend, and the first traffic after it now applies its
+  own size at once, as a new area, speed or total does. The 10-second rule
+  still keeps the legend steady within one subject.
+- **`Field` is not plain text.** Each `Field` cell draws a `FontIcon` and a
+  `TextBlock` with a `TextHighlighter` (`TinyTorrentInlineFieldStyle`), and the
+  Download, Upload and City cells set a glyph. Plain text would change what the
+  cell shows, so the cells keep `Field`, as the owner's condition requires.
+- **Where the pans freeze, from the saved runs of `new18`.** A freeze is 50 ms
+  or more between two drawn views that differ. The map showed an old view in
+  41.6% of the moving time: 167 freezes in 25 phases. In 27.7% of the moving
+  time (67 freezes, about 200 ms each) the UI thread was busy for at least half
+  the freeze, mostly in the tables' new-order blocks. Pan input on the render
+  thread would remove those. In about 14% (100 freezes, about 70 ms each) the
+  UI thread was free. HEAD's runs: 49.4% and 37.2%.
+
+  An independent review of the free-UI freezes found that they are real: a
+  median of 7 replay steps reached `Navigate` on time inside each one. In 83 of
+  99 the game loop drew nothing. In 4.7 s of their 6.8 s a newer view was
+  already in `MapMotion`, so render-thread input cannot shorten them. The game
+  loop draws about 10 times less often in the middle of the worker's pass than
+  near its publish, and longer passes give more freezes: pan east drew 8
+  freezes with a 183 ms pass and 1 with a 48 ms pass. The worker draws on the
+  game loop's `CanvasDevice`, and Win2D's `CanvasSwapChain` takes that device's
+  Direct2D factory lock (`ID2D1Multithread`) to start each frame and to present
+  it. So a long Direct2D call on the worker holds the game loop's next frame.
+  The capture records no time at which each worker step starts, so the step
+  that holds the lock is not named yet. In the other 2.1 s the replay's steps
+  reached `Navigate` 20 to 90 ms late while the UI probes answered at once: a
+  probe is a sent message, which Windows delivers before posted work, so the
+  probes miss waits of posted work.
+- **The first sort of the all-peers list.** In the traced run the block lasted
+  316 ms. Half of the UI thread's samples were in `CellsPanel.MeasureOverride`,
+  36% to 38% were in WinUI with no app frame, and the rest built new row
+  elements and their bindings. `ApplyProjection` took tens of ms at most and
+  `CaptureSort` 5 to 10 ms; the sort itself runs on the worker. No row on
+  screen keeps its place in the first sort, so every row the list holds leaves
+  and a new one arrives: about twice the work of a later sort. Only a native
+  trace, which needs elevation, can split WinUI's share.
+
+In a 60-row test list the list itself dropped its containers below the screen
+in the layout after a sort, and made them again with the right rows and
+selection within 1.5 s. So off screen, `RebindRows` matters for the containers
+the list keeps, such as a focused row's. No test reaches that case: a test list
+keeps no container below the screen through a sort.
+
+Built on 10 November with no warnings (`new19`). The TableView reconcile,
+sorting and selection tests passed.
+
+### Round of batch 12
+
+Five pairs of `new18` (`bfc54dc`) against `new19`:
+
+- The glow took 0.1 ms per pan and zoom drawing instead of 7.5 ms (median),
+  and the arcs 16 ms instead of 38 ms. Freezes with the UI thread free fell
+  from 11.4% to 3.1% of the moving time.
+- `new19` crashed at exit in 3 of 5 runs: the queued rebind of containers off
+  screen (`FlushRebind`) read the list after the window had closed. It now
+  returns when the table is unloaded, as every other queued table callback
+  does. `new20` then ran 6 times without a crash.
+- Freezes with the UI thread busy rose from 26.1% to 38.4% of the moving time.
+
+To isolate the notices on screen only, five pairs ran `new20` with that change
+switched off (`Shown()` returned null) against `new20`, both with the dot fix:
+
+| Measure | Off | On |
+| --- | ---: | ---: |
+| Moving time with the map frozen | 24.8% | 32.1% |
+| Torrent-table new-order block, median | 143 ms | 228 ms |
+| Peer-table new-order block, median | 168 ms | 137 ms |
+| UI blocks near no new order | 3 | 15 |
+| First sort of the all-peers list, worst UI response | 295 ms | 156 ms |
+| Zoom-in, worst navigation gap | 206 ms | 278 ms |
+
+The change halves the first big sort, but it makes pans and the torrent table
+worse. With it off, a switch to another torrent rebinds every row at once,
+which is slower than before batch 12, so the click results of this round do
+not judge it.
+
+The first dot now flies 5.7 to 6.1 s after the marquee starts, in zoom-out, in
+all 10 runs, against 12.1 to 12.8 s, in pan-west, before the dot fix.
+
+### Second round: the table source at HEAD against the notices on screen only
+
+On 11 November the owner asked for the measurement again. `new21b` has the
+TableView source exactly at `HEAD`; `new21` has the notices on screen only.
+Both carry three map changes: a refined guide keeps its core brush, guides are
+refined only when the view rests, and a parked route releases its strokes.
+One `new21` run stopped with "The final peer table did not publish": the peer
+table did not show the heavy torrent's list within 20 s.
+
+| Measure, pans and zooms | `new21b` | `new21` |
+| --- | ---: | ---: |
+| Moving time with the map frozen | 34.2% | 39.2% |
+| of it with the UI thread busy | 17.9% | 26.8% |
+| Torrent-table new-order block, median | 127 ms | 171 ms |
+| UI blocks near no new order | 2 | 8 |
+
+The notices on screen only made movement more jagged in both rounds. The
+review that proposed them is asked to trace why, through the table code and
+WinUI's source.
+
+The map changes made each drawing shorter, and the worker drew more of them:
+against `new20`, the arcs step fell from a median of about 14.6 ms (p90 about
+55 ms) to about 10.2 ms (p90 15 to 21 ms), and the drawings rose from 29 to 31
+to 41 to 46 per second. The game loop then drew 49 frames per second instead
+of 55, and the map froze more with the UI thread free. A cheaper drawing only
+helps when the worker also draws less often during a pan: proposal 2 of the
+pan review. The review that proposed it is asked for the design. Private
+memory still grew by 3.0 to 4.3 MiB/s, against 4.4 to 6.0, so the parked
+strokes are not the main cause of the climb.
+
+### Third round: the border stall
+
+The other review traced the freezes with the UI thread free to one drawing
+step. The guides no longer used the 6 ms rebuild budget during a zoom, so the
+fills traced every visible country again at each new outline detail, and the
+borders then made a stroke for every new piece with no budget at all
+(`e723ae6` had removed that budget when drawing moved to the worker). One such
+drawing held the device the game loop presents with for 0.6 to 2.8 s. The fix,
+committed as `605838d`: while the view moves, outlines keep their detail and
+are traced once at rest, as guides are; a piece's first stroke takes the
+budget; and the map reports ready only after the work left for its rest is
+drawn.
+
+`new22` (the fix) against `new21`, five pairs, all ten runs finished. Logs:
+`round22.log` in the session scratchpad, with `stepmax22.ps1`, `panfreeze.ps1`
+and `loopframes.ps1`.
+
+| Measure, pans and zooms | `new21` | `new22` |
+| --- | ---: | ---: |
+| Longest borders step, per run | 746 to 1,799 ms | 0.7 to 5.6 ms |
+| Longest fills step, per run | 32 to 143 ms | 1.4 to 16.9 ms |
+| Moving time with the map frozen | 37.9% (149 freezes) | 24.9% (79 freezes) |
+| of it with the UI thread free | 12.5% | 2.0% |
+| Game-loop frames with a new view | 36.3/s | 43.8/s |
+| Worker drawings | 34.9/s | 53.9/s |
+
+What remains is 22.9% of the moving time frozen while the UI thread is busy,
+mostly with table re-sorts. The owner first approved holding the peers table's
+re-sort during a map gesture, then withdrew it: "I think we shound't hold it
+right now and we should investigate how can winui3 dredraw smooth animation in
+2 table during this heavy load yet we can't pan properly".
+
+*Why do the tables animate smoothly while a pan freezes?* (Review of WinUI's
+source, 11 November; nothing run.) Row animations are independent animations:
+the UI thread starts them once and the compositor plays them
+(`DoubleAnimation.cpp:121`, `timemgr.cpp:346` in `3rdParty/microsoft-ui-xaml`).
+One table update is one UI block of about 165 ms that lays out the rows and
+starts their animations; in that block no code reads the mouse, so the map has
+no new view. WinUI's own scrolling takes touch, pen, touchpad and wheel input
+off the UI thread (`ScrollPresenter.cpp:4582-4634`, `2798`), but not a mouse
+drag. For swap chain content the platform's way is an input source made off the
+UI thread (`HWCompNodeWinRT.cpp:3517`), the render-thread input item of the pan
+review. Open, because `InputPointerSource` is closed source: a mouse drag that
+leaves the map, input to the controls above the map, and click, double-click,
+menu, hover, cursor and focus on raw pointer events. On 11 November the owner
+asked for a prototype that answers those questions.
+
+### Fourth round: arcs that drew the map again
+
+After `605838d` a pan still drew a new picture at almost every frame. Capture
+builds now record what made each drawing, and nearly every one was asked for
+by the drawing before it. An arc whose stroke was made at another scale asked
+for another drawing when the 6 ms budget had run out. The arcs draw last, so
+with 1,000 arcs every drawing ran out before the later ones, and none was ever
+rebuilt. The fix, committed as `a1cb18b`: such an arc keeps its stroke and
+waits in the restyle queue, which passes that draw nothing rebuild. With that
+loop gone, a pan that the latest picture still covers draws nothing new until
+the view rests.
+
+`new25` (the fix) against `new24`, five pairs, all ten runs finished. Logs:
+`round25.log` and `compare25.md` in the session scratchpad, with `causes.ps1`.
+
+| Measure | `new24` | `new25` |
+| --- | ---: | ---: |
+| Drawings in each pan of pair 1 | 69 to 134 | 24 to 29 |
+| of them asked for by the drawing before | all but 2 | 0 to 5 |
+| Zoom-out drawings, per pair | 61 to 89 | 54 to 74 |
+| No-selection animation, worst UI response (median) | 311 ms | 158 ms |
+
+No measure was worse in all five pairs. The zoom-out's UI-thread measures were
+worse in 4 of 5 (navigation updates 41.1 against 37.1 per second). The worker
+drew less there, and no path from its work to the UI thread was found, so this
+is read as noise. The pan drawings that remain are activity fade steps, about
+10 a second.
+
+### Fifth round: notices bounded to the cache
+
+Counters in the table showed why the notices on screen only made the torrent
+table slower. The list kept every container it was never told about, 35 for
+10 rows on screen. So each new order refilled about 24 rows off screen, at
+about 3 ms a row. Now a held position farther from the screen than the cache
+reaches, `ceiling(CacheLength × rows on screen)` rows, is told again, and the
+list drops it. Only the rows within the cache are refilled without a notice.
+Not committed.
+
+`new26` (bounded) against `new26h` (TableView source at `HEAD`), same map code,
+five pairs, all ten runs finished. Logs: `round26.log`, `compare26.md` and
+`disconnect26.txt` in the session scratchpad.
+
+| Measure | `new26h` | `new26` |
+| --- | ---: | ---: |
+| Torrent-table new-order block, median (5 of 5 pairs better) | 132 ms | 98 ms |
+| Peer-table new-order block, median (5 of 5 pairs better) | 135 ms | 106 ms |
+| UI blocks over 100 ms near no new order | 2 | 0 |
+| Click to selection, median (5 of 5 better) | 22.7 ms | 10.5 ms |
+| Opening the selected torrent's map, worst UI response (5 of 5 worse) | 160 ms | 230 ms |
+| Its first picture (5 of 5 worse) | 294 ms | 380 ms |
+
+The torrent table now holds 14 containers after the first orders, as at
+`HEAD`. Also worse in 5 of 5: the first picture after the selection settles
+(489 against 519 ms) and the worst UI response when the churn map opens (103
+against 125 ms). Round 21's saved runs show the same slower opening with the
+unbounded notices, so the notices on screen only cause it, not the bound.
+
+The opening is slower because the peer table builds its row containers later,
+not because it does more. Going from all peers to one torrent's peers removes
+the 16 rows the list holds, with an animation. A removed container cannot be
+reused until its animation ends, so the list needs 16 others at once. With the
+table source at `HEAD`, the first re-sort of all peers had already built 16
+spare containers; with the bounded notices it built 6, so the opening builds
+the other 10 (about 85 ms of cell measure). In all five pairs the two blocks
+together were shorter with the bounded notices: 342 to 421 ms against 455 to
+522 ms. The review proposed that a change of subject that keeps none of the
+rows the list holds replaces the list in one step, as a switch to another
+torrent's peers already does. The owner then gave the rule for every change of
+the data source, which is
+[hard line 2](#hard-lines-that-waste-memory-and-cpu).
+
+## Allocation owners still open
+
+Sampled allocation owners that no correction has addressed, from the `78fb43f`
+allocation trace (sampled tick amounts, not a census), read by owning frame and
+by phase in its preserved
+[phase grouping](../../artifacts/evidence/ui-profile-alloc-current-20261106-78fb43f/phase-grouping.md).
 The journey is 59.3 s; its aggregate phase is 13.6 s with the whole population
 loaded.
 
 | Owner | Thread | Sampled allocation over the journey | Standing |
 | --- | --- | ---: | --- |
-| `Table.CaptureProjection`: the memoized row-key map, built by calling the host's key selector once per row | UI | 184 MiB of entries, 33 MiB of buckets | Moved to the worker by this round. The peers table sets a key, so every capture read 159,810 keys on the UI thread into a map grown from zero capacity. |
-| `Schema.SortKey` capture: the sort-key map, built by calling the host's sort selector once per row | UI | 19.5 MiB of entries, 3.8 MiB of buckets | Moved to the worker by this round. |
-| `Body.Projection.Prepare`: uniqueness and source-key sets, position map | worker | 198 MiB of set entries, 139 MiB of position entries, 78 MiB of buckets | Sized from their counts by this round, which removes the doubling chains; they never blocked the UI. |
-| `Body.View.Apply`: COM-wrapper holder arrays | UI | 51 MiB | The .NET 10 duplicate-bookkeeping defect, removed by the runtime option at `75af850`. |
 | `Peer[]` replacement lists in `ApplyPeers` reconciliation | worker | 119 MiB in the aggregate phase | No correction selected. |
-| Inspector `Filter` capture | worker | about 24 captures in the aggregate phase, 1.7 per second | One 4.9 MiB value array per capture. The fixture delivers about one reply burst per second, so coalescing captures per burst cannot move an endpoint here. |
-| `MapModel.Update` per-peer objects | worker | 209 MiB | Removed at `fc0916d4` and `6528d57`. |
-| `Dictionary<DestinationKey, Destination>` rebuilt by `MapRenderer.Inspect` every render pass | render worker | 137 MiB | About 1,000 entries, generation 0, at pass rate during navigation. |
-
-Issues [573](https://github.com/SynoSoftware/TinyTorrent2/issues/573) and
-[578](https://github.com/SynoSoftware/TinyTorrent2/issues/578) are therefore
-ordinary-use code fixes, judged as code: the per-reply recapture is real when
-the engine answers one torrent at a time, and the geolocation sets are real
-when geolocation runs, but this fixture shows neither. They ride in the next
-build without a predicted endpoint.
-
-The change, committed in `2dec906`,
-[issue 579](https://github.com/SynoSoftware/TinyTorrent2/issues/579): the
-projection worker reads the host's row key and sort keys itself, once per row,
-from the source snapshot the UI captured. `Table.CaptureProjection` captures
-only UI-affine state (the source snapshot, displayed rows, realized indices,
-hierarchy state and holds) and passes the raw selectors; `Body.Projection`
-memoizes the keys and builds the sort comparer, and sizes its collections from
-the counts they fill. One UI-thread read stays: a sort or layout request reads
-its keys once when it is made, so a request whose selector fails is rejected
-before the table changes, as the contract and its tests require; every later
-projection of the accepted sort, which is the per-update path, reads on the
-worker. Hosts are unchanged. The worker takes detached inputs, a concrete
-blocking cost leaves the UI thread, and ownership is clearer, since the worker
-now prepares everything from one captured snapshot.
-
-The contract changes with it: key and sort-key selectors run on the worker and
-read only state the host publishes safely, never UI objects. Every host
-selector was audited: the peers table's key and sort keys read readonly fields
-and the volatile record snapshot the map already reads off-thread; torrent and
-tracker selectors read plain properties written on the UI thread, where a
-stale read sorts a row by its previous value until the next update; file nodes,
-Library entries, the sample and the tests read plain or immutable data.
-
-Every build since `2dec906` holds this change, plan 18's round 4 reference
-included, so it has no separate round: [step 4](#steps)'s trace of the current
-build measures the collections with it.
-
-Issues 573 and 578 against the current code:
-
-- 578 no longer applies, and it is closed: `LocatePeers` and its two
-  whole-population sets are gone since `6c6f57b`. `Swarm.Read` looks a peer up
-  when it joins, and again only when the geolocation data changes.
-- 573's capture for the map is gone: the map takes a round's changes once,
-  when the round ends. Its remaining case was a chosen place: every reply that
-  changed the rows started its own search of the whole population for that
-  place's rows, and every search but the last was discarded. `Inspector.Filter`
-  now runs one search at a time; a call during it leaves the search to one
-  that follows it with the latest peers and place. The map capture's "peer
-  worker cancellation and latest filter" journey, which changes the place
-  during a search, and every peers capture journey pass.
+| Inspector `Filter` capture | worker | about 24 captures in the aggregate phase, 1.7 per second | One 4.9 MiB value array per capture. The fixture delivers about one reply burst per second, so coalescing captures per burst cannot move an endpoint here. [Issue 573](https://github.com/SynoSoftware/TinyTorrent2/issues/573), which asked for it, is closed: the map takes a round's changes once, and a chosen place's search runs one at a time. |
+| `Dictionary<DestinationKey, Destination>` rebuilt by `MapRenderer.Inspect` every render pass | render worker | 137 MiB | About 1,000 entries, generation 0, at pass rate during navigation. [Issue 576](https://github.com/SynoSoftware/TinyTorrent2/issues/576). |
 
 ## Follow-ups, not steps
 
@@ -1333,6 +1179,16 @@ endpoint and completion condition.
 - Code shape: [577](https://github.com/SynoSoftware/TinyTorrent2/issues/577),
   splitting the picture pool, sprites and markers out of `MapMotion`.
 - Perceived halo softness of the location lights is visually unverified.
+- At rest after a zoom, outlines are retraced in slices of the 6 ms budget, and
+  each unfinished slice draws a whole picture: 45 pictures in one churn phase of
+  round 25 (`again rebuild Trace`). Running the slices in passes that draw
+  nothing, as the arcs now are, and drawing once at the end would remove them.
+  It changes the contract's rule that the retrace keeps the allowance.
+- Merging map destinations that lie close together at the shown zoom has its
+  own [plan](20-close-destinations.md), decided by the owner on 11 November.
+  It changes the peer location contract, which today merges only an estimated
+  group's places, in fitted-map space, and groups cities with coordinates only
+  at identical positions.
 
 ## Deferred TableView findings
 
@@ -1358,13 +1214,5 @@ None of these is established as a cause of the measured stalls.
 
 | Record | Content |
 | --- | --- |
-| [Map handoff functional run](../../artifacts/evidence/Capture-map-handoff-d220f8ff-add3-44be-adfb-cc33004a45fd/captures/review.json) | Eight journeys passed at `e723ae6`. |
-| [Replay baseline `b20b923`](../../artifacts/evidence/ui-benchmark-replay-baseline-20261106-b20b923/README.md), [corrected observer `ba64259`](../../artifacts/evidence/ui-benchmark-draw-observer-baseline-20261106-ba64259/README.md) | Frozen references. |
-| [Peer snapshot](../../artifacts/evidence/ui-benchmark-peer-snapshot-20261106-2beb6e7/README.md), [scope retention](../../artifacts/evidence/ui-benchmark-scope-retention-20261106-3d2970a/README.md), [notification attribution](../../artifacts/evidence/ui-notification-attribution-20261106-deb3e1e/README.md), [bindable notifications](../../artifacts/evidence/ui-profile-bindable-20261106-222e88d/README.md), [sort capacity](../../artifacts/evidence/ui-profile-sort-capacity-20261106-78fb43f/README.md) | Table-side attribution rounds. |
-| [Allocation trace `78fb43f`](../../artifacts/evidence/ui-profile-alloc-current-20261106-78fb43f/README.md) | Allocation owners behind the next round. |
-| [Thread work `fc0916d4`](../../artifacts/evidence/ui-profile-map-thread-work-20261106-fc0916d4/README.md) | Relocation demonstrated; response mixed. |
-| [Marker preparation `555bd62`](../../artifacts/evidence/ui-profile-marker-preparation-20261106-555bd62/README.md) | Acceptance failed; GC first identified. |
-| [Runtime bookkeeping `75af850`](../../artifacts/evidence/ui-profile-runtime-bookkeeping-20261106-75af850/README.md), [delay attribution](../../artifacts/evidence/ui-profile-runtime-bookkeeping-20261106-75af850/plan17-reviewed-delay-findings.md) | Retained; mixed. |
 | [Defined changes `4f069bb`](../../artifacts/evidence/ui-profile-map-defined-changes-20261107-4f069bb/README.md), [build](../../artifacts/evidence/ui-build-map-defined-changes-20261107-4f069bb/README.md) | Current reference; mixed. |
 | [Country full-screen run](../../artifacts/evidence/ui-country-fullscreen-20261107-4f069bb/comparison.json) | Visual review of the accepted artifact. |
-| [Plan before this rewrite](../../artifacts/evidence/plan17-rewrite-20261107/plan-before-rewrite.md) | The full investigation record through 7 November, with the former HTML review beside it. |

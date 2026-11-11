@@ -33,6 +33,46 @@ in the 9 November comparison a replayed click cost the UI thread a median of
 land on a row that moves away.
 The external one-second peer source, summaries, sorting and churn stay unchanged.
 No replay result establishes displayed FPS or physical next-frame acceptance.
+The replay fixture reads a torrent's peers like the product does: `CaptureSource.Peers`
+parses the reply into pooled buffers and the caller disposes the document, so the
+replay allocates the app's own collections. Reading peers into new arrays made
+WinUI force full collections that the product does not cause.
+
+## Comparing two builds
+
+Keep the reference binary in an evidence folder before a second build overwrites
+the output, and give the reference and the new build the same configuration, fixture,
+display and refresh rate. An in-process probe needs both builds to carry it, because
+its cost would bias one side's endpoints. One round is five pairs, alternating,
+the reference first. Before each run, record whether a build or another benchmark
+was running. A difference counts only when all five pairs agree in direction; a
+mixed result is reported as mixed and not run again. Values from different displays
+compare only within a pair.
+
+The click journey records for each press the UI thread's CPU cycles
+(`QueryThreadCycleTime`, `CaptureCycles.Current`) when the press reaches the table
+(`pressCycles`) and at its rendered selection (`renderCycles`). Cycles are the
+UI work of the click and other programs on the machine do not change them;
+milliseconds are what the person waits for, which includes waiting for other work
+and work on other threads. Compare cycles first, then milliseconds. The click's
+wait splits into the press waiting to be handled, the handled press to the
+selection, and the selection to its rendered frame.
+
+Each native press also records what it landed on (`pressedOn`: a row, a leaving
+row whose container has no index, or no row) and the table's gesture state just
+after the press and just before the release (`pressGesture`, `releaseGesture`).
+A press that selected nothing is classified by these records. Replay makes no hit
+test, so the counts of presses lost on a leaving row and of presses handled after
+a view change are checked by source review, not by a replayed run.
+`heavy detail after clicks` records `firstSubjectPictureMs`: the time from the
+release to the first map drawing whose picture shows the subject object that
+selecting the heavy torrent created, stamped on the game loop thread. It is not
+measured when the last click had already selected the heavy torrent.
+
+Which clicks switch the peers table is not fixed: the inspector merges selections
+while the UI thread is busy, so a run sees a different number of switches. The click
+journey therefore cannot show a cost per switch. `Capture.ps1 -Review peer-switch`
+measures a switch alone; see [testing](../../docs/agents/testing.md).
 
 For notification attribution only, set `TINYTORRENT_PERFORMANCE_CHANGES=1` in
 the launching process before one `-Replay -InputOnly` run, then remove it.
@@ -160,6 +200,10 @@ and timeouts expose UI-thread stalls; they do not establish pixel latency.
 `Capture.ps1` owns the workload and saves its counts in `fixture.json` for the
 app to consume. The complete workload remains loaded without scrolling through
 all 50 torrents.
+The selection replay also has a `peer-select-all` phase: Ctrl+A in the Peers
+table, through `SelectAllFromKeyboard` on all 159,810 peers, until the map has
+marked their 1,000 places and drawn them. A trace of this phase shows what the UI
+and render threads still do per selected peer.
 
 Supply Intel PresentMon 2.3.1 through `-PresentMonPath`, or put it at
 `artifacts/tools/PresentMon-2.3.1-x64.exe`. The runner writes `performance.md`,

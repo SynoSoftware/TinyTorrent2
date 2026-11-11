@@ -423,6 +423,17 @@ priority. A newer target cancels callbacks waiting for the previous frame as
 well as its reads. An accepted table selection does not enumerate the torrent
 view again unless it needs correction, so ordinary clicks do no work proportional
 to the number of visible torrents.
+The UI keeps up with the person. A click moves the selection at once and the
+rest follows. A newer click drops the display work that the person no
+longer wants to see, such as the old torrent's reads, row publications and map
+picture, and starts the new torrent's work after the selection's frame, because
+work for a torrent the person has left delays the next click. A click
+cancels display work, never a command: closing a dialog while Apply runs does
+not cancel Apply. A press on a row is never lost, except a press on a row that
+is still invisible as it arrives
+([TableView contract, section 13](../../../lib/TableView/docs/tableview-contract.md#13-selection-and-keyboard-behavior)).
+A click is refused only while the inspector saves an edit, which takes one
+engine round trip.
 Peer and tracker parsing, file-tree construction, piece classification and
 history assembly run in the background. Applying changes to live peers, trackers
 and locations yields after about 16 ms of work, so input can change the target
@@ -527,6 +538,12 @@ has no icon. The shields give the encryption state a compact,
 recognizable context; the tooltip and accessible name retain the full direction
 and explanation. A retained address without a connection shows a dash without
 direction or encryption icons.
+The Connection column sorts by kind, not by its hint sentence: known peers
+first, then TCP, uTP, I2P and HTTP, with outgoing before incoming, so the order
+is the same in every language. A peer cell's tooltip text is bound to its row
+and changes with each update, because a tooltip that WinUI registers lazily does
+not open on the hover that registers it, and Narrator reads the hint from the
+cell's help text.
 The generated Download and Upload headers in Torrents and Peers supply Down
 and Up as TableView `ShortName` alternatives. Torrents also supplies Q for Queue
 and ETA for Time left, so a long heading alone need not keep these columns wide.
@@ -553,6 +570,13 @@ CircleQuestionMark only when the state is unavailable or unrecognized.
 Address shows the IP address without its port, followed by a separate,
 numerically sortable Port column. I2P destinations retain their full address
 and show a dash for Port. Existing peer row identities retain the full endpoint.
+A torrent's peers keep the order in which they first appeared: a join appends
+and a leave removes. The engine lists connected peers first, so its order
+changes whenever a peer connects or disconnects, and following it would rebuild
+the table's rows each time and move the rows of an unsorted table under the
+person. A change to a peer replaces its published record, and records and the
+peer lists built from them are never changed afterwards, so worker threads read
+them without locks.
 Country and City are separate sortable columns after Client.
 Country shows the country's flag at the cell's text size followed by its name;
 City shows the city name when the installed data provides one. The flag is

@@ -602,7 +602,8 @@ or leave at the end. Raising each of 5,000 removals and arrivals at its true
 position costs about 90 ms of native work for rows that are not on screen, and
 building a new row for every held position is the work a click made during the
 switch waits for.
-**Owner ruling: the table never flashes.** Animating a different list's rows
+**Owner ruling: the table never flashes and never breaks the list's
+animation.** Animating a different list's rows
 out and in shows no rows in between, because the list's removals finish before
 its delayed arrivals.
 **Owner ruling: a different list starts at the top.** After that switch the
@@ -616,6 +617,23 @@ selection again.
 What falsifies the rule is a container whose content differs from the view's
 row at its index after a sort, a scroll, or `ScrollIntoView`; the reference
 host's diagnostics section J checks exactly that.
+**Owner ruling: a new sort order keeps its row animation.** Only a switch to a
+different list may change its rows without animation. The owner declined to put
+a new order into the existing rows when most visible rows change: "the
+animations is there for a purpose. it is acceptable to flip it when you change
+the torrent, but not when you switch the sort order because the animation has a
+purpose and your proposal invalidates the purpose of the animation." The
+animation shows where each row went, so the cost of a new order is reduced only
+by what the animation does not need.
+The private view never raises `Move` and never resets the list (`Clear` or
+`Reset`), because the list answers both by dropping and rebuilding its
+containers, and the whole table flashes. This is why the table reconciles the
+private view in place instead of replacing it. A change to the reconciliation,
+or to the notifications the view raises (their kind, order, number or
+positions), is accepted only after two checks: a code review of the table and
+of the WinUI 3 list source in `3rdParty/microsoft-ui-xaml/src/dxaml`, and a
+visual test on screen that shows the rows still animate and nothing flashes. A
+faster mechanism that flashes is a regression, whatever it saves.
 
 A source that implements `INotifyCollectionChanged` is live for membership and
 source-order changes. A plain `IEnumerable` is immutable from the table's
