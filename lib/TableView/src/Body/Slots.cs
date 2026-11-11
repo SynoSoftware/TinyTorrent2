@@ -141,6 +141,7 @@ internal sealed class Slots
         }
         else
         {
+            _map.EnsureCapacity(_map.Count + _joined.Count);
             foreach ((object key, int slot) in _joined)
             {
                 _map.Add(key, slot);
