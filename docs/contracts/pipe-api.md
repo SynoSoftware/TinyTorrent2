@@ -163,7 +163,9 @@ observation per subscription and torrent, each replaced by the latest for its
 key, so an earlier subscription's late message never replaces a newer
 subscription's. A new subscription withdraws the earlier subscription's
 undelivered observations, which the window would drop, so the new view's
-first observation does not wait behind them. The writer
+first observation does not wait behind them. A release withdraws nothing,
+which matters only for the release that a Peers view without one target sends,
+described below. The writer
 alternates ordered frames with these pushed messages, and sends pushed messages
 in the order their keys arrived, so none can starve the others. Every
 snapshot, including an explicit reply, carries a sequence number assigned when
@@ -217,11 +219,33 @@ window's refresh round never waits for it. A new subscription keeps the
 collected facts of the torrents both subscriptions show, so its first
 observation shows them.
 
+A Peers view without one target, all torrents or a multiple selection, is the
+exception when the window invalidates its context, after a command reply or a
+change of selection or section. The window then releases the subscription at
+once and subscribes again a frame later, so the engine ends those collections
+first: the earlier subscription's undelivered observations are still sent, and
+the new subscription's first observations carry no peers. Nothing visible
+changes, because the window keeps its rows when an observation has no peers,
+and a display subscription waits for facts newer than its start either way.
+The release spares the engine from rebuilding every shown torrent's retained
+peer list after each command reply. A change of the scope's torrents
+subscribes again without a release.
+
 Views apply those facts immediately and retain known values while missing ones
 arrive. The window keeps the newest undelivered observation per subscription
 and torrent, and applies all waiting observations in one UI pass. Peer rows are matched within
 the affected torrent, so an ordinary rate or state change updates existing rows
 and keeps their identity instead of rebuilding the whole list.
+
+**Owner ruling: the engine sends each torrent's full peer list, never peer
+changes.** The window finds the changes: a worker matches each list against
+the kept rows, and the UI thread updates only the peers that joined, left or
+changed, plus one copy of the view's row references after a join or a leave.
+Every delivery step replaces or drops whole messages: the engine's
+keyed slot, the withdrawal of an earlier subscription's messages, the receive
+thread's context check and the window's drain. A change message lost at any
+of them would leave the window wrong until a full list arrived, so changes on
+the wire would need a baseline per subscriber and a resync after each drop.
 
 The window parses each observation once, into pooled buffers, and keeps it
 there until the inspector has applied it. A worker reads the peer list from

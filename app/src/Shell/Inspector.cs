@@ -985,8 +985,9 @@ public sealed partial class Inspector : INotifyPropertyChanged
             await reading.CancelAsync().ConfigureAwait(false);
     }
 
-    // The outcome does not matter, and a later subscription often replaces
-    // this one unsent, so it is awaited without throwing.
+    // The outcome does not matter, and while the release is unsent a later
+    // Withdraw can cancel it or a later subscription can replace it, so it is
+    // awaited without throwing.
     private async Task Release() =>
         await ((Task)_client.Release()).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
 
