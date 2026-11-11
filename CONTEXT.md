@@ -246,11 +246,13 @@ membership, such as managed torrents.
 _Avoid_: source alone, which means a torrent file or magnet supplied for addition.
 
 **Disk discovery**: Library's automatic finding of video, music and subtitle
-files on selected local NTFS drives, including changes to their locations.
+files on the fixed drives that gozler indexes, including changes to their
+locations.
 
-**File finder**: the helper process, `TinyTorrentFileFinder.exe`, that reads
-the NTFS metadata and USN change journal of selected drives for disk discovery
-and locates missing torrent files.
+**gozler**: the person's separate file-search program, with its Windows service
+`gozlerd` and its command `gozler.exe`. TinyTorrent runs `gozler.exe --json` for
+disk discovery and to locate moved torrent files. It never replaces an installed
+gozler and never runs a second service.
 _Avoid_: Find, which is the subtitle batch command.
 
 **File presence**: the observed existence or absence of a file at its location,
@@ -363,7 +365,7 @@ Subtitles show it as Search again.
 **Library subtitle search**: the person's request to download subtitles for
 finished movies, chosen as New, Missing data or All selected. Its command is
 Find, which becomes Stop while the batch runs.
-_Avoid_: file finder, which is disk discovery's helper process.
+_Avoid_: gozler, which is the program that disk discovery runs.
 
 **Missing data**: unresolved questions, including both New and locally blocked
 ones. Subtitle matching options still determine what satisfies the request.

@@ -44,14 +44,13 @@ for durable and reconstructed state.
 and storage rules for Library and subtitle requests. Its change index selects
 the retry/reset and IMDb local-data references.
 
-The [disk discovery plan](plans/13-disk-discovery-plan.md) defines the optional NTFS
-C++ helper for video, music and subtitles, plus targeted lookup of missing torrent
-files: its purpose, shared pipe interface, DTOs, memory budget, current-file
-visibility and the engine's recovery hold. Two independent opt-ins start it when
-Library needs discovery or with the engine for movement tracking. Tracking searches
-only after files are noticed missing; neither option builds an all-files index.
-It releases query memory while unused and exits with the engine. Its
-implementation is in progress.
+The [plan for using gozler](plans/13-using-gozler.md) defines how Library finds
+video, music and subtitles, and how the engine finds moved torrent files, by running
+the person's own gozler (`gozler.exe --json`) instead of a TinyTorrent file index:
+the two opt-ins, what the person sees when gozler is missing, stopped, still indexing
+or too old, the install prompt, current-file visibility and the
+engine's recovery hold. TinyTorrent never replaces an installed gozler and never
+runs a second service. It is a draft, to be reviewed before implementation.
 
 [IMDb datasets](contracts/imdb-datasets.md) owns the Library provider that reads IMDb's
 downloadable datasets from a local SQLite file and shows their ratings for
