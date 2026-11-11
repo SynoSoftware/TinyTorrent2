@@ -29,6 +29,13 @@ internal sealed class MapDots<TRoute>(long smallest)
 
     // A route keeps its lane while it carries dots, so its bytes carry over.
     private readonly Dictionary<TRoute, Lane> _lanes = [];
+    // Where the next new lane starts within its first dot, as a share of the dot's bytes.
+    // Steady traffic leaves every route somewhere within its next dot. Lanes that all started
+    // at zero waited a whole dot each, so after a new subject the first dot left only when the
+    // busiest route alone had carried one, about 8 s. Steps of the golden ratio spread the
+    // starts evenly however many lanes begin together.
+    private double _phase;
+    private const double PhaseStep = .618033988749895;
     private readonly List<Dot> _flying = [];
     private int _maximum = 1;
     private double _area;
@@ -58,10 +65,14 @@ internal sealed class MapDots<TRoute>(long smallest)
     internal void Update(Input input, long now)
     {
         Advance(now);
+        List<Lane>? started = null;
         foreach (var traffic in input.Routes.Values)
         {
             if (!_lanes.TryGetValue(traffic.Route, out var lane))
+            {
                 _lanes[traffic.Route] = lane = new Lane();
+                (started ??= []).Add(lane);
+            }
             lane.Down = traffic.Down;
             lane.Up = traffic.Up;
             lane.Trip = traffic.Trip;
@@ -80,6 +91,17 @@ internal sealed class MapDots<TRoute>(long smallest)
         if (Total > 0)
             _target = Fit(input.Needed);
         Settle(now, reshaped);
+        // After Settle, so a new subject's lanes start within its own dot size.
+        if (started is not null && Bytes is { } size)
+        {
+            foreach (var lane in started)
+            {
+                _phase = (_phase + PhaseStep) % 1;
+                lane.Downloaded = _phase * size;
+                _phase = (_phase + PhaseStep) % 1;
+                lane.Uploaded = _phase * size;
+            }
+        }
     }
 
     /// <summary>

@@ -84,7 +84,9 @@ text block uses the font; the name beside it stays in the app's font.
 `Inspector.Place` is the chosen filter for both views. Inspector captures the
 immutable peer-list reference and filter intent on the UI thread, and finds a
 chosen place's rows on a worker only when a join, a leave or a location can
-change them. For the map it gathers each reply that joined or removed a peer or
+change them. That search runs one at a time. A call during a search leaves the
+work to a follower that reads the latest peers and place, so a burst of replies
+searches the population once more, not once per reply. For the map it gathers each reply that joined or removed a peer or
 changed a peer's role, state, rates or location, independently of
 place-filtered rows. A new
 list that no reply describes, such as a new scope, makes the map group every
@@ -100,7 +102,15 @@ population and its changes without enumerating peers or relabelling an old
 subject. One serialized `MapWork` worker owns grouping and estimated
 distribution. It keeps each peer's contribution to its groups, so a change takes
 exactly that off and adds the peer's published record and location; a new
-subject, detail, language or population groups every peer again. It publishes
+subject, detail, language or population groups every peer again, and so does a
+round of changes that names more peers than the population holds. The worker
+keeps its own copy of each contribution rather than the update, because the map
+skips and merges updates: a superseded preparation, a hidden map and a cancelled
+worker each drop some. Taking off what it added and adding the current values
+gives the right totals however many updates it missed, and subtraction is exact
+because the engine sends rates as whole bytes per second. A group's estimated
+mark counts its members that have no point, so taking such a peer off can clear
+it. It publishes
 detached group copies that nobody subsequently mutates, copying a group again
 only after it changed. The UI
 captures size, appearance and selection intent; `MapMotion`'s dedicated render worker
@@ -225,7 +235,9 @@ Borders and routes retain their normal blending.
 Outline tracing yields at bounded source-point, ring and border-piece
 checkpoints. A map traces every country that has no outline yet before it draws
 its land, without the renderer's rebuild budget, so the map's first picture
-shows all of its land before any arc. Tracing the world takes about 0.1 s on
+shows all of its land before any arc. The border pieces that this first
+picture shows take their first stroke without the budget, so it shows the
+borders with the land. Tracing the world takes about 0.1 s on
 the worker, once per map. Retracing at another detail checks the budget at each
 checkpoint before continuing. A complete
 old outline stays visible until its replacement is complete; nearby strokes are
@@ -241,7 +253,12 @@ Win2D draws bundled Natural Earth geometry and great-circle guides, not measured
 network paths. Guides adaptively subdivide curved segments to a quarter-DIP
 tolerance at their retained scale. Zooming in refines only visible guides in
 powers of two within the rebuild budget; panning and zooming out reuse that
-detail. The existing guide stays visible until refinement finishes. Their
+detail. The existing guide stays visible until refinement finishes. Guides,
+country outlines and the glow are rebuilt for a new view only when it rests, a
+quarter second after its last change; while it moves they keep what they have,
+and the glow moves with the map. A zoom reaches a new detail every few frames,
+so work done while the view moves is soon replaced, and doing it made each
+drawing several times longer. Their
 overview length stays fixed for dot timing, and both drawing and
 motion use conservative analytical bounds at polar crests. Active arcs use a
 fixed logarithmic speed scale and the app's
@@ -346,8 +363,13 @@ others.
 - **Size.** The smallest value in the series 1, 1.5, 2, 3, 4, 6 … KiB that
   keeps the mean dots in flight at 80% of the target and every route within
   its spacing. It rises at once and falls only after ten seconds of lower
-  traffic, so the legend does not flicker; a resize or a new animation
-  choice applies at once. Dots
+  traffic, so the legend does not flicker; a resize, a new animation
+  choice and a new subject's first traffic apply at once, so another
+  torrent's peers do not wait ten seconds under the last one's size. A new
+  route starts its count somewhere within its first dot, spread evenly over
+  the routes that start together, as a route in steady traffic is; from zero,
+  a new subject's first dot left only when its busiest route alone had
+  carried a whole dot, about 8 s. Dots
   launched before a change keep their size until they land.
 - **Ceiling.** The connection capacity that Connection setup saved, when
   both directions are above zero; otherwise the highest total of this engine
@@ -434,6 +456,14 @@ rebuild or what it draws of the places changes: their arcs, role kinds,
 activity, colour and strengths. A strength change below one colour level is
 kept for later, so a steady transfer redraws nothing. Border strokes that a
 picture drew from another scale are replaced on the render worker.
+Each drawing draws the whole map, so refinement that needs its own drawing
+costs a whole map for the few strokes it changed. Each fade step therefore
+draws once, and an arc width that a fade step changed waits for the next step,
+which draws anyway. The glow is recorded once per fade step. Widths that a
+fade's last drawing leaves at an earlier width wait in a queue; passes that
+draw nothing rebuild them, as they do stale border strokes, and the map draws
+once when the queue is empty. Without this rule a fade drew at every frame, 37
+to 59 times in an idle second.
 Geometry preparation uses bounded passes, reading the latest inputs between
 them; no preparation is spread across UI frames. The glow is recorded again
 only when what it shows can change.
@@ -454,7 +484,25 @@ the arcs, the scene and the places that have a connection. The third adds every
 other place. The presenter does not draw the arcs layer of the first
 publication, because the worker is still drawing it; the second publication
 completes it. A cancellation between publications leaves
-the last one on screen, and the next pass prepares and draws the picture again.
+the last one on screen, and the next pass prepares and draws the picture again,
+because the map counts its input as applied only after the last publication.
+Each publication has an inspection with its own list of places, so hit testing
+and the accessible description follow what is shown, and the display changes
+once per publication. A later picture of the same subject publishes whole,
+because three publications on every poll would make its arcs disappear and come
+back.
+
+The land publication holds all of the land and nothing is drawn twice. The first
+picture of a map traces every country that has no outline yet before it draws
+the land, outside the 6 ms rebuild allowance: tracing in slices took 14 to 24
+drawings, each showing arcs over missing countries and drawing them again. The
+retrace after a zoom waits for the view's rest and keeps the allowance, because a complete coarser outline
+stays on screen meanwhile. The land publication also holds the activity shading
+of estimated countries, because drawing it later would draw the fills twice.
+The map takes a new subject when the next torrent's rows arrive and keeps its
+last picture until then. When they arrive before the old subject's connections
+are drawn, the old land stays on screen until the new subject's land replaces
+it; when they arrive later, the old connections are published first.
 
 Grouping returns only geographic facts; it cannot restore captured selection
 or hover. The Inspector owns a subject identity that survives ordinary refreshes.
@@ -470,11 +518,20 @@ without joining the worker on WinUI. The worker retires geometry after its
 native call finishes and retires returned targets after the game loop stops.
 Worker device-loss errors use CanvasDevice.RaiseDeviceLost to initiate recovery.
 Country tracing prepares border strokes inside the overscan window before
-publishing the complete outline. A visible border or arc creates its first
-cached stroke once on the worker, avoiding repeated uncached tessellation when
-the refinement allowance is exhausted. Retained strokes remain visible while the allowance
-replaces them for the current width and scale. Refining an arc replaces its
-cached strokes and brushes together, so they follow the new guide.
+publishing the complete outline. A visible arc creates its first cached stroke
+once on the worker, avoiding repeated uncached tessellation when the refinement
+allowance is exhausted. A border piece's first stroke takes the allowance like a
+replacement, except in the drawing that first traces a map's land, and a piece
+without one is drawn in a later pass: a country traced
+at a new detail needs a stroke for every piece, and making them all in one
+drawing held the device the game loop presents with for up to 2.8 s. Retained
+strokes remain visible while the allowance replaces them for the current width
+and scale. Refining an arc replaces its cached strokes, so they follow the new
+guide, and keeps its core brush, which depends only on the end points, colour
+and scale. A route that leaves the shown routes keeps its arc and core brush for
+its place's return and releases its strokes, which hold most of an arc's native
+memory. The map reports ready only after the work left for the view's rest is
+drawn, so a capture sees the finished map.
 Rate-strength transitions keep the current smooth fade. A new observation
 preserves the pending visible step's deadline, so frequent updates cannot keep
 postponing all visible progress.

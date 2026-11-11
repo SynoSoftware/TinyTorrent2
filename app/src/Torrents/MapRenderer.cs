@@ -995,8 +995,7 @@ internal sealed class MapRenderer : IDisposable
         var up = palette.Upload;
         var contrast = HighContrast;
         var progress = Progress;
-        if (draw is not null)
-            TraceLand(cancellation);
+        var first = draw is not null && TraceLand(cancellation);
         _rebuildUntil = Stopwatch.GetTimestamp() + RebuildBudget;
         if (draw is not null)
         {
@@ -1131,7 +1130,7 @@ internal sealed class MapRenderer : IDisposable
                             cancellation.ThrowIfCancellationRequested();
                             if (!piece.Extent.Moved(360 * turn).Overlaps(visible))
                                 continue;
-                            if (Stroked(piece) is not { } stroke)
+                            if (Stroked(piece, first) is not { } stroke)
                                 continue;
                             if (!IsCurrent(stroke.Scale, BorderTolerance))
                                 _staleBorders.Enqueue(piece);
@@ -1357,17 +1356,23 @@ internal sealed class MapRenderer : IDisposable
     /// the land would take many drawings, each showing arcs over missing countries. This runs
     /// once per map; a cancellation keeps the outlines already traced.
     /// </summary>
-    private void TraceLand(CancellationToken cancellation)
+    /// <returns>Whether it traced a country, as the first drawing of a map's land does.</returns>
+    private bool TraceLand(CancellationToken cancellation)
     {
         _rebuildUntil = long.MaxValue;
+        var found = false;
         foreach (var country in _world.Values)
         {
             cancellation.ThrowIfCancellationRequested();
             if (country.Rings.Length == 0 || _land.ContainsKey(country.Code))
                 continue;
             if (Trace(country) is { } traced)
+            {
                 _land[country.Code] = traced;
+                found = true;
+            }
         }
+        return found;
     }
 
     // The complete old outline stays usable until its replacement is ready;
@@ -1451,10 +1456,12 @@ internal sealed class MapRenderer : IDisposable
     // A piece's first stroke takes the rebuild budget like any other. Every country traced at
     // a new detail needs strokes for all its pieces, and making them in one drawing held the
     // shared device for up to 2.8 s, so the game loop could not present. A piece without a
-    // stroke draws in a later pass.
-    private Stroke? Stroked(Piece piece)
+    // stroke draws in a later pass. The drawing that first traces a map's land is the
+    // exception: no piece has a stroke yet, so the pieces it shows take theirs at once, and
+    // the map's first picture has its borders.
+    private Stroke? Stroked(Piece piece, bool first)
     {
-        if (piece.Stroke is null && MayRebuild())
+        if (piece.Stroke is null && (first || MayRebuild()))
             Restroke(piece);
         return piece.Stroke;
     }
@@ -1547,8 +1554,8 @@ internal sealed class MapRenderer : IDisposable
     // a realization looks the same; one
     // further off, or made at another outline detail, still draws, a little too
     // wide, narrow or coarse, until its turn. A country's outline is traced
-    // again at the current detail only when it shows, so a zoom spends the same
-    // budget on tracing, and only on countries that show.
+    // again at the current detail only when it shows and the view rests, so
+    // the budget goes only to countries that show.
     // A border carries half a DIP of ink. Below one physical pixel its
     // antialiasing breaks into uneven steps, so it widens to a pixel and Draw
     // fades its colour to keep the same ink.
