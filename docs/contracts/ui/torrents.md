@@ -582,6 +582,9 @@ CircleQuestionMark only when the state is unavailable or unrecognized.
 Address shows the IP address without its port, followed by a separate,
 numerically sortable Port column. I2P destinations retain their full address
 and show a dash for Port. Existing peer row identities retain the full endpoint.
+Address sorts IP addresses by their numeric value, so 198.67.9.9 comes before
+198.67.9.89, with IPv4 before IPv6; an address that is not an IP address, such
+as an I2P destination, comes last, by its text.
 A torrent's peers keep the order in which they first appeared: a join appends
 and a leave removes. The engine lists connected peers first, so its order
 changes whenever a peer connects or disconnects, and following it would rebuild

@@ -311,6 +311,12 @@ most probable placement, where a second connection stays in a 90% region
 instead of spreading to a 10% one, and checks that the regions used take all of
 a country's traffic. It does not cover merging places into regions or drawing.
 
+`app/tests/AddressChecks.ps1 -BinaryDirectory <built-app-folder>` checks the
+peers table's Address order without starting WinUI. It watches the reader of
+address text: an IPv4 or IPv6 address it misreads sorts as text again, so
+`198.67.9.9` falls between `198.67.9.89` and `198.67.9.90`. It does not check
+which key the Address column registers.
+
 Use this machine and the targeted checks below for the
 [architecture](../contracts/architecture.md).
 Lifecycle behavior needs a real process check when it changes; a cache-policy

@@ -193,7 +193,7 @@ public sealed partial class InspectorPane : UserControl
             case InspectorSection.Peers:
                 // A swarm keeps one peer object per endpoint, so a row is its peer.
                 var schema = Peers.Schema<Peer>();
-                SortPeers(schema, AddressColumn, peer => peer.Address, Peer.Properties.None);
+                SortPeers(schema, AddressColumn, peer => new PeerAddress(peer.Address), Peer.Properties.None);
                 SortPeers(schema, PortColumn, peer => peer.Port, Peer.Properties.None);
                 SortPeers(schema, ClientColumn, peer => peer.Client, Peer.Properties.Client);
                 SortPeers(schema, CountryColumn, peer => peer.CountryText, Peer.Properties.CountryText);
