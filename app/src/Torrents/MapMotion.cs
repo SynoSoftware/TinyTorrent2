@@ -785,7 +785,7 @@ internal sealed class MapMotion : IDisposable
         cancellation.ThrowIfCancellationRequested();
         _highlight = highlight;
         var ready = Volatile.Read(ref _ready);
-        if (!_again && !renderer.HasStaleStrokes && !ready.Task.IsCompleted)
+        if (!_again && !renderer.HasStaleStrokes && !renderer.WaitsForRest && !ready.Task.IsCompleted)
             _dispatcher.TryEnqueue(() =>
             {
                 if (!_disposed && ReferenceEquals(input, _input) && view == _view)

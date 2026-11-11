@@ -43,10 +43,11 @@ internal sealed class MapRenderer : IDisposable
     // kept between updates to reuse its capacity.
     private readonly Dictionary<DestinationKey, Route> _previousRoutes = [];
     // Routes whose place the subject lacks, and the arcs of places that left the shown routes,
-    // newest first. They keep their arc and brushes for when the place shows again, up to the arc
-    // limit, and the longest-unused leaves first. Every input of those resources is the origin,
-    // the meridian, the device and the DPI, and the scale each resource checks itself, so a
-    // change of origin or meridian, and Dispose, release the cache.
+    // newest first. They keep their arc and core brush for when the place shows again, up to the
+    // arc limit, and the longest-unused leaves first; their strokes are released (Depart). Every
+    // input of those resources is the origin, the meridian, the device and the DPI, and the scale
+    // each resource checks itself, so a change of origin or meridian, and Dispose, release the
+    // cache.
     private readonly LinkedList<Route> _departed = [];
     private readonly Dictionary<DestinationKey, LinkedListNode<Route>> _departedByKey = [];
     // The destinations whose routes draw an arc: the active ones with the highest rates, up to
@@ -73,6 +74,12 @@ internal sealed class MapRenderer : IDisposable
     private GlowInputs? _glowInputs;
     // Whether the glow's latest rebuild made every stroke it needed.
     private bool _glowComplete;
+    // Whether the drawing left work for the view's rest: a glow that moved with the view, or
+    // guides and outlines not traced at the current detail.
+    private bool _restWaits;
+    // Counts the changes to the strengths, arcs and stroke widths that the glow records.
+    private int _strokes;
+    private long _viewMoved;
     private int _arrangement;
     private double _originStrength;
     // Miter joins spike past the line at sharp outline corners.
@@ -117,7 +124,26 @@ internal sealed class MapRenderer : IDisposable
     internal bool Animates { get; set; }
     internal bool HighContrast { get; set; }
     internal MapMotion.Scene? Scene { get; private set; }
-    internal TimeSpan? Delay => NextStep() is { } wait ? wait < Frame ? Frame : wait : null;
+    internal TimeSpan? Delay
+    {
+        get
+        {
+            var wait = NextStep();
+            if (_restWaits)
+            {
+                var rest = TimeSpan.FromSeconds(
+                    Math.Max(0, _viewMoved + Rest - Stopwatch.GetTimestamp()) / (double)Stopwatch.Frequency);
+                wait = wait is { } step && step < rest ? step : rest;
+            }
+            return wait is { } value ? value < Frame ? Frame : value : null;
+        }
+    }
+
+    // A pan or zoom has ended when its view has not changed for a quarter
+    // second; the pointer moves and wheel notches of one gesture come faster.
+    private static readonly long Rest = Stopwatch.Frequency / 4;
+
+    private bool Moving => Stopwatch.GetTimestamp() - _viewMoved < Rest;
     internal static bool SystemHighContrast => SystemAccessibility.HighContrast;
 
     internal MapAnimation Animation { get; set; } = MapAnimation.Normal;
@@ -128,6 +154,8 @@ internal sealed class MapRenderer : IDisposable
     internal void UseView(MapViewport viewport)
     {
         viewport.Meridian = _viewport.Meridian;
+        if (viewport.Transform != _viewport.Transform)
+            _viewMoved = Stopwatch.GetTimestamp();
         _viewport = viewport;
     }
 
@@ -141,13 +169,15 @@ internal sealed class MapRenderer : IDisposable
 
     internal bool Advance()
     {
+        // The view's rest draws the work the motion left.
+        var rested = _restWaits && !Moving;
         if (!Animated)
-            return false;
+            return rested;
         var progress = Progress;
         var changed = progress != _shownProgress;
         _shownProgress = progress;
         _interpolating = progress < 1;
-        return changed;
+        return changed || rested;
     }
 
     /// <summary>The time until activity takes its next step, or null when it does not interpolate.</summary>
@@ -381,9 +411,8 @@ internal sealed class MapRenderer : IDisposable
         // New observations must not keep postponing a pending visible step.
         if (_interpolating && next is { } wait && wait.TotalSeconds < Fade / _steps)
             _started -= (long)((Fade / _steps - wait.TotalSeconds) * Stopwatch.Frequency);
-        // The glow's inputs hold no strengths.
         if (change > 0)
-            _glowInputs = null;
+            _strokes++;
         _shownProgress = Progress;
         _prepared = true;
         // A fade redraws at its own steps, starting from the drawn strengths.
@@ -956,6 +985,9 @@ internal sealed class MapRenderer : IDisposable
         var measured = Stopwatch.GetTimestamp();
 #endif
         UpdateDetail();
+        // A new subject's land and arcs drawings each keep the work the other left.
+        if (draw is not null && arcDrawing is not null)
+            _restWaits = false;
         var ink = palette.Ink;
         var land = palette.Land;
         var edge = palette.Edge;
@@ -992,16 +1024,21 @@ internal sealed class MapRenderer : IDisposable
                 if (route.Arc is null || route.Scale >= _viewport.ViewScale
                     || !(Reaches(route, -1) || Reaches(route, 0) || Reaches(route, 1)))
                     continue;
+                // A zoom passes the next power of two within a fraction of a second, so a guide
+                // refined while the view moves is soon refined again, and refining made those
+                // drawings 3 to 4 times longer.
+                if (Moving)
+                {
+                    _restWaits = true;
+                    break;
+                }
                 if (!MayRebuild())
                     break;
                 // Retain finer guides when zooming out; only visible routes refine.
                 var detail = MathF.Pow(2, MathF.Ceiling(MathF.Log2(_viewport.ViewScale)));
                 var arc = Arc(route.Path, detail, out _, out var segments);
-                route.Release();
-                route.Arc = arc;
-                route.Segments = segments;
-                route.Scale = detail;
-                ReleaseGlow();
+                route.Refine(arc, segments, detail);
+                _strokes++;
             }
         }
         // Prioritise the selected routes before map drawing uses its rebuild budget.
@@ -1058,10 +1095,13 @@ internal sealed class MapRenderer : IDisposable
                         cancellation.ThrowIfCancellationRequested();
                         if (!traced.Extent.Moved(360 * turn).Overlaps(visible))
                             continue;
-                        var outline =
-                            traced.Detail == _detail || !MayRebuild()
-                                ? traced
-                                : Retrace(code, traced);
+                        // A zoom reaches a new detail every few frames, so an outline traced
+                        // while the view moves is soon replaced. As with guides, it is traced
+                        // once, at the view's rest.
+                        var stale = traced.Detail != _detail;
+                        if (stale && Moving)
+                            _restWaits = true;
+                        var outline = !stale || Moving || !MayRebuild() ? traced : Retrace(code, traced);
                         var fill = land;
                         if (_model.Countries.TryGetValue(code, out var group) && group.Estimated)
                         {
@@ -1091,7 +1131,8 @@ internal sealed class MapRenderer : IDisposable
                             cancellation.ThrowIfCancellationRequested();
                             if (!piece.Extent.Moved(360 * turn).Overlaps(visible))
                                 continue;
-                            var stroke = Stroked(piece);
+                            if (Stroked(piece) is not { } stroke)
+                                continue;
                             if (!IsCurrent(stroke.Scale, BorderTolerance))
                                 _staleBorders.Enqueue(piece);
                             ApplyStroke(draw, stroke, transform, ref applied);
@@ -1151,10 +1192,21 @@ internal sealed class MapRenderer : IDisposable
                         // glow that kept a stroke from another scale is rebuilt
                         // only while budget is left, because without budget it
                         // would record the same strokes again. Border work left
-                        // over from a zoom does not rebuild it.
-                        var inputs = new GlowInputs(view, _viewport.Size, down, up, _arrangement, highlight.Selection, progress);
+                        // over from a zoom does not rebuild it. While the view
+                        // moves, the glow moves with the map and keeps its
+                        // strengths and strokes until the view rests, because
+                        // recording it at every step of a pan made each drawing
+                        // about 7 ms longer.
+                        var inputs = new GlowInputs(view, _viewport.Size, down, up, _arrangement, _strokes,
+                            highlight.Selection, progress);
+                        Matrix3x2? recordedView = null;
+                        if (!contrast && Moving && _glowBlur is not null && _glowInputs is { } recorded
+                            && recorded with { View = view, Strokes = _strokes, Progress = progress } == inputs)
+                            recordedView = recorded.View;
+                        _restWaits |= recordedView is not null && (_glowInputs != inputs || !_glowComplete);
                         if (
                             !contrast
+                            && recordedView is null
                             && (
                                 _glowInputs != inputs
                                 || _glowBlur is null
@@ -1213,7 +1265,12 @@ internal sealed class MapRenderer : IDisposable
                             _rebuildPending |= pending;
                         }
                         if (!contrast && _glowBlur is not null)
+                        {
+                            if (recordedView is { } from && Matrix3x2.Invert(from, out var inverse))
+                                arcDrawing.Transform = inverse * view;
                             arcDrawing.DrawImage(_glowBlur);
+                            arcDrawing.Transform = Matrix3x2.Identity;
+                        }
 #if CAPTURE
                         Measure("glow", ref measured);
 #endif
@@ -1391,15 +1448,22 @@ internal sealed class MapRenderer : IDisposable
         return geometry;
     }
 
-    private Stroke Stroked(Piece piece)
+    // A piece's first stroke takes the rebuild budget like any other. Every country traced at
+    // a new detail needs strokes for all its pieces, and making them in one drawing held the
+    // shared device for up to 2.8 s, so the game loop could not present. A piece without a
+    // stroke draws in a later pass.
+    private Stroke? Stroked(Piece piece)
     {
-        if (piece.Stroke is null)
+        if (piece.Stroke is null && MayRebuild())
             Restroke(piece);
-        return piece.Stroke!.Value;
+        return piece.Stroke;
     }
 
     /// <summary>Whether border or arc strokes wait for <see cref="RebuildStrokes"/>.</summary>
     internal bool HasStaleStrokes => _staleBorders.Count > 0 || _unstyled.Count > 0;
+
+    /// <summary>Whether the last drawing left work for the view's rest.</summary>
+    internal bool WaitsForRest => _restWaits;
 
     /// <summary>
     /// Replaces stale border and arc strokes within a fresh budget on frames that draw no picture.
@@ -1437,8 +1501,7 @@ internal sealed class MapRenderer : IDisposable
             paint.Restyle();
             _unstyled.Dequeue();
         }
-        // The glow holds the strokes it recorded.
-        _glowInputs = null;
+        _strokes++;
         _invalidate();
     }
 
@@ -1540,16 +1603,14 @@ internal sealed class MapRenderer : IDisposable
             );
     }
 
-    /// <summary>
-    /// What the route glow depends on besides the strengths a fade starts from and moves to,
-    /// which <see cref="Prepare"/> changes only by clearing the kept inputs.
-    /// </summary>
+    /// <summary>What the route glow depends on.</summary>
     private readonly record struct GlowInputs(
         Matrix3x2 View,
         Size Size,
         Color Down,
         Color Up,
         int Arrangement,
+        int Strokes,
         IReadOnlySet<DestinationKey>? Selection,
         double Progress
     );
@@ -1841,8 +1902,18 @@ internal sealed class MapRenderer : IDisposable
         /// </summary>
         internal float Degrees { get; set; }
 
-        /// <summary>The brushes for <see cref="Arc"/>; it shares the arc's lifetime.</summary>
+        /// <summary>The brushes for <see cref="Arc"/>; a refined guide keeps them (<see cref="Refine"/>).</summary>
         internal Paint? Paint { get; set; }
+
+        /// <summary>Replaces the guide with a finer one of the same path.</summary>
+        internal void Refine(CanvasGeometry arc, Vector2[] segments, float detail)
+        {
+            _arc?.Dispose();
+            Arc = arc;
+            Segments = segments;
+            Scale = detail;
+            Paint?.Trace(arc);
+        }
 
         private Inspection.Target? _target;
 
@@ -1898,7 +1969,7 @@ internal sealed class MapRenderer : IDisposable
         Depart(route);
     }
 
-    /// <summary>Keeps a leaving route's arc and brushes for its place's return, or releases it when it has none.</summary>
+    /// <summary>Keeps a leaving route's arc and core brush for its place's return, or releases it when it has none.</summary>
     private void Depart(Route route)
     {
         if (route.Arc is null)
@@ -1906,6 +1977,7 @@ internal sealed class MapRenderer : IDisposable
             route.Release();
             return;
         }
+        route.Paint?.ReleaseStrokes();
         _departedByKey[route.Destination.Key] = _departed.AddFirst(route);
         while (_departed.Count > ArcLimit)
         {
@@ -1945,8 +2017,10 @@ internal sealed class MapRenderer : IDisposable
     // adds native memory pressure that can force a full garbage collection.
     // Each arc therefore keeps its core brush and strokes, and a frame only
     // sets their size and opacity. A route that leaves the subject or the
-    // shown routes keeps them in _departed, so they are not built again when
-    // its place returns. They follow the map's scale under its rebuild limit.
+    // shown routes keeps its core brush in _departed, so it is not built again
+    // when its place returns; the strokes, which hold most of the native
+    // memory, are made again. They follow the map's scale under its rebuild
+    // limit.
     // The arc stays owned by its route; its endpoints are geographic
     // coordinates.
     private sealed class Paint(
@@ -1955,7 +2029,7 @@ internal sealed class MapRenderer : IDisposable
         GeoPoint origin
     ) : IDisposable
     {
-        private readonly CanvasGeometry _arc = route.Arc!;
+        private CanvasGeometry _arc = route.Arc!;
         private readonly Vector2 _start = map._viewport.Coordinates(origin);
         private readonly Vector2 _end = map._viewport.Coordinates(route.Destination.Point);
         private CanvasRadialGradientBrush? _core;
@@ -1977,6 +2051,26 @@ internal sealed class MapRenderer : IDisposable
         internal Stroke Glow(float width) => Realize(ref _glow, ref _glowWidth, ref _glowWanted, width);
 
         internal Stroke Line(float width) => Realize(ref _line, ref _lineWidth, ref _lineWanted, width);
+
+        /// <summary>
+        /// Releases the strokes, which hold most of an arc's native memory, and keeps the core
+        /// brush, which takes the longest to create and depends only on the end points, colour
+        /// and scale. The next drawing makes the strokes again.
+        /// </summary>
+        internal void ReleaseStrokes()
+        {
+            _glow?.Geometry.Dispose();
+            _line?.Geometry.Dispose();
+            _glow = null;
+            _line = null;
+        }
+
+        /// <summary>Follows a refined guide of the same route; see <see cref="ReleaseStrokes"/>.</summary>
+        internal void Trace(CanvasGeometry arc)
+        {
+            ReleaseStrokes();
+            _arc = arc;
+        }
 
         /// <summary>
         /// Rebuilds the strokes a drawing left at an earlier width, whatever the budget, which
