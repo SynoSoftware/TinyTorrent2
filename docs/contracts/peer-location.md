@@ -193,22 +193,33 @@ from the installed city database are grouped at identical positions.
 Destinations closer than the place grouping distance at the shown zoom show as
 one: one arc, one light and one set of dots, landing at the place with the most
 peers, as map applications group nearby markers at each zoom level. The map
-menu's Place grouping submenu offers Less, Normal and More: 25 DIPs at Normal,
-half at Less and double at More, saved with the peer view and starting at
-Normal. Zooming in separates them and zooming out joins them. The distance is
-measured on the map as the default view draws it, with longitude relative to
-the origin's meridian and no wrap across the seam, because places on either
-side of the seam are drawn a map width apart. Each place joins the nearest
+menu's Place grouping submenu offers None, Small, Medium and Large: 25 DIPs at
+Medium, half at Small and double at Large, saved with the peer view and
+starting at Medium. At None, only places whose points lie inside another
+place's dot, closer than the dot's 1.5-DIP radius, show as one, because two
+dots that close read as one; every other place is its own destination. Zooming in
+separates them and zooming out joins them. The distance is measured on the map
+as the default view draws it, with longitude relative to the origin's meridian
+and no wrap across the seam, because places on either side of the seam are
+drawn a map width apart. Each place joins the nearest
 landing closer than that distance or becomes a landing, so landings lie that
 far apart and a line of close places does not chain into one destination. The
-merges change when the view rests, also after a vertical pan, which changes the
-horizontal scale, after a held drag only once it is released, and at once on a
-resize or a new place grouping. They are made again whole for a new scale,
-meridian, subject, detail or place grouping. Between those, each place keeps its landing while that shows, so peer
-counts that change on every poll never move an arc; a place that joins merges
-with the nearest landing or shows on its own. A merged destination's arc,
-colour, dots and rank under the arc limit come from the sum of its places'
-drawn rates, each estimated region counting its share. Its description names
+merge applies to every destination: cities, estimated regions and, in
+Countries detail, countries; each country keeps its own fill. The merges change
+when the view rests, also after a vertical pan, which changes the horizontal
+scale, after a held drag only once it is released, and at once on a resize or
+a new place grouping. Wheel steps and keys that wait while the UI thread is
+busy count as view changes, so a stall never ends a rest in the middle of a
+gesture. A held zoom key regroups once after its first step, because the
+keyboard waits about half a second before it repeats. The merges are made again
+whole for a new scale, meridian, subject, detail or place grouping. Between
+those, each place keeps its landing while that shows, so peer counts that
+change on every poll never move an arc; a place that joins merges with the
+nearest landing or shows on its own, and when a landing leaves, its other
+places merge again. At a rest that merges routes, the merged-away arcs and
+their moving dots leave together and the landing's arc takes their rate. A
+merged destination's arc, colour, dots and rank under the arc limit come from
+the sum of its places' drawn rates, each estimated region counting its share. Its description names
 its landing and counts its other places, with the totals of each place's
 peers once, and says country-only when any place is estimated. A city name or
 a bundled country polygon is not required to plot a supplied coordinate. The

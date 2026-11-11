@@ -23,7 +23,7 @@ public sealed partial class MainWindow
             Animation = MapAnimation.Slow,
             DotTotal = MapDotTotal.High,
             ArcLimit = 50,
-            Grouping = MapGrouping.More,
+            Grouping = MapGrouping.Large,
         };
         try
         {

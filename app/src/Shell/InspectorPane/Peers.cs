@@ -160,9 +160,10 @@ public sealed partial class InspectorPane
                 text.Get("peer_map", "grouping"),
                 Segoe.Merge,
                 [
-                    Grouping("grouping_less", MapGrouping.Less),
-                    Grouping("grouping_normal", MapGrouping.Normal),
-                    Grouping("grouping_more", MapGrouping.More),
+                    Grouping("grouping_none", MapGrouping.None),
+                    Grouping("grouping_small", MapGrouping.Small),
+                    Grouping("grouping_medium", MapGrouping.Medium),
+                    Grouping("grouping_large", MapGrouping.Large),
                 ]
             ),
             new MenuSubmenu(

@@ -49,7 +49,7 @@ public sealed partial class PeerMap : UserControl
     private MapAnimation _animation = MapAnimation.Normal;
     private MapDotTotal _dotTotal = MapDotTotal.Normal;
     private int _arcLimit = MapRenderer.DefaultLimit;
-    private MapGrouping _grouping = MapGrouping.Normal;
+    private MapGrouping _grouping = MapGrouping.Medium;
 #if CAPTURE
     internal Action<double>? FrameMeasured { get; set; }
     internal Action<double>? PreparationMeasured { get; set; }

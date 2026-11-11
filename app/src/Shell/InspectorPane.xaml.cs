@@ -615,6 +615,6 @@ public sealed record PeerView(PeerLayout Layout, double Side, double Stacked)
     public MapAnimation Animation { get; init; } = MapAnimation.Normal;
     public MapDotTotal DotTotal { get; init; } = MapDotTotal.Normal;
     public int ArcLimit { get; init; } = MapRenderer.DefaultLimit;
-    public MapGrouping Grouping { get; init; } = MapGrouping.Normal;
+    public MapGrouping Grouping { get; init; } = MapGrouping.Medium;
     internal static PeerView Default { get; } = new(PeerLayout.Both, .55, .5);
 }

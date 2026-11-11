@@ -85,7 +85,9 @@ It represents aggregate transfer activity, not an individual network connection
 or a measured network path.
 
 **Place grouping**: how far apart map destinations may lie and still show as
-one: 25 DIPs at Normal, half at Less and double at More.
+one: 25 DIPs at Medium, half at Small and double at Large. At None, only
+places whose points lie inside another place's dot, closer than 1.5 DIPs, show
+as one.
 
 **Arc limit**: the maximum number of active destination arcs shown at once.
 _Avoid_: connection limit, which limits network connections.

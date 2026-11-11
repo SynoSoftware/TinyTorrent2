@@ -183,7 +183,7 @@ above them. Arcs and their moving dots convey transfer activity.
 Roughly 500–700 arcs from 1,000 locations is the
 owner's expected collapse behavior at this resolution, not a target the fixture
 enforces. Locations closer than 25 DIPs at the shown zoom show as one
-destination at the default Normal place grouping, so the arc count depends on
+destination at the default Medium place grouping, so the arc count depends on
 the zoom the journey holds.
 
 The journey opens the global map with Ctrl+Shift+M, pans at 1× for one second

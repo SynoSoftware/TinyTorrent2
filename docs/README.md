@@ -64,10 +64,8 @@ country data installed with the app, the city data the person downloads
 through the same dataset path as IMDb data, and the flags.
 It also owns the native peer map and its estimated country distribution.
 The contract also owns moving dots, activity fades, the configurable fastest-arc
-limit and retained, budgeted map preparation. GitHub tracks remaining map defects.
-
-The [close destinations plan](plans/20-close-destinations.md) merges map
-destinations that lie close together at the shown zoom into one arc.
+limit, the merge of close destinations with its Place grouping choice and
+retained, budgeted map preparation. GitHub tracks remaining map defects.
 
 [Licences](contracts/licences.md) holds release rights, provider attribution and the
 unresolved distribution questions.

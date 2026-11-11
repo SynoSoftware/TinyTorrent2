@@ -435,12 +435,15 @@ public enum MapDotTotal
     High,
 }
 
-// How far apart peer map destinations may lie and still show as one.
+// How far apart peer map destinations may lie and still show as one. The saved
+// peer view stores the grouping as its number, so members keep their positions;
+// the menu order is separate.
 public enum MapGrouping
 {
-    Less,
-    Normal,
-    More,
+    Small,
+    Medium,
+    Large,
+    None,
 }
 
 public enum PieceKind

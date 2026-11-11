@@ -686,11 +686,13 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
             _previous.Clear();
         }
 
-        // How far apart destinations on the shown map may lie and still show as one.
+        // How far apart destinations on the shown map may lie and still show as one. At None,
+        // only places whose points lie inside another place's dot do.
         private float Distance => _merged.Grouping switch
         {
-            MapGrouping.Less => Spacing / 2,
-            MapGrouping.More => Spacing * 2,
+            MapGrouping.None => MapMotion.MarkerRadius,
+            MapGrouping.Small => Spacing / 2,
+            MapGrouping.Large => Spacing * 2,
             _ => Spacing,
         };
 
@@ -774,8 +776,8 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
             location?.Point ?? (location is null ? null : world.GetValueOrDefault(location.Code)?.Anchor);
 
         // Places closer than this many DIPs are too close to tell apart: bundled places on the
-        // fitted map form one region, and destinations on the shown map show as one at Normal
-        // grouping.
+        // fitted map form one region, and destinations on the shown map show as one at Medium
+        // place grouping.
         private const float Spacing = 25;
 
         /// <summary>
