@@ -353,7 +353,8 @@ session that read saved runs and traces. Add each new answer here.
   five pairs of the peer table switch capture show a switch at about 40% of its
   earlier cycles (median 140 against 349 megacycles) and its busiest frame at
   less than half. Rounds 1 to 3 and the switch capture of
-  [plan 18](18-keep-up-with-the-person.md), 9 November.
+  the keep-up plan (plan 18), 9 November. That plan is closed and deleted;
+  `git show bfceaa2:docs/plans/18-keep-up-with-the-person.md` shows its text.
 
 **Allocation and engine copies**
 

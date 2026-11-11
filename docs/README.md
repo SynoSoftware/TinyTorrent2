@@ -75,10 +75,6 @@ preserved map handoff and settled decisions, the questions already
 investigated, how a change is judged, what still interrupts the person, the
 hard lines, the steps and the recorded comparisons.
 
-The [keep-up plan](plans/18-keep-up-with-the-person.md) holds the click-first
-work. Its steps are built, and round 24 found the click no slower than its
-reference build; closing it is the owner's decision.
-
 The [close destinations plan](plans/20-close-destinations.md) merges map
 destinations that lie close together at the shown zoom into one arc.
 
