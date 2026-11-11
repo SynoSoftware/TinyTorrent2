@@ -65,7 +65,8 @@ public static class PerformanceSource
     public static Task<Status> State(string pipe, int? afterTick = null, CancellationToken cancellation = default) =>
         Read<Status>(pipe, new(ReadKind.Status, AfterTick: afterTick), cancellation);
     public static Task<bool> SetViewport(string pipe, Viewport viewport) => Read<bool>(pipe, new(ReadKind.Viewport, Viewport: viewport));
-    public static string Endpoint(int torrent, int row) => $"198.{18 + torrent}.{row / 256}.{row % 256}:51413";
+    public static string Endpoint(int torrent, int row) =>
+        $"198.{18 + torrent}.{row / 256}.{row % 256}:{49152 + (torrent * 977 + row * 7919) % 16384}";
 
     private static async Task<T> Read<T>(string name, Request request, CancellationToken cancellation = default)
     {

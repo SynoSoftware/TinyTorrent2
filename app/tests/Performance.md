@@ -138,9 +138,11 @@ It runs the unchanged setup up to the docked all-peers map, starts the
 once-per-second peer source and the 250-per-second connection churn at once,
 and then runs no scripted input. The window fills the main display's work area
 without taking focus; click it to use it. The source runs until the window is
-closed, and closing it ends the run with the usual cleanup. A hold run measures
-nothing and writes no performance report. While it is open, other capture
-reviews wait for the capture lock.
+closed, and closing it ends the run with the usual cleanup. Exit from the menu
+or the tray ends the app without that path and stops the engine, so the
+launcher then reports "Pipe is broken" and exit 1; nothing is lost, and nothing
+stays running. A hold run measures nothing and writes no performance report.
+While it is open, other capture reviews wait for the capture lock.
 
 ```powershell
 pwsh -NoProfile -File .\app\tests\Capture.ps1 -Review performance-selection -Configuration Release -BinaryDirectory '<printed build output>' -MapDetail cities -ArcLimit 1000 -Replay -InputOnly -Hold
