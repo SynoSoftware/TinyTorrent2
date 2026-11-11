@@ -19,6 +19,10 @@ internal sealed class MapRenderer : IDisposable
 #if CAPTURE
     internal Action<string, double>? WorkMeasured { get; set; }
     internal Action<CancellationToken>? RoutePrepared { get; set; }
+    // What asked for the next picture, recorded when that picture starts, and the caller
+    // whose rebuild the budget refused first in the latest picture.
+    private string? _redraw;
+    private string? _refused;
 
     private void Measure(string phase, ref long started)
     {
@@ -72,10 +76,8 @@ internal sealed class MapRenderer : IDisposable
     private CanvasCommandList? _glowLines;
     private GaussianBlurEffect? _glowBlur;
     private GlowInputs? _glowInputs;
-    // Whether the glow's latest rebuild made every stroke it needed.
-    private bool _glowComplete;
-    // Whether the drawing left work for the view's rest: a glow that moved with the view, or
-    // guides and outlines not traced at the current detail.
+    // Whether work waits for the view's rest: a view left undrawn (Postpone), a glow that moved
+    // with the view, or guides and outlines not traced at the current detail.
     private bool _restWaits;
     // Counts the changes to the strengths, arcs and stroke widths that the glow records.
     private int _strokes;
@@ -91,7 +93,7 @@ internal sealed class MapRenderer : IDisposable
     private bool _rebuildPending;
     // Border pieces the latest picture drew from another scale.
     private readonly Queue<Piece> _staleBorders = new();
-    // Arcs a picture drew at an earlier width after a fade ended; see MayRestyle.
+    // Arcs a picture drew at an earlier width or scale; see MayRestyle.
     private readonly Queue<Paint> _unstyled = new();
 
     private float _detail;
@@ -157,6 +159,22 @@ internal sealed class MapRenderer : IDisposable
         if (viewport.Transform != _viewport.Transform)
             _viewMoved = Stopwatch.GetTimestamp();
         _viewport = viewport;
+    }
+
+    /// <summary>
+    /// Leaves the view's drawing to its rest, for a caller whose latest picture, drawn at
+    /// <paramref name="scale"/>, covers the view. Returns false, and leaves nothing, when the
+    /// view does not move or that scale no longer looks the same.
+    /// </summary>
+    internal bool Postpone(Vector2 scale)
+    {
+        if (!Moving || !IsCurrent(scale))
+        {
+            return false;
+        }
+
+        _restWaits = true;
+        return true;
     }
 
     internal void UseModel(MapModel.Presentation model) => _model = model;
@@ -542,7 +560,12 @@ internal sealed class MapRenderer : IDisposable
             break;
         }
         if (completed is null)
+        {
             _rebuildPending = true;
+#if CAPTURE
+            _refused ??= nameof(Trace);
+#endif
+        }
 #if CAPTURE
         Measure("trace slice", ref started);
 #endif
@@ -1001,6 +1024,15 @@ internal sealed class MapRenderer : IDisposable
         {
             _rebuildPending = false;
             _staleBorders.Clear();
+#if CAPTURE
+            if (_redraw is not null)
+            {
+                WorkMeasured?.Invoke("again " + _redraw, 0);
+            }
+
+            _redraw = null;
+            _refused = null;
+#endif
         }
         // The view shows one turn of longitude around its centre. A shape near
         // a map edge also draws a turn away, so it continues on the other side.
@@ -1188,10 +1220,9 @@ internal sealed class MapRenderer : IDisposable
                     {
                         // The blurred glow is kept while its inputs stay the same.
                         // Animation changes it at every step, not at every pass. A
-                        // glow that kept a stroke from another scale is rebuilt
-                        // only while budget is left, because without budget it
-                        // would record the same strokes again. Border work left
-                        // over from a zoom does not rebuild it. While the view
+                        // glow that recorded a stroke from another scale is
+                        // recorded again when RestyleArcs has replaced the
+                        // strokes, which _strokes counts. While the view
                         // moves, the glow moves with the map and keeps its
                         // strengths and strokes until the view rests, because
                         // recording it at every step of a pan made each drawing
@@ -1202,19 +1233,9 @@ internal sealed class MapRenderer : IDisposable
                         if (!contrast && Moving && _glowBlur is not null && _glowInputs is { } recorded
                             && recorded with { View = view, Strokes = _strokes, Progress = progress } == inputs)
                             recordedView = recorded.View;
-                        _restWaits |= recordedView is not null && (_glowInputs != inputs || !_glowComplete);
-                        if (
-                            !contrast
-                            && recordedView is null
-                            && (
-                                _glowInputs != inputs
-                                || _glowBlur is null
-                                || (!_glowComplete && MayRebuild())
-                            )
-                        )
+                        _restWaits |= recordedView is not null && _glowInputs != inputs;
+                        if (!contrast && recordedView is null && (_glowInputs != inputs || _glowBlur is null))
                         {
-                            var pending = _rebuildPending;
-                            _rebuildPending = false;
                             ReleaseGlow();
                             _glowLines = new CanvasCommandList(_device);
                             using (var halo = _glowLines.CreateDrawingSession())
@@ -1260,8 +1281,6 @@ internal sealed class MapRenderer : IDisposable
                                 CacheOutput = true,
                             };
                             _glowInputs = inputs;
-                            _glowComplete = !_rebuildPending;
-                            _rebuildPending |= pending;
                         }
                         if (!contrast && _glowBlur is not null)
                         {
@@ -1314,7 +1333,12 @@ internal sealed class MapRenderer : IDisposable
         if (arcDrawing is not null)
             StrokeStaleBorders(cancellation);
         if (_rebuildPending)
+        {
+#if CAPTURE
+            _redraw = "rebuild " + _refused;
+#endif
             _invalidate();
+        }
 #if CAPTURE
         Measure("marks and rebuild", ref measured);
 #endif
@@ -1469,7 +1493,7 @@ internal sealed class MapRenderer : IDisposable
     /// <summary>Whether border or arc strokes wait for <see cref="RebuildStrokes"/>.</summary>
     internal bool HasStaleStrokes => _staleBorders.Count > 0 || _unstyled.Count > 0;
 
-    /// <summary>Whether the last drawing left work for the view's rest.</summary>
+    /// <summary>Whether work waits for the view's rest.</summary>
     internal bool WaitsForRest => _restWaits;
 
     /// <summary>
@@ -1495,7 +1519,7 @@ internal sealed class MapRenderer : IDisposable
 
     // A picture drawn for each few strokes rebuilt spent most of its time
     // drawing the arcs that had not changed, so the arcs a drawing left at an
-    // earlier width are rebuilt here, and drawn once when all are done.
+    // earlier width or scale are rebuilt here, and drawn once when all are done.
     private void RestyleArcs(CancellationToken cancellation)
     {
         if (_unstyled.Count == 0)
@@ -1509,6 +1533,9 @@ internal sealed class MapRenderer : IDisposable
             _unstyled.Dequeue();
         }
         _strokes++;
+#if CAPTURE
+        _redraw = "arcs";
+#endif
         _invalidate();
     }
 
@@ -1535,6 +1562,9 @@ internal sealed class MapRenderer : IDisposable
             }
             _staleBorders.Dequeue();
         }
+#if CAPTURE
+        _redraw = "borders";
+#endif
         _invalidate();
     }
 
@@ -1627,11 +1657,19 @@ internal sealed class MapRenderer : IDisposable
     private bool InBudget => Stopwatch.GetTimestamp() < _rebuildUntil;
 
     // Work this refuses draws the map again; border strokes test InBudget.
-    private bool MayRebuild()
+    private bool MayRebuild(
+#if CAPTURE
+        [System.Runtime.CompilerServices.CallerMemberName] string member = "",
+        [System.Runtime.CompilerServices.CallerLineNumber] int line = 0
+#endif
+    )
     {
         if (InBudget)
             return true;
         _rebuildPending = true;
+#if CAPTURE
+        _refused ??= $"{member}:{line}";
+#endif
         return false;
     }
 
@@ -1639,12 +1677,16 @@ internal sealed class MapRenderer : IDisposable
     // which draws again with a new budget and changes many widths again.
     // Drawing again at once would draw the whole map at every frame of a fade
     // for the few strokes the budget allows in each drawing. After the fade
-    // the arc waits for RestyleArcs.
-    private bool MayRestyle(Paint paint)
+    // the arc waits for RestyleArcs. An arc made for another scale waits there
+    // during a fade too, because no step of the fade brings that scale back.
+    // It does not ask for another drawing, as MayRebuild does: the arcs draw
+    // last, so with many arcs the budget has ended before the later ones in
+    // every drawing, and drawing again would never rebuild them.
+    private bool MayRestyle(Paint paint, bool rescaled)
     {
         if (InBudget)
             return true;
-        if (!_interpolating && !paint.Waits)
+        if ((rescaled || !_interpolating) && !paint.Waits)
         {
             paint.Waits = true;
             _unstyled.Enqueue(paint);
@@ -2052,7 +2094,7 @@ internal sealed class MapRenderer : IDisposable
         private float _lineWanted;
         private bool _disposed;
 
-        /// <summary>Whether the map's queue of arcs left at an earlier width holds this one.</summary>
+        /// <summary>Whether the map's queue of arcs left at an earlier width or scale holds this one.</summary>
         internal bool Waits { get; set; }
 
         internal Stroke Glow(float width) => Realize(ref _glow, ref _glowWidth, ref _glowWanted, width);
@@ -2080,18 +2122,29 @@ internal sealed class MapRenderer : IDisposable
         }
 
         /// <summary>
-        /// Rebuilds the strokes a drawing left at an earlier width, whatever the budget, which
-        /// the caller keeps to.
+        /// Rebuilds the strokes and the core brush a drawing left at an earlier width or scale,
+        /// whatever the budget, which the caller keeps to.
         /// </summary>
         internal void Restyle()
         {
             Waits = false;
-            if (_disposed)
+            // An arc without its line has left the picture since it was queued, and it is
+            // rebuilt when it draws again.
+            if (_disposed || _line is null)
+            {
                 return;
-            if (_line is { } line && map.IsCurrent(line.Scale))
-                Rebuild(ref _line, ref _lineWidth, _lineWanted);
-            if (_glow is { } glow && map.IsCurrent(glow.Scale))
+            }
+
+            Rebuild(ref _line, ref _lineWidth, _lineWanted);
+            if (_glow is not null)
+            {
                 Rebuild(ref _glow, ref _glowWidth, _glowWanted);
+            }
+
+            if (_core is not null && !map.IsCurrent(_coreScale))
+            {
+                CreateCore(_coreColour);
+            }
         }
 
         private Stroke Realize(
@@ -2105,7 +2158,7 @@ internal sealed class MapRenderer : IDisposable
             if (stroke is { } cached)
             {
                 var current = map.IsCurrent(cached.Scale);
-                if (current && made == width || !(current ? map.MayRestyle(this) : map.MayRebuild()))
+                if (current && made == width || !map.MayRestyle(this, rescaled: !current))
                     return cached;
             }
             return Rebuild(ref stroke, ref made, width);
@@ -2131,22 +2184,12 @@ internal sealed class MapRenderer : IDisposable
             if (
                 _core is null
                 || _coreColour != colour
-                || (!map.IsCurrent(_coreScale) && map.MayRebuild())
+                || (!map.IsCurrent(_coreScale) && map.MayRestyle(this, rescaled: true))
             )
             {
-                var scale = map._viewport.AxisScale;
-                var length = Math.Max(1, ((_end - _start) * scale).Length());
-                _core?.Dispose();
-                _core = new CanvasRadialGradientBrush(map._device, CoreStops(colour, length))
-                {
-                    Center = _end,
-                    RadiusX = length / scale.X,
-                    RadiusY = length / scale.Y,
-                };
-                _coreColour = colour;
-                _coreScale = scale;
-                _coreTransform = Matrix3x2.Identity;
+                CreateCore(colour);
             }
+
             var transform = Matrix3x2.CreateScale(_line?.Scale ?? Vector2.One);
             if (_coreTransform != transform)
             {
@@ -2154,6 +2197,23 @@ internal sealed class MapRenderer : IDisposable
                 _coreTransform = transform;
             }
             return _core;
+        }
+
+        [MemberNotNull(nameof(_core))]
+        private void CreateCore(Color colour)
+        {
+            var scale = map._viewport.AxisScale;
+            var length = Math.Max(1, ((_end - _start) * scale).Length());
+            _core?.Dispose();
+            _core = new CanvasRadialGradientBrush(map._device, CoreStops(colour, length))
+            {
+                Center = _end,
+                RadiusX = length / scale.X,
+                RadiusY = length / scale.Y,
+            };
+            _coreColour = colour;
+            _coreScale = scale;
+            _coreTransform = Matrix3x2.Identity;
         }
 
         // A method of its own, because a lambda that captures the colour

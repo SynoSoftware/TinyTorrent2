@@ -691,7 +691,7 @@ internal sealed class MapMotion : IDisposable
         var previous = _appliedInput;
         var previousView = _appliedView;
         var first = _renderer is null;
-        var margin = new Vector2((float)view.Size.Width, (float)view.Size.Height) / 8;
+        var margin = Margin(view);
         var raster = view with
         {
             Size = new(view.Size.Width + 2 * margin.X, view.Size.Height + 2 * margin.Y),
@@ -751,11 +751,28 @@ internal sealed class MapMotion : IDisposable
         DrawingStarted?.Invoke(cancellation);
 #endif
         cancellation.ThrowIfCancellationRequested();
-        var draw = phased || _again || viewChanged || changed || input.Palette != previous?.Palette
+        // The game loop moves the latest picture with the view, so a pan that picture still
+        // covers draws no new one until the view rests.
+        var postponed = viewChanged && _completed is { } latest && Covers(latest.View, view)
+            && renderer.Postpone(latest.View.AxisScale);
+        var draw = phased || _again || (viewChanged && !postponed) || changed || input.Palette != previous?.Palette
             || highlight != _highlight || input.Background != previous?.Background
             || input.HighContrast != previous?.HighContrast;
 #if CAPTURE
-        draw |= Interlocked.Exchange(ref _captureRedraw, 0) != 0;
+        var captureRedraw = Interlocked.Exchange(ref _captureRedraw, 0) != 0;
+        draw |= captureRedraw;
+        // What made the pass draw, one letter per cause, so a capture shows which input keeps
+        // the worker drawing: P phase, A again, V view (c when the latest picture covered it),
+        // C activity, L palette, H highlight, B background, K contrast, R capture redraw.
+        if (draw)
+        {
+            var covered = viewChanged && !postponed && _completed is { } shown && Covers(shown.View, view);
+            measurements.Add(("draw " + string.Concat(phased ? "P" : "", _again ? "A" : "",
+                viewChanged && !postponed ? covered ? "Vc" : "V" : "", changed ? "C" : "",
+                input.Palette != previous?.Palette ? "L" : "", highlight != _highlight ? "H" : "",
+                input.Background != previous?.Background ? "B" : "", input.HighContrast != previous?.HighContrast ? "K" : "",
+                captureRedraw ? "R" : ""), 0));
+        }
 #endif
         if (draw)
         {
@@ -805,6 +822,34 @@ internal sealed class MapMotion : IDisposable
             });
         }
 #endif
+    }
+
+    /// <summary>How much of the map a picture holds beyond each edge of its view, in DIPs.</summary>
+    private static Vector2 Margin(MapView view) =>
+        new Vector2((float)view.Size.Width, (float)view.Size.Height) / 8;
+
+    /// <summary>
+    /// Whether a picture drawn for <paramref name="drawn"/> shows all of <paramref name="view"/>
+    /// at the same zoom, with half its margin to spare for the time a new picture takes.
+    /// </summary>
+    private static bool Covers(MapView drawn, MapView view)
+    {
+        if (drawn.Size != view.Size || drawn.Meridian != view.Meridian || drawn.AxisScale.Y != view.AxisScale.Y)
+        {
+            return false;
+        }
+
+        var size = new Vector2((float)view.Size.Width, (float)view.Size.Height);
+        // The view's centre wraps at 180°, so its corners are placed in the turn
+        // nearest the picture.
+        var turn = new Vector2(MapViewport.Wrap(view.Center.X, drawn.Center.X) - view.Center.X, 0);
+        var low = Vector2.Transform(view.ToMap(Vector2.Zero) + turn, drawn.Transform);
+        var high = Vector2.Transform(view.ToMap(size) + turn, drawn.Transform);
+        var spare = Margin(view) / 2;
+        return low.X >= -spare.X
+            && low.Y >= -spare.Y
+            && high.X <= size.X + spare.X
+            && high.Y <= size.Y + spare.Y;
     }
 
     private void OnUpdate(ICanvasAnimatedControl sender, CanvasAnimatedUpdateEventArgs args)

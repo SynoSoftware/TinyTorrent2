@@ -421,7 +421,14 @@ Navigation publishes an immutable view immediately. The presenter transforms
 the latest completed image into that view while the worker draws its exact
 replacement from vector geometry, independently of peer aggregation. Pictures
 include one eighth of a viewport of extra geography at each edge; wrapped
-copies meet at the world boundary. Geography draws first, then location lights,
+copies meet at the world boundary. A pan that keeps the zoom draws no
+replacement while the latest picture shows the whole view with half that
+margin to spare and its horizontal scale, which follows the latitude, is
+within 5% of the view's. The presenter's move of that picture already shows
+such a view, and drawing one for every view repeated that work about 60 times
+a second. The worker draws the replacement when the margin runs short, at an
+activity-fade step, and when the view has rested for a quarter second. A zoom
+draws at every step. Geography draws first, then location lights,
 then arcs, then moving packets. Markers and packets draw in the current view at
 their normal DIP sizes. The render worker prepares marker map
 coordinates, theme tints and emphasis sizes with
@@ -451,7 +458,8 @@ thread; dots already in flight never wait. All dots are one sprite batch. A
 control with a new device stays hidden until it has shown its first frame,
 because until then it can show black.
 
-The map's picture is drawn again only when the view, appearance, inspection, a pending
+The map's picture is drawn again only when the view needs a new one, as
+described above, or the appearance, inspection, a pending
 rebuild or what it draws of the places changes: their arcs, role kinds,
 activity, colour and strengths. A strength change below one colour level is
 kept for later, so a steady transfer redraws nothing. Border strokes that a
@@ -459,10 +467,14 @@ picture drew from another scale are replaced on the render worker.
 Each drawing draws the whole map, so refinement that needs its own drawing
 costs a whole map for the few strokes it changed. Each fade step therefore
 draws once, and an arc width that a fade step changed waits for the next step,
-which draws anyway. The glow is recorded once per fade step. Widths that a
-fade's last drawing leaves at an earlier width wait in a queue; passes that
-draw nothing rebuild them, as they do stale border strokes, and the map draws
-once when the queue is empty. Without this rule a fade drew at every frame, 37
+which draws anyway. The glow is recorded once per fade step. An arc that a
+fade's last drawing leaves at an earlier width, or that any drawing leaves
+with a stroke or core brush made for another scale, waits in a queue; passes
+that draw nothing rebuild the queued arcs, as they do stale border strokes, and
+the map draws once when the queue is empty. An arc made for another scale does
+not ask for another drawing, because the arcs draw last: with more arcs than
+the 6 ms allowance reaches, every drawing refused the later arcs, so the map
+drew again without end and never rebuilt them. Without this rule a fade drew at every frame, 37
 to 59 times in an idle second.
 Geometry preparation uses bounded passes, reading the latest inputs between
 them; no preparation is spread across UI frames. The glow is recorded again
