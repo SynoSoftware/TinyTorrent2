@@ -171,6 +171,13 @@ public sealed partial class MainWindow
                 .Select(index => surface.Items[index]).ToArray();
         }
 
+        // The containers the list's panel holds against its cache range, because a container the
+        // panel keeps outside that range still takes a new row after each change.
+        static object? Containers(Syno.TableView.Table table) =>
+            Read<ListView?>(table, "_surface")?.ItemsPanelRoot is ItemsStackPanel panel
+                ? new { children = panel.Children.Count, firstCache = panel.FirstCacheIndex, lastCache = panel.LastCacheIndex }
+                : null;
+
         Vector2 Screen(FrameworkElement element, Point point)
         {
             var position = element.TransformToVisual(Root).TransformPoint(point);
@@ -243,12 +250,12 @@ public sealed partial class MainWindow
             if (Stopwatch.GetElapsedTime(lastTableSample, now).TotalMilliseconds >= 100)
             {
                 lastTableSample = now;
-                tables.Add(new { phase, qpc = now, table = "torrents", subject = "all",
+                tables.Add(new { phase, qpc = now, table = "torrents", subject = "all", containers = Containers(Torrents),
                     rows = VisibleRows(Torrents).OfType<Torrent>().Select(torrent => new { key = torrent.TorrentId, rate = torrent.DownloadRate }).ToArray() });
                 if (InspectorContent.Content is InspectorPane current && current.FindName("Peers") is Syno.TableView.Table table)
                 {
                     ObserveChanges(table, "peers");
-                    tables.Add(new { phase, qpc = now, table = "peers", subject = inspector.Target?.TorrentId ?? "all",
+                    tables.Add(new { phase, qpc = now, table = "peers", subject = inspector.Target?.TorrentId ?? "all", containers = Containers(table),
                         rows = VisibleRows(table).OfType<Peer>().Select(peer => new { key = peer.TorrentId + "/" + peer.Endpoint, rate = peer.DownloadRate }).ToArray() });
                 }
             }
