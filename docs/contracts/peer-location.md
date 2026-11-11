@@ -190,18 +190,21 @@ arrangement and uses the larger one. `MapViewport` owns that scale calculation,
 so layout and projection agree. Combined views retain separate split proportions,
 using the same accessible Splitter as the inspector frame. Coordinates
 from the installed city database are grouped at identical positions.
-Destinations closer than 25 DIPs at the shown zoom show as one: one arc, one
-light and one set of dots, landing at the place with the most peers, as map
-applications group nearby markers at each zoom level. Zooming in separates
-them and zooming out joins them. The distance is measured on the map as the
-default view draws it, with longitude relative to the origin's meridian and no
-wrap across the seam, because places on either side of the seam are drawn a
-map width apart. Each place joins the nearest landing closer than 25 DIPs or
-becomes a landing, so landings lie 25 DIPs apart and a line of close places
-does not chain into one destination. The merges change when the view rests,
-also after a vertical pan, which changes the horizontal scale, after a held
-drag only once it is released, and at once on a resize. They are made again whole for a new scale, meridian, subject or
-detail. Between those, each place keeps its landing while that shows, so peer
+Destinations closer than the place grouping distance at the shown zoom show as
+one: one arc, one light and one set of dots, landing at the place with the most
+peers, as map applications group nearby markers at each zoom level. The map
+menu's Place grouping submenu offers Less, Normal and More: 25 DIPs at Normal,
+half at Less and double at More, saved with the peer view and starting at
+Normal. Zooming in separates them and zooming out joins them. The distance is
+measured on the map as the default view draws it, with longitude relative to
+the origin's meridian and no wrap across the seam, because places on either
+side of the seam are drawn a map width apart. Each place joins the nearest
+landing closer than that distance or becomes a landing, so landings lie that
+far apart and a line of close places does not chain into one destination. The
+merges change when the view rests, also after a vertical pan, which changes the
+horizontal scale, after a held drag only once it is released, and at once on a
+resize or a new place grouping. They are made again whole for a new scale,
+meridian, subject, detail or place grouping. Between those, each place keeps its landing while that shows, so peer
 counts that change on every poll never move an arc; a place that joins merges
 with the nearest landing or shows on its own. A merged destination's arc,
 colour, dots and rank under the arc limit come from the sum of its places'

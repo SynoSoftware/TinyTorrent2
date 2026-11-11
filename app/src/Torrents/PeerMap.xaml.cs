@@ -49,6 +49,7 @@ public sealed partial class PeerMap : UserControl
     private MapAnimation _animation = MapAnimation.Normal;
     private MapDotTotal _dotTotal = MapDotTotal.Normal;
     private int _arcLimit = MapRenderer.DefaultLimit;
+    private MapGrouping _grouping = MapGrouping.Normal;
 #if CAPTURE
     internal Action<double>? FrameMeasured { get; set; }
     internal Action<double>? PreparationMeasured { get; set; }
@@ -198,6 +199,16 @@ public sealed partial class PeerMap : UserControl
             return;
         _arcLimit = limit;
         Invalidate();
+    }
+
+    internal void SetGrouping(MapGrouping grouping)
+    {
+        if (_grouping == grouping)
+        {
+            return;
+        }
+        _grouping = grouping;
+        QueuePreparation();
     }
 
     /// <summary>
@@ -362,6 +373,7 @@ public sealed partial class PeerMap : UserControl
             Model = snapshot,
             Scale = _viewport.Scale,
             Shown = new Vector2(_rested.Ratio, 1) * (_viewport.Scale * _rested.Zoom),
+            Grouping = _grouping,
         };
     }
 

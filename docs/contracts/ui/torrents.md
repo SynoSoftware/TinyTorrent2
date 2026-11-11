@@ -642,8 +642,9 @@ totals. Both lines align to the edge of Speed's corner, so a longer second
 line never moves the totals, and the second line keeps its height while
 empty. A place name too long for the map trims with an ellipsis, so its
 connections and rates always show. The shared peer-view
-menu offers the map's [Animation and Total dots](../peer-location.md#moving-dots)
-submenus, then Speed position: Top-left, Bottom-left or Bottom-right, saved with
+menu offers the map's [Place grouping](../peer-location.md#map),
+[Animation and Total dots](../peer-location.md#moving-dots) submenus, then
+Speed position: Top-left, Bottom-left or Bottom-right, saved with
 the peer layout and starting at Bottom-right. Top-right stays reserved for the
 map's close button. The zoom and Fit controls sit at the bottom centre, so
 moving Speed never moves them.

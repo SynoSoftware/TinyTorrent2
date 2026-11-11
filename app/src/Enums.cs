@@ -435,6 +435,14 @@ public enum MapDotTotal
     High,
 }
 
+// How far apart peer map destinations may lie and still show as one.
+public enum MapGrouping
+{
+    Less,
+    Normal,
+    More,
+}
+
 public enum PieceKind
 {
     Unavailable,

@@ -76,13 +76,16 @@ _Avoid_: destination, when referring to the peers included by a place filter.
 
 **Map destination**: a position representing peers on the map, either at supplied
 coordinates or in an estimated populated region. Several estimated destinations
-can represent the same peer place. Positions closer than 25 DIPs at the shown
-zoom show as one destination that stands for all their peer places, landing at
-the place with the most peers.
+can represent the same peer place. Positions closer than the place grouping
+distance at the shown zoom show as one destination that stands for all their
+peer places, landing at the place with the most peers.
 
 **Map arc**: a guide between the user's location and one active map destination.
 It represents aggregate transfer activity, not an individual network connection
 or a measured network path.
+
+**Place grouping**: how far apart map destinations may lie and still show as
+one: 25 DIPs at Normal, half at Less and double at More.
 
 **Arc limit**: the maximum number of active destination arcs shown at once.
 _Avoid_: connection limit, which limits network connections.

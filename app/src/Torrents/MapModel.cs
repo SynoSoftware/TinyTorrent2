@@ -290,7 +290,7 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
         // Where the groups place their peers, before close ones show as one destination.
         private readonly List<Placement> _placed = [];
         // What the last merge placed the destinations for; a change merges every placement again.
-        private (object? Subject, bool Cities, float Meridian, Vector2 Shown) _merged;
+        private (object? Subject, bool Cities, float Meridian, Vector2 Shown, MapGrouping Grouping) _merged;
         // Kept for Merge's capacity: each placement's index by key, its point on the shown map,
         // its landing's index, the order the unplaced ones are taken in, the next landing in its
         // grid cell, the next member of its landing, each landing's last member, and the last
@@ -528,10 +528,11 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
 
         /// <summary>
         /// Places the groups' destinations on the map fitted at <paramref name="scale"/> DIPs
-        /// per degree, and shows the destinations closer than <see cref="Spacing"/> DIPs on the
-        /// map shown at <paramref name="shown"/> DIPs per degree of longitude and latitude as one.
+        /// per degree, and shows the destinations that <paramref name="grouping"/> finds too close
+        /// on the map shown at <paramref name="shown"/> DIPs per degree of longitude and latitude
+        /// as one.
         /// </summary>
-        internal void Arrange(float scale, Vector2 shown)
+        internal void Arrange(float scale, Vector2 shown, MapGrouping grouping)
         {
             OriginPoint = Locate(Origin, _world);
             if (_regionsFor != (Meridian, scale))
@@ -569,7 +570,7 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
             }
             if (placed < _placed.Count)
                 _placed.RemoveRange(placed, _placed.Count - placed);
-            Merge(shown);
+            Merge(shown, grouping);
 
             void Place(Group group, GeoPoint point, double share, string? area)
             {
@@ -588,22 +589,23 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
             }
         }
 
-        // Shows the placements closer than Spacing on the shown map as one destination. Each
-        // placement taken joins the nearest landing closer than Spacing, or becomes a landing,
-        // so landings lie at least Spacing apart and a line of close places cannot chain into
-        // one destination. Distance is straight on the map as drawn at the default view: the
+        // Shows the placements closer than Distance on the shown map as one destination. Each
+        // placement taken joins the nearest landing closer than Distance, or becomes a landing,
+        // so landings lie at least Distance apart and a line of close places cannot chain into
+        // one destination. It is measured straight on the map as drawn at the default view: the
         // seam there is the map's left and right edges, and places on either side of it are
-        // drawn a map width apart. A grid of Spacing-sized cells finds the near landings,
+        // drawn a map width apart. A grid of Distance-sized cells finds the near landings,
         // because the places can number in the thousands. Called alone, it merges the
         // placements of the last Arrange, so no fact, fitted scale or origin may have changed.
-        internal void Merge(Vector2 shown)
+        internal void Merge(Vector2 shown, MapGrouping grouping)
         {
             var count = _placed.Count;
-            // A new scale, seam, subject or detail takes every placement, most peers first, so
-            // each destination lands at its member with the most peers. Otherwise each placement
-            // keeps its landing while that shows, so changing peer counts never move an arc.
-            var whole = _merged != (_subject, Cities, Meridian, shown);
-            _merged = (_subject, Cities, Meridian, shown);
+            // A new scale, seam, subject, detail or grouping takes every placement, most peers
+            // first, so each destination lands at its member with the most peers. Otherwise each
+            // placement keeps its landing while that shows, so changing peer counts never move an
+            // arc.
+            var whole = _merged != (_subject, Cities, Meridian, shown, grouping);
+            _merged = (_subject, Cities, Meridian, shown, grouping);
             _indexes.Clear();
             _positions.Clear();
             _landing.Clear();
@@ -684,8 +686,16 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
             _previous.Clear();
         }
 
+        // How far apart destinations on the shown map may lie and still show as one.
+        private float Distance => _merged.Grouping switch
+        {
+            MapGrouping.Less => Spacing / 2,
+            MapGrouping.More => Spacing * 2,
+            _ => Spacing,
+        };
+
         private (int Column, int Row) Cell(Vector2 position) =>
-            ((int)MathF.Floor(position.X / Spacing), (int)MathF.Floor(position.Y / Spacing));
+            ((int)MathF.Floor(position.X / Distance), (int)MathF.Floor(position.Y / Distance));
 
         private void Land(int index)
         {
@@ -694,12 +704,12 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
             _cells[cell] = index;
         }
 
-        // The landing closer than Spacing to position, or -1 when none is.
+        // The landing closer than Distance to position, or -1 when none is.
         private int Nearest(Vector2 position)
         {
             var (column, row) = Cell(position);
             var nearest = -1;
-            var distance = Spacing;
+            var distance = Distance;
             for (var across = -1; across <= 1; across++)
             {
                 for (var down = -1; down <= 1; down++)
@@ -764,7 +774,8 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
             location?.Point ?? (location is null ? null : world.GetValueOrDefault(location.Code)?.Anchor);
 
         // Places closer than this many DIPs are too close to tell apart: bundled places on the
-        // fitted map form one region, and destinations on the shown map show as one.
+        // fitted map form one region, and destinations on the shown map show as one at Normal
+        // grouping.
         private const float Spacing = 25;
 
         /// <summary>

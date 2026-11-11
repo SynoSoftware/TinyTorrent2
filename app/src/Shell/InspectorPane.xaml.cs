@@ -49,6 +49,7 @@ public sealed partial class InspectorPane : UserControl
                 Animation = Enum.IsDefined(view.Animation) ? view.Animation : PeerView.Default.Animation,
                 DotTotal = Enum.IsDefined(view.DotTotal) ? view.DotTotal : PeerView.Default.DotTotal,
                 ArcLimit = view.ArcLimit > 0 ? view.ArcLimit : PeerView.Default.ArcLimit,
+                Grouping = Enum.IsDefined(view.Grouping) ? view.Grouping : PeerView.Default.Grouping,
             };
             var peers = value.Peers;
             if (
@@ -614,5 +615,6 @@ public sealed record PeerView(PeerLayout Layout, double Side, double Stacked)
     public MapAnimation Animation { get; init; } = MapAnimation.Normal;
     public MapDotTotal DotTotal { get; init; } = MapDotTotal.Normal;
     public int ArcLimit { get; init; } = MapRenderer.DefaultLimit;
+    public MapGrouping Grouping { get; init; } = MapGrouping.Normal;
     internal static PeerView Default { get; } = new(PeerLayout.Both, .55, .5);
 }

@@ -157,6 +157,15 @@ public sealed partial class InspectorPane
                 }).ToArray()
             ),
             new MenuSubmenu(
+                text.Get("peer_map", "grouping"),
+                Segoe.Merge,
+                [
+                    Grouping("grouping_less", MapGrouping.Less),
+                    Grouping("grouping_normal", MapGrouping.Normal),
+                    Grouping("grouping_more", MapGrouping.More),
+                ]
+            ),
+            new MenuSubmenu(
                 text.Get("peer_map", "animation"),
                 Segoe.Play,
                 [
@@ -213,6 +222,9 @@ public sealed partial class InspectorPane
         MenuChoice DotTotal(string key, MapDotTotal total) =>
             Choice(key, view.DotTotal == total, view with { DotTotal = total });
 
+        MenuChoice Grouping(string key, MapGrouping grouping) =>
+            Choice(key, view.Grouping == grouping, view with { Grouping = grouping });
+
         MenuChoice Choice(string key, bool selected, PeerView choice, bool enabled = true) =>
             new(
                 text.Get("peer_map", key),
@@ -227,6 +239,7 @@ public sealed partial class InspectorPane
                     "countries" or "cities" => "PeerGeography",
                     _ when key.StartsWith("animation_") => "PeerAnimation",
                     _ when key.StartsWith("dots_") => "PeerDotTotal",
+                    _ when key.StartsWith("grouping_") => "PeerGrouping",
                     _ => "PeerSpeedCorner",
                 },
             };
@@ -362,6 +375,7 @@ public sealed partial class InspectorPane
                 }
                 _peerMap.SetAnimation(view.Animation, view.DotTotal);
                 _peerMap.SetArcLimit(view.ArcLimit);
+                _peerMap.SetGrouping(view.Grouping);
                 if (!ReferenceEquals(PeerDrawing.Content, _peerMap))
                     PeerDrawing.Content = _peerMap;
             }

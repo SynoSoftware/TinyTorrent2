@@ -69,7 +69,8 @@ the app for about 150 ms.
   leave together, and the landing's arc takes their rate.
 - **The rule holds for every map destination:** cities with coordinates,
   estimated regions, and countries in Countries detail. At the fitted view the
-  regions of one country never merge, because they already lie 25 DIPs apart.
+  regions of one country merge only at More grouping, because they already lie
+  25 DIPs apart.
   Regions of neighbouring countries can merge; each country keeps its own fill.
 
 For the 1,000 cities of the benchmark, a 25-DIP merge leaves about 164 arcs at
@@ -205,11 +206,12 @@ in `_departed` as now, and its flying dots leave with it (`MapDots.cs:72`).
 
 ## Defaults
 
-- **The distance is 25 DIPs**, the existing `Spacing`, so one distance means
-  "too close to tell apart" on the whole map. It is one constant. The owner
-  judges it on the running map first: `app/tests/Performance.md` records
-  roughly 500–700 arcs from the benchmark's 1,000 locations as the owner's
-  expected collapse at its whole-world view, and 25 DIPs leaves about 164.
+- **The distance is 25 DIPs at Normal**, the existing `Spacing`, so one
+  distance means "too close to tell apart" on the whole map. After seeing the
+  running map, the owner asked for a choice: the peer-view menu's Place
+  grouping offers Less (half the distance), Normal and More (double), saved
+  with the peer view. A new choice merges every placement again, like a new
+  shown scale.
 
 ## Contract changes when it lands
 
@@ -251,9 +253,13 @@ detail, measured peak private memory 903.5 to 714.9 MiB and the all-peers map's
 first picture 3,361 to 2,692 ms, both better in 5 of 5 pairs, and pans
 smoother. Open:
 
-- The owner looks at the whole-world and zoomed maps on the running app, with
-  the distance and the merged lights first, and chooses a merged destination
-  and zooms.
+- The owner looked at the whole-world and 2× maps of the selection replay
+  (about 1,000 places) on the running app: "looks right. maybe in full zoom
+  out it groups a bit too many? what do you think?" In the replay, the
+  whole-world view shows 91 destinations, 8× shows 296 and 16× shows 734.
+  The owner chose a Place grouping choice over a new default. It is built,
+  and the peer-preferences capture journey checks that the choice is saved
+  and restored.
 - The round measured four measures worse. Zoom-in and zoom-out updates per
   second (46.8 to 45.7, 47.1 to 44.2) and the selected-peers map's first
   picture (269 to 279 ms) stay inside the old build's own spread, except in

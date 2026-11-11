@@ -21,6 +21,7 @@ internal sealed class MapWork(Dictionary<string, Geography.Country> world) : IDi
         /// current size, which decide the destinations that show as one.
         /// </summary>
         internal required Vector2 Shown { get; init; }
+        internal required MapGrouping Grouping { get; init; }
         internal CancellationToken Cancellation { get; init; }
     }
 
@@ -36,6 +37,7 @@ internal sealed class MapWork(Dictionary<string, Geography.Country> world) : IDi
     private Presentation? _presentation;
     private float _scale;
     private Vector2 _shown;
+    private MapGrouping _grouping;
     private readonly TaskCompletionSource _released = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     internal Task Released => _released.Task;
@@ -51,17 +53,17 @@ internal sealed class MapWork(Dictionary<string, Geography.Country> world) : IDi
         input.Cancellation.ThrowIfCancellationRequested();
         var presentation = _presentation;
         var placed = presentation is not null && !_model.Changed && input.Scale == _scale;
-        if (!placed || input.Shown != _shown)
+        if (presentation is null || !placed || input.Shown != _shown || input.Grouping != _grouping)
         {
-            // Only the merge reads the shown scale, so a rest merges the placements again
-            // without placing every group.
+            // Only the merge reads the shown scale and the grouping, so a rest or a new
+            // grouping merges the placements again without placing every group.
             if (placed)
             {
-                _model.Merge(input.Shown);
+                _model.Merge(input.Shown, input.Grouping);
             }
             else
             {
-                _model.Arrange(input.Scale, input.Shown);
+                _model.Arrange(input.Scale, input.Shown, input.Grouping);
             }
             var arranged = _model.Present();
             // A new population of equal peer facts, such as a return to the
@@ -71,6 +73,7 @@ internal sealed class MapWork(Dictionary<string, Geography.Country> world) : IDi
                 presentation = _presentation = arranged;
             _scale = input.Scale;
             _shown = input.Shown;
+            _grouping = input.Grouping;
         }
         input.Cancellation.ThrowIfCancellationRequested();
         return new()
