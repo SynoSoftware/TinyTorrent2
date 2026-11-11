@@ -40,6 +40,8 @@ WinUI force full collections that the product does not cause.
 
 ## Comparing two builds
 
+A round falls under the compile-and-measure-last ruling in
+[AGENTS.md](../../AGENTS.md): it measures every change that is ready, once.
 Keep the reference binary in an evidence folder before a second build overwrites
 the output, and give the reference and the new build the same configuration, fixture,
 display and refresh rate. An in-process probe needs both builds to carry it, because

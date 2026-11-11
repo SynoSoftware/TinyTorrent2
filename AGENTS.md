@@ -124,11 +124,14 @@ do not define this product.
   [focused review passes](docs/agents/compilation.md#focused-review-passes). They trace
   behavior, simplify ownership and recheck corrections, because one broad review
   can miss defects and the fixes can introduce others.
-- **Owner ruling: compile last.** Before compiling, launching a built
-  executable, or handling a build failure, read
+- **Owner ruling: compile and measure last.** Before compiling, launching a
+  built executable, or handling a build failure, read
   [compilation](docs/agents/compilation.md). Each build costs minutes of the owner's
-  15 W laptop, which agents share, so a task compiles only when nothing else
-  can answer its remaining questions, and then once for all of them.
+  15 W laptop, which agents share, and a five-pair performance round costs
+  about 15 minutes more, so a task builds or runs a round only when nothing
+  else can answer its remaining questions, and then once for all of them.
+  Every change that is ready joins one build and one round; the changes are
+  measured apart only when that round shows a regression.
 - **Owner ruling: finish the requested work, including its validation.** An
   implementation or fix authorizes the focused tests and application
   inspection its open questions need; a review reads code and names a question
