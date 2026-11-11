@@ -81,6 +81,24 @@ from the `dialog` text section, so every dialog uses the same word. Button words
 icons, tooltips, colour, placement and the default button
 follow the [button rulings](../docs/contracts/ui.md#buttons).
 
+## WinUI behavior that designs depend on
+
+WinUI forces a blocking full collection when the working set grows, so memory
+that a design allocates and drops becomes a stall the person sees. Every 51
+render walks WinUI reads the process working set (`CCoreServices::TrackMemory`);
+when it has grown more than 50 MiB since the last trigger, WinUI calls
+`DisconnectUnusedReferenceSources`, and .NET runs a full collection of 100 to
+160 ms on the UI thread. It stops every thread that runs .NET code, the peer
+map's game loop and its dots included. An app cannot turn this off
+([microsoft-ui-xaml#12113](https://github.com/microsoft/microsoft-ui-xaml/issues/12113)),
+so the app can only grow its working set less. New WinUI elements add to the
+growth, because their managed wrappers report memory pressure as they are
+created.
+
+The table's part is in
+[WinUI list behavior the design depends on](../lib/TableView/docs/tableview-implementation.md#winui-list-behavior-the-design-depends-on),
+and the map's in the [peer location contract](../docs/contracts/peer-location.md#map).
+
 ## Capture review
 
 A capture review, when justified by the

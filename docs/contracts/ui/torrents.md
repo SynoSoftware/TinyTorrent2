@@ -434,6 +434,13 @@ is still invisible as it arrives
 ([TableView contract, section 13](../../../lib/TableView/docs/tableview-contract.md#13-selection-and-keyboard-behavior)).
 A click is refused only while the inspector saves an edit, which takes one
 engine round trip.
+The old torrent's display is not frozen at the click. Its reads and its map
+picture are cancelled, but a freeze would need its own state in the table, the
+map and the inspector, because more than seven paths restart work for the old
+torrent. Row publications keep their dispatcher priority: a click's hit test
+runs any waiting layout first
+([TableView implementation](../../../lib/TableView/docs/tableview-implementation.md#winui-list-behavior-the-design-depends-on)),
+so a lower priority protects no click, and only less pending layout does.
 Peer and tracker parsing, file-tree construction, piece classification and
 history assembly run in the background. Applying changes to live peers, trackers
 and locations yields after about 16 ms of work, so input can change the target
@@ -461,7 +468,9 @@ Scope pruning uses the existing explicit row-release path, and refreshed replies
 reconcile at the same peer owner. A true torrent retarget or engine session
 change still invalidates its previous detail.
 TableView owns collection reconciliation and row transitions, whether the source
-notifies changes or is replaced as a snapshot.
+notifies changes or is replaced as a snapshot. A host never animates, holds or
+suppresses a row transition itself; the owner: "u must not handle animation out
+of tableview".
 
 While the engine restores a selected torrent, the inspector keeps its loading
 state and retries detail reads with the existing summary updates. This wait
@@ -553,6 +562,9 @@ Seeding uses Sprout. Numeric transfer cells use the shared inline field styles:
 download and downloaded values have the download arrow and accent colour;
 upload and uploaded values have the upload arrow and upload colour. The same
 glyph resources identify rates in the title bar, status bar and Inspector.
+A `Field` cell draws a glyph and a text with search highlighting, so plain text
+replaces it only in a cell where that is proven to look the same; the owner
+rejected a guess as a hack.
 **Owner ruling.** A rate shows a number, zero included, while connections are
 open or opening, and a dash while none are, so 0 B/s always means "connected
 but nothing moves". A downloading, seeding, completed or metadata torrent and

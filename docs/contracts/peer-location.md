@@ -249,6 +249,10 @@ cut in the data is never drawn.
 Country fills add their antialiased coverage on the transparent geography
 surface, so adjacent shaded countries meet without a source-over blending seam.
 Borders and routes retain their normal blending.
+**Owner ruling: preserve speed over the country artifact.** Broad gaps and
+overlaps between shaded countries still show in places. They stay wherever a
+correction would slow navigation or complicate the renderer, so they get no
+further probe, geometry change or redesign of how a picture is handed over.
 
 Outline tracing yields at bounded source-point, ring and border-piece
 checkpoints. A map traces every country that has no outline yet before it draws
@@ -431,7 +435,10 @@ is unchanged. Returning to animation uses current rates; time spent with
 animation off contributes no dots.
 
 The dots keep moving at the display's frame rate while the app works, such as
-while the Peers table fills. The map shows in a transparent Win2D
+while the Peers table fills. During a pan or zoom the dots are optional: they
+keep moving while that costs the gesture nothing, they may pause or hide when
+it does, and they resume without another input when the gesture ends, because
+the gesture's own response comes first. The map shows in a transparent Win2D
 `CanvasAnimatedControl`, whose own thread draws the latest picture of the map
 and the dots over it, because the map and every table share the UI thread and
 any long work there would freeze dots drawn on it. The map itself cannot lie
@@ -468,7 +475,13 @@ view and its detached targets. View-only input neither prepares routes again
 nor restarts activity fades.
 
 The worker keeps geometry, brushes, tracing and rasterization off both WinUI
-and the presentation loop. It retains complete older outlines while finer
+and the presentation loop. It draws on the game loop's `CanvasDevice`, and
+Win2D's `CanvasSwapChain` takes that device's Direct2D factory lock
+(`ID2D1Multithread`) to start each frame (`CreateDrawingSession`) and to
+present it (`PresentWithSyncInterval`). One long Direct2D call on the worker
+therefore holds the game loop's next frame, and the map freezes although the
+UI thread is free: in 83 of 99 such freezes of one run the game loop drew
+nothing. Reading the map's input off the UI thread cannot help such a freeze. It retains complete older outlines while finer
 detail is prepared, and replaces stale borders without recording every
 intermediate map picture. It sleeps between inputs and activity-fade steps.
 When no visible dot flies and the latest picture has been presented, the
@@ -568,9 +581,15 @@ drawing held the device the game loop presents with for up to 2.8 s. Retained
 strokes remain visible while the allowance replaces them for the current width
 and scale. Refining an arc replaces its cached strokes, so they follow the new
 guide, and keeps its core brush, which depends only on the end points, colour
-and scale. A route that leaves the shown routes keeps its arc and core brush for
+and scale. The halo's brush depends only on its colour, so the map keeps one per
+colour and sets the centre, radius, opacity and scale before each arc: a Win2D
+command list keeps a radial brush by value and references only its gradient
+stops. A route that leaves the shown routes keeps its arc and core brush for
 its place's return and releases its strokes, which hold most of an arc's native
-memory. The map reports ready only after the work left for the view's rest is
+memory. `CanvasDevice.Trim()` does not release the committed pages of zeros
+that appear when a map's first arcs show: 178 to 225 MiB within a second on
+10 November 2026, not measured since the arcs became cheaper to draw. Only a
+native heap trace can name their owner. The map reports ready only after the work left for the view's rest is
 drawn, so a capture sees the finished map.
 Rate-strength transitions keep the current smooth fade. A new observation
 preserves the pending visible step's deadline, so frequent updates cannot keep
@@ -663,7 +682,19 @@ inertia or a zoom animation. While a mouse drag is active, the map's game loop
 reads the cursor at each frame and moves the view itself, so the map follows
 the hand while the UI thread is busy; the control takes that view back when the
 drag ends. The press, the drag threshold, the release, pen and touch drags, the
-wheel and the keyboard use the UI thread's events. A compact control at the bottom centre
+wheel and the keyboard use the UI thread's events, so a zoom still stops while
+the UI thread is busy. One table update is one such block: about 130 to 165 ms
+at the stress load, in which the list lays out its rows and starts their
+animations and no code reads input
+([TableView implementation](../../lib/TableView/docs/tableview-implementation.md#winui-list-behavior-the-design-depends-on)).
+The tables are not held for a map gesture: the owner approved holding the
+peers table's new order while the map moves and then withdrew it. WinUI's own
+scrolling reads touch, pen, touchpad and wheel input off the UI thread
+(`ScrollPresenter.cpp`), but not a mouse drag, and for swap chain content the
+platform's way is an input source made off the UI thread. `InputPointerSource`
+is closed source, so what that route does with a drag that leaves the map,
+with the controls above the map and with click, menu, hover, cursor and focus
+is not known. A compact control at the bottom centre
 shows a Segoe Fit button after each zoom, while the view is not fitted. It
 hides after three seconds, but not while the pointer is over it, it has
 focus or the map has keyboard focus, so Tab reaches it. It does not return

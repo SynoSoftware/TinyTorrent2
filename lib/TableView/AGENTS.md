@@ -34,6 +34,18 @@ preferences. The host owns domain policy; TableView owns the mechanics described
 its contract. Use the existing non-torrent sample to check that new control
 behavior belongs in the library, rather than inventing another application host.
 
+**Owner ruling: a TableView change starts from the table's history.** Before
+designing a change, read every TableView commit since the `v0.9.1.2` release
+(`git log v0.9.1.2..HEAD -- lib/TableView`) and the TableView documents,
+`docs/archive` included. Name each earlier attempt at the same change or its
+opposite: what it did, why its commit message says it ended, and what the new
+design does better. The table's behavior has gone back and forth: the
+3 November 2026 revert to `v0.9.1.2` was made for memory and also removed two
+owner rulings on switching to a different list, and the next commit built the
+opposite behavior.
+[WinUI list behavior the design depends on](docs/tableview-implementation.md#winui-list-behavior-the-design-depends-on)
+lists the platform facts those attempts found.
+
 Inspect the current code before acting on historical findings. In particular,
 archived construction notes are not a second implementation plan. Keep shared
 geometry, selection, source projection, and gesture state at the owners named in

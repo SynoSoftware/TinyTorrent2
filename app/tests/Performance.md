@@ -51,6 +51,42 @@ was running. A difference counts only when all five pairs agree in direction; a
 mixed result is reported as mixed and not run again. Values from different displays
 compare only within a pair.
 
+**Owner ruling, 11 November 2026: no measure has a limit in milliseconds at the
+stress load.** The owner: "we're not looking here for faster execution but for
+less jagged movement and more responsive interface", and "my targets were never
+miliseconds at 160k peers. my targets were smooth and immediate feedback of the
+user interface.... I'm asking to start rendering immediatelly what I ask, best
+effort basis. I also ask to stop wasting memory and cpu because of architecture
+that draws hard lines when it shoudn't". A change is therefore judged by what
+the person feels: how soon the UI answers an input, whether what was asked for
+starts to show at once, and whether motion stays even while the content fills
+in. Execution time and memory count as causes of those, and as waste. Nothing
+promises a time by which a large content, such as the stress load's 159,810
+peers, is complete. Limits written by agents (p95 within one frame, worst
+within three) ended every round as "not accepted", whatever it changed, so they
+told nobody whether a change was good.
+
+A performance change is judged by three things, in this order:
+
+1. A count of the work it removes, such as the drawings in an idle second, the
+   row notices of a click or the bytes one update allocates. A count needs one
+   run, does not vary between runs, and names the code that does the work. A
+   change that predicts no count or measure is judged as code only.
+2. One round, for the phases the change touches. The change stays when no
+   measure is worse in all five pairs. The measures vary between runs of one
+   build by more than most changes move them: one build's median click was
+   43.6 ms in one round and 27.9 ms in the next. A report holds about 60
+   measures, and each has a 1 in 32 chance to be worse in all five pairs of
+   two equal builds, so about two per round are by chance. A measure worse in
+   all five pairs is therefore first explained from the code and the saved
+   records. A worst value of a short phase also depends on the phase's edges:
+   the navigation gap counts the time from the phase's start to the first
+   drawn view and from the last drawn view to the phase's end, and a phase
+   that ends on readiness holds or misses the UI block that follows it.
+3. The owner's look on screen, beside the reference build, for every change to
+   motion or to what an input shows, because no measure shows whether motion
+   looks even.
+
 The click journey records for each press the UI thread's CPU cycles
 (`QueryThreadCycleTime`, `CaptureCycles.Current`) when the press reaches the table
 (`pressCycles`) and at its rendered selection (`renderCycles`). Cycles are the
@@ -212,6 +248,9 @@ The selected heavy torrent stays open while this load continues through docked
 zoom and pan cases. An external WM_NULL round-trip probe checks window-thread
 availability about every 16 ms with a one-second timeout. Its p95/worst delay
 and timeouts expose UI-thread stalls; they do not establish pixel latency.
+The probe is a sent message, which Windows delivers before posted work, so it
+misses waits of posted work: replayed steps reached the map 20 to 90 ms late
+while the probes answered at once.
 `Capture.ps1` owns the workload and saves its counts in `fixture.json` for the
 app to consume. The complete workload remains loaded without scrolling through
 all 50 torrents.

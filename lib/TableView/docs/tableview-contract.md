@@ -614,6 +614,24 @@ own record of a held container's row still names the old list's row, so the
 table finds a container's row and its automation row by position, and, when
 the old list had selected rows, asks the list to read every held container's
 selection again.
+WinUI stores the item each container was prepared for, and putting another row
+into a container without a notification does not change that record. So the
+lookups that start from an item, `Table.ShownRow` and `Table.ContainerItem`,
+are correct only while no item a container was prepared for is also the view's
+row at another position. A different list shares no row with the old one, so it
+keeps that true. Filling held containers without a notification within one
+list, or between two lists that share rows, does not: `ContainerFromItem`
+returns a container that shows another row, so Narrator and UI Automation read
+or select the wrong row, and the joins and leaves the list is told slide an
+untold container onto the screen with its old row. A design that told the list
+only about the rows on screen and past its cache was built and dropped for
+this on 11 November 2026. A list that shares rows with the shown one, such as
+one torrent's peers after all peers, is therefore animated as a change of the
+same list. The owner's rule covers it too: "we established that there's no
+need to animate when we change the datasource so we flip it in place. u must
+not handle animation out of tableview".
+[Issue 581](https://github.com/SynoSoftware/TinyTorrent2/issues/581) holds that
+open work and the WinUI source that decides it.
 What falsifies the rule is a container whose content differs from the view's
 row at its index after a sort, a scroll, or `ScrollIntoView`; the reference
 host's diagnostics section J checks exactly that.

@@ -149,6 +149,60 @@ Actual contrast, Narrator,
 and out-of-process automation still require relevant runtime evidence under the
 [testing policy](../../../docs/agents/testing.md).
 
+## WinUI list behavior the design depends on
+
+These facts come from WinUI's source in `3rdParty/microsoft-ui-xaml` and from
+traces of the product's stress replay in November 2026. A design that works
+against one of them was built and removed at least once, so a new design names
+the fact it relies on or the measurement that shows the fact has changed.
+
+- **One notice per row.** `IBindableObservableVector` has no range notice, so
+  a list that changes by 1,000 rows takes 1,000 notices, and contract 5.3
+  forbids a Reset. Each notice reaches .NET through `Surface`, a managed
+  `ListView` subclass that exists for its automation peer, and makes four
+  `ComWrappers` calls. A list that is not a managed subclass would save about
+  a tenth of a notice's cost and lose the automation peer, so `Surface` stays.
+- **One update is one UI block.** The list lays out the changed rows and
+  starts their animations in one pass on the UI thread: about 130 to 165 ms
+  for a new sort order of a screen of rows at the stress load. No other UI-thread code
+  runs in that block, input included. In the native trace of 8 November, WinUI
+  spent 31.9% of a new order drawing each row in a transition again from
+  nothing, 19.8% drawing the other rows and 31.5% in layout; reconciling the
+  view took under 2 ms. The list has no move, so a moved row is built a second
+  time.
+- **Row animations run on the compositor.** The UI thread starts a row's
+  transition once and the compositor plays it (`DoubleAnimation.cpp:121`,
+  `timemgr.cpp:346`), so rows keep animating smoothly while the UI thread is
+  busy.
+- **A removed container is not reused until its animation ends.** A change
+  that removes every held row therefore needs as many other containers at
+  once. Going from all peers to one torrent's peers removes the 16 rows the
+  list holds; where 10 of the 16 other containers were not spare, building
+  them took about 85 ms of cell measure.
+- **The list drops containers it no longer needs.** In a 60-row test the list
+  dropped its containers below the screen in the layout after a sort and made
+  them again, with the right rows and selection, within 1.5 s. Below the
+  screen, `RebindRows` therefore matters only for containers the list keeps,
+  such as a focused row's.
+- **A hit test runs any waiting layout first** (`CUIElement::HitTestEntry`
+  calls `UpdateLayout`), and so does `TransformToVisual`. A click or a marquee
+  step pays for a layout that is waiting, whatever dispatcher priority queued
+  its cause. Only a smaller pending layout makes the click faster.
+- **The list builds rows inside the UI tick,** until the time since the
+  previous frame passes its budget, 40 ms by default
+  (`BUDGET_MANAGER_DEFAULT_LIMIT`). `ListViewBase::SetupContainerContentChangingAfterPrepare`
+  sets a prepared row's content and measures the row with all of its cells at
+  once, unless a handler marks the event handled. A press that arrives during
+  that tick waits for all of it.
+- **Splitting row work does not make it smaller.** Rows filled in phases, the
+  first cell at once and the other cells from the list's phase callback or one
+  row per Low-priority dispatcher item, were built and removed on 9 November:
+  the median click was slower in all 15 pairs. During fast clicking the UI
+  thread is busy most of the time, so each piece ran where the next press
+  landed and added its own layout pass. Only a cheaper cell makes a row
+  cheaper: the cost is WinUI inflating each cell's `DataTemplate`, binding it
+  and measuring its text.
+
 ## Localisation and source lifetime
 
 `Strings.Load` prepares an immutable catalogue with parent/English fallback
