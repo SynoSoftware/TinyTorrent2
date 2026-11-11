@@ -41,8 +41,8 @@ internal sealed class MapDots<TRoute>(long smallest)
     /// <summary>
     /// The bytes one dot stands for, or null before the first traffic. The
     /// size rises at once but falls only after ten seconds of lower traffic,
-    /// so the legend does not flicker; a new area, speed or total applies at
-    /// once.
+    /// so the legend does not flicker; a new area, speed or total, and the
+    /// first traffic after <see cref="Clear"/>, apply at once.
     /// </summary>
     internal long? Bytes { get; private set; }
 
@@ -71,7 +71,7 @@ internal sealed class MapDots<TRoute>(long smallest)
                 _lanes.Remove(route);
         _flying.RemoveAll(dot => !input.Routes.ContainsKey(dot.Route));
         Total = input.Rate;
-        var reshaped = input.Area != _area || input.Speed != _speed || input.Total != _total;
+        var reshaped = _target is null || input.Area != _area || input.Speed != _speed || input.Total != _total;
         _area = input.Area;
         _speed = input.Speed;
         _total = input.Total;
@@ -82,7 +82,10 @@ internal sealed class MapDots<TRoute>(long smallest)
         Settle(now, reshaped);
     }
 
-    /// <summary>Ends traffic accounting while keeping the last dot size for the legend.</summary>
+    /// <summary>
+    /// Ends traffic accounting while keeping the last dot size for the legend
+    /// until the next traffic takes its own.
+    /// </summary>
     internal void Clear()
     {
         _flying.Clear();
