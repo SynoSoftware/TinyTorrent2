@@ -536,6 +536,21 @@ entry that the app can change, and the owner has looked at ordinary use and at
 the stress replay and accepts both. Each entry that stays names the platform
 limit that keeps it.
 
+Before the plan is deleted, two kinds of its content are in the contract that
+owns them, because a rule or a fact that only a plan holds is deleted with it,
+and the next design then works it out again or builds the opposite:
+
+- every owner ruling and owner answer recorded here;
+- the platform facts that a later design depends on. They are under
+  [questions already investigated](#questions-already-investigated), the
+  rounds and [hard lines](#hard-lines-that-waste-memory-and-cpu): a WinUI list
+  takes one notice for each row and none for a range; one table update is one
+  UI block of layout; a removed row container is not reused until its
+  animation ends; a hit test runs any waiting layout first; WinUI forces a
+  blocking full collection after 50 MiB of working-set growth; the render
+  worker and the swap chain share one Direct2D lock; and which input WinUI
+  reads off the UI thread.
+
 ### Deciding a correction
 
 - Before building, the correction names the goal point it serves, the count or
