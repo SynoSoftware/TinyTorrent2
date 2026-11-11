@@ -7,10 +7,27 @@ section and the baseline gate, so the owner can see what is removed.**
 
 **In progress.** Stage 1, the reviewed responsiveness fixes, is implemented,
 and its rules live in the [pipe API](../contracts/pipe-api.md) and
-[engine](../contracts/engine.md) contracts. On 9 November the owner asked to
-implement the next version below, as batch 4 of the
-[rendering and selection plan](17-rendering-and-selection.md)'s fix list. Its
-step 4's incremental row application is that plan's batches 1 and 2.
+[engine](../contracts/engine.md) contracts. The next version below is built as
+protocol 39 in bfc54dc, and the contracts hold its rules. The Settings delay
+is closed (see [Settings feedback](#settings-feedback)). Two items are open:
+
+- The cost of a Files observation on a large file list (see the baseline
+  below).
+- A Peers view without one target releases its subscription before it
+  subscribes again when its context is invalidated, which a contract sentence
+  and a comment do not describe (see [delivery and identity](#delivery-and-identity)).
+
+The paragraphs below that the departures override stay, so the owner can see
+what changed. On 11 November the built sections were removed from this plan,
+because their rules now live in the [pipe API](../contracts/pipe-api.md#snapshots-and-detail)
+and [engine](../contracts/engine.md) contracts: "Shared per-torrent
+collection", the retention paragraph of "Bounded retention and publication",
+"Incremental presentation", the status-freshness paragraphs of "Settings
+feedback and status freshness", the paragraph on refreshes the engine starts,
+and implementation steps 2 to 5. `git show bfc54dc:docs/plans/communication-plan.md`
+shows them. The engine contract's rules for collections and for the status
+query arrived in the same change as this shortening, so the two are committed
+together.
 
 **Step 1 baseline, 9 November.** Engine of protocol 38 (the build before
 batch 4), `engine/tests/Latency.ps1 -Samples 40` under a load of 117 live peer
@@ -22,28 +39,19 @@ outgrow the default one-second refresh interval near 500 torrents. The
 120-torrent snapshot is 105,492 bytes, arrives in a median 5.7 ms and parses in
 1.7 ms. A Files read got its three answers in one alert batch 77 times of 80,
 and a Pieces read 74 of 80, so partial publication seldom sends anything.
-`DescribeFiles` for the owner's largest file list is unmeasured: the owner's
-library is private and the load torrents hold one file each.
+`DescribeFiles` now returns only the file count. The per-file cost moved into
+each Files observation: the engine thread copies the file priorities and
+progress, and the trees worker builds a tree of every file with its path, at
+every refresh (`engine/src/Engine/Detail.cpp`, `Respond`). That cost is
+unmeasured, because the load torrents hold one file each. `engine/tests/Checks.ps1
+-Check FileWindow` builds a torrent of 10,921 files and sends this read through
+`Send-Timed`, which returns its milliseconds; the check discards them today.
+Run against a Release engine (`-EnginePath`), it gives the number. The owner
+names the size of the largest list only if it is far above 10,921 files. The
+trees worker also serves `tree` requests, so the time of one build also
+bounds how long a `tree` request can wait behind it.
 
-**Steps 2, 3 and 5 are built, 10 November.** Protocol 39 has
-`subscribe` and per-torrent observations, the engine keeps one collection per
-torrent and collects at most eight at once, and the pipe keeps the latest
-pushed message per key. The window subscribes once per view, and PipeClient
-lost its detail and file gate. The engine writes a torrent's peers as JSON
-text, without a JSON object per peer. Two departures from the design below:
-
-- No `overloaded` byte budget. Each torrent has one pending entry, so the
-  scope bounds the pending messages, and ending a large subscription would
-  hide every torrent's peers instead of showing what is known.
-- No per-key sequence number on observations. Observations travel only
-  through the keyed slot, keyed by context and torrent, so a newer one for a
-  key always follows an older one; snapshots keep their existing `sequence`.
-
-The `Consumer` enum stays: it still gives each view its one unsent read, and
-replacing it touches the summary and draft readers, which steps 2 and 3 do not
-need.
-
-**After steps 2 and 3, 10 November.** The same script and load on the same
+**After protocol 39, 10 November.** The same script and load on the same
 laptop, two runs, `Latency-dd83bae1` and `Latency-1a5f6fcb`. The all-torrents
 Peers refresh, from the subscription to every torrent's ready observation:
 
@@ -67,6 +75,35 @@ one torrent's first and complete observations take a median 1.5–1.7 and
 A Files read got its answers in one alert batch 80 times of 80, and a Pieces
 read 78 of 80.
 
+**Departures from the design below.** Protocol 39 built it with these three
+differences:
+
+- No `overloaded` byte budget. Each torrent has one pending entry, so the
+  scope bounds the pending messages, and ending a large subscription would
+  hide every torrent's peers instead of showing what is known.
+- No per-key sequence number on observations. Observations travel only
+  through the keyed slot, keyed by context and torrent, so a newer one for a
+  key always follows an older one; snapshots keep their existing `sequence`.
+- The `Consumer` enum stays: it still gives each view its one unsent read, and
+  replacing it touches the summary and draft readers, which the collector and
+  keyed delivery do not need. `Withdraw(Consumer)` therefore stays too, and
+  `Read` takes no cancellation token. The sentence under [modules and
+  seams](#modules-and-seams) that removes `Withdraw` describes no planned work.
+
+Three more differences in names and shapes, which the contracts own:
+
+- The collector is a set of `Engine::State` functions in
+  `engine/src/Engine/Detail.cpp`: `Subscribe`, `ReadDetail`, `CollectDetail`,
+  `ReleaseReading(connection)` and `Invalidate`. Its `Demand` means "collect
+  this torrent before the refresh of torrents already shown", not the
+  `Demand(torrent, kinds, reader)` below.
+- An observation is a reply, with `ok` and `data` or `error`, plus `type`,
+  `session_id`, `context`, `torrent_id` and `section`. `ready` is inside
+  `data`.
+- The window's receive thread drops an observation of another context before
+  the inspector sees it (`PipeClient.Keeps`), as the pipe API says. The
+  inspector still owns the context.
+
 [Architecture](../contracts/architecture.md), [engine](../contracts/engine.md), [pipe API](../contracts/pipe-api.md),
 [UI](../contracts/ui.md#committing-edits), and [testing](../agents/testing.md) remain the
 authorities. Update their affected sections as the design is implemented. This
@@ -87,16 +124,19 @@ then all detail and communication paths, including the Settings delay.
 
 ## Source findings and current patch
 
+Protocol 39 built every disposition below except the Settings row, whose two
+named causes are handled while its symptom is not recorded.
+
 | Finding | Source | Disposition |
 | --- | --- | --- |
 | Peer aggregation dropped the callback applying the immediate cached reply. | [Inspector peers](../../app/src/Shell/Inspector/Peers.cs) | The patch restores it. Preserve this fast display path. |
-| The pipe previously waited for each reply before sending another request. | [PipeClient](../../app/src/Shared/Engine/PipeClient.cs), [native Pipe](../../lib/Pipe/Pipe.cpp) | The patch multiplexes requests using existing request IDs and one ordered writer. |
+| The pipe previously waited for each reply before sending another request. | [PipeClient](../../app/src/Shared/Engine/PipeClient.cs), [native Pipe](../../engine/src/Pipe.cpp) | The patch multiplexes requests using existing request IDs and one ordered writer. |
 | Every peer reply rebuilds collections over all displayed peers. | [Inspector peers](../../app/src/Shell/Inspector/Peers.cs) | Fix the repeated merge work before expanding concurrency. |
 | Every changed setting previously called full policy application, including display preferences. | [Settings](../../engine/src/Engine/Settings.cpp), [Policy](../../engine/src/Engine/Policy.cpp) | The reviewing agent's fix compares policy groups and skips unaffected work. It is included in the first commit; confirmation still follows the store commit. |
 | Partial replies construct complete file JSON separately for each arriving detail kind. | [Detail](../../engine/src/Engine/Detail.cpp), [Torrent](../../engine/src/Torrent.cpp) | Combine publication at the end of the current alert batch, before construction. Implemented in source: `Receive` marks the reading and `Tick` publishes once after the batch. |
 | The engine holds one detail collection, and a new context read from the same connection cancels the earlier one. The window therefore reads the all-torrents Peers scope one torrent per round trip, and a refresh of N torrents costs N pipe and libtorrent round trips. | [Detail](../../engine/src/Engine/Detail.cpp), [Inspector peers](../../app/src/Shell/Inspector/Peers.cs) | Replace this with shared per-torrent collection in the next architecture change. This is the one finding that forces that change. |
 | The snapshot reply serializes status refreshed on the engine's periodic clock, while the window polls on its own clock. | [Session](../../engine/src/Engine/Session.cpp), [Commands](../../engine/src/Engine/Commands.cpp), [PipeClient](../../app/src/Shared/Engine/PipeClient.cs) | Keep the immediate reply and push later observations. The two cadences introduce staleness; their constants alone do not bound collection, queueing or UI time. |
-| Native delivery and the window each retain one pending detail message. | [Pipe](../../lib/Pipe/Pipe.h), [MainViewModel](../../app/src/Shell/MainViewModel.cs) | Concurrent torrent updates require separate pending entries, or results will overwrite each other. |
+| Native delivery and the window each retain one pending detail message. | [Pipe](../../engine/inc/Pipe.h), [MainViewModel](../../app/src/Shell/MainViewModel.cs) | Concurrent torrent updates require separate pending entries, or results will overwrite each other. |
 | Background file reads share Inspector's demand lifetime and use negative contexts. | [File reads](../../app/src/Shared/Engine/PipeClient/Files.cs) | Move complete-data consumers to independent requests using the same collector. |
 | Settings already chooses the clicked value before awaiting the save. | [Settings](../../app/src/Settings/Editor.cs) | Trace input-to-render latency as well as the pipe; do not add a second optimistic state owner. |
 
@@ -106,8 +146,9 @@ the engine thread, libtorrent answers wake that thread the same way, and the
 reply goes straight to the window's receive loop. Measurement must establish
 the share of the reported delay, the cost of building and parsing a snapshot
 or a file list at the owner's sizes, and the time an all-torrents Peers refresh
-takes against torrent count. No runtime measurements were performed for this
-change. Country and city lookup happen locally in WinUI, not
+takes against torrent count. The baseline and the measurement after protocol
+39 answer the snapshot cost and the refresh time; the Files observation cost
+and the Settings delay remain unmeasured. Country and city lookup happen locally in WinUI, not
 through the engine pipe.
 
 **Owner requirement: display available facts immediately, even when they are
@@ -137,16 +178,6 @@ The first demand starts immediately. Later refreshes follow the existing window
 refresh setting, with one cadence and no duplicate query while a kind is still
 outstanding. Hidden or disconnected subscriptions produce no new collection.
 Speed continues using the existing engine histories rather than a new store.
-
-The engine starts each later refresh: it re-collects a held subscription at
-the window's saved interval and pushes the observations. The window already
-tells the engine its interval through settings, the fresh facts then arrive as
-pushed packets without a request in front of them, and a scope of many
-torrents costs one declaration instead of one request per refresh. With
-summaries pushed the same way below, this is the only consistent choice, so it
-is not an open decision. The [pipe API](../contracts/pipe-api.md) sentence that no refresh
-timer runs for a hidden inspector stays true, because a hidden view releases
-its subscription.
 
 ### Modules and seams
 
@@ -222,10 +253,11 @@ Inspector stays the one owner of context currency: it increments the context
 and discards observations that do not match; PipeClient does not second-guess
 it.
 
-Test surface: the collector is exercised through the wire by the existing
-engine checks, with demand, answers, invalidation, removal, dropped alerts and
-observations all visible there, and PipeClient through `Subscribe` and the
-`Observation` event. No internal seam is added until a second adapter needs it.
+Test surface: `engine/tests/Checks.ps1` covers complete `torrent` reads and
+removal through the wire. No check sends a subscription, asserts an
+observation or drops an alert; `engine/tests/Latency.ps1` subscribes and
+measures, and dropped-alert recovery is verified by reading only. No internal
+seam is added until a second adapter needs it.
 
 ### Delivery and identity
 
@@ -245,55 +277,55 @@ old work or its release. Keep known rows for identities still in scope. Retained
 presentation for a recently viewed torrent can display before a new reply.
 Apply subsequent results only to the current session, context, torrent and view.
 
-### Shared per-torrent collection
+**Open: a Peers view without one target releases before it subscribes again
+when its context is invalidated.** In the all-torrents Peers view and a
+multiple selection's Peers view, every command reply and every change of
+selection or section invalidates the context. `Inspector.Invalidate` then
+sends a release at once, and the next subscription follows a frame later. A
+change of the scope's torrents, such as a torrent whose peer count reaches
+zero, subscribes again without a release, and the contract is right for that
+path. After a release, the engine ends that scope's collections before the
+new subscription arrives, so the first observations carry no peers, and observations of the old
+context that were already queued are still sent. Nothing visible changes: the
+window keeps its rows when an observation has no peers, and a display
+subscription needs facts newer than its own start either way. The release
+saves work, because every command reply resubscribes the scope, settings and
+layout saves included, and without it the engine would rebuild every shown
+torrent's retained peer list for a view that has not changed. Keep the code.
+Correct the [pipe API](../contracts/pipe-api.md#snapshots-and-detail)
+sentences that a new subscription keeps the collected facts and withdraws the
+earlier one's unsent observations, so they name this exception and its
+trigger, and the comment above `Inspector.Release`, which says that a later
+subscription often replaces the release unsent. The alternative, releasing
+only when no subscription follows, makes one path for every scope at the cost
+of that rebuild, which is unmeasured beyond the 117 peers of the `Latency.ps1`
+load.
 
-Replace the global active `Reading` and other-torrent queue with collections
-keyed by durable torrent identity. Each owns requested detail kinds, available
-answers, generation, and waiting readers. Reuse the existing torrent query
-records so only one query for a torrent/detail kind is outstanding.
-
-Display subscriptions and complete-data consumers use this same collector.
-Background file reads and actions such as Open await the complete facts they
-need through ordinary request IDs; they do not borrow Inspector's context.
-Remove the negative-context convention and global Inspector/background-file gate
-as callers migrate. Keep one implementation of validity and collection rules.
-
-Reply from available facts before admitting any fresh query. A display with no
-retained facts receives unknown values immediately. Collection capacity never
-delays that reply or the local presentation change.
-
-Collect multiple torrents within a bounded batch, prioritizing newly visible
-demand while allowing background work to progress. Start with eight in-flight
-fresh torrent collections as a provisional internal bound, then tune from evidence.
-Release capacity when collection finishes; retained subscriptions do not occupy it.
-The bound exists because libtorrent's alert queue holds 2000 alerts by default
-and drops the rest; a scope of hundreds of torrents queried at once can
-overflow it, and `RecoverDetail` then fails the affected reads. This is not a
-user setting or a claim of optimal concurrency. One slow collection must not
-stop other admitted collections or unrelated commands and summaries.
-
-An arriving fact updates its torrent and marks its publication pending. At the
-end of the current alert batch, publish each changed observation once. Complete
-callers finish only when their required facts satisfy the existing validity
-rules. Unknown, known-empty and complete remain different states.
-
-Keep generation checks at this owner: answers predating an invalidating edit
-cannot become current facts. Removal settles that torrent's readers while
-others continue. Dropped-alert recovery reconciles or fails affected reads;
-increasing concurrency must not create waits that can never finish.
-
-### Bounded retention and publication
-
-Retain requested detail kinds rather than all peers, files and pieces for every
-torrent. Release collections without readers. Keep the existing bounded display
-retention in Inspector; do not add another cache service or durable torrent
-database. Inspect retained bytes as well as entry counts before tuning limits.
+### Keyed publication
 
 Replace the single pending detail slot at both endpoints with entries keyed by
 context, torrent identity and section, behind the key-agnostic `Replace`
 described under [modules and seams](#modules-and-seams). A newer observation
 replaces only the older observation for that key. Each observation contains the currently available
 facts for its section, so replacing it does not require replaying field patches.
+
+Peer diffs are applied in the window, not sent on the wire. Each observation
+carries one torrent's full peer list. A worker matches it against the kept
+rows (`Swarm.Read`), and the UI thread changes only the peers that joined,
+left or changed. A join or a leave also makes the worker build the view's
+whole list again (`Swarm.Join`), and the table copies every row reference of
+that list on the UI thread (`Source.Set`). The wire stays full lists because every delivery step
+replaces or drops whole messages: the engine's keyed slot, the withdrawal of
+an earlier subscription's messages, the receive thread's context check and the
+window's drain. A diff would need a baseline per subscriber and a resync after
+each of those drops; even "send nothing when unchanged" loses a change when it
+replaces an unsent full list in the keyed slot. libtorrent returns the full
+list on every query, so the engine pays for the list either way, and no
+measurement shows that its bytes cost anything the person sees: the load of
+`Latency.ps1` holds 117 peers. Jagged movement in the owner's all-torrents Peers view, or a
+torrent near libtorrent's limit of 3000 known peers whose observation costs
+visible engine or parse time, would change this. The first lever then is to
+send the slowly changing list of known, unconnected peers less often.
 
 Drain keys in arrival order. Include keyed publication in an explicit bound on
 pending bytes and messages. The existing single detail slot bypasses the ordered
@@ -314,88 +346,46 @@ obsolete subscription entries when the context is replaced or disconnected.
 Queue one UI dispatcher drain for pending observations and apply the newest
 current update for each key. Split a drain across dispatcher turns only when a
 measured all-torrents scope blocks input for a visible time. Changing scope
-discards old detail, not unrelated completions.
+discards old detail, not unrelated completions. No split is planned: a worker
+reads and matches the peer lists, and the UI thread applies only the changes,
+plus one copy of the view's row references after a join or a leave.
+The capture fixture applies the all-torrents scope one torrent at a time, so
+its all-torrents figures overstate the work per refresh and do not measure
+this path.
 
-### Incremental presentation
-
-Inspector owns peer groups by torrent and stable rows keyed by
-`(torrent_id, endpoint)`. Match a torrent's `p` peers in O(p) work. Update
-existing objects for telemetry changes and alter membership only where needed.
-Do not rebuild a dictionary of all `P` peers for every torrent's answer.
-
-Combine aggregate membership, summary, sorting and map updates once per scheduled
-UI drain where required. Follow the [TableView update contract](../../lib/TableView/docs/tableview-contract.md#53-source-identity-and-update-contract)
-to retain focus, selection and scrolling. A large drain must yield to input;
-coalescing should reduce repeated work rather than delay first useful content.
-
-General, Files, Trackers and Pieces apply known fields immediately without
-erasing known values when a partial observation lacks them. File/tracker drafts
-remain in their current owners. Display availability never authorizes a file
-operation that requires confirmed paths or priorities.
-
-Location lookup stays in WinUI's Geolocation owner. It runs in the background,
-updates only retained peer identities and the matching dataset version, and
-joins the next table/map update. Peer rows never await a location batch.
-
-### Settings feedback and status freshness
+### Settings feedback
 
 Keep `Setting` as the sole owner of input, pending intent, confirmation and
 failure. Later clicks remain available during a save, and a reply settles only
 the submitted input. Navigation follows the existing immediate Settings rules.
 
-Trace show-dialog and one engine-affecting preference through click, synchronous
+Closed on 11 November. No symptom is recorded: no switch, no duration and no
+build, and the owner knows of no delay. Both causes the findings name are
+handled: `Setting.Toggle` shows the click before it awaits the save, and the
+engine reapplies only the policy groups that changed
+(`engine/src/Engine/Policy.cpp`). A switch that the owner later finds slow
+opens the item again; then trace that switch only, as follows.
+
+Trace that switch through click, synchronous
 notifications, binding/layout, enqueue, frame write, engine dispatch, commit,
 reply and first rendered frame. Narrow repeated notifications or move blocking
 work only where the trace identifies it. Separate visual latency from save time.
-
-Return already known summary facts immediately, then deliver fresh snapshots
-as coalesced pushes through the existing snapshot representation and application
-owner. Initial replies and pushes carry the sequence stamp described under
-[modules and seams](#modules-and-seams), so an older cached reply cannot
-overwrite a newer observation even when the writer interleaves them. These
-pushes replace routine polling; keep explicit refresh and reconnect reads where
-needed. The selected cadence governs recurring telemetry collection, never
-initial replies or command feedback. While a connection test is active the
-engine pushes once per second whatever the saved interval, which replaces the
-window's one-second polling that the [pipe API](../contracts/pipe-api.md#connection-measurement)
-requires during the test, so phase changes and the hold countdown stay
-responsive. One slow request cannot stop these independent updates.
-
-Post command-triggered status queries directly through the existing status-query
-owner, guarded against an outstanding query. A command that arrives while a
-query is outstanding sets a pending mark, and the handler issues one follow-up
-query when the outstanding answer arrives, because that answer can predate the
-command and the feedback would otherwise wait for the next periodic refresh.
-Setting `statusPending` alone can wait until the next tick. Pass only `query_name`, as the current routine query
-does: `query_save_path` distinguishes explicit detail answers in the alert
-handler and would bypass routine summary updates. Clear outstanding state when
-the answer arrives or the relevant alert is dropped.
-
-At alert-batch end, publish partial detail only for reads still held. Mark a
-collection changed only after storing a current answer; invalidation clears the
-mark and ending a collection destroys it. These rules prevent duplicate final
-answers and empty partials after invalidation. No timer delays partial delivery.
 
 ## Implementation order for the next version
 
 1. Establish the baseline and diagnostic points; record the exact executable
    and revision before making timing claims. Preserve the first commit's fast
-   display paths throughout the change. The deciding number for steps 2 and 3
+   display paths throughout the change. The deciding number for the per-torrent collection
    is the all-torrents Peers refresh time against torrent count: it grows with
    one round trip per torrent by construction, and the baseline shows at what
    count it stops fitting the refresh interval on the owner's machine.
-2. Implement per-torrent collection, scoped demand, and keyed pending delivery
-   together across both endpoints. Do not enable concurrent torrent publication
-   while either endpoint still has one detail slot.
-3. Migrate Inspector and complete-data consumers, then remove the global reading
-   queue, sequential aggregate loop, obsolete gates, and replaced context paths.
-4. Make row application incremental, combine UI work, add snapshot pushes,
-   and finish the Settings corrections an authorized trace identifies. The
-   summary delivery change is independent of steps 2 and 3 and can land first.
-5. Update the active contracts and wire representation with the implementation.
-   Advance the protocol version from its then-current value in both executables
-   and the existing harness; ship the matching pair.
-6. Review the final diff and perform the narrowly scoped validation below only
+   Done on 9 and 10 November (see the baseline above), except the Files
+   observation cost.
+2. Settings feedback: closed, with no symptom (see
+   [Settings feedback](#settings-feedback)).
+3. Correct the pipe API sentences and the comment named under [delivery and
+   identity](#delivery-and-identity).
+4. Review the final diff and perform the narrowly scoped validation below only
    when authorized. Record remaining limitations rather than claiming zero delay.
 
 ## Evidence and acceptance
@@ -404,17 +394,25 @@ Use existing fixtures and diagnostics. Add behavioral coverage only for a
 concrete unguarded failure under the testing policy; do not create a new test
 framework, use sleeps to demonstrate concurrency, or assert source text.
 
-| Scenario | Required result |
-| --- | --- |
-| Hold request A; send independent B. | B completes and is routed correctly while A remains pending. |
-| Request a summary while its cached facts are old. | The cached reply displays immediately; the later observation reaches the window without waiting for its next periodic poll. |
-| Delay one torrent's detail; read another torrent and a summary. | Available facts display and independent work completes. |
-| Two torrents update before the UI drains; one updates again. | Both torrents survive delivery, with the newest observation for the repeated key. |
-| Switch A → B → A with replies and lookups pending. | Retained rows display immediately; old contexts cannot alter the current view or loading state. |
-| Deliver partial, empty, failed and complete observations. | Known facts remain visible; empty/failure affects its own demand; complete-data actions never consume incomplete facts. |
-| Share a collection between Inspector and a complete-data caller. | Both receive their required facts; releasing Inspector does not cancel the other caller. |
-| Edit/remove a torrent or drop an alert during collection. | Obsolete facts do not apply; affected readers settle; other torrents continue. |
-| Flip a setting repeatedly and delay/refuse an earlier save. | Latest input remains responsive; refusal belongs to the submitted input; success still follows commit. |
+Protocol 39 built every row below. The status column names the code that
+enforces each row, as read at a1cb18b on 11 November.
+
+| Scenario | Required result | Status |
+| --- | --- | --- |
+| Hold request A; send independent B. | B completes and is routed correctly while A remains pending. | Built: `PipeClient.RunConnection` and the engine's request IDs. |
+| Request a summary while its cached facts are old. | The cached reply displays immediately; the later observation reaches the window without waiting for its next periodic poll. | Built: summary pushes and the summary key in `Pipe::Connection::Replace`. |
+| Delay one torrent's detail; read another torrent and a summary. | Available facts display and independent work completes. | Built: one collection per torrent, admitted by `Admit`. |
+| Two torrents update before the UI drains; one updates again. | Both torrents survive delivery, with the newest observation for the repeated key. | Built: the keyed slots in `Pipe.cpp` and `MainViewModel`. |
+| Switch A → B → A with replies and lookups pending. | Retained rows display immediately; old contexts cannot alter the current view or loading state. | Built: the context checks in `Inspector.Receive` and `PipeClient.Keeps`, and the kept swarms. Aggregate views are the open exception under [delivery and identity](#delivery-and-identity). |
+| Deliver partial, empty, failed and complete observations. | Known facts remain visible; empty/failure affects its own demand; complete-data actions never consume incomplete facts. | Built: `Inspector.Apply` and `ContinueCollection`. |
+| Share a collection between Inspector and a complete-data caller. | Both receive their required facts; releasing Inspector does not cancel the other caller. | Built: `ReleaseReading` keeps reads without a context. |
+| Edit/remove a torrent or drop an alert during collection. | Obsolete facts do not apply; affected readers settle; other torrents continue. | Built: `Invalidate`, `FailReading` and `RecoverDetail`. No check drops an alert, so dropped-alert recovery is verified by reading only. |
+| Flip a setting repeatedly and delay/refuse an earlier save. | Latest input remains responsive; refusal belongs to the submitted input; success still follows commit. | Built: `Setting.Toggle`; `app/tests/SettingChecks.ps1` checks who owns a save. |
+
+**Status, 11 November.** The segment measurement and the coverage list in the
+next two paragraphs are not planned: the [pipe API](../contracts/pipe-api.md#snapshots-and-detail)
+holds the latency targets, `Latency.ps1` measured the engine side, and no open
+question needs the segments. Measure them only for a symptom the owner names.
 
 When authorized, measure input-to-first-frame, enqueue-to-write,
 write-to-initial-data, collection-to-publication, and UI application separately.
@@ -437,6 +435,12 @@ whether partial publication ever sends anything. `engine/tests/Latency.ps1`
 measures single requests under peer load and needs these added. The engine
 thread builds every cached reply synchronously today; split an expensive
 describe or frame only if the `DescribeFiles` number requires it.
+
+Status of this gate: `Latency.ps1` now records the first, second and fourth
+numbers, and the baseline and the measurement after protocol 39 give them. The
+third has moved: `DescribeFiles` returns only the file count, so the number to
+take is the cost of a Files observation on a large file list, as the
+baseline describes. Split that work only if the number requires it.
 
 Build affected targets and use the prescribed output location only when the
 owner requests validation. Use an optimized build for timing as required by the

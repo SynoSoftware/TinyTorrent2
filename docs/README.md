@@ -85,10 +85,10 @@ The [ring copy research](plans/ring-copy-plan.md) keeps the evidence and the
 design of a copy engine of the engine's own, for moves between hard disks. It
 will not be implemented.
 
-The [communication plan](plans/communication-plan.md) holds the
-scoped-subscription design for torrent detail, in progress as batch 4 of the
-rendering and selection plan; its implemented first stage lives in the protocol
-and engine contracts.
+The [communication plan](plans/19-communication-plan.md) holds the
+scoped-subscription design for torrent detail. Its built parts live in the
+protocol and engine contracts. The cost of a Files observation on a large
+file list and a correction for aggregate Peers views are open.
 
 For TableView work, continue with the [table glossary](../lib/TableView/CONTEXT.md),
 [TableView contract](../lib/TableView/docs/tableview-contract.md), and

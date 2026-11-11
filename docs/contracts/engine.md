@@ -62,6 +62,26 @@ together; [the pipe contract](pipe-api.md#snapshots-and-detail) describes
 subscriptions and reads. A torrent's peer list is written as JSON text,
 without a JSON object per peer.
 
+The collections follow these rules, so that a reader never waits for an answer
+that cannot arrive and no reader shows a fact older than an edit:
+
+- A collection asks only for the detail kinds its readers request, and the
+  engine releases it when it has no reader and no queued refresh. The engine
+  keeps no peers, files or pieces that nobody shows.
+- Eight collections at once is a provisional bound, to be tuned from evidence.
+  It is not a setting and not a claim of optimal concurrency. One slow
+  collection stops no other admitted collection, and a retained subscription
+  holds no capacity.
+- An answer applies only when its query's generation is still the torrent's. An
+  edit that invalidates a torrent raises the generation, clears its collected
+  facts and its changed mark, and asks again, so no fact from before the edit
+  becomes current, and a duplicate final answer publishes nothing.
+- Removing a torrent settles that torrent's readers with a failure and the
+  other torrents continue.
+- After dropped alerts, the queries of the dropped kinds are given up. A
+  complete read still waiting for one fails with recovery required and a display
+  read asks again, so no wait depends on an alert that was lost.
+
 Pause all pauses the libtorrent session, which keeps each torrent's own running
 or paused state, so Resume all does not start torrents the person paused one by
 one. The session pause is saved and survives a restart. While all are paused, a
@@ -108,6 +128,10 @@ hold on files while it can still affect them. After an engine crash, unfinished
 work is unknown until recovered, never inferred as success.
 
 Routine status uses libtorrent state-update alerts without piece bitfields.
+A status query that follows a command passes only `query_name`, as the routine
+query does. The alert handler treats `query_save_path` as the mark of an
+explicit detail answer, so a status query that passed it would bypass the
+routine summary update.
 Retain the latest status per accepted torrent and classify it once for summary
 rows, tray counts and power policy. This avoids synchronous per-torrent queries
 on every tray or window refresh. A new or restored torrent starts with the facts
