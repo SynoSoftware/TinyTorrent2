@@ -53,6 +53,8 @@ internal sealed class MapMotion : IDisposable
     private MapRenderer.Highlight _highlight;
     private Dictionary<PeerPlace, int> _marks = [];
     private HashSet<DestinationKey>? _selection;
+    // The destinations the drawn arcs mark as chosen or selected.
+    private HashSet<DestinationKey> _marked = [];
     private TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Scene? _scene;
     private Completed? _pending;
@@ -182,9 +184,8 @@ internal sealed class MapMotion : IDisposable
         internal required Presentation Model { get; init; }
         internal required MapRenderer.Palette Palette { get; init; }
         internal required MapModel.Selection Selection { get; init; }
-        internal DestinationKey? Chosen { get; init; }
+        internal IReadOnlySet<PeerPlace>? Chosen { get; init; }
         internal DestinationKey? Pointed { get; init; }
-        internal PeerPlace? Place { get; init; }
         internal required Color Background { get; init; }
         internal MapAnimation Animation { get; init; }
         internal MapDotTotal DotTotal { get; init; }
@@ -357,7 +358,7 @@ internal sealed class MapMotion : IDisposable
             }
             cancellation.ThrowIfCancellationRequested();
             var connected = renderer.Inspect(input.Model,
-                input.Model.Destinations.Where(destination => destination.Group.Connections > 0).ToList(), request.View);
+                input.Model.Destinations.Where(destination => destination.Totals.Connections > 0).ToList(), request.View);
             completed = completed with
             {
                 Scene = renderer.Scene,
@@ -718,13 +719,19 @@ internal sealed class MapMotion : IDisposable
             if (selected is null || _selection is null || !_selection.SetEquals(selected))
                 _selection = selected;
         }
-        var chosen = input.Model.Destinations.FirstOrDefault(destination => destination.Key == input.Chosen
-                && destination.Group.Place == input.Place)
-            ?? input.Model.Destinations.FirstOrDefault(destination => destination.Group.Place == input.Place);
-        var highlight = new MapRenderer.Highlight(chosen?.Key, _marks, input.Pointed)
+        var highlight = new MapRenderer.Highlight(input.Chosen, _marks, input.Pointed)
         {
             Selection = input.HighContrast ? null : _selection,
         };
+        // A regroup can move a chosen or selected place to another destination while the
+        // highlight stays equal, and the drawn arcs show which destinations it marks.
+        var marked = _marked;
+        if (modelChanged || highlight != _highlight)
+        {
+            var keys = input.Model.Destinations.Where(highlight.IsMarked).Select(destination => destination.Key).ToHashSet();
+            if (!keys.SetEquals(_marked))
+                marked = keys;
+        }
         var prepare = first || modelChanged || view.Size != previousView?.Size
             || input.Animation != previous?.Animation || input.DotTotal != previous?.DotTotal
             || input.ArcLimit != previous?.ArcLimit || input.Animates != previous?.Animates
@@ -756,20 +763,22 @@ internal sealed class MapMotion : IDisposable
         var postponed = viewChanged && _completed is { } latest && Covers(latest.View, view)
             && renderer.Postpone(latest.View.AxisScale);
         var draw = phased || _again || (viewChanged && !postponed) || changed || input.Palette != previous?.Palette
-            || highlight != _highlight || input.Background != previous?.Background
+            || highlight != _highlight || !ReferenceEquals(marked, _marked) || input.Background != previous?.Background
             || input.HighContrast != previous?.HighContrast;
 #if CAPTURE
         var captureRedraw = Interlocked.Exchange(ref _captureRedraw, 0) != 0;
         draw |= captureRedraw;
         // What made the pass draw, one letter per cause, so a capture shows which input keeps
         // the worker drawing: P phase, A again, V view (c when the latest picture covered it),
-        // C activity, L palette, H highlight, B background, K contrast, R capture redraw.
+        // C activity, L palette, H highlight, M marked destinations, B background, K contrast,
+        // R capture redraw.
         if (draw)
         {
             var covered = viewChanged && !postponed && _completed is { } shown && Covers(shown.View, view);
             measurements.Add(("draw " + string.Concat(phased ? "P" : "", _again ? "A" : "",
                 viewChanged && !postponed ? covered ? "Vc" : "V" : "", changed ? "C" : "",
                 input.Palette != previous?.Palette ? "L" : "", highlight != _highlight ? "H" : "",
+                !ReferenceEquals(marked, _marked) ? "M" : "",
                 input.Background != previous?.Background ? "B" : "", input.HighContrast != previous?.HighContrast ? "K" : "",
                 captureRedraw ? "R" : ""), 0));
         }
@@ -778,6 +787,7 @@ internal sealed class MapMotion : IDisposable
         {
             _again = false;
             _highlight = highlight;
+            _marked = marked;
             if (phased)
                 DrawPhases(raster, highlight, request);
             else

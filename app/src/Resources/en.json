@@ -892,7 +892,9 @@
     "detail": "{0} · Peers: {1} · Active: {2} · ↓ {3} · ↑ {4} · Seeds: {5} (download color) · Leechers: {6} (upload color) · Unknown: {7}",
     "estimated": "Estimated near {0} · Allocated ↓ {1} · ↑ {2}",
     "country_only": "Country only; endpoints are representative",
-    "location_approximate": "Approximate IP location"
+    "location_approximate": "Approximate IP location",
+    "places_more_one": "{1} and {0:N0} more place",
+    "places_more_other": "{1} and {0:N0} more places"
   },
   "peers": {
     "summary": "{0} known peers · {1} connections · {2} active",

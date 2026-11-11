@@ -81,9 +81,9 @@ text block uses the font; the name beside it stays in the app's font.
 
 ## Map
 
-`Inspector.Place` is the chosen filter for both views. Inspector captures the
-immutable peer-list reference and filter intent on the UI thread, and finds a
-chosen place's rows on a worker only when a join, a leave or a location can
+`Inspector.Places` is the chosen filter for both views. Inspector captures the
+immutable peer-list reference and filter intent on the UI thread, and finds the
+chosen places' rows on a worker only when a join, a leave or a location can
 change them. That search runs one at a time. A call during a search leaves the
 work to a follower that reads the latest peers and place, so a burst of replies
 searches the population once more, not once per reply. For the map it gathers each reply that joined or removed a peer or
@@ -189,7 +189,25 @@ When both are visible, the inspector compares the fitted map scale in each
 arrangement and uses the larger one. `MapViewport` owns that scale calculation,
 so layout and projection agree. Combined views retain separate split proportions,
 using the same accessible Splitter as the inspector frame. Coordinates
-from the installed city database are grouped at identical positions. A city name or
+from the installed city database are grouped at identical positions.
+Destinations closer than 25 DIPs at the shown zoom show as one: one arc, one
+light and one set of dots, landing at the place with the most peers, as map
+applications group nearby markers at each zoom level. Zooming in separates
+them and zooming out joins them. The distance is measured on the map as the
+default view draws it, with longitude relative to the origin's meridian and no
+wrap across the seam, because places on either side of the seam are drawn a
+map width apart. Each place joins the nearest landing closer than 25 DIPs or
+becomes a landing, so landings lie 25 DIPs apart and a line of close places
+does not chain into one destination. The merges change when the view rests,
+also after a vertical pan, which changes the horizontal scale, after a held
+drag only once it is released, and at once on a resize. They are made again whole for a new scale, meridian, subject or
+detail. Between those, each place keeps its landing while that shows, so peer
+counts that change on every poll never move an arc; a place that joins merges
+with the nearest landing or shows on its own. A merged destination's arc,
+colour, dots and rank under the arc limit come from the sum of its places'
+drawn rates, each estimated region counting its share. Its description names
+its landing and counts its other places, with the totals of each place's
+peers once, and says country-only when any place is estimated. A city name or
 a bundled country polygon is not required to plot a supplied coordinate. The
 projection fits the full latitude/longitude range with the origin's longitude
 in the centre, or 0° while the origin is unknown, as map applications centre
@@ -269,28 +287,31 @@ using each estimated destination's allocated share. Equal speeds keep destinatio
 order. Only retained arcs carry moving dots. All peers, location markers, table
 rows, country shading and aggregate speed values remain available. This choice
 is saved with the peer view and never changes the engine's network connections.
-Every location has one small light, combining peers at the same location
-regardless of role or connection state. Markers sit above geography and below
+Every shown destination has one small light, combining the peers of all its
+places regardless of role or connection state. Markers sit above geography and below
 the arcs; moving transfer dots remain above the arcs. A 3-DIP solid core has a
 subtle soft halo, white in Dark and black in Light, using the theme's foreground
 ink. Chosen, selected and pointed locations enlarge by half without outlined
 rings. High Contrast uses solid system foreground ink with no halo. Hit targets
 retain their existing size.
 The place description supplies seed, leecher and connection counts. The arc
-limit never removes location markers, including locations with only known peers.
+limit never removes location markers, including destinations with only known peers.
 The map opens no tooltip, because one over the map hides the routes around
 the pointer. The line under the
 [Speed readout](ui/torrents.md#peers-and-connections-map)'s totals describes
 the place under the pointer, or the one inspected with the arrow keys, and
-otherwise the chosen place: a map pin, the place, its connections (peers not
+otherwise the chosen places: a map pin, the place, its connections (peers not
 merely known), then its download and upload rates in the totals' colours.
+The chosen places are named like a merged destination, by the chosen
+destination's landing while it shows and otherwise the first by key, so the
+name never changes between polls on its own.
 Connections and each rate show only when above zero, because "0 connections"
 or a dash tells the person nothing. It describes no place while the map is
 dragged. It and the map's accessible description change with the displayed
 places and their highlight, not with each new picture, so panning and zooming
 add no UI-thread work for them. An estimated
-destination shows the totals of the peers that choosing it shows, not its
-estimated share.
+destination, a merged destination and the chosen places show the totals of the
+peers that choosing them shows, not an estimated share.
 Land and boundaries use the platform's secondary control surface and strong
 control stroke. Arcs and moving transfer dots use the same accent text and
 upload brushes as the table and speed graph. Location lights retain their
@@ -311,9 +332,16 @@ selected rows. Clearing the table selection restores normal colours and opacity,
 including cached glow. This changes appearance without restarting traffic or
 activity fades. High Contrast retains its solid, undimmed system ink.
 Choosing a location on the map, by clicking its marker or route or with the
-arrow keys, limits the peers table to that place's peers in every connection
-state: the whole country in Countries detail, one coordinate in Cities detail,
-or the country's records without coordinates for an estimated destination.
+arrow keys, limits the peers table to the peers of its places in every
+connection state: the whole country in Countries detail, one coordinate in
+Cities detail, or the country's records without coordinates for an estimated
+destination, and each place a merged destination shows. The chosen places stay
+while the map zooms and pans, whichever destinations then show them, so the
+table keeps its rows. Every destination that holds a chosen place shows as
+chosen, so after a zoom-out a chosen mark means some of the chosen peers are
+there, and choosing one estimated region marks every region of its place. The
+arrow keys continue from the chosen destination while it shows, and otherwise
+from the first marked one.
 Any other table filter applies only while nothing is chosen. Clicking empty
 map, pressing Escape, changing the map detail or choosing Table only shows
 every peer again. Selecting rows in the limited table keeps the choice.
@@ -323,8 +351,8 @@ and without refreshing the rest of the inspector.
 Active country arcs keep visible endpoints; idle countries keep their markers.
 The composited arc layer uses the [dimming treatment](#arc-dimming);
 selected routes use the same transparency and fades with a two-DIP stroke.
-They retain transfer colours while table rows are selected; a map-chosen route
-uses highlight ink when no table rows are selected. Location marks remain
+They retain transfer colours while table rows are selected; every route that
+holds a chosen place uses highlight ink when no table rows are selected. Location marks remain
 outside it. Drawing stops when the map leaves the visible inspector.
 Redraws follow changed observations, view transforms, inspection or appearance.
 An unchanged, clamped pan or zoom does not request another frame. Navigation
@@ -647,9 +675,10 @@ Left and right panning continues without end at every zoom, as in established
 map applications; the view always shows one turn of longitude. Vertically, the
 world stays centred where it fits; otherwise panning stops at its top and
 bottom edges. Resize retains the zoom factor and geographic centre, subject to the
-new bounds. Peer updates do not move the view. Estimated destinations are merged
-in fitted-map space, so zoom does not change their number or locations. Resize
-may still merge or separate destinations under the existing spacing rule.
+new bounds. Peer updates do not move the view. Estimated regions are merged
+in fitted-map space, so zoom does not change which regions an estimate uses.
+The shown merge changes the number of destinations when the view rests and
+when it resizes.
 
 The map uses equirectangular coordinates. Zooming calculates the horizontal
 ratio as the cosine of the latitude at the centre of the constrained view.
@@ -663,7 +692,9 @@ vertical world bounds constrain it. Panning recalculates the ratio as the
 centre latitude changes, so the map stays in proportion without zooming; Fit
 restores the overview.
 Estimated-place spacing and inspector arrangement use the same fixed overview
-ratio, so navigation does not redistribute peers or rearrange the inspector.
+ratio, so navigation does not change which regions an estimate uses or
+rearrange the inspector; only the shown merge regroups destinations at the
+view's rest.
 
 Geometry remains vector-based. Land fills are clipped to an overscan window
 and stay cached until the view nears its edge or outline detail changes.

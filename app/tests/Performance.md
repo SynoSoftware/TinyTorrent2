@@ -89,8 +89,8 @@ transfer dots. White location dots sit beneath arcs; moving transfer dots sit
 above them. Arcs and their moving dots convey transfer activity.
 Roughly 500–700 arcs from 1,000 locations is the
 owner's expected collapse behavior at this resolution, not a target the fixture
-enforces. Current city grouping merges exact coordinates only; nearby-location
-merging remains a product finding, separate from frame pacing.
+enforces. Locations closer than 25 DIPs at the shown zoom show as one
+destination, so the arc count depends on the zoom the journey holds.
 
 The journey opens the global map with Ctrl+Shift+M, pans at 1× for one second
 each way, zooms at the download origin to 128× and back for two seconds each,

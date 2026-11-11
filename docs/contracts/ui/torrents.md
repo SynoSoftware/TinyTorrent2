@@ -591,9 +591,9 @@ shared Splitter adjusts their proportions without switching arrangement during
 the gesture. Each orientation retains its proportion in the saved layout.
 The map and table share live peer observations and keep individual connections
 in the table. Connection and active counts join the existing status-bar context;
-the line under the Speed totals gives the pointed or chosen place, its
-connections and rates, and the map's accessible description adds roles and
-precision.
+the line under the Speed totals gives the pointed destination or the chosen
+places, their connections and rates, and the map's accessible description adds
+roles and precision.
 The map area shows total download and upload rates for the inspector's selection
 as a Speed readout: the Speed section's icon and the totals, with no caption,
 because the icon and the arrows already say what the numbers are, and with

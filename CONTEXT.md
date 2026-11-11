@@ -76,7 +76,9 @@ _Avoid_: destination, when referring to the peers included by a place filter.
 
 **Map destination**: a position representing peers on the map, either at supplied
 coordinates or in an estimated populated region. Several estimated destinations
-can represent the same peer place.
+can represent the same peer place. Positions closer than 25 DIPs at the shown
+zoom show as one destination that stands for all their peer places, landing at
+the place with the most peers.
 
 **Map arc**: a guide between the user's location and one active map destination.
 It represents aggregate transfer activity, not an individual network connection
@@ -85,8 +87,10 @@ or a measured network path.
 **Arc limit**: the maximum number of active destination arcs shown at once.
 _Avoid_: connection limit, which limits network connections.
 
-**Chosen place**: the peer place chosen on the map that limits the table's peers.
-It is distinct from the individual peers selected in that table.
+**Chosen places**: the peer places of the destination chosen on the map, which
+limit the table's peers. They stay chosen while the map zooms and pans, whichever
+destinations then show them. They are distinct from the individual peers
+selected in that table.
 
 **Inspected destination**: the map destination whose details the person is
 examining. An estimated destination does not establish the actual location of

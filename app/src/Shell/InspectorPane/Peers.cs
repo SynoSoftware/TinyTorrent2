@@ -356,7 +356,7 @@ public sealed partial class InspectorPane
                 {
                     _peerMap = new PeerMap(Model.Map);
                     _peerMap.Select(Peers.Selection.Items);
-                    _peerMap.PlaceChanged += (_, place) => ChoosePlace(place);
+                    _peerMap.PlacesChanged += (_, places) => ChoosePlaces(places);
                     _peerMap.DotBytesChanged += (_, _) => ShowSpeedLine();
                     _peerMap.DescribedChanged += (_, _) => ShowSpeedLine();
                 }
@@ -370,9 +370,9 @@ public sealed partial class InspectorPane
                 PeerDrawing.Content = null;
                 if (view.Layout == PeerLayout.Table)
                 {
-                    // Without the map nothing shows or clears its chosen place.
+                    // Without the map nothing shows or clears its chosen places.
                     _peerMap = null;
-                    ChoosePlace(null);
+                    ChoosePlaces(null);
                 }
             }
         }
@@ -404,9 +404,9 @@ public sealed partial class InspectorPane
             ShowTransfer();
             ShowSpeedLine();
             var cities = _layout.View.Cities && Model.HasCities;
-            // A chosen place belongs to one map detail.
+            // Chosen places belong to one map detail.
             if (Model.Map.Cities != cities)
-                ChoosePlace(null);
+                ChoosePlaces(null);
             Model.UpdateMap(cities);
         });
     }
@@ -430,9 +430,9 @@ public sealed partial class InspectorPane
 
     // The person's place choice changes which peers show, and that does not
     // wait for the table's settle.
-    private void ChoosePlace(PeerPlace? place)
+    private void ChoosePlaces(IReadOnlySet<PeerPlace>? places)
     {
-        Model.Place = place;
+        Model.Places = places;
     }
 
     private void OnPeersWithdrawn(object? sender, EventArgs args) => Peers?.Withdraw();
@@ -487,17 +487,18 @@ public sealed partial class InspectorPane
     private void ShowSpeedLine()
     {
         var text = Model.Text;
-        var place = _peerMap?.Described?.Group;
+        var place = _peerMap?.Described;
         PlaceSpeed.Visibility = place is null ? Visibility.Collapsed : Visibility.Visible;
         if (place is not null)
         {
+            var totals = place.Totals;
             PlaceName.Text = place.Name;
-            PlaceConnectionCount.Text = text.FormatCount("peer_map", "connections", place.Connections);
-            PlaceConnections.Visibility = place.Connections > 0 ? Visibility.Visible : Visibility.Collapsed;
-            PlaceDownloadRate.Text = TransferPair.Amount(text, "download", text.Rate(place.Down));
-            PlaceDownload.Visibility = place.Down > 0 ? Visibility.Visible : Visibility.Collapsed;
-            PlaceUploadRate.Text = TransferPair.Amount(text, "upload", text.Rate(place.Up));
-            PlaceUpload.Visibility = place.Up > 0 ? Visibility.Visible : Visibility.Collapsed;
+            PlaceConnectionCount.Text = text.FormatCount("peer_map", "connections", totals.Connections);
+            PlaceConnections.Visibility = totals.Connections > 0 ? Visibility.Visible : Visibility.Collapsed;
+            PlaceDownloadRate.Text = TransferPair.Amount(text, "download", text.Rate(totals.Down));
+            PlaceDownload.Visibility = totals.Down > 0 ? Visibility.Visible : Visibility.Collapsed;
+            PlaceUploadRate.Text = TransferPair.Amount(text, "upload", text.Rate(totals.Up));
+            PlaceUpload.Visibility = totals.Up > 0 ? Visibility.Visible : Visibility.Collapsed;
         }
         var dot = place is null ? _peerMap?.DotBytes : null;
         DotScale.Visibility = dot is null ? Visibility.Collapsed : Visibility.Visible;

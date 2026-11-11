@@ -53,10 +53,10 @@ public sealed partial class Inspector
     private (string Address, int Version)? _originKey;
     private Location? _origin;
     private IReadOnlyList<Peer>? _peers;
-    private PeerPlace? _place;
+    private IReadOnlySet<PeerPlace>? _places;
     private int _filterVersion;
     // A join, a leave or a location changed since a finished filter last found
-    // the chosen place's rows.
+    // the chosen places' rows.
     private bool _rowsChanged;
     private TaskCompletionSource? _peersReady;
     private (int Count, int Connected, int Active) _peerCounts;
@@ -109,19 +109,22 @@ public sealed partial class Inspector
     }
 
     /// <summary>
-    /// The peer map place whose peers the table shows, in every connection
-    /// state, or null for every peer.
+    /// The peer map places whose peers the table shows, in every connection
+    /// state: the places of the destination chosen on the map, kept while the
+    /// map zooms and pans. Null for every peer; never empty.
     /// </summary>
-    internal PeerPlace? Place
+    internal IReadOnlySet<PeerPlace>? Places
     {
-        get => _place;
+        get => _places;
         set
         {
-            if (_place == value)
+            if (value is { Count: 0 })
+                value = null;
+            if (_places == value || _places is not null && value is not null && _places.SetEquals(value))
                 return;
-            _place = value;
+            _places = value;
             PeersWithdrawn?.Invoke(this, EventArgs.Empty);
-            Map.RefreshPlace();
+            Map.RefreshPlaces();
             Filter();
         }
     }
@@ -134,16 +137,16 @@ public sealed partial class Inspector
             PropertyChanged?.Invoke(this, ShownPeersChanged);
     }
 
-    /// <summary>The table's rows: <see cref="Peers"/>, or those at <see cref="Place"/>.</summary>
+    /// <summary>The table's rows: <see cref="Peers"/>, or those at <see cref="Places"/>.</summary>
     public IReadOnlyList<Peer>? ShownPeers { get; private set; }
 
-    // While a search for the chosen place's rows runs, the filter it serves:
+    // While a search for the chosen places' rows runs, the filter it serves:
     // the one that started it, or a later one that waits for it to end. Null
     // when no search runs.
     private int? _finding;
 
     /// <summary>
-    /// The chosen place's rows are being found. Until they are, <see cref="ShownPeers"/>
+    /// The chosen places' rows are being found. Until they are, <see cref="ShownPeers"/>
     /// holds the rows from before the person's change, or none after another
     /// torrent was chosen, and the table must not take them as that change.
     /// </summary>
@@ -191,7 +194,7 @@ public sealed partial class Inspector
     internal Task PeersReady => _peersReady?.Task ?? Task.CompletedTask;
 
     /// <param name="rowsMayChange">
-    /// False when only peers' values changed, so a chosen place keeps the rows it shows.
+    /// False when only peers' values changed, so a choice keeps the rows it shows.
     /// </param>
     private async void Filter(bool rowsMayChange = true)
     {
@@ -203,21 +206,21 @@ public sealed partial class Inspector
         _rowsChanged |= rowsMayChange;
         var findsRows = _rowsChanged;
         var peers = _peers;
-        var place = _place;
+        var places = _places;
         var previous = ShownPeers;
-        if (place is null || peers is null)
+        if (places is null || peers is null)
         {
             ShownPeers = peers;
             if (!ReferenceEquals(previous, peers))
                 NotifyShownPeers();
         }
-        var shown = place is null || peers is null ? peers : previous;
+        var shown = places is null || peers is null ? peers : previous;
         var searched = false;
-        // Only finding a chosen place's rows again passes over the peers.
-        if (place is { } chosen && peers is { } all && (findsRows || previous is null))
+        // Only finding the chosen places' rows again passes over the peers.
+        if (places is { } chosen && peers is { } all && (findsRows || previous is null))
         {
             // One search runs at a time. A call during it leaves the search to
-            // the one that follows it, which reads the latest peers and place,
+            // the one that follows it, which reads the latest peers and places,
             // so a burst of replies searches the population once more, not
             // once per reply.
             var running = _finding is not null;
@@ -226,7 +229,11 @@ public sealed partial class Inspector
                 return;
             shown = await Task.Run(() =>
             {
-                IReadOnlyList<Peer> found = all.Where(peer => chosen.Contains(peer.Location)).ToArray();
+                // The places of one choice belong to one map detail.
+                var cities = chosen.First().Cities;
+                IReadOnlyList<Peer> found = all
+                    .Where(peer => peer.Location is { } location && chosen.Contains(PeerPlace.Of(location, cities)))
+                    .ToArray();
                 return previous is not null && previous.SequenceEqual(found) ? previous : found;
             });
             searched = true;

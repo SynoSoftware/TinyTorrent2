@@ -363,8 +363,9 @@ own legality checks. `SpeedHistory` owns its buffers and aggregation, while the
 engine owns sampling cadence and the session envelope.
 
 The peer map keeps its models inside `Torrents`. The shared `Inspector` owns
-scope, geolocation and the chosen place, and retains its plain `MapModel`.
-That model aggregates observations and distributes estimated destinations.
+scope, geolocation and the chosen places, and retains its plain `MapModel`.
+That model aggregates observations, distributes estimated destinations and
+merges the destinations too close to tell apart at the shown zoom.
 `PeerMap` owns native input, focus and inspection; `MapViewport` owns the shared
 projection and navigation calculations. `MapRenderer` owns geometry, animation
 and native resource caches, released when the control unloads. Shell composition

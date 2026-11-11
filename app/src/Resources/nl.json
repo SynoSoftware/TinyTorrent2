@@ -892,7 +892,9 @@
     "detail": "{0} · Peers: {1} · Actief: {2} · ↓ {3} · ↑ {4} · Seeds: {5} (downloadkleur) · Leechers: {6} (uploadkleur) · Onbekend: {7}",
     "estimated": "Geschat nabij {0} · Toegewezen ↓ {1} · ↑ {2}",
     "country_only": "Alleen land; eindpunten zijn representatief",
-    "location_approximate": "Geschatte IP-locatie"
+    "location_approximate": "Geschatte IP-locatie",
+    "places_more_one": "{1} en {0:N0} andere plaats",
+    "places_more_other": "{1} en {0:N0} andere plaatsen"
   },
   "peers": {
     "summary": "{0} bekende peers · {1} verbindingen · {2} actief",

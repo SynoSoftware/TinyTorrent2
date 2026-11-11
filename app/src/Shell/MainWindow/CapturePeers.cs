@@ -279,7 +279,9 @@ public sealed partial class MainWindow
             map.SetAnimation(MapAnimation.Normal, MapDotTotal.Normal);
             if (ReviewMode == CaptureMode.MapGeography)
                 return;
-            var crowded = Enumerable.Range(0, 300).Select(index => MakePeer(index, (index + 1) * 1024)).ToArray();
+            // 300 places at least 32 DIPs apart on the fitted map, so none show as one.
+            GeoPoint Apart(int index) => new(-174 + index % 30 * 12, -63 + index / 30 * 14);
+            var crowded = Enumerable.Range(0, 300).Select(index => MakePeer(index, (index + 1) * 1024, point: Apart(index))).ToArray();
             model.Update(CapturePopulation(model, crowded), origin, Model.Text, cities: true);
             map.SetArcLimit(25);
             await Settle();
@@ -288,14 +290,14 @@ public sealed partial class MainWindow
                 .Select(route => (MapModel.Destination)route.GetType().GetProperty("Destination", Flags)!.GetValue(route)!)
                 .ToArray();
             var shown = Shown();
-            if (model.Destinations.Count != 300 || shown.Length != 25 || shown.Min(destination => destination.Group.Down) != 276 * 1024
+            if (model.Destinations.Count != 300 || shown.Length != 25 || shown.Min(destination => destination.Totals.Down) != 276 * 1024
                 || Read<MapMotion.Traffic>(renderer, "_traffic").Routes.Count != 25)
                 throw new InvalidOperationException("The arc cap lost markers or failed to retain the fastest routes and matching dots.");
-            crowded[0].Update(MakePeer(0, 0, 1048576));
+            crowded[0].Update(MakePeer(0, 0, 1048576, Apart(0)));
             model.Update(CapturePopulation(model, crowded), origin, Model.Text, cities: true);
             await Settle();
-            if (!Shown().Any(destination => destination.Group.Up == 1048576)
-                || Shown().Where(destination => destination.Group.Down > 0).Min(destination => destination.Group.Down) != 277 * 1024)
+            if (!Shown().Any(destination => destination.Totals.Up == 1048576)
+                || Shown().Where(destination => destination.Totals.Down > 0).Min(destination => destination.Totals.Down) != 277 * 1024)
                 throw new InvalidOperationException("The fastest-arc selection did not follow a rate change.");
             map.SetArcLimit(MapRenderer.DefaultLimit);
             await Settle();
@@ -413,7 +415,7 @@ public sealed partial class MainWindow
             }
         }
         var owner = Model.Inspector;
-        var originalPlace = owner.Place;
+        var originalPlaces = owner.Places;
         var location = new Location("US", new Place("US", null), null, null);
         var origin = new Location("GB", new Place("GB", null), null, new GeoPoint(0, 51.5));
         Peer MakePeer(double down, string role = "seed", double up = 0, string torrent = "map-check") => new(Model.Text, torrent, "192.0.2.1:51413", location,
@@ -429,7 +431,7 @@ public sealed partial class MainWindow
         {
             foreach (var paused in new[] { false, true })
             {
-                owner.Place = null;
+                owner.Places = null;
                 var model = new MapModel(owner);
                 var peer = MakePeer(65536);
                 model.Update(CapturePopulation(model, [peer]), origin, Model.Text, cities: false);
@@ -489,7 +491,7 @@ public sealed partial class MainWindow
                         outcomes.Add(new { journey = "map stale selection preparation", workerThread = true,
                             immediateClear = true, obsoleteMarksRejected = true });
                         var chosen = model.Destinations[0];
-                        map.PlaceChanged += (_, place) => owner.Place = place;
+                        map.PlacesChanged += (_, places) => owner.Places = places;
                         typeof(PeerMap).GetMethod("Choose", Flags)!.Invoke(map, [chosen, CaptureDisplay(map)]);
                         var viewport = Read<MapViewport>(map, "_viewport");
                         viewport.SetView(8, new Vector2(10, -50), 1);
@@ -497,10 +499,12 @@ public sealed partial class MainWindow
                         model.Update(CapturePopulation(model, [peer]), origin, Model.Text, cities: false);
                         await Until(() => CaptureMapIdle(map) && !Read<bool>(renderer, "_interpolating"),
                             "The map's first offscreen activity fade did not settle.");
+                        // The chosen places' description is made from the current placements.
                         if (map.Described is not { } described || described.Key != chosen.Key
-                            || described.Group.Down != 2097152 || !model.Destinations.Contains(described))
+                            || described.Totals.Down != 2097152
+                            || !model.Destinations.Any(destination => ReferenceEquals(destination.Members[0], described.Members[0])))
                             throw new InvalidOperationException("The chosen destination retained its previous group or speed.");
-                        if (chosen.Group.Down != 65536)
+                        if (chosen.Members[0].Group.Down != 65536)
                             throw new InvalidOperationException("Worker aggregation mutated a published inspection snapshot.");
                         peer.Update(MakePeer(2097153));
                         model.Update(CapturePopulation(model, [peer]), origin, Model.Text, cities: false);
@@ -528,16 +532,16 @@ public sealed partial class MainWindow
                         outcomes.Add(new { journey = "map hidden sleep and pan-back", staleSleepRejected = true });
 
                         var retained = Read<MapModel.Presentation>(renderer, "_model").Destinations[0];
-                        var retainedRate = retained.Group.Down;
+                        var retainedRate = retained.Members[0].Group.Down;
                         var retainedRoute = Read<System.Collections.IEnumerable>(renderer, "_routes").Cast<object>().Single();
                         var arrangement = Read<int>(renderer, "_arrangement");
                         peer.Update(MakePeer(0, "leecher", 65536));
                         model.Update(CapturePopulation(model, [peer]), origin, Model.Text, cities: false);
                         await Until(() => CaptureMapIdle(map), "The role and direction update did not prepare.");
                         var updated = Read<MapModel.Presentation>(renderer, "_model").Destinations[0];
-                        if (updated.Key != retained.Key || retained.Group.Down != retainedRate
+                        if (updated.Key != retained.Key || retained.Members[0].Group.Down != retainedRate
                             || !ReferenceEquals(retainedRoute, Read<System.Collections.IEnumerable>(renderer, "_routes").Cast<object>().Single())
-                            || updated.Group.Seeds != 0 || updated.Group.Leechers != 1 || updated.Group.Down != 0 || updated.Group.Up != 65536
+                            || updated.Totals.Seeds != 0 || updated.Totals.Leechers != 1 || updated.Totals.Down != 0 || updated.Totals.Up != 65536
                             || Read<int>(renderer, "_arrangement") == arrangement)
                             throw new InvalidOperationException("Retained membership lost a role, rate or direction change.");
                         peer.Update(MakePeer(65536));
@@ -638,7 +642,7 @@ public sealed partial class MainWindow
         }
         finally
         {
-            owner.Place = originalPlace;
+            owner.Places = originalPlaces;
         }
     }
 
@@ -722,12 +726,12 @@ public sealed partial class MainWindow
             }
             peers[0].Location = new Location("US", new Place("US", null), null, null);
             peers[1].Location = new Location("JP", new Place("JP", null), null, null);
-            inspector.Place = PeerPlace.Of(peers[0].Location!, false);
-            inspector.Place = PeerPlace.Of(peers[1].Location!, false);
+            inspector.Places = new HashSet<PeerPlace> { PeerPlace.Of(peers[0].Location!, false) };
+            inspector.Places = new HashSet<PeerPlace> { PeerPlace.Of(peers[1].Location!, false) };
             await inspector.PeersReady.WaitAsync(TimeSpan.FromSeconds(5));
             if (inspector.ShownPeers is not { Count: 1 } shown || !ReferenceEquals(shown[0], peers[1]))
                 throw new InvalidOperationException("A superseded place filter published its rows.");
-            inspector.Place = null;
+            inspector.Places = null;
             await inspector.PeersReady.WaitAsync(TimeSpan.FromSeconds(5));
             if (!ReferenceEquals(inspector.ShownPeers, peers))
                 throw new InvalidOperationException("Clearing the place did not restore the current peer source.");
@@ -737,7 +741,7 @@ public sealed partial class MainWindow
         finally
         {
             inspector.PreparingPeers = null;
-            inspector.Place = null;
+            inspector.Places = null;
             fetching.SetValue(inspector, false);
             Model.CloseInspector();
         }
@@ -1752,13 +1756,14 @@ public sealed partial class MainWindow
                 BindingFlags.Instance | BindingFlags.NonPublic
             )!;
             var choices = inspector.Map.Destinations.ToArray();
-            var chosen = choices.First(choice => choice.Key.Code == "JP");
+            // Japan's regions can show with a neighbour's at the whole-world view.
+            var chosen = choices.First(choice => choice.Members.Any(member => member.Key.Code == "JP"));
             choose.Invoke(chooser, [chosen, CaptureDisplay(chooser)]);
             await CaptureUi("peers-place-japan");
             completed.Add("peers-place-japan");
-            var japan = inspector.Place
+            var japan = inspector.Places
                 ?? throw new InvalidOperationException("Choosing a map place did not filter the table.");
-            var expected = peers.Count(peer => japan.Contains(peer.Location));
+            var expected = peers.Count(peer => japan.Any(place => place.Contains(peer.Location)));
             var states = inspector.ShownPeers!.Select(peer => peer.State).Distinct().Count();
             if (
                 inspector.ShownPeers!.Count != expected
@@ -1768,39 +1773,95 @@ public sealed partial class MainWindow
             )
                 throw new InvalidOperationException("The table does not show exactly the chosen place's peers.");
             var selectedField = typeof(PeerMap).GetField("_selected", BindingFlags.Instance | BindingFlags.NonPublic)!;
-            inspector.Place = null;
+            inspector.Places = null;
             await CaptureLayout();
             if (selectedField.GetValue(chooser) is not null)
-                throw new InvalidOperationException("Clearing Inspector.Place left a chosen map destination.");
+                throw new InvalidOperationException("Clearing Inspector.Places left a chosen map destination.");
             outcomes.Add(new
             {
                 journey = "authoritative place cleared",
-                tableCleared = inspector.Place is null && ReferenceEquals(table.ItemsSource, inspector.Peers),
+                tableCleared = inspector.Places is null && ReferenceEquals(table.ItemsSource, inspector.Peers),
                 mapCleared = selectedField.GetValue(chooser) is null,
             });
             choose.Invoke(chooser, [chosen, CaptureDisplay(chooser)]);
-            var sameCountry = choices.Where(choice => choice.Key.Code == "US").Take(2).ToArray();
+            // Two US regions that show apart choose the same country.
+            var sameCountry = choices.Where(choice => choice.Members.All(member => member.Key.Code == "US")).Take(2).ToArray();
             if (sameCountry.Length == 2)
             {
                 choose.Invoke(chooser, [sameCountry[0], CaptureDisplay(chooser)]);
                 var first = selectedField.GetValue(chooser);
-                var place = inspector.Place;
+                var place = inspector.Places!;
                 choose.Invoke(chooser, [sameCountry[1], CaptureDisplay(chooser)]);
                 var second = selectedField.GetValue(chooser);
                 await inspector.PeersReady;
                 var row = inspector.ShownPeers!.First();
                 table.Selection = new Syno.TableView.Selection([row], row);
                 await CaptureLayout();
-                if (Equals(first, second) || inspector.Place != place)
+                var preserved = inspector.Places?.SetEquals(place) == true;
+                if (Equals(first, second) || !preserved)
                     throw new InvalidOperationException("Estimated destinations or table selection changed the country filter.");
-                outcomes.Add(new { journey = "two destinations share one place", distinct = !Equals(first, second), preserved = inspector.Place == place });
+                outcomes.Add(new { journey = "two destinations share one place", distinct = !Equals(first, second), preserved });
             }
+            // A merged destination's choice outlasts zooms, and a peer update between rests
+            // keeps every merge: the table keeps its rows and the drawn marks follow the places.
+            async Task<MapRenderer.Inspection> Rest(float zoom, Vector2 focus)
+            {
+                View(zoom, focus);
+                await Task.Delay(MapViewport.Rest + TimeSpan.FromMilliseconds(100));
+                await chooser.Ready.WaitAsync(TimeSpan.FromSeconds(10));
+                await inspector.PeersReady;
+                return CaptureDisplay(chooser)?.Inspection
+                    ?? throw new InvalidOperationException("The rested map showed no picture.");
+            }
+            var whole = await Rest(1f, Vector2.Zero);
+            var merged = whole.Destinations.FirstOrDefault(choice => choice.Members.Select(member => member.Group.Place).Distinct().Count() > 1)
+                ?? throw new InvalidOperationException("The whole-world map showed no merged destination.");
+            choose.Invoke(chooser, [merged, CaptureDisplay(chooser)]);
+            await inspector.PeersReady;
+            var mergedPlaces = inspector.Places!;
+            var mergedRows = inspector.ShownPeers!;
+            void Keeps(MapRenderer.Inspection rested)
+            {
+                if (inspector.Places?.SetEquals(mergedPlaces) != true || !ReferenceEquals(inspector.ShownPeers, mergedRows)
+                    || rested.Highlight.Chosen?.SetEquals(mergedPlaces) != true)
+                    throw new InvalidOperationException("A zoom changed the chosen places, their rows or their marks.");
+            }
+            var zoomedIn = await Rest(MapViewport.MaxZoom, viewport.Coordinates(merged.Point));
+            Keeps(zoomedIn);
+            var split = zoomedIn.Destinations.Count(zoomedIn.Highlight.IsChosen);
+            if (split < 2)
+                throw new InvalidOperationException("Zooming in did not separate the merged destination.");
+            var zoomedOut = await Rest(1f, Vector2.Zero);
+            Keeps(zoomedOut);
+            string Merges(IEnumerable<MapModel.Destination> destinations) =>
+                string.Join(";", destinations.Select(destination => string.Join(",", destination.Members.Select(member => member.Key))));
+            if (!zoomedOut.Destinations.Any(destination => Merges([destination]) == Merges([merged])))
+                throw new InvalidOperationException("Zooming out did not join the merged destination again.");
+            // Only the rates change: the map keeps its origin and detail, which otherwise
+            // regroup it on purpose.
+            var merges = Merges(inspector.Map.Destinations);
+            var downloads = peers.Select(peer => peer.DownloadRate).ToArray();
+            for (var index = 0; index < peers.Length; index++)
+                CaptureRates(peers[index], downloads[index] * 1.1);
+            inspector.Map.Update(CapturePopulation(inspector.Map, peers), inspector.Map.Origin, Model.Text, inspector.Map.Cities);
+            await chooser.Ready.WaitAsync(TimeSpan.FromSeconds(10));
+            var updated = Merges(inspector.Map.Destinations);
+            for (var index = 0; index < peers.Length; index++)
+                CaptureRates(peers[index], downloads[index]);
+            inspector.Map.Update(CapturePopulation(inspector.Map, peers), inspector.Map.Origin, Model.Text, inspector.Map.Cities);
+            await chooser.Ready.WaitAsync(TimeSpan.FromSeconds(10));
+            var kept = updated == merges;
+            if (!kept)
+                throw new InvalidOperationException(
+                    "A peer update between rests changed which places show as one: "
+                    + $"{merges.Split(';').Length} destinations before, {updated.Split(';').Length} after.");
+            outcomes.Add(new { journey = "merged choice across zooms", places = mergedPlaces.Count, split, rows = mergedRows.Count, mergesKept = kept });
             choose.Invoke(chooser, [null, CaptureDisplay(chooser)]);
             await CaptureUi("peers-place-cleared");
             completed.Add("peers-place-cleared");
-            if (inspector.Place is not null || !ReferenceEquals(table.ItemsSource, inspector.Peers))
+            if (inspector.Places is not null || !ReferenceEquals(table.ItemsSource, inspector.Peers))
                 throw new InvalidOperationException("Clearing the map place did not show every peer.");
-            outcomes.Add(new { journey = "map place filters peers table", place = japan.ToString(), rows = expected, states, all = peers.Length });
+            outcomes.Add(new { journey = "map place filters peers table", place = string.Join(", ", japan), rows = expected, states, all = peers.Length });
             // With Countries detail, two selected US rows mark at most the two
             // most populous US destinations and one Japanese row marks Japan's.
             var several = peers
@@ -1816,9 +1877,11 @@ public sealed partial class MainWindow
             var highlight = (MapRenderer.Highlight)typeof(PeerMap)
                 .GetMethod("Highlight", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .Invoke(chooser, [drawn])!;
+            // The ranks of the marked regions, whichever destinations show them.
             var ranks = inspector.Map.Destinations
-                .Where(highlight.IsMarked)
-                .Select(destination => destination.Rank)
+                .SelectMany(destination => destination.Members)
+                .Where(member => highlight.Places.GetValueOrDefault(member.Group.Place) > member.Rank)
+                .Select(member => member.Rank)
                 .ToArray();
             if (ranks.Count(rank => rank == 0) != 2 || ranks.Any(rank => rank > 1))
                 throw new InvalidOperationException("Selected rows did not mark the most populous destinations.");
@@ -1918,18 +1981,20 @@ public sealed partial class MainWindow
             owner.PropertyChanged -= changed;
             if (notifications != 0 || !destinations.SequenceEqual(owner.Destinations))
                 throw new InvalidOperationException("Drawing changed map presentation data.");
-            choose.Invoke(chooser, [owner.Destinations.First(destination => destination.Key.Code == "JP"), CaptureDisplay(chooser)]);
-            var retainedPlace = inspector.Place;
+            bool Japanese(MapModel.Destination destination) => destination.Members.Any(member => member.Key.Code == "JP");
+            choose.Invoke(chooser, [owner.Destinations.First(Japanese), CaptureDisplay(chooser)]);
+            var retainedPlaces = inspector.Places!;
             var retainedChoice = selectedField.GetValue(chooser);
+            // A choice can hold a neighbour's places, so every chosen place loses its peers.
             typeof(Inspector).GetProperty(nameof(Inspector.Peers))!.SetValue(
-                inspector, peers.Where(peer => peer.Location?.Code != "JP").ToArray());
+                inspector, peers.Where(peer => !retainedPlaces.Any(place => place.Contains(peer.Location))).ToArray());
             inspector.Refresh();
-            await DrawMap(() => owner.Destinations.All(destination => destination.Key.Code != "JP"));
-            if (inspector.Place != retainedPlace || inspector.ShownPeers!.Count != 0)
+            await DrawMap(() => !owner.Destinations.Any(Japanese));
+            if (inspector.Places != retainedPlaces || inspector.ShownPeers!.Count != 0)
                 throw new InvalidOperationException("Losing the last peer cleared the chosen place.");
             typeof(Inspector).GetProperty(nameof(Inspector.Peers))!.SetValue(inspector, peers);
             inspector.Refresh();
-            await DrawMap(() => owner.Destinations.Any(destination => destination.Key.Code == "JP"));
+            await DrawMap(() => owner.Destinations.Any(Japanese));
             if (((MapModel.Destination?)retainedChoice)?.Key != ((MapModel.Destination?)selectedField.GetValue(chooser))?.Key)
                 throw new InvalidOperationException("Returning peers changed the exact chosen destination.");
             // Detach the real control without restarting engine acquisition
@@ -1952,12 +2017,12 @@ public sealed partial class MainWindow
             // renderer, and its readiness covers only a map that has one.
             activeRenderer = await CaptureMapValue(() => CaptureRenderer(chooser), "The shown map made no renderer.");
             await chooser.Ready.WaitAsync(TimeSpan.FromSeconds(10));
-            if (Arcs().Length != arcs.Length || inspector.Place != retainedPlace)
+            if (Arcs().Length != arcs.Length || inspector.Places != retainedPlaces)
                 throw new InvalidOperationException("Resource recreation changed the place or lost routes.");
-            if (!ReferenceEquals(owner, inspector.Map) || inspector.Place != retainedPlace)
+            if (!ReferenceEquals(owner, inspector.Map) || inspector.Places != retainedPlaces)
                 throw new InvalidOperationException("Showing the map replaced its model or chosen place.");
             outcomes.Add(new { journey = "map ownership and resources", retainedRoutes = arcs.Length, redrawNotifications = notifications, placePreserved = true });
-            inspector.Place = null;
+            inspector.Places = null;
             table.Selection = new Syno.TableView.Selection(several, several[0]);
             pane.Layout = pane.Layout with
             {
@@ -2005,12 +2070,13 @@ public sealed partial class MainWindow
                 drawing.FrameMeasured = frames.Add;
                 inspector.Map.Update(CapturePopulation(inspector.Map, known), null, Model.Text);
                 await CaptureUi($"peers-known-{count}");
-                var rendered = inspector.Map.Destinations.Count;
+                // Close locations show as one destination, so the fixture counts what the map places.
+                var rendered = inspector.Map.Destinations.Sum(destination => destination.Members.Count);
                 if (!ReferenceEquals(inspector.Peers, known))
                     throw new InvalidOperationException("The measured map lost its peer fixture: the inspector replaced its peers.");
                 if (rendered != count)
                     throw new InvalidOperationException(
-                        $"The measured map lost its peer fixture: it shows {rendered} of {count} destinations"
+                        $"The measured map lost its peer fixture: it places {rendered} of {count} locations"
                         + $" in {(inspector.Map.Cities ? "Cities" : "Countries")} detail.");
                 var managed = GC.GetTotalMemory(true);
                 using var process = Process.GetCurrentProcess();
@@ -2067,8 +2133,8 @@ public sealed partial class MainWindow
                 await Task.Delay(TimeSpan.FromSeconds(1));
                 var warmupFrames = drawing.MotionFrames - warmupStart;
                 var motionState = drawing.MotionState;
-                var activeArcs = inspector.Map.Destinations.Count(destination => destination.Group.Active > 0);
-                var place = inspector.Map.Destinations.MaxBy(destination => destination.Group.Count)!;
+                var activeArcs = inspector.Map.Destinations.Count(destination => destination.Totals.Active > 0);
+                var place = inspector.Map.Destinations.MaxBy(destination => destination.Totals.Count)!;
                 List<object> rounds = [];
                 var paneRefresh = typeof(InspectorPane).GetMethod(
                     "Refresh", BindingFlags.Instance | BindingFlags.NonPublic, [typeof(bool)])!;

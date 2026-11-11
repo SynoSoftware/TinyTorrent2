@@ -84,7 +84,8 @@ public sealed partial class MainWindow
                 oldMarks = 0, backgroundAccumulation = false });
             var point = new GeoPoint(100, -40);
             var destination = new MapModel.Destination(
-                new MapModel.Group(new PeerPlace("XX", point, false), () => "Fixture", point), point, 1, null);
+                [new MapModel.Placement(new MapModel.Group(new PeerPlace("XX", point, false), () => "Fixture", point), point, 1, null)],
+                Model.Text);
             var inspection = new MapRenderer.Inspection(view,
                 [new(destination, new MapRenderer.Extent(new Vector2(50, 40), new Vector2(100, 40)),
                     [new Vector2(50, 40), new Vector2(100, 40)])]);
@@ -274,7 +275,8 @@ public sealed partial class MainWindow
                 {
                     model.Update(CapturePopulation(model, peers), origin, Model.Text);
                     await preparing.Task.WaitAsync(TimeSpan.FromSeconds(5));
-                    var destination = model.Destinations.First(destination => destination.Point == peers[2].Location!.Point);
+                    var destination = model.Destinations.First(destination =>
+                        destination.Members.Any(member => member.Point == peers[2].Location!.Point));
                     map.Select([peers[2]]);
                     var marked = false;
                     var selectionClock = Stopwatch.StartNew();

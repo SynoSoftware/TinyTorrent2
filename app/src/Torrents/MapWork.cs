@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Numerics;
 using Syno.TinyTorrent.Shared;
 using static Syno.TinyTorrent.Torrents.MapModel;
 
@@ -14,6 +15,12 @@ internal sealed class MapWork(Dictionary<string, Geography.Country> world) : IDi
     {
         internal required Snapshot Model { get; init; }
         internal required float Scale { get; init; }
+
+        /// <summary>
+        /// The DIPs per degree of longitude and latitude of the view's last rest at the
+        /// current size, which decide the destinations that show as one.
+        /// </summary>
+        internal required Vector2 Shown { get; init; }
         internal CancellationToken Cancellation { get; init; }
     }
 
@@ -28,6 +35,7 @@ internal sealed class MapWork(Dictionary<string, Geography.Country> world) : IDi
     private readonly Arrangement _model = new(world);
     private Presentation? _presentation;
     private float _scale;
+    private Vector2 _shown;
     private readonly TaskCompletionSource _released = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     internal Task Released => _released.Task;
@@ -42,9 +50,9 @@ internal sealed class MapWork(Dictionary<string, Geography.Country> world) : IDi
         _model.Update(input.Model, input.Cancellation);
         input.Cancellation.ThrowIfCancellationRequested();
         var presentation = _presentation;
-        if (presentation is null || _model.Changed || input.Scale != _scale)
+        if (presentation is null || _model.Changed || input.Scale != _scale || input.Shown != _shown)
         {
-            _model.Arrange(input.Scale);
+            _model.Arrange(input.Scale, input.Shown);
             var arranged = _model.Present();
             // A new population of equal peer facts, such as a return to the
             // subject's peers, keeps the presentation, so the map does not
@@ -52,6 +60,7 @@ internal sealed class MapWork(Dictionary<string, Geography.Country> world) : IDi
             if (presentation is null || language != input.Model.Text.Language || !arranged.Matches(presentation))
                 presentation = _presentation = arranged;
             _scale = input.Scale;
+            _shown = input.Shown;
         }
         input.Cancellation.ThrowIfCancellationRequested();
         return new()

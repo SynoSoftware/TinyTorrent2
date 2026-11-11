@@ -141,9 +141,7 @@ internal sealed class MapRenderer : IDisposable
         }
     }
 
-    // A pan or zoom has ended when its view has not changed for a quarter
-    // second; the pointer moves and wheel notches of one gesture come faster.
-    private static readonly long Rest = Stopwatch.Frequency / 4;
+    private static readonly long Rest = (long)(MapViewport.Rest.TotalSeconds * Stopwatch.Frequency);
 
     private bool Moving => Stopwatch.GetTimestamp() - _viewMoved < Rest;
     internal static bool SystemHighContrast => SystemAccessibility.HighContrast;
@@ -217,19 +215,21 @@ internal sealed class MapRenderer : IDisposable
         internal Color Upload { get; init; }
     }
 
+    /// <param name="Chosen">The places chosen on the map, or null; every destination that holds one shows as chosen.</param>
+    /// <param name="Places">The selected peers' places, each with its reach (<see cref="Presentation.Marks"/>).</param>
     internal readonly record struct Highlight(
-        DestinationKey? Chosen,
+        IReadOnlySet<PeerPlace>? Chosen,
         IReadOnlyDictionary<PeerPlace, int> Places,
         DestinationKey? Pointed
     )
     {
         internal IReadOnlySet<DestinationKey>? Selection { get; init; }
 
-        internal bool IsSelected(Destination destination) =>
-            Places.GetValueOrDefault(destination.Group.Place) > destination.Rank;
+        internal bool IsSelected(Destination destination) => destination.Marked(Places);
 
-        internal bool IsMarked(Destination destination) =>
-            destination.Key == Chosen || IsSelected(destination);
+        internal bool IsChosen(Destination destination) => Chosen is { } chosen && destination.Holds(chosen);
+
+        internal bool IsMarked(Destination destination) => IsChosen(destination) || IsSelected(destination);
 
         internal Color Colour(Color colour, DestinationKey destination)
         {
@@ -339,7 +339,7 @@ internal sealed class MapRenderer : IDisposable
         _shown.Clear();
         if (origin is not null)
         {
-            _shown.UnionWith(_model.Destinations.Where(destination => destination.Group.Active > 0)
+            _shown.UnionWith(_model.Destinations.Where(destination => destination.Totals.Active > 0)
                 .OrderByDescending(destination => destination.Rate)
                 .Take(ArcLimit));
         }
@@ -384,7 +384,7 @@ internal sealed class MapRenderer : IDisposable
             _arrangement++;
         // A rate change alone keeps the glow until its strengths change.
         var arranged = _routes
-            .Select(route => Arranged.Of(route.Destination.Key, route.Destination.Group, _shown.Contains(route.Destination)))
+            .Select(route => Arranged.Of(route.Destination, _shown.Contains(route.Destination)))
             .Concat(_model.Countries.Values
                 .Where(group => group.Estimated)
                 .Select(group => Arranged.Of(new DestinationKey(group.Code, null, true), group, false)))
@@ -401,7 +401,7 @@ internal sealed class MapRenderer : IDisposable
         _started = Stopwatch.GetTimestamp();
         var change = _routes
             .Where(route =>
-                _shown.Contains(route.Destination) || route.Destination.Group.Estimated && route.Destination.Group.Active > 0)
+                _shown.Contains(route.Destination) || route.Destination.Totals is { Estimated: true, Active: > 0 })
             .Select(route => Math.Abs(route.Strength - route.Start))
             .Concat(_model.Countries.Values
                 .Where(group => group.Estimated && group.Active > 0)
@@ -1085,7 +1085,7 @@ internal sealed class MapRenderer : IDisposable
                     continue;
                 var paint = PaintOf(selected, source);
                 paint.Line(2);
-                var colour = highlight.Selection is null ? ink : selected.Destination.Group.Downloads ? down : up;
+                var colour = highlight.Selection is null ? ink : selected.Destination.Downloads ? down : up;
                 paint.Core(highlight.Colour(colour, selected.Destination.Key));
             }
         }
@@ -1250,7 +1250,7 @@ internal sealed class MapRenderer : IDisposable
                                         if (route.Arc is null || !Reaches(route, turn))
                                             continue;
                                         var strength = _displayed[route.Destination.Key];
-                                        var colour = route.Destination.Group.Downloads ? down : up;
+                                        var colour = route.Destination.Downloads ? down : up;
                                         colour = highlight.Colour(colour, route.Destination.Key);
                                         var paint = PaintOf(route, home);
                                         var glowStroke = paint.Glow(Step(2 + 3 * strength, 2));
@@ -1313,7 +1313,7 @@ internal sealed class MapRenderer : IDisposable
                                 }
                                 var brush = paint.Core(
                                     highlight.Colour(
-                                        marked && highlight.Selection is null ? ink : route.Destination.Group.Downloads ? down : up,
+                                        marked && highlight.Selection is null ? ink : route.Destination.Downloads ? down : up,
                                         route.Destination.Key)
                                 );
                                 brush.Opacity = .18f + .82f * strength;
@@ -1637,6 +1637,17 @@ internal sealed class MapRenderer : IDisposable
                 group.Unknown > 0,
                 group.Active > 0,
                 group.Downloads
+            );
+
+        internal static Arranged Of(Destination destination, bool arc) =>
+            new(
+                destination.Key,
+                arc,
+                destination.Totals.Seeds > 0,
+                destination.Totals.Leechers > 0,
+                destination.Totals.Unknown > 0,
+                destination.Totals.Active > 0,
+                destination.Downloads
             );
     }
 

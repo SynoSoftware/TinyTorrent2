@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Numerics;
@@ -33,8 +34,15 @@ public sealed partial class PeerMap : UserControl
     // picture works it out.
     private Color? _underlay;
     private string _language = string.Empty;
+    // The destination the person chose; its key starts the arrow keys while it shows.
     private Destination? _selected;
     private Destination? _pointed;
+    // The zoom and ratio of the view at its last rest, which set the scale its destinations
+    // are merged at; the fitted scale is read at each preparation, so a resize applies at once.
+    private (float Zoom, float Ratio) _rested = (1, 1);
+    private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _restTimer;
+    // The description of the chosen places, for the inspection and choice it was made from.
+    private (MapRenderer.Inspection Inspection, IReadOnlySet<PeerPlace> Places, DestinationKey? Key, Destination? Destination)? _choice;
     private long _dotBytes = MapMotion.SmallestDot;
     private MapAnimation _animation = MapAnimation.Normal;
     private MapDotTotal _dotTotal = MapDotTotal.Normal;
@@ -72,6 +80,10 @@ public sealed partial class PeerMap : UserControl
         _navigationTimer.Interval = TimeSpan.FromSeconds(3);
         _navigationTimer.IsRepeating = false;
         _navigationTimer.Tick += (_, _) => Navigation.Visibility = Visibility.Collapsed;
+        _restTimer = DispatcherQueue.CreateTimer();
+        _restTimer.Interval = MapViewport.Rest;
+        _restTimer.IsRepeating = false;
+        _restTimer.Tick += (_, _) => Rest();
         // Keyboard focus shows the Fit button, so Tab can reach it.
         GotFocus += (_, _) =>
         {
@@ -111,6 +123,8 @@ public sealed partial class PeerMap : UserControl
         _viewport.Changed += (_, navigation) =>
         {
             _motion?.Navigate(_viewport.View);
+            _restTimer.Stop();
+            _restTimer.Start();
             if (_pointed is not null)
             {
                 _pointed = null;
@@ -128,9 +142,9 @@ public sealed partial class PeerMap : UserControl
 
     /// <summary>
     /// Raised when the person chooses a location on the map or clears the
-    /// choice; the peers table shows only that place's peers.
+    /// choice; the peers table shows only the peers of the chosen destination's places.
     /// </summary>
-    internal event EventHandler<PeerPlace?>? PlaceChanged;
+    internal event EventHandler<IReadOnlySet<PeerPlace>?>? PlacesChanged;
 
     /// <summary>
     /// The bytes one moving dot stands for, or null while the map's animation
@@ -146,10 +160,10 @@ public sealed partial class PeerMap : UserControl
 
     /// <summary>
     /// The place the speed legend describes: the one under the pointer, else
-    /// the chosen one. Null when there is neither and while the map is dragged.
+    /// the chosen places. Null when there is neither and while the map is dragged.
     /// </summary>
     internal Destination? Described => _drag is not { IsActive: true } && Displayed is { } displayed
-        ? Resolve(displayed, _pointed) ?? Chosen(displayed) : null;
+        ? Resolve(displayed, _pointed) ?? Choice(displayed) : null;
 
     /// <summary>Raised when <see cref="Described"/> or its speeds may have changed.</summary>
     internal event EventHandler? DescribedChanged;
@@ -200,15 +214,15 @@ public sealed partial class PeerMap : UserControl
         if (destination is not null && chosen is null)
             return;
         _selected = chosen;
-        PlaceChanged?.Invoke(this, _selected?.Group.Place);
+        PlacesChanged?.Invoke(this, chosen?.Members.Select(member => member.Group.Place).ToFrozenSet());
     }
 
 
     private void OnModelChanged(object? sender, PropertyChangedEventArgs args)
     {
-        if (args.PropertyName == nameof(MapModel.Place))
+        if (args.PropertyName == nameof(MapModel.Places))
         {
-            if (_selected?.Group.Place != _model.Place)
+            if (_selected is not null && (_model.Places is not { } places || !_selected.Holds(places)))
                 _selected = null;
             Invalidate();
             return;
@@ -232,6 +246,8 @@ public sealed partial class PeerMap : UserControl
     {
         var loading = new object();
         _loading = loading;
+        // The view survives an unload, and the timer stopped with it.
+        _rested = (_viewport.Zoom, _viewport.Ratio);
         _model.PropertyChanged += OnModelChanged;
         CaptureSelection();
         WatchSettings();
@@ -336,7 +352,21 @@ public sealed partial class PeerMap : UserControl
         {
             Model = snapshot,
             Scale = _viewport.Scale,
+            Shown = new Vector2(_rested.Ratio, 1) * (_viewport.Scale * _rested.Zoom),
         };
+    }
+
+    // The view has not changed for MapViewport.Rest, so its destinations merge at its scale;
+    // a held drag waits for its release.
+    private void Rest()
+    {
+        if (_drag is { IsActive: true })
+            return;
+        var rested = (_viewport.Zoom, _viewport.Ratio);
+        if (rested == _rested)
+            return;
+        _rested = rested;
+        QueuePreparation();
     }
 
     private async void Prepare(MapWork work)
@@ -435,9 +465,8 @@ public sealed partial class PeerMap : UserControl
             },
             Selection = !_selection.HasPeers || presentation.Cities == _selection.Cities
                 ? _selection : MapModel.Selection.Empty,
-            Chosen = _selected?.Key,
+            Chosen = _model.Places,
             Pointed = _pointed?.Key,
-            Place = _model.Place,
             Background = _underlay ??= Underlay(),
             Animation = _animation,
             DotTotal = _dotTotal,
@@ -467,10 +496,12 @@ public sealed partial class PeerMap : UserControl
         _underlay = null;
         EndDrag(true);
         _navigationTimer.Stop();
+        _restTimer.Stop();
         Navigation.Visibility = Visibility.Collapsed;
         var work = _work;
         _work = null;
         _presentation = null;
+        _choice = null;
         if (work is not null && !ReferenceEquals(work, _working))
             _ = Task.Run(work.Dispose);
         _motion?.Dispose();
@@ -482,15 +513,45 @@ public sealed partial class PeerMap : UserControl
     }
 
     private MapRenderer.Highlight Highlight(MapMotion.Displayed displayed) =>
-        new(Chosen(displayed)?.Key, displayed.Inspection.Highlight.Places, _pointed?.Key);
+        new(_model.Places, displayed.Inspection.Highlight.Places, _pointed?.Key);
 
     private static Destination? Resolve(MapMotion.Displayed displayed, Destination? destination) =>
         destination is null ? null : displayed.Inspection.Destinations.FirstOrDefault(current => current.Key == destination.Key);
 
-    private Destination? Chosen(MapMotion.Displayed displayed) => _model.Place is { } place
-        ? displayed.Inspection.Destinations.FirstOrDefault(destination => destination.Key == _selected?.Key && destination.Group.Place == place)
-            ?? displayed.Inspection.Destinations.FirstOrDefault(destination => destination.Group.Place == place)
-        : null;
+    /// <summary>
+    /// The chosen places as one destination, whichever destinations show them: their totals
+    /// are the peers the table shows. Its first member, which names it, is the chosen
+    /// destination's landing while that shows, else the first by key, so its name never
+    /// changes between polls on its own. Null without a choice or a place that shows.
+    /// </summary>
+    private Destination? Choice(MapMotion.Displayed displayed)
+    {
+        if (_model.Places is not { } places || _model.Text is not { } text)
+        {
+            _choice = null;
+            return null;
+        }
+        var inspection = displayed.Inspection;
+        var key = _selected?.Key;
+        if (_choice is { } kept && ReferenceEquals(kept.Inspection, inspection) && ReferenceEquals(kept.Places, places)
+            && kept.Key == key)
+            return kept.Destination;
+        List<Placement> members = [];
+        foreach (var destination in inspection.Destinations)
+        {
+            foreach (var member in destination.Members)
+            {
+                if (places.Contains(member.Group.Place))
+                    members.Add(member);
+            }
+        }
+        members.Sort((first, second) => (second.Key == key).CompareTo(first.Key == key) is var chosen && chosen != 0
+            ? chosen
+            : first.Key.CompareTo(second.Key));
+        var choice = members.Count == 0 ? null : new Destination(members, text);
+        _choice = (inspection, places, key, choice);
+        return choice;
+    }
 
 
     private static Color Colour(Brush brush) => ((SolidColorBrush)brush).Color;
@@ -562,7 +623,9 @@ public sealed partial class PeerMap : UserControl
         if (_model.Text is not { } text)
             return;
         displayed ??= Displayed;
-        AutomationProperties.SetHelpText(this, _model.Describe(Inspected(displayed)) + " " + text.Get("peer_map", "keyboard"));
+        // Without a pointed destination it describes the chosen places, as the speed line does.
+        var described = displayed is null ? null : Resolve(displayed, _pointed) ?? Choice(displayed) ?? Inspected(displayed);
+        AutomationProperties.SetHelpText(this, _model.Describe(described) + " " + text.Get("peer_map", "keyboard"));
         DescribedChanged?.Invoke(this, EventArgs.Empty);
     }
 

@@ -895,7 +895,9 @@
     "detail": "{0} · Pares: {1} · Ativos: {2} · ↓ {3} · ↑ {4} · Semeadores: {5} (cor do download) · Receptores: {6} (cor do envio) · Desconhecidos: {7}",
     "estimated": "Estimado perto de {0} · Alocado ↓ {1} · ↑ {2}",
     "country_only": "Somente o país; os pontos de conexão são representativos",
-    "location_approximate": "Localização aproximada por IP"
+    "location_approximate": "Localização aproximada por IP",
+    "places_more_one": "{1} e mais {0:N0} local",
+    "places_more_other": "{1} e mais {0:N0} locais"
   },
   "peers": {
     "summary": "{0} pares conhecidos · {1} conexões · {2} ativas",

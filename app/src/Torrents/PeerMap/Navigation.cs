@@ -182,6 +182,12 @@ public sealed partial class PeerMap
         Drawing.ReleasePointerCaptures();
         if (cancel && drag.IsActive)
             _viewport.SetView(_viewport.Zoom, drag.Center, drag.Ratio);
+        // A release changes no view, and the rest that came during the drag waited for it.
+        if (drag.IsActive)
+        {
+            _restTimer.Stop();
+            _restTimer.Start();
+        }
         Describe();
     }
 
@@ -233,8 +239,11 @@ public sealed partial class PeerMap
             var step = args.Key is VirtualKey.Left or VirtualKey.Up ? -1 : 1;
             var index = -1;
             var highlight = Highlight(displayed);
+            // From the pointed destination, else the chosen one while it shows, else the first
+            // marked: after a zoom the chosen places can show as several destinations.
+            var start = _pointed?.Key ?? Resolve(displayed, _selected)?.Key;
             for (var candidate = 0; candidate < destinations.Count; candidate++)
-                if (_pointed is null ? highlight.IsMarked(destinations[candidate]) : destinations[candidate].Key == _pointed.Key)
+                if (start is null ? highlight.IsMarked(destinations[candidate]) : destinations[candidate].Key == start)
                 {
                     index = candidate;
                     break;

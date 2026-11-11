@@ -9,6 +9,12 @@ internal sealed class MapViewport
     internal const float MaxZoom = 128;
     private const float OverviewRatio = 1;
 
+    /// <summary>
+    /// How long the view stays unchanged before a pan or zoom has ended; the
+    /// pointer moves and wheel notches of one gesture come faster.
+    /// </summary>
+    internal static readonly TimeSpan Rest = TimeSpan.FromSeconds(.25);
+
     internal Size Size { get; private set; }
     internal Size FrameSize { get; private set; }
     internal float Scale { get; private set; }

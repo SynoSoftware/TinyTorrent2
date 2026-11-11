@@ -28,7 +28,7 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
 
     internal Strings? Text { get; private set; }
     internal bool Cities { get; private set; }
-    internal PeerPlace? Place => owner.Place;
+    internal IReadOnlySet<PeerPlace>? Places => owner.Places;
     public event PropertyChangedEventHandler? PropertyChanged;
 
     // The model outlives the map's unload and reload, so the peak lasts the
@@ -51,8 +51,8 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
     /// <summary>Forgets the peak, as when the engine session changes.</summary>
     internal void ResetPeak() => _peak = 0;
 
-    internal void RefreshPlace() =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Place)));
+    internal void RefreshPlaces() =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Places)));
 
     /// <summary>Takes the map's facts, and tells the map only when one changed.</summary>
     /// <param name="capacity">The connection capacity, download plus upload, in bytes per second, or null when unknown.</param>
@@ -202,13 +202,16 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
             }
             for (var index = 0; index < Destinations.Count; index++)
             {
-                var mine = Destinations[index];
-                var theirs = other.Destinations[index];
-                if (!ReferenceEquals(mine, theirs)
-                    && (mine.Point != theirs.Point || mine.Share != theirs.Share || mine.Area != theirs.Area
-                        || mine.Rank != theirs.Rank || !mine.Group.Matches(theirs.Group)))
-                {
+                var mine = Destinations[index].Members;
+                var theirs = other.Destinations[index].Members;
+                if (ReferenceEquals(mine, theirs))
+                    continue;
+                if (mine.Count != theirs.Count)
                     return false;
+                for (var member = 0; member < mine.Count; member++)
+                {
+                    if (!mine[member].Matches(theirs[member]))
+                        return false;
                 }
             }
             foreach (var (code, group) in Countries)
@@ -226,9 +229,12 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
             Dictionary<PeerPlace, int> marks = [];
             foreach (var destination in Destinations)
             {
-                var group = destination.Group;
-                if (!marks.ContainsKey(group.Place) && selected.Counts.TryGetValue(group.Place, out var count))
-                    marks[group.Place] = group.Regions.Length == 0 ? 1 : Reach(group.Regions, count);
+                foreach (var member in destination.Members)
+                {
+                    var group = member.Group;
+                    if (!marks.ContainsKey(group.Place) && selected.Counts.TryGetValue(group.Place, out var count))
+                        marks[group.Place] = group.Regions.Length == 0 ? 1 : Reach(group.Regions, count);
+                }
             }
             return marks;
         }
@@ -281,6 +287,23 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
         private readonly HashSet<Group> _changedGroups = [];
         private readonly Dictionary<string, Geography.Area[]> _regions = [];
         private (float Meridian, float Scale) _regionsFor;
+        // Where the groups place their peers, before close ones show as one destination.
+        private readonly List<Placement> _placed = [];
+        // What the last merge placed the destinations for; a change merges every placement again.
+        private (object? Subject, bool Cities, float Meridian, Vector2 Shown) _merged;
+        // Kept for Merge's capacity: each placement's index by key, its point on the shown map,
+        // its landing's index, the order the unplaced ones are taken in, the next landing in its
+        // grid cell, the next member of its landing, each landing's last member, and the last
+        // merge's destinations by key.
+        private readonly Dictionary<DestinationKey, int> _indexes = [];
+        private readonly List<Vector2> _positions = [];
+        private readonly List<int> _landing = [];
+        private readonly List<int> _order = [];
+        private readonly List<int> _nextInCell = [];
+        private readonly List<int> _nextMember = [];
+        private readonly List<int> _lastMember = [];
+        private readonly Dictionary<(int Column, int Row), int> _cells = [];
+        private readonly Dictionary<DestinationKey, Destination> _previous = [];
         internal Dictionary<string, Group> Countries { get; } = [];
         internal List<Destination> Destinations { get; } = [];
         internal Location? Origin { get; private set; }
@@ -494,6 +517,8 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
             _contributions.Clear();
             Countries.Clear();
             Destinations.Clear();
+            _placed.Clear();
+            _previous.Clear();
             _places.Clear();
             _copies.Clear();
             _changedGroups.Clear();
@@ -501,10 +526,11 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
         }
 
         /// <summary>
-        /// Places the groups' destinations on the map fitted at
-        /// <paramref name="scale"/> DIPs per degree.
+        /// Places the groups' destinations on the map fitted at <paramref name="scale"/> DIPs
+        /// per degree, and shows the destinations closer than <see cref="Spacing"/> DIPs on the
+        /// map shown at <paramref name="shown"/> DIPs per degree of longitude and latitude as one.
         /// </summary>
-        internal void Arrange(float scale)
+        internal void Arrange(float scale, Vector2 shown)
         {
             OriginPoint = Locate(Origin, _world);
             if (_regionsFor != (Meridian, scale))
@@ -540,25 +566,183 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
                 foreach (var (region, share) in Distribute(group.Regions, Math.Max(group.Active, 1)))
                     Place(group, region.Point, share, region.Name);
             }
-            if (placed < Destinations.Count)
-                Destinations.RemoveRange(placed, Destinations.Count - placed);
+            if (placed < _placed.Count)
+                _placed.RemoveRange(placed, _placed.Count - placed);
+            Merge(shown);
 
             void Place(Group group, GeoPoint point, double share, string? area)
             {
-                var previous = placed < Destinations.Count ? Destinations[placed] : null;
+                var previous = placed < _placed.Count ? _placed[placed] : null;
                 if (previous is null || !ReferenceEquals(previous.Group, group) || previous.Point != point
                     || previous.Share != share || previous.Area != area || previous.Rank != rank)
                 {
-                    var destination = new Destination(group, point, share, area) { Rank = rank };
-                    if (placed < Destinations.Count)
-                        Destinations[placed] = destination;
+                    var placement = new Placement(group, point, share, area) { Rank = rank };
+                    if (placed < _placed.Count)
+                        _placed[placed] = placement;
                     else
-                        Destinations.Add(destination);
+                        _placed.Add(placement);
                 }
                 placed++;
                 rank++;
             }
         }
+
+        // Shows the placements closer than Spacing on the shown map as one destination. Each
+        // placement taken joins the nearest landing closer than Spacing, or becomes a landing,
+        // so landings lie at least Spacing apart and a line of close places cannot chain into
+        // one destination. Distance is straight on the map as drawn at the default view: the
+        // seam there is the map's left and right edges, and places on either side of it are
+        // drawn a map width apart. A grid of Spacing-sized cells finds the near landings,
+        // because the places can number in the thousands.
+        private void Merge(Vector2 shown)
+        {
+            var count = _placed.Count;
+            // A new scale, seam, subject or detail takes every placement, most peers first, so
+            // each destination lands at its member with the most peers. Otherwise each placement
+            // keeps its landing while that shows, so changing peer counts never move an arc.
+            var whole = _merged != (_subject, Cities, Meridian, shown);
+            _merged = (_subject, Cities, Meridian, shown);
+            _indexes.Clear();
+            _positions.Clear();
+            _landing.Clear();
+            _order.Clear();
+            _nextInCell.Clear();
+            _nextMember.Clear();
+            _lastMember.Clear();
+            _cells.Clear();
+            _previous.Clear();
+            for (var index = 0; index < count; index++)
+            {
+                _indexes[_placed[index].Key] = index;
+                _positions.Add(MapViewport.Coordinates(_placed[index].Point, Meridian) * shown);
+                _landing.Add(-1);
+                _nextInCell.Add(-1);
+                _nextMember.Add(-1);
+                _lastMember.Add(index);
+            }
+            foreach (var destination in Destinations)
+            {
+                _previous[destination.Key] = destination;
+                if (whole || !_indexes.TryGetValue(destination.Key, out var landing))
+                    continue;
+                foreach (var member in destination.Members)
+                {
+                    if (_indexes.TryGetValue(member.Key, out var index))
+                        _landing[index] = landing;
+                }
+                Land(landing);
+            }
+            for (var index = 0; index < count; index++)
+            {
+                if (_landing[index] < 0)
+                    _order.Add(index);
+            }
+            // Equal peers go by key, the same way at every merge, unlike the groups' dictionary,
+            // whose order changes when it reuses a freed slot.
+            _order.Sort((first, second) =>
+                Peers(_placed[second]).CompareTo(Peers(_placed[first])) is var order && order != 0
+                    ? order
+                    : _placed[first].Key.CompareTo(_placed[second].Key));
+            foreach (var index in _order)
+            {
+                var nearest = Nearest(_positions[index]);
+                if (nearest >= 0)
+                    _landing[index] = nearest;
+                else
+                {
+                    _landing[index] = index;
+                    Land(index);
+                }
+            }
+            // Members follow their landing in presentation order.
+            for (var index = 0; index < count; index++)
+            {
+                var landing = _landing[index];
+                if (landing == index)
+                    continue;
+                _nextMember[_lastMember[landing]] = index;
+                _lastMember[landing] = index;
+            }
+            var shownCount = 0;
+            for (var index = 0; index < count; index++)
+            {
+                if (_landing[index] != index)
+                    continue;
+                var destination = _previous.TryGetValue(_placed[index].Key, out var previous) && Unchanged(previous, index)
+                    ? previous
+                    : new Destination(Members(index), Text!);
+                if (shownCount < Destinations.Count)
+                    Destinations[shownCount] = destination;
+                else
+                    Destinations.Add(destination);
+                shownCount++;
+            }
+            if (shownCount < Destinations.Count)
+                Destinations.RemoveRange(shownCount, Destinations.Count - shownCount);
+            _previous.Clear();
+        }
+
+        private (int Column, int Row) Cell(Vector2 position) =>
+            ((int)MathF.Floor(position.X / Spacing), (int)MathF.Floor(position.Y / Spacing));
+
+        private void Land(int index)
+        {
+            var cell = Cell(_positions[index]);
+            _nextInCell[index] = _cells.GetValueOrDefault(cell, -1);
+            _cells[cell] = index;
+        }
+
+        // The landing closer than Spacing to position, or -1 when none is.
+        private int Nearest(Vector2 position)
+        {
+            var (column, row) = Cell(position);
+            var nearest = -1;
+            var distance = Spacing;
+            for (var across = -1; across <= 1; across++)
+            {
+                for (var down = -1; down <= 1; down++)
+                {
+                    for (var landing = _cells.GetValueOrDefault((column + across, row + down), -1); landing >= 0; landing = _nextInCell[landing])
+                    {
+                        var apart = Vector2.Distance(position, _positions[landing]);
+                        if (apart < distance)
+                        {
+                            distance = apart;
+                            nearest = landing;
+                        }
+                    }
+                }
+            }
+            return nearest;
+        }
+
+        // Whether destination shows exactly the placements the landing at index now holds.
+        private bool Unchanged(Destination destination, int index)
+        {
+            var members = destination.Members;
+            var position = 0;
+            for (var member = index; member >= 0; member = _nextMember[member], position++)
+            {
+                if (position == members.Count || !ReferenceEquals(members[position], _placed[member]))
+                    return false;
+            }
+            return position == members.Count;
+        }
+
+        private Placement[] Members(int index)
+        {
+            var count = 0;
+            for (var member = index; member >= 0; member = _nextMember[member])
+                count++;
+            var members = new Placement[count];
+            count = 0;
+            for (var member = index; member >= 0; member = _nextMember[member])
+                members[count++] = _placed[member];
+            return members;
+        }
+
+        // An estimated placement holds its share of its group's peers.
+        private static double Peers(Placement placement) => placement.Group.Count * placement.Share;
 
         // The regions an estimated group's traffic is spread over; none for a
         // group whose peers all have coordinates, or a country without places.
@@ -577,7 +761,8 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
         private static GeoPoint? Locate(Location? location, IReadOnlyDictionary<string, Geography.Country> world) =>
             location?.Point ?? (location is null ? null : world.GetValueOrDefault(location.Code)?.Anchor);
 
-        // Bundled places closer than this, in DIPs on the fitted map, form one region.
+        // Places closer than this many DIPs are too close to tell apart: bundled places on the
+        // fitted map form one region, and destinations on the shown map show as one.
         private const float Spacing = 25;
 
         /// <summary>
@@ -616,9 +801,8 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
     internal string Describe(Destination? destination)
     {
         var text = Text!;
-        var group = destination?.Group;
         string value;
-        if (group is null)
+        if (destination is null)
         {
             value = text.Get(
                 "peer_map",
@@ -627,19 +811,21 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
         }
         else
         {
+            var totals = destination.Totals;
             value = text.Format(
                 "peer_map",
                 "detail",
-                group.Name,
-                group.Count,
-                group.Active,
-                text.Rate(group.Down),
-                text.Rate(group.Up),
-                group.Seeds,
-                group.Leechers,
-                group.Unknown
+                destination.Name,
+                totals.Count,
+                totals.Active,
+                text.Rate(totals.Down),
+                text.Rate(totals.Up),
+                totals.Seeds,
+                totals.Leechers,
+                totals.Unknown
             );
-            if (destination?.Area is { } area)
+            // Only one region names where an estimate places its share.
+            if (destination.Members is [{ Area: { } area } region])
             {
                 value +=
                     " · "
@@ -647,13 +833,13 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
                         "peer_map",
                         "estimated",
                         area,
-                        text.Rate(destination.Down),
-                        text.Rate(destination.Up)
+                        text.Rate(region.Down),
+                        text.Rate(region.Up)
                     );
             }
             else
             {
-                var precision = group.Estimated ? "country_only" : "location_approximate";
+                var precision = totals.Estimated ? "country_only" : "location_approximate";
                 value += " · " + text.Get("peer_map", precision);
             }
         }
@@ -715,6 +901,7 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
         private int _unpointed;
 
         internal Group Copy() => (Group)MemberwiseClone();
+
         internal PeerPlace Place { get; } = place;
         internal string Code => Place.Code;
         internal string Name => field ??= name();
@@ -735,7 +922,7 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
         internal double Down { get; private set; }
         internal double Up { get; private set; }
 
-        /// <summary>Whether it downloads at least as much as it uploads, which sets its arc and glow colour.</summary>
+        /// <summary>Whether it downloads at least as much as it uploads, which sets an estimated country's glow colour.</summary>
         internal bool Downloads => Down >= Up;
 
         /// <summary>
@@ -776,17 +963,146 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
     }
 
 
-    internal readonly record struct DestinationKey(string Code, GeoPoint? Point, bool Estimated);
+    internal readonly record struct DestinationKey(string Code, GeoPoint? Point, bool Estimated) : IComparable<DestinationKey>
+    {
+        public int CompareTo(DestinationKey other)
+        {
+            var order = string.CompareOrdinal(Code, other.Code);
+            if (order == 0)
+                order = Nullable.Compare(Point?.Longitude, other.Point?.Longitude);
+            if (order == 0)
+                order = Nullable.Compare(Point?.Latitude, other.Point?.Latitude);
+            return order != 0 ? order : Estimated.CompareTo(other.Estimated);
+        }
+    }
 
-    internal sealed record Destination(Group Group, GeoPoint Point, double Share, string? Area)
+    /// <summary>Where a group places peers: its coordinate, or one region of its estimated distribution.</summary>
+    internal sealed record Placement(Group Group, GeoPoint Point, double Share, string? Area)
     {
         internal DestinationKey Key => new(Group.Code, Point, Group.Estimated);
         internal double Down => Group.Down * Share;
         internal double Up => Group.Up * Share;
-        internal double Rate => Down + Up;
 
         /// <summary>Rank in the place's estimated distribution; zero for supplied coordinates.</summary>
         internal int Rank { get; init; }
+
+        // The facts the map draws and describes, apart from the group's name.
+        internal bool Matches(Placement other) =>
+            ReferenceEquals(this, other)
+            || Point == other.Point && Share == other.Share && Area == other.Area && Rank == other.Rank
+                && Group.Matches(other.Group);
+    }
+
+    /// <summary>The peers a destination shows: each of its places' peers once, with their whole rates.</summary>
+    internal readonly record struct Totals
+    {
+        internal int Count { get; init; }
+        internal int Seeds { get; init; }
+        internal int Leechers { get; init; }
+        internal int Unknown => Count - Seeds - Leechers;
+        internal int Connections { get; init; }
+        internal int Active { get; init; }
+        internal double Down { get; init; }
+        internal double Up { get; init; }
+
+        /// <summary>Whether some of its peers are placed by estimate, so it is labelled country-only.</summary>
+        internal bool Estimated { get; init; }
+
+        internal Totals Add(Group group) => this with
+        {
+            Count = Count + group.Count,
+            Seeds = Seeds + group.Seeds,
+            Leechers = Leechers + group.Leechers,
+            Connections = Connections + group.Connections,
+            Active = Active + group.Active,
+            Down = Down + group.Down,
+            Up = Up + group.Up,
+            Estimated = Estimated || group.Estimated,
+        };
+    }
+
+    /// <summary>
+    /// What the map shows at one point: the placements too close to tell apart at the shown
+    /// zoom, its landing first. Its arc, light and dots stand for all of them.
+    /// </summary>
+    internal sealed class Destination
+    {
+        private readonly Strings _text;
+        private readonly int _placeCount;
+
+        /// <param name="members">The placements it shows, its landing first; never empty.</param>
+        internal Destination(IReadOnlyList<Placement> members, Strings text)
+        {
+            Members = members;
+            _text = text;
+            for (var index = 0; index < members.Count; index++)
+            {
+                var member = members[index];
+                Down += member.Down;
+                Up += member.Up;
+                if (!Counted(index))
+                {
+                    Totals = Totals.Add(member.Group);
+                    _placeCount++;
+                }
+            }
+
+            // The regions of one estimated place share its group, whose peers count once.
+            bool Counted(int index)
+            {
+                for (var earlier = 0; earlier < index; earlier++)
+                {
+                    if (ReferenceEquals(members[earlier].Group, members[index].Group))
+                        return true;
+                }
+                return false;
+            }
+        }
+
+        internal IReadOnlyList<Placement> Members { get; }
+        internal DestinationKey Key => Members[0].Key;
+        internal GeoPoint Point => Members[0].Point;
+
+        /// <summary>Its landing's name, with the number of its other places.</summary>
+        internal string Name => field ??= _placeCount == 1
+            ? Members[0].Group.Name
+            : _text.FormatCount("peer_map", "places_more", _placeCount - 1, Members[0].Group.Name);
+
+        internal Totals Totals { get; }
+
+        /// <summary>The rates its arc and dots draw: each member's share of its group's rates.</summary>
+        internal double Down { get; }
+
+        internal double Up { get; }
+        internal double Rate => Down + Up;
+
+        /// <summary>Whether it draws at least as much download as upload, which sets its arc and glow colour.</summary>
+        internal bool Downloads => Down >= Up;
+
+        /// <summary>Whether it shows the peers of any of <paramref name="places"/>.</summary>
+        internal bool Holds(IReadOnlySet<PeerPlace> places)
+        {
+            foreach (var member in Members)
+            {
+                if (places.Contains(member.Group.Place))
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Whether it shows a place of the selected peers within the regions their estimated
+        /// distribution reaches, given each selected place's reach (<see cref="Presentation.Marks"/>).
+        /// </summary>
+        internal bool Marked(IReadOnlyDictionary<PeerPlace, int> marks)
+        {
+            foreach (var member in Members)
+            {
+                if (marks.GetValueOrDefault(member.Group.Place) > member.Rank)
+                    return true;
+            }
+            return false;
+        }
     }
 
     internal readonly record struct Observation(Location? Location, double Down, double Up, PeerRole Role, PeerState State)
