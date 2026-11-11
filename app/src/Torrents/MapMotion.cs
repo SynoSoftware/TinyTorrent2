@@ -59,6 +59,9 @@ internal sealed class MapMotion : IDisposable
     private Scene? _scene;
     private Completed? _pending;
     private MapView? _view;
+    // Replaced whole, and only under _gate. Only the game loop calls its
+    // pointer and changes the viewport of the instance it read.
+    private Drag? _drag;
     private volatile bool _idle = true;
     private long _revision;
     private volatile bool _disposed;
@@ -196,6 +199,9 @@ internal sealed class MapMotion : IDisposable
 
     private sealed record Surface(CanvasDevice Device, float Dpi);
     private sealed record Request(Input Input, MapView View, Surface Surface, CancellationToken Cancellation);
+
+    /// <summary>A drag the game loop follows: the map point it keeps under the pointer, on its own copy of the view.</summary>
+    private sealed record Drag(Vector2 Grip, Func<Vector2?> Pointer, MapViewport Viewport);
 
 #if CAPTURE
     internal event Action<double>? FrameMeasured;
@@ -461,10 +467,69 @@ internal sealed class MapMotion : IDisposable
 
     internal void Navigate(MapView view)
     {
-        if (_disposed || view == Volatile.Read(ref _view))
+        if (_disposed)
+        {
             return;
+        }
+        lock (_gate)
+        {
+            if (_drag is { } drag)
+            {
+                Volatile.Write(ref _drag, drag with { Viewport = MapViewport.From(view) });
+                return;
+            }
+        }
+        if (view == Volatile.Read(ref _view))
+        {
+            return;
+        }
         Volatile.Write(ref _view, view);
         Changed();
+    }
+
+    /// <summary>
+    /// Lets the game loop move the view for a drag, keeping the map point
+    /// <paramref name="grip"/> under the position that <paramref name="pointer"/>
+    /// returns once per frame. Called on the UI thread.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="pointer"/> runs on the game loop's thread and returns
+    /// the position in DIPs of the map control, or null once the button is up;
+    /// the view then stays where it is. Until <see cref="Release"/>,
+    /// <see cref="Navigate"/> keeps the view's centre and takes only its size,
+    /// zoom and meridian, at the next frame.
+    /// </remarks>
+    /// <returns>False when the map is disposed or has no view yet; the caller then moves the view itself.</returns>
+    internal bool Follow(Vector2 grip, Func<Vector2?> pointer)
+    {
+        lock (_gate)
+        {
+            if (_disposed || _view is not { } view)
+            {
+                return false;
+            }
+            Volatile.Write(ref _drag, new Drag(grip, pointer, MapViewport.From(view)));
+        }
+        Wake();
+        return true;
+    }
+
+    /// <summary>
+    /// Ends the drag that <see cref="Follow"/> started. Called on the UI
+    /// thread; after it, <see cref="Navigate"/> sets the view again.
+    /// </summary>
+    /// <returns>The view the game loop reached, or null when no drag was followed.</returns>
+    internal MapView? Release()
+    {
+        lock (_gate)
+        {
+            if (_drag is null)
+            {
+                return null;
+            }
+            Volatile.Write(ref _drag, null);
+            return _view;
+        }
     }
 
     /// <summary>
@@ -480,6 +545,14 @@ internal sealed class MapMotion : IDisposable
     }
 
     private void Changed()
+    {
+        Submit();
+        Wake();
+    }
+
+    // Also called on the game loop's thread, where Wake must not run, because
+    // it uses the UI thread's timer and the control.
+    private void Submit()
     {
         lock (_gate)
         {
@@ -497,10 +570,13 @@ internal sealed class MapMotion : IDisposable
                 }
                 Volatile.Write(ref _request, new(input, view, surface, _cancellation.Token));
             }
+            // Under the gate, so two threads cannot each replace a completed
+            // task and leave a caller waiting on the one that is lost.
+            if (_ready.Task.IsCompleted)
+            {
+                Volatile.Write(ref _ready, new(TaskCreationOptions.RunContinuationsAsynchronously));
+            }
         }
-        if (_ready.Task.IsCompleted)
-            Volatile.Write(ref _ready, new(TaskCreationOptions.RunContinuationsAsynchronously));
-        Wake();
         Signal();
     }
 
@@ -577,8 +653,12 @@ internal sealed class MapMotion : IDisposable
 
     internal void CancelDrawing()
     {
-        CancelRequest();
-        Volatile.Write(ref _input, null);
+        // Under the gate, so the game loop cannot submit the old input between the two.
+        lock (_gate)
+        {
+            CancelRequest();
+            Volatile.Write(ref _input, null);
+        }
     }
 
     private void CancelRequest()
@@ -603,6 +683,10 @@ internal sealed class MapMotion : IDisposable
         if (_disposed)
             return;
         _disposed = true;
+        lock (_gate)
+        {
+            Volatile.Write(ref _drag, null);
+        }
         CancelDrawing();
         _ = _shutdown.CancelAsync();
         _wake.Stop();
@@ -919,17 +1003,48 @@ internal sealed class MapMotion : IDisposable
             _dots.Advance(now);
         }
         Report();
+        // Before the view is read, so this frame draws where the pointer is.
+        Track();
         var view = CurrentView;
         if (!ReferenceEquals(_visibility.Traffic, scene?.Traffic) || _visibility.View != view)
             _visibility = (scene?.Traffic, view, scene is not null && view is { } current
                 && scene.Traffic.Routes.Any(route => route.Length >= MapDots<DestinationKey>.ShortRoute && current.Shows(route.Bounds, 13)));
         var visible = _visibility.Visible;
-        _idle = _dots.Flying.Count == 0 || !visible;
+        // A followed drag keeps the loop running: the UI thread that would
+        // pause and wake it may be blocked.
+        _idle = Volatile.Read(ref _drag) is null && (_dots.Flying.Count == 0 || !visible);
         if (!_idle || _drawn < 2)
             return;
         var wait = scene is null ? null : _dots.Wait(visible);
         if (wait is null || wait > 2 * Frame)
             _dispatcher.TryEnqueue(() => Sleep(revision, wait, now));
+    }
+
+    // Game loop thread.
+    private void Track()
+    {
+        if (Volatile.Read(ref _drag) is not { } drag || drag.Viewport is not { Scale: > 0 } viewport
+            || drag.Pointer() is not { } position)
+        {
+            return;
+        }
+        var (center, ratio) = (viewport.Center, viewport.Ratio);
+        viewport.Hold(viewport.Zoom, drag.Grip, position);
+        if (viewport.Center == center && viewport.Ratio == ratio)
+        {
+            return;
+        }
+        var view = viewport.View;
+        lock (_gate)
+        {
+            // A Release or Navigate after this frame read the drag wins.
+            if (!ReferenceEquals(_drag, drag) || view == _view)
+            {
+                return;
+            }
+            Volatile.Write(ref _view, view);
+        }
+        Submit();
     }
 
     private void Apply(Traffic traffic, long now)

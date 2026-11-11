@@ -659,7 +659,11 @@ Zoom ranges from 1× to 128×, with 1.25× per wheel notch and proportional smal
 wheel deltas. A drag does not select a location. Show the SizeAll cursor only
 after the drag threshold is crossed, restoring the normal cursor when the drag
 ends or is cancelled. Input moves the view directly, without added easing,
-inertia or a zoom animation. A compact control at the bottom centre
+inertia or a zoom animation. While a mouse drag is active, the map's game loop
+reads the cursor at each frame and moves the view itself, so the map follows
+the hand while the UI thread is busy; the control takes that view back when the
+drag ends. The press, the drag threshold, the release, pen and touch drags, the
+wheel and the keyboard use the UI thread's events. A compact control at the bottom centre
 shows a Segoe Fit button after each zoom, while the view is not fitted. It
 hides after three seconds, but not while the pointer is over it, it has
 focus or the map has keyboard focus, so Tab reaches it. It does not return

@@ -84,6 +84,14 @@ public sealed partial class MainWindow
 
     internal void ShowCaptureReview()
     {
+        if (IsPerformanceHold)
+        {
+            // The owner drives a hold run by hand, so it fills the main display's work
+            // area with its title bar and waits for a click to activate it.
+            AppWindow.MoveAndResize(Microsoft.UI.Windowing.DisplayArea.Primary.WorkArea);
+            AppWindow.Show(false);
+            return;
+        }
         if (IsPerformanceReview)
         {
             ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).SetBorderAndTitleBar(false, false);

@@ -41,6 +41,8 @@ public sealed partial class PeerMap
 
     private void ZoomInspection(float factor, MapMotion.Displayed displayed)
     {
+        // A followed drag leaves the viewport at its start until it ends.
+        EndDrag(false);
         var destination = Inspected(displayed);
         if (destination is not null)
             _viewport.Reveal(destination.Point);
@@ -142,9 +144,15 @@ public sealed partial class PeerMap
             drag.IsActive = true;
             ProtectedCursor = PanCursor;
             Describe();
+            if (args.Pointer.PointerDeviceType == PointerDeviceType.Mouse && Cursor() is { } cursor)
+            {
+                drag.IsFollowed = _motion?.Follow(drag.Grip, cursor) == true;
+            }
         }
-        if (drag.IsActive && _viewport.Scale > 0)
+        if (drag.IsActive && !drag.IsFollowed && _viewport.Scale > 0)
+        {
             _viewport.Hold(_viewport.Zoom, drag.Grip, new Vector2((float)point.Position.X, (float)point.Position.Y));
+        }
         args.Handled = true;
         return true;
     }
@@ -154,7 +162,7 @@ public sealed partial class PeerMap
         if (_drag is not { } drag || drag.PointerId != args.Pointer.PointerId)
             return;
         var moved = drag.IsActive;
-        if (moved && _viewport.Scale > 0)
+        if (moved && !drag.IsFollowed && _viewport.Scale > 0)
         {
             var point = args.GetCurrentPoint(Drawing).Position;
             _viewport.Hold(_viewport.Zoom, drag.Grip, new Vector2((float)point.X, (float)point.Y));
@@ -180,9 +188,24 @@ public sealed partial class PeerMap
         _drag = null;
         ProtectedCursor = null;
         Drawing.ReleasePointerCaptures();
+        // Released before the view is set, because until then Navigate keeps
+        // the centre the game loop reached.
+        var reached = drag.IsFollowed ? _motion?.Release() : null;
         if (cancel && drag.IsActive)
+        {
             _viewport.SetView(_viewport.Zoom, drag.Center, drag.Ratio);
-        // A release changes no view, and the rest that came during the drag waited for it.
+        }
+        else if (reached is not null)
+        {
+            _viewport.SetView(_viewport.Zoom, reached.Center, reached.AxisScale.X / reached.AxisScale.Y);
+        }
+        // A followed drag leaves the viewport at its start, so cancelling
+        // changes nothing there and raises no navigation of its own.
+        if (drag.IsFollowed)
+        {
+            _motion?.Navigate(_viewport.View);
+        }
+        // The rest that came during the drag waited for its end, also when the release changes no view.
         if (drag.IsActive)
         {
             _restTimer.Stop();
@@ -190,6 +213,30 @@ public sealed partial class PeerMap
         }
         Describe();
     }
+
+#if CAPTURE
+    /// <summary>
+    /// Starts a drag grabbed at <paramref name="start"/> that the game loop
+    /// moves along <paramref name="pointer"/>, for a replay that has no mouse.
+    /// <see cref="EndDrag"/> ends it.
+    /// </summary>
+    /// <returns>Whether the game loop follows the drag; when it does not, no drag is left.</returns>
+    internal bool CaptureDrag(Vector2 start, Func<Vector2?> pointer)
+    {
+        EndDrag(false);
+        var drag = new Drag(0, start, _viewport.ToMap(start), _viewport.Center, _viewport.Ratio)
+        {
+            IsActive = true,
+        };
+        _drag = drag;
+        drag.IsFollowed = _motion?.Follow(drag.Grip, pointer) == true;
+        if (!drag.IsFollowed)
+        {
+            EndDrag(false);
+        }
+        return drag.IsFollowed;
+    }
+#endif
 
     private void OnKey(object sender, KeyRoutedEventArgs args)
     {
@@ -284,5 +331,8 @@ public sealed partial class PeerMap
         internal Vector2 Center { get; } = center;
         internal float Ratio { get; } = ratio;
         internal bool IsActive { get; set; }
+
+        /// <summary>Whether the map's game loop moves the view for this drag.</summary>
+        internal bool IsFollowed { get; set; }
     }
 }

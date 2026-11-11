@@ -95,6 +95,19 @@ click/navigation/churn schedule or live rate source. The report labels this
 `peer-scope`; it is not a standard-profile response or animation comparison.
 Remove the environment variable after the run.
 
+`-Hold` lets the owner try the app by hand under the selection replay's load.
+It runs the unchanged setup up to the docked all-peers map, starts the
+once-per-second peer source and the 250-per-second connection churn at once,
+and then runs no scripted input. The window fills the main display's work area
+without taking focus; click it to use it. The source runs until the window is
+closed, and closing it ends the run with the usual cleanup. A hold run measures
+nothing and writes no performance report. While it is open, other capture
+reviews wait for the capture lock.
+
+```powershell
+pwsh -NoProfile -File .\app\tests\Capture.ps1 -Review performance-selection -Configuration Release -BinaryDirectory '<printed build output>' -MapDetail cities -ArcLimit 1000 -Replay -InputOnly -Hold
+```
+
 The native desktop-input procedure described below is retained for its existing
 evidence and safety guards. **Do not run it on the owner's desktop.** `-InputOnly`
 alone still sends global input. PresentMon 2.3.1 records ETW presentation events

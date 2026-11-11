@@ -694,6 +694,15 @@ public sealed partial class MainWindow : Window
         if (_allowClose)
             return;
         args.Cancel = true;
+#if CAPTURE
+        // A hold run's review ends on the person's close, writes its report and then
+        // closes the window itself.
+        if (_holdClose is { } held)
+        {
+            held.TrySetResult();
+            return;
+        }
+#endif
         await CloseWindow(CloseRequest.Close);
     }
 

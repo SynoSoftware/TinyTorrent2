@@ -5,7 +5,8 @@ param(
     [switch] $Analyze,
     [switch] $ElevatedRecorder,
     [switch] $InputOnly,
-    [switch] $Replay
+    [switch] $Replay,
+    [switch] $Hold
 )
 
 $ErrorActionPreference = 'Stop'
@@ -503,7 +504,8 @@ try {
     Start-Sleep -Seconds 1
     if ($recorder -and $recorder.HasExited) { throw "PresentMon stopped during startup with $($recorder.ExitCode)." }
     $null = New-Item -ItemType File -Path (Join-Path $Directory 'go')
-    $deadline = [DateTime]::UtcNow.AddSeconds(120)
+    # A hold run ends when the owner closes the window.
+    $deadline = if ($Hold) { [DateTime]::MaxValue } else { [DateTime]::UtcNow.AddSeconds(120) }
     while (-not $ui.WaitForExit(100)) {
         SampleMemory
         $request = Join-Path $Directory 'screenshot-request'
@@ -525,7 +527,10 @@ try {
     SaveMemory
     StopSender
     $review = ReadReview -AllowFailure
-    if ($InputOnly) {
+    if ($Hold) {
+        Write-Host "Hold run closed: it measured nothing, so it wrote no performance report. Evidence: $Directory"
+    }
+    elseif ($InputOnly) {
         Report
         Write-Host "Input scenarios completed without a display recorder. Evidence: $Directory"
     }

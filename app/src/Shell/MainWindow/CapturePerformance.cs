@@ -23,6 +23,13 @@ public sealed partial class MainWindow
     private bool IsPerformanceReview => ReviewMode is CaptureMode.Performance or CaptureMode.PerformanceMap or CaptureMode.PerformanceSelection;
     private bool IsPerformanceReplay => IsPerformanceReview
         && Environment.GetEnvironmentVariable("TINYTORRENT_PERFORMANCE_REPLAY") == "1";
+    // The selection replay's load without its journey, on the main display for the owner's hand.
+    private bool IsPerformanceHold => IsPerformanceReplay
+        && Environment.GetEnvironmentVariable("TINYTORRENT_PERFORMANCE_HOLD") == "1";
+    // Set once a hold run waits for the person's close, which OnClosing then completes
+    // instead of closing the window. It stays set, so a second close cannot start the
+    // product's close while the review writes its report.
+    private TaskCompletionSource? _holdClose;
 
     private async Task CapturePerformance(List<object> outcomes)
     {
@@ -36,6 +43,7 @@ public sealed partial class MainWindow
         Directory.CreateDirectory(directory);
         var window = WinRT.Interop.WindowNative.GetWindowHandle(this);
         var replay = IsPerformanceReplay;
+        var hold = IsPerformanceHold;
         var scopeReview = Environment.GetEnvironmentVariable("TINYTORRENT_PERFORMANCE_SCOPES") == "1";
         if (scopeReview && (!replay || ReviewMode != CaptureMode.PerformanceSelection))
             throw new InvalidOperationException("Peer-scope attribution requires the offscreen selection replay.");
@@ -48,9 +56,9 @@ public sealed partial class MainWindow
         await CaptureLayout();
         var display = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Nearest).OuterBounds;
         var origin = PerformanceInput.Screen(window, default);
-        if (AppWindow.ClientSize.Width != 1920 || AppWindow.ClientSize.Height != 1080
+        if (!hold && (AppWindow.ClientSize.Width != 1920 || AppWindow.ClientSize.Height != 1080
             || !replay && (origin.X < display.X || origin.Y < display.Y
-            || origin.X + 1920 > display.X + display.Width || origin.Y + 1080 > display.Y + display.Height))
+            || origin.X + 1920 > display.X + display.Width || origin.Y + 1080 > display.Y + display.Height)))
             throw new InvalidOperationException("The visible 1920x1080 client area must fit on one monitor.");
         var targets = Model.Torrents.OrderBy(torrent => torrent.Name, StringComparer.Ordinal).ToArray();
         var inspector = Model.Inspector;
@@ -303,7 +311,12 @@ public sealed partial class MainWindow
         }
         void Observe(MapMotion motion)
         {
-            if (motions.ContainsKey(motion)) return;
+            // A hold run records no map draws, because the records would grow
+            // for as long as the owner keeps the window open.
+            if (hold || motions.ContainsKey(motion))
+            {
+                return;
+            }
             if (map is not null && inputMaps.Add(map))
                 map.CaptureInput = (kind, delta) => received.Enqueue(new { phase = Volatile.Read(ref phase),
                     qpc = Stopwatch.GetTimestamp(), kind, delta });
@@ -429,22 +442,50 @@ public sealed partial class MainWindow
             var to = Screen(drawing, new Point(drawing.ActualWidth / 2 - distance / 2, drawing.ActualHeight / 2));
             var start = new Vector2((float)(drawing.ActualWidth / 2 + distance / 2), (float)drawing.ActualHeight / 2);
             var end = new Vector2((float)(drawing.ActualWidth / 2 - distance / 2), start.Y);
-            await DragMap(name, PerformanceInput.Drag(window, 2000, from, to), start, end);
+            var followed = await DragMap(name, PerformanceInput.Drag(window, 2000, from, to), start, end);
             await ViewDrawn();
-            outcomes.Add(new { journey = name, requestedDegrees = degrees,
+            outcomes.Add(new { journey = name, followed, requestedDegrees = degrees,
                 actualDegrees = MapViewport.Wrap(viewport.Center.X - before.X, 0),
                 before = new { longitude = before.X + viewport.Meridian, latitude = -before.Y },
                 after = new { longitude = viewport.Center.X + viewport.Meridian, latitude = -viewport.Center.Y } });
         }
-        async Task DragMap(string name, PerformanceInput.Plan plan, Vector2 start, Vector2 end)
+        // Whether the map's game loop followed the drag; null when the real
+        // mouse drove it or the drag never passed the threshold.
+        async Task<bool?> DragMap(string name, PerformanceInput.Plan plan, Vector2 start, Vector2 end)
         {
             var viewport = Read<MapViewport>(map!, "_viewport");
             var grip = viewport.ToMap(start);
-            await Measure(name, plan, (step, _) => {
+            // Found by name, because this harness also builds with product files that lack it.
+            var capture = map!.GetType().GetMethod("CaptureDrag", flags);
+            bool? followed = capture is null ? false : null;
+            await Measure(name, plan, (step, sent) =>
+            {
                 var position = Vector2.Lerp(start, end, (float)(step.At / plan.Milliseconds));
-                if (Vector2.DistanceSquared(position, start) >= 16)
+                if (Vector2.DistanceSquared(position, start) < 16)
+                {
+                    return;
+                }
+                if (followed is null)
+                {
+                    // sent is in Stopwatch ticks; step.At is milliseconds after the plan's start.
+                    var began = sent - (long)(step.At * Stopwatch.Frequency / 1000);
+                    Func<Vector2?> path = () =>
+                    {
+                        var elapsed = Stopwatch.GetElapsedTime(began).TotalMilliseconds;
+                        return Vector2.Lerp(start, end, (float)Math.Clamp(elapsed / plan.Milliseconds, 0, 1));
+                    };
+                    followed = (bool)capture!.Invoke(map, [start, path])!;
+                }
+                if (followed == false)
+                {
                     viewport.Hold(viewport.Zoom, grip, position);
+                }
             });
+            if (followed == true)
+            {
+                Call(map!, "EndDrag", false);
+            }
+            return followed;
         }
         Vector2 anchor = default;
         void Position(Vector2 point)
@@ -518,6 +559,11 @@ public sealed partial class MainWindow
             File.WriteAllText(Path.Combine(directory, "unhandled.log"), args.Exception.ToString());
         Application.Current.UnhandledException += unhandled;
         CompositionTarget.Rendered += Rendered;
+        var closing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (hold)
+        {
+            _holdClose = closing;
+        }
         try
         {
             ObserveChanges(Torrents, "torrents");
@@ -549,7 +595,10 @@ public sealed partial class MainWindow
                 torrents = targets.Select((torrent, index) => new { torrent.TorrentId, leechers = data.Leechers[index],
                     seeds = data.Leechers[index] * 2, rows = data.Leechers[index] * 3 }) }));
             await Until(() => File.Exists(Path.Combine(directory, "go")), "The display recorder did not start.", TimeSpan.FromMinutes(2));
-            await Measure("window-baseline", PerformanceInput.Idle(window, 500));
+            if (!hold)
+            {
+                await Measure("window-baseline", PerformanceInput.Idle(window, 500));
+            }
             if (ReviewMode != CaptureMode.PerformanceSelection)
             {
                 await OpenMap("map-first-open");
@@ -608,6 +657,14 @@ public sealed partial class MainWindow
             var peersTable = (Syno.TableView.Table)table;
             peersTable.SortInterval = TimeSpan.FromSeconds(1);
             peersTable.Layout = peersTable.Layout with { SortColumnId = "down", SortDirection = Syno.TableView.SortDirection.Descending };
+            if (hold)
+            {
+                await StartUpdates();
+                await File.WriteAllTextAsync(Path.Combine(directory, "source-churn"), "");
+                // A failed feed also ends the hold; the finally block reports it.
+                await Task.WhenAny(closing.Task, feed!);
+                return;
+            }
             await Screenshot("no-selection-map");
             await Measure("no-selection-animation", PerformanceInput.Idle(window, 3000));
             if (scopeReview)

@@ -20,7 +20,8 @@ param(
     [int] $ArcLimit = 200,
     [switch] $ElevatedRecorder,
     [switch] $InputOnly,
-    [switch] $Replay
+    [switch] $Replay,
+    [switch] $Hold
 )
 
 $ErrorActionPreference = 'Stop'
@@ -29,6 +30,10 @@ if ($performance -and $Configuration -ne 'Release') { throw 'Performance measure
 if ($InputOnly -and -not $performance) { throw '-InputOnly belongs to the performance journey.' }
 if ($Replay -and (-not $performance -or -not $InputOnly -or $ElevatedRecorder)) {
     throw '-Replay requires a performance journey with -InputOnly and no elevated recorder.'
+}
+# The hold stops where the selection replay has its all-peers map open under load.
+if ($Hold -and ($Review -ne 'performance-selection' -or -not $Replay)) {
+    throw '-Hold requires -Review performance-selection with -Replay -InputOnly.'
 }
 if ($LibraryFiles -and $Review -ne 'library-files') {
     throw 'Library timing uses the library-files capture mode.'
@@ -204,7 +209,7 @@ $preserved = @{}
 $peer = $null
 $ui = $null
 $variables = @{}
-foreach ($name in 'TINYTORRENT_CAPTURE_DIRECTORY', 'TINYTORRENT_CAPTURE_REVIEW', 'TINYTORRENT_CAPTURE_STORE', 'TINYTORRENT_PERFORMANCE_REPLAY') {
+foreach ($name in 'TINYTORRENT_CAPTURE_DIRECTORY', 'TINYTORRENT_CAPTURE_REVIEW', 'TINYTORRENT_CAPTURE_STORE', 'TINYTORRENT_PERFORMANCE_REPLAY', 'TINYTORRENT_PERFORMANCE_HOLD') {
     $variables[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
 }
 try {
@@ -409,8 +414,9 @@ try {
     $env:TINYTORRENT_CAPTURE_REVIEW = $Review
     $env:TINYTORRENT_CAPTURE_STORE = $directory
     $env:TINYTORRENT_PERFORMANCE_REPLAY = if ($Replay) { '1' } else { $null }
+    $env:TINYTORRENT_PERFORMANCE_HOLD = if ($Hold) { '1' } else { $null }
     if ($performance) {
-        $ui = & (Join-Path $PSScriptRoot 'Performance.ps1') -WindowPath $window -Directory $captures -PresentMonPath $PresentMonPath -ElevatedRecorder:$ElevatedRecorder -InputOnly:$InputOnly -Replay:$Replay
+        $ui = & (Join-Path $PSScriptRoot 'Performance.ps1') -WindowPath $window -Directory $captures -PresentMonPath $PresentMonPath -ElevatedRecorder:$ElevatedRecorder -InputOnly:$InputOnly -Replay:$Replay -Hold:$Hold
     }
     else { $ui = Start-Process -FilePath $window -WindowStyle Hidden -PassThru }
     $deadline = [DateTime]::UtcNow.AddMinutes(10)
@@ -458,7 +464,8 @@ try {
     foreach ($path in $preserved.Keys) {
         Assert ((Test-Path -LiteralPath $path) -and (Payload-Hash $path) -eq $preserved[$path]) "The $Review review changed $path"
     }
-    if ($null -ne $members) {
+    # In a hold run the owner's hand may add or remove torrents.
+    if ($null -ne $members -and -not $Hold) {
         $snapshot = (Send-Command @{ command = 'snapshot' }).data
         Assert ((@($snapshot.torrents.torrent_id | Sort-Object) -join ',') -eq (@($members | Sort-Object) -join ',')) "The $Review review changed torrent membership"
         if ($Review -eq 'library') { Assert (Test-Idle $snapshot.torrents) 'The library review activated a torrent' }
