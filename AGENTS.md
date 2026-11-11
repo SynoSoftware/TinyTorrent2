@@ -190,20 +190,37 @@ do not define this product.
 
 ## Code style
 
-The best code is the simplest correct code whose intent and ownership are
-obvious on first reading. Five principles decide every change; the points under
-each say how to apply it. The test: an engineer new to the feature finds what
-an operation does, where its rules live, and how its data changes by reading
-the code, without a map of the architecture.
+The test for every change: an engineer new to the feature finds what an
+operation does, where its rules live, and how its data changes by reading the
+code, without a map of the architecture.
 
-1. **Correctness first.** Code is correct, secure and reliable, and fast where
-   performance is measured. Simplicity never justifies weaker behavior, so
-   correctness wins any conflict with the principles below.
+1. **Correctness first.** Simplicity never justifies weaker behavior, so
+   correctness wins any conflict with the principles below. Work that makes
+   the person wait, or that the product repeats without need, is weaker
+   behavior, so its cost is decided while the code is designed.
+   - **Work follows the change.** Code that runs for every update, frame,
+     input or item does work sized by what changed or by what is on screen,
+     and keeps what did not change, because work sized by the whole list
+     grows with the list at every owner on the path. Work of that size stays
+     off the UI thread and out of a frame, which answer the person and keep
+     motion even.
+   - **Owner ruling: every stage that redoes work an earlier stage already
+     did, or makes an object only to drop it, is fixed; the collector is the
+     evidence, not the target.** Dropped objects grow memory, and WinUI
+     answers memory growth with a blocking collection that stops every
+     thread that runs .NET code.
 2. **Clarity over cleverness.** Write for the reader, because code is read and
-   changed far more often than it is written. Intent is obvious without
-   tracing abstractions or indirection.
-   - Choose the most appropriate algorithm and data structure for the problem. Consider time and space complexity, expected scale, and proven library implementations. Prefer efficient, established algorithms over simpler but inferior ones. Among comparably effective solutions, choose the easiest to understand and maintain. Keep control flow straightforward, names and types expressive, and execution paths easy to trace without unnecessary indirection.
-   - **Choose the right model for the behavior.** Evaluate booleans, enums, discriminated unions, state machines, polymorphism and ordinary branching according to the problem. Use booleans for independent facts, enums for mutually exclusive states, state machines for constrained transitions, and polymorphism when implementations differ in behavior. Interacting flags, impossible combinations, repeated conditions and scattered transitions signal that the model may be wrong. Reconsider the representation instead of adding more branches. Choose the simplest model that expresses the rules correctly.
+   changed far more often than it is written.
+   - For an algorithm or a data structure, consider time and space complexity,
+     expected scale, and proven library implementations. Prefer efficient,
+     established algorithms over simpler but inferior ones. Among comparably
+     effective solutions, choose the easiest to understand and maintain.
+   - **Choose the right model for the behavior.** Use booleans for independent
+     facts, enums for mutually exclusive states, state machines for
+     constrained transitions, and polymorphism when implementations differ in
+     behavior. Interacting flags, impossible combinations, repeated conditions
+     and scattered transitions signal that the model may be wrong. Reconsider
+     the representation instead of adding more branches.
    - Requests, results and errors that cross a boundary have named types, not
      strings, loose JSON or the other side's storage shapes. A contract
      separates the failures its caller handles differently.
@@ -213,10 +230,9 @@ the code, without a map of the architecture.
      zero or a sentinel you invent never selects a second behavior. A
      convention the platform or a library already defines, such as
      libtorrent's 0 for no limit, stays at that boundary, because readers
-     already know it. Prefer explicit state and legal transitions over
-     combinations of flags. In C#, use the
-     null-forgiving `!` only where a real invariant guarantees the value;
-     elsewhere it hides the null it claims cannot happen.
+     already know it. In C#, use the null-forgiving `!` only where a real
+     invariant guarantees the value; elsewhere it hides the null it claims
+     cannot happen.
    - Dependencies, state changes, side effects and failures show at the call:
      a constructor receives what a type depends on, and a method that saves,
      sends or changes shared state says so in its name.
@@ -227,20 +243,24 @@ the code, without a map of the architecture.
      implementation. When the change exposes two implementations of one rule,
      move their direct callers to the established owner in the same change.
    - Independent owners meet at a small boundary, so a change stays inside one
-     owner.
+     owner. A small boundary has few members and still carries what the next
+     owner needs: the owner that knows a fact passes it, such as what changed
+     or what the person chose, because an owner that receives only the whole
+     result works that fact out again. Count the work of a path as a whole,
+     from the input or the update to the result, across every owner on it,
+     because each owner can be correct while the path does the same work
+     twice.
    - Validation, invariants, transactions and error handling each have one
      owner where data enters or leaves. Code inside that boundary trusts the
      result; a second check needs a reason you can name, such as untrusted
      input from a website.
    - Store facts and decisions; derive display values and other computed state
-     when read. Keep a stored derived value only for a measured reason, and
-     name it as derived.
+     when read. Keep a stored derived value only where it is read more often
+     than its inputs change, and name it as derived.
 4. **Minimal architecture that works.** Every layer, interface, abstraction,
    dependency and file earns its place by removing more complexity than it
    adds, because each one is another thing a reader holds or opens.
-   - Each names the current requirement that forces it: it owns a concrete
-     decision, hides necessary complexity, or improves cohesion or reuse.
-     Shorter code does not count. Separate responsibilities do not require
+   - Shorter code does not count. Separate responsibilities do not require
      separate projects, interfaces or processes.
    - Use the language, .NET, WinUI and the C++ standard library directly, the
      way their documentation shows. A wrapper, factory or generic
@@ -255,8 +275,7 @@ the code, without a map of the architecture.
      and repeats no host rule; a plugin that needs either shows the contract is
      wrong.
 5. **Improve without expanding scope.** Solve the actual problem completely,
-   and no more. Refactor when it materially simplifies the code or clarifies
-   ownership, and prefer deleting complexity over moving it behind a new name.
+   and no more.
    - Follow the existing solution to the same problem and match the existing
      style; "cleaner" and "more flexible" alone are not reasons to depart, and
      usability wins when it conflicts with consistency.
@@ -270,10 +289,6 @@ the code, without a map of the architecture.
      reading data an earlier version saved.
    - Outside that feature, remove only orphans the change creates and report
      other problems instead of widening the diff or building a third solution.
-
-Read the final diff as the engineer who will own it. Every new file, type,
-state, dependency and branch answers a concrete requirement, and the test above
-holds.
 
 ## Naming
 
