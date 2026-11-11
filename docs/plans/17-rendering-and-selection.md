@@ -747,8 +747,9 @@ comparing bytes before making strings; buffers are sized once and reused.
    The input is read on the UI thread, so a busy UI thread freezes a map that
    could draw: 22.9% of the moving time (third round). WinUI's own scrolling
    reads touch, pen, touchpad and wheel input off the UI thread, but not a
-   mouse drag. Change: the prototype the owner asked for on 11 November
-   (step 2).
+   mouse drag. A mouse drag now reaches the game loop directly
+   ([sixth round](#sixth-round-the-game-loop-follows-a-mouse-drag)); a zoom
+   still goes through the UI thread.
 
 Two lines stay where they are. The engine sends each torrent's full peer list,
 by owner ruling ([pipe API](../contracts/pipe-api.md#snapshots-and-detail)). A
@@ -788,9 +789,11 @@ done when its result is written into
    peers to all peers, one step of a multiple selection, and a new sort order
    of a list longer than the screen.
 2. **Prototype the map's input off the UI thread** (hard line 4). The owner
-   asked for it on 11 November. Done when the questions in the
-   [third round](#third-round-the-border-stall) have answers and the owner has
-   seen a pan during table re-sorts.
+   asked for it on 11 November. Done for a mouse drag: the owner has seen a
+   pan during table re-sorts
+   ([sixth round](#sixth-round-the-game-loop-follows-a-mouse-drag)). Open: the
+   slower rendered selection that round found, and whether a zoom needs the
+   same path.
 3. **Record what the start shows.** Capture builds add the subject to the
    record of each published picture, so a saved run says when the first
    picture of the requested content appeared. It joins the next build and
@@ -1141,6 +1144,36 @@ rows the list holds replaces the list in one step, as a switch to another
 torrent's peers already does. The owner then gave the rule for every change of
 the data source, which is
 [hard line 2](#hard-lines-that-waste-memory-and-cpu).
+
+### Sixth round: the game loop follows a mouse drag
+
+While a mouse drag is active, the map's game loop reads the cursor at each
+frame and moves the view itself, so a pan no longer waits for the UI thread
+(hard line 4, for a mouse drag only). The owner tried it by hand under the
+replay's load and judged it "works outstanding. follows perfectly".
+
+`nf1` (the drag change, committed as `689ab23`) against `nf1h` (`HEAD` with
+the same harness), five
+pairs, all ten runs finished. Every pan of `nf1` reports that the game loop
+followed the drag. Logs: `round33.log` and `compare33.md` in the coordinating
+session's scratchpad.
+
+| Measure | `nf1h` | `nf1` |
+| --- | ---: | ---: |
+| Pan east, worst gap between drawn views (5 of 5 better) | 187 ms | 48 ms |
+| Pan back, worst gap (5 of 5 better) | 150 ms | 65 ms |
+| Pan west, worst gap (5 of 5 better) | 116 ms | 31 ms |
+| Pans, drawn views per second (5 of 5 better each) | 50 to 52 | 58 to 60 |
+| New views drawn while the UI thread is blocked, pans and zooms | 1.4/s | 28.3/s |
+| Click to rendered selection, median (5 of 5 worse) | 33.6 ms | 45.5 ms |
+
+Zooms still reach the map through the UI thread, so the views drawn while it
+is blocked come from the pans. The slower rendered selection is open: the
+selection itself is not slower and the UI thread does no more work per click,
+so the time is spent waiting before the selection's frame. Pair 4 differed by
+0.1 ms, the other four by 7 to 23 ms. The drag change also reordered two calls
+on the path without a drag, and its correction restores that order; one round
+decides whether the slower median is real.
 
 ## Allocation owners still open
 
