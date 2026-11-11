@@ -630,7 +630,7 @@ one torrent's peers after all peers, is therefore animated as a change of the
 same list. The owner's rule covers it too: "we established that there's no
 need to animate when we change the datasource so we flip it in place. u must
 not handle animation out of tableview".
-[Issue 581](https://github.com/SynoSoftware/TinyTorrent2/issues/581) holds that
+[Issue 582](https://github.com/SynoSoftware/TinyTorrent2/issues/582) holds that
 open work and the WinUI source that decides it.
 What falsifies the rule is a container whose content differs from the view's
 row at its index after a sort, a scroll, or `ScrollIntoView`; the reference

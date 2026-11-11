@@ -683,7 +683,8 @@ reads the cursor at each frame and moves the view itself, so the map follows
 the hand while the UI thread is busy; the control takes that view back when the
 drag ends. The press, the drag threshold, the release, pen and touch drags, the
 wheel and the keyboard use the UI thread's events, so a zoom still stops while
-the UI thread is busy. One table update is one such block: about 130 to 165 ms
+the UI thread is busy
+([issue 585](https://github.com/SynoSoftware/TinyTorrent2/issues/585)). One table update is one such block: about 130 to 165 ms
 at the stress load, in which the list lays out its rows and starts their
 animations and no code reads input
 ([TableView implementation](../../lib/TableView/docs/tableview-implementation.md#winui-list-behavior-the-design-depends-on)).

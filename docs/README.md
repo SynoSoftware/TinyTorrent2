@@ -66,15 +66,6 @@ It also owns the native peer map and its estimated country distribution.
 The contract also owns moving dots, activity fades, the configurable fastest-arc
 limit and retained, budgeted map preparation. GitHub tracks remaining map defects.
 
-The [rendering and selection plan](plans/17-rendering-and-selection.md) holds
-the open responsiveness work. Its goal is that each input is answered at once,
-that what was asked for starts to show at once and fills in best effort, that
-motion stays smooth while it fills, and that no hard line in the architecture
-wastes memory or CPU. It sets no time limit at the stress load. It holds the
-preserved map handoff and settled decisions, the questions already
-investigated, how a change is judged, what still interrupts the person, the
-hard lines, the steps and the recorded comparisons.
-
 The [close destinations plan](plans/20-close-destinations.md) merges map
 destinations that lie close together at the shown zoom into one arc.
 
