@@ -41,6 +41,8 @@ public sealed partial class PeerMap : UserControl
     // are merged at; the fitted scale is read at each preparation, so a resize applies at once.
     private (float Zoom, float Ratio) _rested = (1, 1);
     private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _restTimer;
+    // Increases with each view change, so a rest sees one that ran after its tick.
+    private int _viewVersion;
     // The description of the chosen places, for the inspection and choice it was made from.
     private (MapRenderer.Inspection Inspection, IReadOnlySet<PeerPlace> Places, DestinationKey? Key, Destination? Destination)? _choice;
     private long _dotBytes = MapMotion.SmallestDot;
@@ -83,7 +85,13 @@ public sealed partial class PeerMap : UserControl
         _restTimer = DispatcherQueue.CreateTimer();
         _restTimer.Interval = MapViewport.Rest;
         _restTimer.IsRepeating = false;
-        _restTimer.Tick += (_, _) => Rest();
+        // After a UI-thread stall the tick runs ahead of the view changes queued
+        // during it, so the rest waits for them at Low priority.
+        _restTimer.Tick += (_, _) =>
+        {
+            var version = _viewVersion;
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => Rest(version));
+        };
         // Keyboard focus shows the Fit button, so Tab can reach it.
         GotFocus += (_, _) =>
         {
@@ -123,6 +131,7 @@ public sealed partial class PeerMap : UserControl
         _viewport.Changed += (_, navigation) =>
         {
             _motion?.Navigate(_viewport.View);
+            _viewVersion++;
             _restTimer.Stop();
             _restTimer.Start();
             if (_pointed is not null)
@@ -358,13 +367,26 @@ public sealed partial class PeerMap : UserControl
 
     // The view has not changed for MapViewport.Rest, so its destinations merge at its scale;
     // a held drag waits for its release.
-    private void Rest()
+    private void Rest(int version)
     {
-        if (_drag is { IsActive: true })
+        // A view change that ran after the tick restarted the timer.
+        if (!IsLoaded || version != _viewVersion || _drag is { IsActive: true })
+        {
             return;
+        }
         var rested = (_viewport.Zoom, _viewport.Ratio);
         if (rested == _rested)
+        {
             return;
+        }
+        // Wheel steps or keys that Windows still holds for the UI thread can
+        // continue the gesture too.
+        if (IsInputPending())
+        {
+            _restTimer.Stop();
+            _restTimer.Start();
+            return;
+        }
         _rested = rested;
         QueuePreparation();
     }

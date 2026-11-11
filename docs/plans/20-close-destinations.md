@@ -149,8 +149,10 @@ places, which is not measured.
    when the map loads, because the view survives an unload. `Capture`
    multiplies them by the current `_viewport.Scale`, so a resize follows at
    once: `Resize` raises no `Changed` when zoom, centre and ratio stay
-   (`MapViewport.cs:93-94`). `MapWork.Prepare` arranges again when the shown
-   scale differs from the last one.
+   (`MapViewport.cs:93-94`). `MapWork.Prepare` merges again when the shown
+   scale differs from the last one; it places the groups again only when a
+   fact or the fitted scale changed, because only the merge reads the shown
+   scale.
 4. **When the view rests.** The quarter second is today `MapRenderer.Rest`; it
    moves to `MapViewport` as the one constant. Each clock stays with its reader.
    The renderer measures from `_viewMoved` on the render worker, because it
@@ -160,7 +162,13 @@ places, which is not measured.
    zoom and ratio and queues a preparation when they changed. A tick during an
    active drag does nothing, and `EndDrag` restarts the timer, because a
    release raises no `Changed`: established map applications regroup after the
-   gesture ends, not under a held button. Today nothing
+   gesture ends, not under a held button. After a UI-thread stall longer than
+   the rest, the tick runs before the view changes queued during the stall, so
+   the map would regroup in the middle of a zoom. The tick therefore decides at
+   Low priority, and only when no view change ran after it; while Windows still
+   holds input for the UI thread, it starts the timer again. A held zoom key
+   regroups once after its first step, because the keyboard waits about half
+   a second before it repeats; a rare case, so it gets no rule. Today nothing
    prepares the map after a zoom of an idle subject: preparations start only
    from a size change, a model change or a new surface (`PeerMap.xaml.cs:92`,
    `:228`, `:258`).
@@ -246,7 +254,17 @@ smoother. Open:
 - The owner looks at the whole-world and zoomed maps on the running app, with
   the distance and the merged lights first, and chooses a merged destination
   and zooms.
-- The round measured some measures worse, and their cause is not known yet:
-  torrent clicks' worst UI response 167 to 197 ms and the selected-peers map's
-  first picture 269 to 279 ms, both worse in 4 of 5 pairs, and zoom-in and
-  zoom-out navigation updates per second 46.8 to 45.7 and 47.1 to 44.2.
+- The round measured four measures worse. Zoom-in and zoom-out updates per
+  second (46.8 to 45.7, 47.1 to 44.2) and the selected-peers map's first
+  picture (269 to 279 ms) stay inside the old build's own spread, except in
+  one run. There a UI stall let the rest timer end in the middle of a zoom,
+  and the map regrouped from 91 to 296 destinations while the zoom went on.
+  The rest now waits for the view changes and input queued during a stall. A
+  five-pair round of the same tree with and without that wait confirmed it:
+  without it, 3 of 5 runs regrouped during a zoom; with it, none did, and the
+  zoom-out made 45.5 instead of 41.8 updates a second. The input check for a
+  person's real wheel and keys is not measured, because the benchmark replays
+  its steps inside the app.
+- Torrent clicks' worst UI response (167 to 197 ms) is one longer block of the
+  same UI work, with less work per click; its cause is not known, and one
+  traced pair with CPU samples and collections would settle it.

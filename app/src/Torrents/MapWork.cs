@@ -50,9 +50,19 @@ internal sealed class MapWork(Dictionary<string, Geography.Country> world) : IDi
         _model.Update(input.Model, input.Cancellation);
         input.Cancellation.ThrowIfCancellationRequested();
         var presentation = _presentation;
-        if (presentation is null || _model.Changed || input.Scale != _scale || input.Shown != _shown)
+        var placed = presentation is not null && !_model.Changed && input.Scale == _scale;
+        if (!placed || input.Shown != _shown)
         {
-            _model.Arrange(input.Scale, input.Shown);
+            // Only the merge reads the shown scale, so a rest merges the placements again
+            // without placing every group.
+            if (placed)
+            {
+                _model.Merge(input.Shown);
+            }
+            else
+            {
+                _model.Arrange(input.Scale, input.Shown);
+            }
             var arranged = _model.Present();
             // A new population of equal peer facts, such as a return to the
             // subject's peers, keeps the presentation, so the map does not

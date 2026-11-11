@@ -590,7 +590,7 @@ cannot change stays and names the platform limit.
    table update is one UI block that lays out the rows and starts their
    animations. The map gets its view through the UI thread, so during that
    block the map has no new view. The owner keeps the row animation. Change:
-   the bounded notices are built and not committed. Reading the map's input
+   the bounded notices were dropped (fifth round). Reading the map's input
    off the UI thread is hard line 4 below. What then stays in the block is
    WinUI's layout and drawing of the rows that changed.
 2. **Going from all peers to one torrent's peers blocks the UI, and that
@@ -724,8 +724,8 @@ so work follows what changed; a reply is parsed into the existing row,
 comparing bytes before making strings; buffers are sized once and reused.
 
 **One path from end to end: a peer update, from libtorrent to the peers
-table.** The same update also goes to the map; that branch is not followed
-here (step 4).
+table.** The same update also goes to the map; that path has its table after
+hard line 4.
 
 | Owner | What it gets | What it does | Work that follows the size of the list |
 | --- | --- | --- | --- |
@@ -774,8 +774,10 @@ leaves a second time.
    so we flip it in place. u must not handle animation out of tableview".
    Change: the host withdraws the shown list (`Table.Withdraw()`) before it
    sets another one, and the table puts the new rows into the containers it
-   holds, without animation. The table part is written and not committed; the
-   peers pane's part is open (step 1).
+   holds, without animation. It was written with the pane's part and dropped
+   on 11 November (fifth round): where the two lists share rows, a held
+   container keeps the old row as WinUI's item, so two containers can answer
+   for one row, and every step of a multiple selection jumped to the top.
 3. **Between the map's render worker and its game loop: more pictures than
    frames.** The worker owns the picture and the game loop owns the frame, and
    the count of pictures does not follow the count of frames. Each drawing
@@ -802,20 +804,105 @@ leaves a second time.
    ([sixth round](#sixth-round-the-game-loop-follows-a-mouse-drag)); a zoom
    still goes through the UI thread.
 
+The three other paths, followed in the code on 11 November (step 4). In the
+map, "all" means every place or destination, about 1,000 in the stress
+fixture, not every peer. The saved runs hold no time for the map worker's
+steps, so the map's entries are not sized.
+
+**A peer update to the map's picture.**
+
+| Owner | What it gets | What it does | Work that follows all places |
+| --- | --- | --- | --- |
+| Inspector, `ApplyPeers` and `GiveMap` | Each torrent's reply | Gives the map the round's replies once, at the round's end | None. It passes the changes |
+| Map worker, `Arrangement.Update` | The replies | Applies each change, join and leave to its groups | None. It follows the changes |
+| Map worker, `Arrange` and `Merge` | Its groups | Looks up the regions of every group and walks every group to rebuild the placement list. Projects every placement again and rebuilds its index | Every group and every placement, though `Update` knows which groups changed |
+| Map worker, `Present` and `Matches` | Its destinations | Makes a new dictionary of every country, a new list of every destination and a new index by key. Compares all of it with the last presentation, and drops it when nothing differs | Three new collections and one comparison of everything, to learn what `Arrange` and `Merge` knew |
+| Render worker, `RenderMap` and `PrepareRoutes` | The presentation | Builds the set of marked destinations. Sorts every active destination by rate to choose the arcs. Sets every route's strength. Builds an array of every route to see whether the arrangement changed | Every destination and country, for every presentation |
+| Render worker, `PrepareArcs`, `Inspect`, `PrepareMarkers` | The routes | New traffic for every arc. A new inspection with a target for every route. A marker for every destination, compared with the kept ones | Every arc, route and destination. The markers' check by reference fails, because `Present` always makes a new list |
+| Game loop | The picture and the traffic | Shows the picture. Walks every lane when the traffic is new | Every lane |
+
+**A wheel step on the map to the picture.**
+
+| Owner | What it gets | What it does | Work that follows all places |
+| --- | --- | --- | --- |
+| `PeerMap`, wheel and viewport | The wheel event | Sets the new view, sends it to the map's threads and restarts the 250 ms rest timer | None |
+| Render worker, for each picture | The view | Draws the whole map (hard line 3). Builds a new inspection with a target for every route, though the model did not change | The whole picture, and an array of every route, also for pictures that no frame shows |
+| Render worker, at its own rest | Its clock | Draws once more 250 ms after its last view, and refines what the motion left | The whole picture |
+| `PeerMap.Rest`, the UI's timer | Its clock | Asks the map worker to group again at the shown zoom, 250 ms after the UI's last view change | None |
+| Map worker, `Merge`, `Present`, `Matches` | The new shown scale | Merges every placement. Makes a whole presentation and drops it when no destination changed. It no longer places every group again, because only `Merge` reads the shown scale (seventh round) | Every placement, at every rest |
+
+**A click on a torrent to its rows and its map.**
+
+| Owner | What it gets | What it does | Work that follows the whole |
+| --- | --- | --- | --- |
+| Torrents table and `MainViewModel` | The press | Selects the row and hands the selection on | None. It follows the selection |
+| Inspector, `QueueSubject` and `Retarget` | The selection | Invalidates, waits one frame, clears, invalidates again and refreshes twice | None |
+| Inspector, `ReadPeers` | The next frame | A torrent seen before: joins its kept swarm on a worker, shows its kept rows, then subscribes. A torrent not seen: subscribes at once | None for the lists. One worker hop for a single kept swarm, whose join returns that swarm's own list |
+| Peers worker, `Swarm.Read` | The first reply | A torrent not seen: a row for every peer. A torrent seen: one match for each peer | Every peer of the new torrent, needed for the first rows |
+| Table, `Source.Set` and `Changes.Prepare` | The new list | Copies the new list. Copies the old view and scans it for a shared row, to learn that the list is another one | The new list, and the old list: 159,810 rows when the person leaves all peers |
+| Map worker, `Arrangement.Update` | The new subject | Groups every peer of the torrent from nothing, also for a torrent it showed before | Every peer of the new torrent |
+| Render worker, `DrawPhases` | The presentation | Publishes the land, then the arcs, then all places | Every destination, twice for the inspection |
+
+5. **Between the map's grouping and its readers: a whole presentation for
+   every change.** `Arrangement.Update` applies only the changes. After it,
+   `Arrange`, `Merge`, `Present` and `Matches` each pass over every group,
+   placement or destination, and the render worker does the same for routes,
+   traffic, inspection and markers. `Arrange` and `Merge` know which groups
+   they copied and which destinations they made new. That fact does not cross,
+   so `Matches` and every reader work it out again. Open.
+6. **Between the render worker and the picture's readers: an inspection for
+   every picture.** An inspection holds a target for every route. During a
+   zoom the model does not change, and the worker still builds one for each
+   of the 152 to 172 pictures of hard line 3. Open with step 5.
+7. **Between the inspector and the map's worker: the map keeps one subject.**
+   The inspector keeps the swarms of torrents seen before and shows their
+   rows at once. The map's worker keeps the groups of one subject, so a
+   return to a torrent groups every peer of it again. Open.
+8. **Between the UI's rest timer and the render worker's rest: two clocks for
+   one rest.** The worker draws its rest picture and refines it. The UI's
+   timer then asks for a new grouping, which walks every group although only
+   the shown scale changed. When a destination changes, the worker draws the
+   whole map again. The order of the two drawings in time is not confirmed.
+   The [close destinations plan](20-close-destinations.md) keeps the two
+   clocks apart by design, so the change is that plan's to decide.
+
 Some lines stay where they are. The engine sends each torrent's full peer
 list, by owner ruling
 ([pipe API](../contracts/pipe-api.md#snapshots-and-detail)); `Swarm.Read` pays
 for it with one match for each listed peer, on a worker. WinUI's lines are not
 ours to move: its list takes one notice for each row and has none for a range,
-and it asks for a full collection after 50 MiB of growth.
+and it asks for a full collection after 50 MiB of growth. The first rows of a
+torrent not seen before need a row for every peer, and the first picture of a
+subject that the map's worker does not hold needs every peer grouped.
+
+The review left four candidates that are not confirmed: pushes of the old
+subscription that are parsed and dropped between a click and the new
+subscription; the second publication of a first picture, replaced before a
+frame shows it; a second rebuild of the table's view when the pane calls
+`RefreshView()` for a new subject; and a hit test of every route after each
+wheel step. The readers' reports are `map-paths.md` and `click-path.md` in
+the reviewing session's scratchpad.
 
 Waste under the ruling of 9 November that is not a hard line:
+
+- **The inspector repeats two calls on a click, and both stay.** It
+  invalidates in `QueueSubject` and again in `Retarget` one frame later. The
+  second call decides the release with the new target, so only its
+  cancellation of a read that never started is a repeat. It refreshes in
+  `Show` and again in `FollowSelection`, after `IsReplacing` may have changed;
+  the repeat costs one pass over the inspector's commands. A third item
+  stays open: a torrent seen before joins its one kept swarm on a worker,
+  where `Swarm.Join` returns that swarm's own list, and its rows and its
+  subscription wait for that hop. A `ShowSwarms` that used a worker only for
+  several swarms was built and taken out again on 11 November
+  ([seventh round](#seventh-round-the-batch-of-11-november)).
 
 - **Collections that grow by doubling** make copies only to drop them. In one
   heap dump of the replay, 40 of the 57 arrays of 1 MiB or more were such dead
   copies: 72.5 MiB. The table's row map is reserved since `0a9df1e`. The map's
-  contributions are next (`MapModel`): the growth of their dictionary
-  allocated 38 to 40 MiB of large objects in one replay.
+  contributions (`MapModel`) are reserved since the seventh round: the growth
+  of their dictionary had allocated 38 to 40 MiB of large objects in one
+  replay.
 - **Native memory with no named owner.** Private memory rises by 178 to
   225 MiB within 1 s when the first arcs appear, and about 195 to 219 MiB of
   it is committed pages that hold only zeros. `CanvasDevice.Trim()` does not
@@ -836,12 +923,10 @@ are not known. Each step is
 done when its result is written into
 [what still interrupts the person](#what-still-interrupts-the-person).
 
-1. **Land the table changes that are built.** They are the notices bounded to
-   the cache (fifth round) and the different-list rule of hard line 2, with
-   the peers pane's part. One build pair and one round. The owner then looks
-   on screen at four cases: all peers to one torrent's peers, one torrent's
-   peers to all peers, one step of a multiple selection, and a new sort order
-   of a list longer than the screen.
+1. **The table changes that were built are dropped.** The notices bounded to
+   the cache and the different-list rule of hard line 2 failed review on 11
+   November ([fifth round](#fifth-round-notices-bounded-to-the-cache)). A new
+   design starts only when the owner asks for one.
 2. **Prototype the map's input off the UI thread** (hard line 4). The owner
    asked for it on 11 November. Done for a mouse drag: the owner has seen a
    pan during table re-sorts
@@ -861,7 +946,9 @@ done when its result is written into
    knew. It is a review of the code and the saved records and needs no build.
    Done when each path has its table, and each piece of work that is done
    twice, or that no later owner uses, is on the hard-lines list or has a
-   reason to stay.
+   reason to stay. Done on 11 November for what the code confirms: the three
+   tables and hard lines 5 to 8. Open: the four candidates listed there as
+   not confirmed, and a size for the map worker's steps.
 5. **Draw less during a zoom** (hard line 3). First the design, with the
    number of pictures it predicts for a 2 s zoom phase; then one batch.
 6. **The whole-list hard line** (hard line 1). First the table's history, as
@@ -880,7 +967,14 @@ done when its result is written into
    draw). The second question is what fills the first UI block of the click
    phase (entry 7 of the list). Naming the native memory needs an elevated
    trace, which needs the owner's permission.
-8. **Implement the changes in batches,** each batch with one build and one
+8. **The map's whole presentation for every change** (hard lines 5 to 7), as
+   later work: `Arrange` and `Merge` sized by the groups that changed;
+   `Present` and `Matches` replaced by the fact that nothing changed; one
+   inspection kept while the model stands; the groups of a torrent shown
+   before kept. The session of the close destinations plan judged the first
+   two not small. None is sized, so the traced run of step 7 first shows the
+   map worker's share.
+9. **Implement the changes in batches,** each batch with one build and one
    matched round under [deciding a correction](#deciding-a-correction).
 
 ## What forces WinUI's full collections
@@ -1174,7 +1268,31 @@ table slower. The list kept every container it was never told about, 35 for
 about 3 ms a row. Now a held position farther from the screen than the cache
 reaches, `ceiling(CacheLength × rows on screen)` rows, is told again, and the
 list drops it. Only the rows within the cache are refilled without a notice.
-Not committed.
+
+**Dropped, 11 November.** An independent review against the WinUI list
+source, and a second trace by another session, found that refilling a
+container without a notice breaks the owner's ruling that the table never
+flashes and never breaks the list's animation:
+
+- The positions on screen stay fixed while the list applies the told joins and
+  leaves, so each net leave at or above the screen moves a quiet cache
+  container onto the screen. It shows the row it had until the rebind at Low
+  priority. A row on screen can also play a leave and an arrival for a move
+  that did not happen. A peers table sorted by rate does this when a visible
+  peer disconnects.
+- WinUI records the item each container was prepared for, and a refill does
+  not change that record. `ContainerFromItem` can then return a container that
+  shows another row, so Narrator and UI Automation can read or select the
+  wrong row. The different-list rule of hard line 2 has the same defect where
+  the two lists share rows.
+- With rows selected, every update re-read the whole selection, and the cache
+  estimate was twice the panel's real cache.
+
+These follow from refilling WinUI's containers without telling WinUI, so a
+fix is a new design, not a correction. The table's lookups by item,
+`Table.ShownRow` and `Table.ContainerItem`, hold only while no item a
+container was prepared for is also the current row at another position; a
+new design keeps that true. The code was taken out of the tree.
 
 `new26` (bounded) against `new26h` (TableView source at `HEAD`), same map code,
 five pairs, all ten runs finished. Logs: `round26.log`, `compare26.md` and
@@ -1232,12 +1350,82 @@ session's scratchpad.
 | Click to rendered selection, median (5 of 5 worse) | 33.6 ms | 45.5 ms |
 
 Zooms still reach the map through the UI thread, so the views drawn while it
-is blocked come from the pans. The slower rendered selection is open: the
-selection itself is not slower and the UI thread does no more work per click,
-so the time is spent waiting before the selection's frame. Pair 4 differed by
-0.1 ms, the other four by 7 to 23 ms. The drag change also reordered two calls
-on the path without a drag, and its correction restores that order; one round
-decides whether the slower median is real.
+is blocked come from the pans. The slower rendered selection was not
+reproduced, so it is closed
+([seventh round](#seventh-round-the-batch-of-11-november)). Pair 4 differed by
+0.1 ms, the other four by 7 to 23 ms.
+
+### Seventh round: the batch of 11 November
+
+Two rounds ran against one reference, `nfc-ref`: `689ab23` with the close
+destinations plan's wait at a rest.
+
+**Round 34** tested four changes in one build: the rest merge
+(`MapWork.Prepare` merges alone when only the shown scale changed), a reserve
+for the map's contributions, a `ShowSwarms` that joined one kept swarm in the
+click's own UI turn, and a correction to the order of two calls in
+`MapMotion`. The worst wait of a replayed step for the UI thread rose from 193
+to 267 ms in 5 of 5 pairs, and the zoom-in's worst UI response from 139 to
+252 ms in 4 of 5. The UI thread did no more work in total; the same work came
+in larger pieces: two UI blocks of 240 ms or more in every run, against one in
+five runs. With one kept swarm, the peers, the filter, the map and the pane's
+refresh ran in the click's turn, before the selected row's frame, and the UI
+cycles of a click rose from 55 to 138 megacycles at the 90th percentile,
+pooled over about 100 clicks. Both UI-thread changes were taken out of the
+tree. Logs: `round34.log` and `compare34.md` in the coordinating session's
+scratchpad.
+
+**The click render after `689ab23` is not slower.** `nfc-ref` holds the drag
+code of `nf1`, byte for byte, and its median click render was 34.9 ms in round
+34, against 33.6 ms for `nf1h` and 45.5 ms for `nf1` in the sixth round.
+Pooled over about 100 clicks per build, `nfc-ref` had the shortest wait from
+selection to rendered frame of the four builds: 30 ms at the 90th percentile,
+against 62 ms for `nf1h`. So the correction in `MapMotion` had nothing to
+correct.
+
+**Round 35** tested the rest merge and the reserve alone (`batch2`). Another
+session's scripts loaded one core during pairs 1 and 2, so pairs 6 and 7
+replaced them. Logs: `round35.log` and `compare35.md`.
+
+| Measure | `nfc-ref` | `batch2` |
+| --- | ---: | ---: |
+| Worst wait of a replayed step for the UI thread (5 of 5 better) | 219 ms | 206 ms |
+| Torrent clicks, worst UI response (4 of 5 better) | 212 ms | 189 ms |
+| Connection churn, worst UI response (4 of 5 better) | 179 ms | 148 ms |
+| Zoom-in, worst UI response (2 better, 3 worse) | 160 ms | 150 ms |
+| Peak private memory (2 better, 3 worse) | 728 MiB | 713 MiB |
+| Settlement after the clicks, worst UI response (5 of 5 worse) | 33 ms | 147 ms |
+| Pan east, worst navigation gap (5 of 5 worse) | 37 ms | 65 ms |
+| Idle map, draws per second (5 of 5 worse) | 60.2 | 59.9 |
+
+The three measures that are worse in 5 of 5 pairs are edges of their phases,
+by the saved runs:
+
+- **Settlement.** A UI block of 90 to 250 ms comes about 400 to 500 ms after
+  the last click in both builds: 124, 140, 245 and 121 ms in four reference
+  runs, and 197, 154, 89, 147 and 125 ms in the batch. The phase ends when the
+  map reports ready. In the reference it ended before that block in three
+  runs; in the batch it ended after it in four. Over the clicks and the
+  settlement together, the worst UI response is better in the batch in 4 of 5
+  pairs. Borderline behind it: the game loop's frames show the selected
+  torrent's land a median of 332 ms after the last click, against 295 ms
+  (later in 4 of 5 pairs).
+- **Pan east.** The report's gap includes the time from the last drawn view
+  to the phase's end, and the harness sets that end on the UI thread. A UI
+  block held the end 55 to 89 ms after the last view in four batch runs, and
+  63 ms in one reference run. Between two drawn views the longest gap was 17
+  to 30 ms in both builds.
+- **Idle map.** One frame in a phase of 3 s. The same reference binary
+  measured 59.7 in round 34, where the build with the same two changes
+  measured 60.1.
+
+In round 34 the same measures pointed the other way with the same two changes
+in the build: the settlement was better in 5 of 5 pairs and the pan east in 4
+of 5. Neither change runs on the UI thread. The rest merge runs only after the
+shown zoom changed, and the reserve does nothing once the dictionary is large.
+The arcs step that took 892 and 897 ms in two zoom-outs of round 34's batch
+took 7 to 25 ms in every batch run of round 35. The rest merge and the reserve
+are retained, and the reference moves to them.
 
 ## Allocation owners still open
 

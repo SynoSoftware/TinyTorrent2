@@ -343,6 +343,7 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
                 _places.Clear();
                 _copies.Clear();
                 _changedGroups.Clear();
+                _contributions.EnsureCapacity(snapshot.Peers.Count);
                 foreach (var peer in snapshot.Peers)
                 {
                     cancellation.ThrowIfCancellationRequested();
@@ -593,8 +594,9 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
         // one destination. Distance is straight on the map as drawn at the default view: the
         // seam there is the map's left and right edges, and places on either side of it are
         // drawn a map width apart. A grid of Spacing-sized cells finds the near landings,
-        // because the places can number in the thousands.
-        private void Merge(Vector2 shown)
+        // because the places can number in the thousands. Called alone, it merges the
+        // placements of the last Arrange, so no fact, fitted scale or origin may have changed.
+        internal void Merge(Vector2 shown)
         {
             var count = _placed.Count;
             // A new scale, seam, subject or detail takes every placement, most peers first, so

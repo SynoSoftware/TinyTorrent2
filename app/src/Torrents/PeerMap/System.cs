@@ -106,4 +106,19 @@ public sealed partial class PeerMap
 
     [DllImport("comctl32.dll", ExactSpelling = true)]
     private static extern nint DefSubclassProc(nint window, uint message, nuint wParam, nint lParam);
+
+    /// <summary>Whether input waits in the UI thread's queue.</summary>
+    /// <remarks>
+    /// MWMO_INPUTAVAILABLE counts queued input even when an earlier check has
+    /// already seen it.
+    /// </remarks>
+    private static bool IsInputPending() =>
+        MsgWaitForMultipleObjectsEx(0, 0, 0, QueuedInput, InputAvailable) == 0;
+
+    // QS_INPUT, with the touch and pointer input of Windows 8 and later.
+    private const uint QueuedInput = 0x1C07;
+    private const uint InputAvailable = 0x0004;
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern uint MsgWaitForMultipleObjectsEx(uint count, nint handles, uint milliseconds, uint wakeMask, uint flags);
 }
