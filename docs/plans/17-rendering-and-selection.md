@@ -70,8 +70,10 @@ input or the motion on screen.
    visual detail cannot delay input or presentation, and selection semantics
    and displayed interaction targets stay correct while refinement is
    incomplete.
-4. **No waste from hard lines.** No part does its work whole, or hands over all
-   of its data, when only a part is seen or has changed.
+4. **No waste from hard lines.** No owner works out again what another owner
+   already knows, and none does work that no later owner uses. The work of a
+   path is counted as a whole, from the input or the update to the picture,
+   across every owner on it.
    [Hard lines](#hard-lines-that-waste-memory-and-cpu) names the ones found.
 
 The goal applies at every size. The stress load is where the failures show; it
@@ -602,7 +604,7 @@ cannot change stays and names the platform limit.
    67 ms held a gen 0 or gen 1 pause of 45 to 55 ms, and the median gen 0
    pause was 23.5 ms. In `cpu19` every collection that allocation started
    stayed at or under 64 ms. Cause: not known. The candidate is objects that
-   WinUI and .NET both hold (step 6). Change: after the cause is known. One
+   WinUI and .NET both hold (step 7). Change: after the cause is known. One
    idea is not designed: the dot motion as Composition animations, which the
    system compositor runs outside the app's threads.
 6. **A pan or zoom stops while the UI thread is free.** Size: 2.0% of the
@@ -613,7 +615,7 @@ cannot change stays and names the platform limit.
    of round 32 (`7b34517` against `20ea1bc`; `compare32.md` in the session
    scratchpad) it is one UI block in the first 0.55 s of the phase, and the
    block ends when the torrent table goes from 29 to 39 row containers. Cause:
-   not established. Change: after one traced run of that phase (step 6).
+   not established. Change: after one traced run of that phase (step 7).
 8. **The marquee stalled** at `4f069bb`: sample gap p95 142 ms, worst 266 ms.
    This plan holds no later marquee figure. Before any work on it, read the
    marquee phases of the latest saved runs.
@@ -646,7 +648,7 @@ in the native click trace, and
 the UI stack of another. WinUI asks after the working set grows by 50 MiB
 ([what forces WinUI's full collections](#what-forces-winuis-full-collections)).
 What grows it is in the [hard lines](#hard-lines-that-waste-memory-and-cpu),
-and why a gen 0 collection takes 23.5 ms is step 6.
+and why a gen 0 collection takes 23.5 ms is step 7.
 
 | Endpoint | 7 November, p95 / worst | Inside the worst gaps |
 | --- | --- | --- |
@@ -663,15 +665,28 @@ after the next change to them.
 
 ## Hard lines that waste memory and CPU
 
-A hard line is a rule or a boundary in the design that makes one part do its
-work whole, or hand over all of its data, when only a part is seen or has
-changed. The part after the line then works out again what the part before it
-already knew, or makes what nobody sees. This is the plan's reading of the
-owner's words of 11 November, "architecture that draws hard lines when it
-shoudn't"; the owner is asked to confirm it. One such line is already gone:
-until `20ea1bc` the map built an arc for every destination, however close two
-of them were at the shown zoom
-([close destinations plan](20-close-destinations.md)).
+The owner, 11 November: "the architecutre was designed to have one owner, one
+implementation, one responsibility - that could have obscured the big picture
+and caused a lot of unnecesary work of the whole system."
+
+A hard line is a boundary between two owners that lets too little through.
+Each owner does its own work completely and correctly. It does not know what
+the owner before it already worked out, or what the owner after it will use.
+So the same result is worked out again on the other side of the line, or work
+is done that no later owner uses. The waste does not show inside one owner.
+Each contract describes one owner, and a review of one owner stops at the
+line: this plan once left the table's copy of every new row list in place
+because the copy "is the library's documented behavior". The waste shows when
+one path is followed from end to end.
+
+The plan keeps one owner for each rule, because two copies of a rule drift
+apart. It changes what crosses the line: the owner that knows a fact passes
+it, and the next owner uses it and does not work it out again. Two lines
+already let the fact through. The peers pane names the rows whose values
+changed (`Table.RefreshView(changed)`), so a sort reads only those rows' keys
+again. And the map's grouping gets the shown zoom since `20ea1bc`; until then
+it built an arc for every destination, however close two of them were on
+screen ([close destinations plan](20-close-destinations.md)).
 
 **Owner ruling, 9 November: every stage that redoes work an earlier stage
 already did, or makes an object only to drop it, is fixed; the collector is
@@ -693,16 +708,32 @@ does not trace; the writer bumps a row's version or names the changed slots,
 so work follows what changed; a reply is parsed into the existing row,
 comparing bytes before making strings; buffers are sized once and reused.
 
-1. **The table is given a whole list for every change.** The peers worker
-   already knows which peers joined, left and changed (`Swarm.Read`). After a
-   join or a leave, a view of several torrents still builds its whole list
-   again (`Swarm.Join`), and the table copies every row reference of the list
-   on the UI thread (`Source.Set`). The table then compares the whole list
-   with the shown one to find the same joins and leaves (`Changes.Prepare`),
-   and makes a new position index for all rows (`Slots.Commit`). In one
-   replay of the 10 November traces these four allocated 31 to 32 MiB, 28 MiB,
-   18 to 21 MiB and 16.5 MiB of large objects, before `0a9df1e` reserved the
-   row map. The fixture answers one torrent at a time when all peers open
+**One path from end to end: a peer update, from libtorrent to the peers
+table.** The same update also goes to the map; that branch is not followed
+here (step 4).
+
+| Owner | What it gets | What it does | Work that follows the size of the list |
+| --- | --- | --- | --- |
+| libtorrent | A query | Returns the torrent's full peer list | The list. Not ours to change |
+| Engine and pipe | The full list | Sends each torrent's full list, by owner ruling | Writing and parsing the list |
+| Peers worker, `Swarm.Read` | The full list | Matches every listed peer against the rows it keeps, and makes the lists of the peers that joined, left and changed | One match for each listed peer. Needed, because the wire carries no changes |
+| Peers worker, `Swarm.Join` | The swarms of the view | After a join or a leave in a view of several torrents, makes one new array of all peers | A copy of the whole list |
+| Inspector and peers pane | The joined, left and changed peers | Names the changed rows to the table (`RefreshView(changed)`). After a join or a leave, sets the whole new list | None of its own |
+| Table, `Source.Set` | The whole list | Copies every row reference, on the UI thread | A second copy of the whole list |
+| Table, `Changes.Prepare` and `Slots.Commit` | Its copy | Compares the whole new order with the shown one, which finds the joins and leaves again, and makes a new position index | A comparison and an index of the whole list |
+| Table to WinUI | The changes | One notice for each changed position the list holds, and one for each row of a change in count | None. It follows the screen and the change |
+| WinUI | The notices | Lays out and draws the rows that changed, in one UI block | None. It follows the screen |
+
+The joins and leaves are known at `Swarm.Read`. After it, the whole list
+crosses two lines, is copied twice, and is compared to find the same joins and
+leaves a second time.
+
+1. **Between the peers worker and the table: a whole list for every join or
+   leave.** The table above shows it. In one replay of the 10 November traces
+   `Swarm.Join`, `Source.Set`, `Changes.Prepare` and `Slots.Commit` allocated
+   31 to 32 MiB, 28 MiB, 18 to 21 MiB and 16.5 MiB of large objects, before
+   `0a9df1e` reserved the row map. The fixture answers one torrent at a time
+   when all peers open
    ([workload](#workload)), so these sizes overstate the product there. The
    person pays through entry 4 of
    [what still interrupts the person](#what-still-interrupts-the-person),
@@ -712,12 +743,14 @@ comparing bytes before making strings; buffers are sized once and reused.
    pattern. The owner's model on 11 November is a collection that the table
    follows: "tableview is displaying peers of a torrent which are in an
    observableconnection. if we switch the torrent we swich the observable
-   collection." Open: a design in which the host passes the changes it already
-   has. It changes TableView contract 5.3, so it starts from the table's
-   history (ruling of 9 November in the settled decisions) and needs the
-   owner's decision before it is built (step 5).
-2. **The table guessed from the rows whether it was given another list.** The
-   host knows that the person chose another torrent. The table was not told,
+   collection." Open: a design in which the peers pane passes the joins and
+   leaves it already has, as it passes the changed rows. It changes TableView
+   contract 5.3, so it starts from the table's history (ruling of 9 November
+   in the settled decisions) and needs the owner's decision before it is
+   built (step 6).
+2. **Between the peers pane and the table: the table guessed whether it was
+   given another list.** The
+   pane knows that the person chose another torrent. The table was not told,
    so it compared rows. A list that shares rows with the shown one, such as
    one torrent's peers after all peers, was animated as a change of the same
    list: every row the list held left with an animation, and the list built
@@ -728,8 +761,10 @@ comparing bytes before making strings; buffers are sized once and reused.
    sets another one, and the table puts the new rows into the containers it
    holds, without animation. The table part is written and not committed; the
    peers pane's part is open (step 1).
-3. **The map draws a whole picture for each step of a zoom, and more pictures
-   than views.** Each drawing draws the whole map. A pan that the latest
+3. **Between the map's render worker and its game loop: more pictures than
+   frames.** The worker owns the picture and the game loop owns the frame, and
+   the count of pictures does not follow the count of frames. Each drawing
+   draws the whole map. A pan that the latest
    picture still covers draws nothing new until the view rests (fourth
    round). During a zoom every step has another scale, and the renderer
    leaves a drawing to the rest only while the picture's scale still looks
@@ -741,8 +776,9 @@ comparing bytes before making strings; buffers are sized once and reused.
    before and after, with 45 to 46 new views per second, so the added pictures
    did not become added frames. The second round saw the same effect: cheaper
    drawings, more of them, fewer game-loop frames and more freezes with the UI
-   thread free. Open: a design that draws less during a zoom (step 4).
-4. **The map's view reaches its game loop through the UI thread.** A pan or a
+   thread free. Open: a design that draws less during a zoom (step 5).
+4. **Between the UI thread and the map's game loop: the map's view is read by
+   an owner that is busy.** A pan or a
    zoom is the person's input to the map, and the map's own threads draw it.
    The input is read on the UI thread, so a busy UI thread freezes a map that
    could draw: 22.9% of the moving time (third round). WinUI's own scrolling
@@ -751,10 +787,12 @@ comparing bytes before making strings; buffers are sized once and reused.
    ([sixth round](#sixth-round-the-game-loop-follows-a-mouse-drag)); a zoom
    still goes through the UI thread.
 
-Two lines stay where they are. The engine sends each torrent's full peer list,
-by owner ruling ([pipe API](../contracts/pipe-api.md#snapshots-and-detail)). A
-new sort order keeps its row animation
-([the owner's answers](#the-owners-answers-to-the-pan-back-review)).
+Some lines stay where they are. The engine sends each torrent's full peer
+list, by owner ruling
+([pipe API](../contracts/pipe-api.md#snapshots-and-detail)); `Swarm.Read` pays
+for it with one match for each listed peer, on a worker. WinUI's lines are not
+ours to move: its list takes one notice for each row and has none for a range,
+and it asks for a full collection after 50 MiB of growth.
 
 Waste under the ruling of 9 November that is not a hard line:
 
@@ -777,8 +815,9 @@ Waste under the ruling of 9 November that is not a hard line:
 
 ## Steps
 
-The order is: what is built, then what the owner asked for, then the hard
-lines that need a design, then the causes that are not known. Each step is
+The order is: what is built, then what the owner asked for, then the paths
+not yet followed and the hard lines that need a design, then the causes that
+are not known. Each step is
 done when its result is written into
 [what still interrupts the person](#what-still-interrupts-the-person).
 
@@ -798,12 +837,22 @@ done when its result is written into
    record of each published picture, so a saved run says when the first
    picture of the requested content appeared. It joins the next build and
    needs none of its own.
-4. **Draw less during a zoom** (hard line 3). First the design, with the
+4. **Follow the other paths from end to end,** across every owner on them, as
+   the table of one peer update does under
+   [hard lines](#hard-lines-that-waste-memory-and-cpu). The paths are: a peer
+   update to the map's picture; a click on a torrent to its rows and its map;
+   a wheel step on the map to the picture. For each owner on a path, write
+   what it gets, what it works out, and what the owner before it already
+   knew. It is a review of the code and the saved records and needs no build.
+   Done when each path has its table, and each piece of work that is done
+   twice, or that no later owner uses, is on the hard-lines list or has a
+   reason to stay.
+5. **Draw less during a zoom** (hard line 3). First the design, with the
    number of pictures it predicts for a 2 s zoom phase; then one batch.
-5. **The whole-list hard line** (hard line 1). First the table's history, as
+6. **The whole-list hard line** (hard line 1). First the table's history, as
    the ruling of 9 November requires; then a design for the owner's decision.
    Nothing is built before that decision.
-6. **One traced run for the causes that are not known.** A collected trace of
+7. **One traced run for the causes that are not known.** A collected trace of
    the current build with a heap snapshot in the aggregate phase answers two
    questions. The first is why a gen 0 collection takes 23.5 ms. An object
    that WinUI and .NET both hold, a native WinUI or Win2D object and its .NET
@@ -816,7 +865,7 @@ done when its result is written into
    draw). The second question is what fills the first UI block of the click
    phase (entry 7 of the list). Naming the native memory needs an elevated
    trace, which needs the owner's permission.
-7. **Implement the changes in batches,** each batch with one build and one
+8. **Implement the changes in batches,** each batch with one build and one
    matched round under [deciding a correction](#deciding-a-correction).
 
 ## What forces WinUI's full collections
