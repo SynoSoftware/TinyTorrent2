@@ -184,18 +184,11 @@ try {
     Require ($matches.Entries.Count -eq 1 -and $matches.Entries[0].Title -eq 'Chosen title') 'Removing one contributor lost the shared identification.'
     Require ($matches.Entries[0].Created -eq 1700000000) 'Removing the original contributor lost shared file properties.'
 
-    # Revision 9 saved the lower-case title as the key; the upgrade rewrites it.
-    Sql "INSERT INTO video_choices VALUES('tmdb','161','movie','Ocean''s Eleven',NULL,2001,'ocean''s eleven',NULL),
-        ('tmdb','163','movie','La gran estafa 2','Ocean''s Twelve',2004,'la gran estafa 2','ocean''s twelve');
-        PRAGMA user_version=9;" | Out-Null
     $database.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null
     $database = New-Value 'Shared.Storage.Database' @($directory)
     $sources = New-Value 'Shared.FileSources' @($database)
     $store = New-Value 'Library.Store' @($database, $imdb)
     Invoke-Value $sources 'Reconcile' @((New-Values 'Shared.Contribution' @($second)), $cancel) | Out-Null
-    $saved = @(Invoke-Value $store 'Choices' @('tmdb', 'Oceans Eleven', $cancel))
-    $original = @(Invoke-Value $store 'Choices' @('tmdb', 'Oceans Twelve', $cancel))
-    Require ($saved.Count -eq 1 -and $saved[0].VideoId -eq '161' -and $original.Count -eq 1 -and $original[0].VideoId -eq '163') 'A choice saved at revision 9 was not found by its title or original title after the upgrade.'
     Require ((Sql 'SELECT group_concat(origin) FROM new_origins;') -eq 'second') 'Reopening forgot a finished torrent whose completion search was not decided.'
     # Records each search snapshot row written from here on.
     Sql 'CREATE TEMP TABLE written (entry_id INTEGER);' | Out-Null
@@ -225,7 +218,8 @@ try {
     Invoke-Value $sources 'Reconcile' @((New-Values 'Shared.Contribution' @($second)), $cancel) | Out-Null
 
     # A database that an earlier TinyTorrent saved at schema revision 9 opens
-    # with the match the person corrected.
+    # with the match the person corrected. Revision 9 saved a choice's
+    # lower-case title as its key; the upgrade rewrites it.
     $saved = Join-Path $directory 'Revision9'
     [IO.Directory]::CreateDirectory($saved) | Out-Null
     $savedPath = Join-Path $saved 'Saved.Movie.2020.mkv'
@@ -242,6 +236,8 @@ INSERT INTO source_files VALUES('saved',0,1,'Saved.Movie.2020.mkv',$path,100,1,1
 INSERT INTO video_information(catalog_id,video_id,language,title,type,year,genres,cast,synopsis,keywords,search)
 VALUES('tmdb','movie/7','en','Corrected title','movie',2020,'','','','','corrected title');
 INSERT INTO identifications VALUES('saved',0,'tmdb','movie/7',1,1700000000,'Saved.Movie.2020.mkv');
+INSERT INTO video_choices VALUES('tmdb','161','movie','Ocean''s Eleven',NULL,2001,'ocean''s eleven',NULL),
+    ('tmdb','163','movie','La gran estafa 2','Ocean''s Twelve',2004,'la gran estafa 2','ocean''s twelve');
 '@
         $command.Parameters.AddWithValue('$path', $savedPath) | Out-Null
         $command.ExecuteNonQuery() | Out-Null
@@ -250,8 +246,12 @@ INSERT INTO identifications VALUES('saved',0,'tmdb','movie/7',1,1700000000,'Save
     finally { $savedConnection.Dispose() }
     $revision9 = New-Value 'Shared.Storage.Database' @($saved)
     try {
-        $savedMatches = Invoke-Value (New-Value 'Library.Store' @($revision9, $imdb)) 'Search' @($query, $cancel)
+        $savedStore = New-Value 'Library.Store' @($revision9, $imdb)
+        $savedMatches = Invoke-Value $savedStore 'Search' @($query, $cancel)
         Require ($savedMatches.Entries.Count -eq 1 -and $savedMatches.Entries[0].Title -eq 'Corrected title') 'A saved revision 9 database lost its corrected match when it opened.'
+        $choice = @(Invoke-Value $savedStore 'Choices' @('tmdb', 'Oceans Eleven', $cancel))
+        $original = @(Invoke-Value $savedStore 'Choices' @('tmdb', 'Oceans Twelve', $cancel))
+        Require ($choice.Count -eq 1 -and $choice[0].VideoId -eq '161' -and $original.Count -eq 1 -and $original[0].VideoId -eq '163') 'A choice saved at revision 9 was not found by its title or original title after the upgrade.'
     }
     finally { $revision9.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null }
 
