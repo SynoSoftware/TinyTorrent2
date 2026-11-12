@@ -22,7 +22,7 @@ public sealed partial class MainWindow
             parent.Children.Insert(index, map);
             foreach (var count in new[] { 20, 20000 })
             {
-                var pieces = CreateFixture(count);
+                var pieces = CreatePiecesFixture(count);
                 var counts = pieces.Counts(0, pieces.Count);
                 var scenario = count == 20 ? "mixed" : "aggregate";
                 await CaptureMatrix(
@@ -83,55 +83,109 @@ public sealed partial class MainWindow
             parent.Children.Insert(index, original);
             await CaptureLayout();
         }
+    }
 
-        static Pieces CreateFixture(int count)
+    // A new piece count changes the layout, so the drawing that a Pieces map
+    // keeps until the new one is drawn must take no input: a point on it would
+    // name a piece of the old layout. Runs a production map, in place of the
+    // Inspector's, with synthetic pieces.
+    private async Task CapturePieceCountChange(List<object> outcomes, List<string> completed)
+    {
+        var original = CaptureElements(InspectorContent).OfType<PiecesMap>().Single();
+        var parent =
+            original.Parent as Panel
+            ?? throw new InvalidOperationException("The Pieces map has no panel.");
+        var index = parent.Children.IndexOf(original);
+        var map = new PiecesMap();
+        var drawing = (FrameworkElement)map.FindName("Drawing");
+        parent.Children.RemoveAt(index);
+        try
         {
-            PieceKind[] kinds =
-            [
-                PieceKind.Verified,
-                PieceKind.Downloading,
-                PieceKind.Rare,
-                PieceKind.Common,
-                PieceKind.Unavailable,
-            ];
-            var verified = new bool[count];
-            var availability = new int[count];
-            var downloading = new List<object>();
-            for (var piece = 0; piece < count; piece++)
-            {
-                var kind = kinds[piece / (count / kinds.Length)];
-                if (count > 20)
+            parent.Children.Insert(index, map);
+            map.Show(CreatePiecesFixture(20), Model.Text);
+            await Interactive();
+            map.Show(CreatePiecesFixture(20000), Model.Text);
+            var keptInput = drawing.IsHitTestVisible;
+            await Interactive();
+            if (keptInput)
+                throw new InvalidOperationException(
+                    "The Pieces map kept input on its old drawing after the piece count changed."
+                );
+            completed.Add("synthetic-pieces-count-change");
+            outcomes.Add(
+                new
                 {
-                    if (piece % 17 == 0)
-                        kind = PieceKind.Unavailable;
-                    else if (piece % 19 == 0)
-                        kind = PieceKind.Verified;
+                    scene = "synthetic-pieces-count-change",
+                    from = 20,
+                    to = 20000,
+                    keptInput,
                 }
-                verified[piece] = kind == PieceKind.Verified;
-                availability[piece] =
-                    kind == PieceKind.Unavailable ? 0
-                    : kind == PieceKind.Rare ? 1
-                    : 20;
-                if (kind == PieceKind.Downloading)
-                    downloading.Add(new { index = piece, progress = 0.2 + piece % 4 * 0.2 });
-            }
-            return new Pieces(
-                JsonSerializer.SerializeToElement(
-                    new
-                    {
-                        metadata_ready = true,
-                        piece_size = 262144,
-                        peer_count = 20,
-                        verified,
-                        wanted = Enumerable.Repeat(true, count).ToArray(),
-                        availability,
-                        downloading,
-                    }
-                ),
-                new PieceFiles.Named(
-                    [new PieceFile("Synthetic renderer fixture.bin", new(0, count))]
-                )
             );
         }
+        finally
+        {
+            parent.Children.Remove(map);
+            parent.Children.Insert(index, original);
+            await CaptureLayout();
+        }
+
+        async Task Interactive()
+        {
+            var until = DateTime.UtcNow.AddSeconds(20);
+            while (!drawing.IsHitTestVisible && DateTime.UtcNow < until)
+                await Task.Delay(16);
+            if (!drawing.IsHitTestVisible)
+                throw new InvalidOperationException("The Pieces map never took input after drawing.");
+        }
+    }
+
+    private static Pieces CreatePiecesFixture(int count)
+    {
+        PieceKind[] kinds =
+        [
+            PieceKind.Verified,
+            PieceKind.Downloading,
+            PieceKind.Rare,
+            PieceKind.Common,
+            PieceKind.Unavailable,
+        ];
+        var verified = new bool[count];
+        var availability = new int[count];
+        var downloading = new List<object>();
+        for (var piece = 0; piece < count; piece++)
+        {
+            var kind = kinds[piece / (count / kinds.Length)];
+            if (count > 20)
+            {
+                if (piece % 17 == 0)
+                    kind = PieceKind.Unavailable;
+                else if (piece % 19 == 0)
+                    kind = PieceKind.Verified;
+            }
+            verified[piece] = kind == PieceKind.Verified;
+            availability[piece] =
+                kind == PieceKind.Unavailable ? 0
+                : kind == PieceKind.Rare ? 1
+                : 20;
+            if (kind == PieceKind.Downloading)
+                downloading.Add(new { index = piece, progress = 0.2 + piece % 4 * 0.2 });
+        }
+        return new Pieces(
+            JsonSerializer.SerializeToElement(
+                new
+                {
+                    metadata_ready = true,
+                    piece_size = 262144,
+                    peer_count = 20,
+                    verified,
+                    wanted = Enumerable.Repeat(true, count).ToArray(),
+                    availability,
+                    downloading,
+                }
+            ),
+            new PieceFiles.Named(
+                [new PieceFile("Synthetic renderer fixture.bin", new(0, count))]
+            )
+        );
     }
 }

@@ -55,6 +55,7 @@
     "seeding_minutes": 0,
     "show_add": true,
     "theme": "system",
+    "backdrop": "solid",
     "upload_limit": 0
   },
   "torrents": [

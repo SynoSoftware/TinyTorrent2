@@ -291,6 +291,8 @@ public sealed partial class MainWindow
         target = alternate;
         alternate = Model.VisibleTorrents.First(torrent => torrent != target);
         await Switch(true);
+        // Both torrents have one piece, so a separate step changes the count.
+        await CapturePieceCountChange(outcomes, completed);
 
         async Task Switch(bool rapid)
         {
