@@ -22,7 +22,7 @@
           x:Name="ModeRow"
           Grid.Column="1"
           Header="{x:Bind Main.Text.Get('transfer_limits', 'control'), Mode=OneWay}"
-          Description="{x:Bind Main.LimitsSummary, Mode=OneWay}"
+          Summary="{x:Bind Main.LimitsSummary, Mode=OneWay}"
           ToolTipService.ToolTip="{x:Bind Main.LimitsNow, Mode=OneWay}"
           BorderThickness="0"
         />

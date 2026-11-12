@@ -123,9 +123,9 @@ public sealed partial class DatasetRow : UserControl
         var focus = focused?.FocusState ?? FocusState.Unfocused;
         var workFocused = _work.HasFocus;
         _row.Header = text.Get(section, "data");
-        _row.Description = _installed is { } installed
-            ? Describe(section, installed, text)
-            : text.Get(section, "data_hint");
+        // The installed data's details are a value, so they stay on one line.
+        _row.Summary = _installed is { } installed ? Describe(section, installed, text) : string.Empty;
+        _row.Description = _installed is null ? text.Get(section, "data_hint") : string.Empty;
         _start.Text = text.Get(section, _installed is null ? "download" : "update");
         ToolTipService.SetToolTip(
             _start,

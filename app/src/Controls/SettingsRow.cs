@@ -12,6 +12,7 @@ public sealed partial class SettingsRow : ContentControl
 {
     public static readonly DependencyProperty HeaderProperty = Text(nameof(Header));
     public static readonly DependencyProperty DescriptionProperty = Text(nameof(Description));
+    public static readonly DependencyProperty SummaryProperty = Text(nameof(Summary));
     public static readonly DependencyProperty ErrorProperty = Text(nameof(Error));
     public static readonly DependencyProperty CautionProperty = Text(nameof(Caution));
     public static readonly DependencyProperty StateTextProperty = Text(nameof(StateText));
@@ -81,10 +82,21 @@ public sealed partial class SettingsRow : ContentControl
         get => (string)GetValue(HeaderProperty);
         set => SetValue(HeaderProperty, value);
     }
+    /// <summary>Help text under the header. It wraps, as every setting's description does.</summary>
     public string Description
     {
         get => (string)GetValue(DescriptionProperty);
         set => SetValue(DescriptionProperty, value);
+    }
+
+    /// <summary>
+    /// A value under the header, shown when there is no description. It stays on one line,
+    /// because a value that changes must not change the row's height.
+    /// </summary>
+    public string Summary
+    {
+        get => (string)GetValue(SummaryProperty);
+        set => SetValue(SummaryProperty, value);
     }
     public string Error
     {
@@ -235,9 +247,11 @@ public sealed partial class SettingsRow : ContentControl
     private void Update()
     {
         AutomationProperties.SetName(this, Header);
+        var wraps = Description.Length > 0;
+        var caption = wraps ? Description : Summary;
         var hasPrimary =
             Header.Length > 0
-            || Description.Length > 0
+            || caption.Length > 0
             || Error.Length > 0
             || Caution.Length > 0
             || Content is not null
@@ -246,7 +260,7 @@ public sealed partial class SettingsRow : ContentControl
             || UnitSelector is not null;
         if (GetTemplateChild("RowRoot") is Grid root)
         {
-            root.MinHeight = Description.Length > 0 ? 64 : 52;
+            root.MinHeight = caption.Length > 0 ? 64 : 52;
             root.RowDefinitions[0].Height = hasPrimary
                 ? new GridLength(1, GridUnitType.Star)
                 : GridLength.Auto;
@@ -254,7 +268,14 @@ public sealed partial class SettingsRow : ContentControl
         }
         if (GetTemplateChild("DetailPresenter") is ContentPresenter detail)
             detail.Margin = new Thickness(0, hasPrimary ? 8 : 0, 0, 0);
-        Show("DescriptionLabel", Description.Length > 0);
+        if (GetTemplateChild("DescriptionLabel") is TextBlock label)
+        {
+            label.Text = caption;
+            label.Style = (Style)Application.Current.Resources[
+                wraps ? "TinyTorrentDescriptionTextStyle" : "TinyTorrentTitleDetailTextStyle"
+            ];
+        }
+        Show("DescriptionLabel", caption.Length > 0);
         Show("IconPresenter", Icon is not null);
         Show("StateLabel", StateText.Length > 0);
         // A text box without a unit, in a card whose other boxes have one,
@@ -266,7 +287,7 @@ public sealed partial class SettingsRow : ContentControl
             unit.MinWidth = _unitWidth;
         var help = string.Join(
             " ",
-            new[] { Error, Description, Caution, Unit }.Where(text => text.Length > 0)
+            new[] { Error, caption, Caution, Unit }.Where(text => text.Length > 0)
         );
         var tip = string.Join(" ", new[] { Error, Caution }.Where(text => text.Length > 0));
         // A disabled control shows no tooltip and passes the pointer to its

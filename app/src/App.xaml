@@ -1249,8 +1249,8 @@
                     />
                     <TextBlock
                       x:Name="DescriptionLabel"
-                      Text="{TemplateBinding Description}"
-                      Style="{StaticResource TinyTorrentDescriptionTextStyle}"
+                      TextTrimming="CharacterEllipsis"
+                      controls:Trimming.ShowsToolTip="True"
                     />
                   </StackPanel>
                 </Grid>

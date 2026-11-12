@@ -12,7 +12,7 @@ public sealed partial class SettingsLink : Button
     };
     private readonly TextBlock _description = new()
     {
-        Style = (Style)Application.Current.Resources["TinyTorrentTitleDetailTextStyle"],
+        TextTrimming = TextTrimming.CharacterEllipsis,
         Visibility = Visibility.Collapsed,
     };
     private string _descriptionText = string.Empty;
@@ -70,8 +70,9 @@ public sealed partial class SettingsLink : Button
         var wraps = _descriptionText.Length > 0;
         var text = wraps ? _descriptionText : _summary;
         _description.Text = text;
-        _description.TextWrapping = wraps ? TextWrapping.Wrap : TextWrapping.NoWrap;
-        _description.TextTrimming = wraps ? TextTrimming.None : TextTrimming.CharacterEllipsis;
+        _description.Style = (Style)Application.Current.Resources[
+            wraps ? "TinyTorrentDescriptionTextStyle" : "TinyTorrentTitleDetailTextStyle"
+        ];
         _description.Visibility = text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         AutomationProperties.SetHelpText(this, text);
     }
