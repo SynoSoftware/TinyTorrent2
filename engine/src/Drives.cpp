@@ -5,7 +5,7 @@
 #include <winioctl.h>
 #include <virtdisk.h>
 #include <cstddef>
-#include <cwctype>
+#include <optional>
 #include <vector>
 
 #pragma comment(lib, "virtdisk.lib")
@@ -17,20 +17,14 @@ namespace
 // Bounds the search through virtual disks that lie in virtual disks.
 constexpr int hostDepth = 4;
 
-std::wstring FinalPath(HANDLE handle, DWORD flags)
+// The drive of a UNC path, such as \\nas\media: its server, because the engine
+// cannot see the server's disks. Nothing for another path.
+std::optional<std::string> Server(std::filesystem::path const& path)
 {
-    std::wstring path(MAX_PATH, L'\0');
-    for (;;)
-    {
-        // Too small a buffer returns the size it needs, with the terminator.
-        auto length = GetFinalPathNameByHandleW(handle, path.data(), static_cast<DWORD>(path.size()), flags);
-        if (length == 0)
-            return {};
-        bool fits = length < path.size();
-        path.resize(length);
-        if (fits)
-            return path;
-    }
+    auto root = path.root_name().wstring();
+    if (!root.starts_with(LR"(\\)") || root == LR"(\\?)" || root == LR"(\\.)")
+        return std::nullopt;
+    return "server " + Utf8(NameKey(std::wstring_view(root).substr(2)));
 }
 
 // Adds the disks that `volume` lies on, and for a virtual disk the disks of
@@ -99,21 +93,12 @@ Drives Drives::Of(std::filesystem::path const& folder)
     auto full = std::filesystem::absolute(folder, ignored).lexically_normal();
     // A UNC path already names its server; opening it would retry an absent
     // share for every torrent before the shared reachability probe runs.
-    auto root = full.root_name().wstring();
-    if (root.starts_with(LR"(\\)") && root != LR"(\\?)" && root != LR"(\\.)")
+    if (auto server = Server(full))
     {
-        for (auto& letter : root)
-            letter = static_cast<wchar_t>(std::towlower(letter));
-        drives.names.insert("server " + Utf8(root.substr(2)));
+        drives.names.insert(*server);
         return drives;
     }
-    auto unknown = [&full]
-    {
-        auto name = full.wstring();
-        for (auto& letter : name)
-            letter = static_cast<wchar_t>(std::towlower(letter));
-        return Drives{{"folder " + Utf8(name)}};
-    };
+    auto unknown = [&full] { return Drives{{"folder " + Utf8(NameKey(full.native()))}}; };
     // A folder that does not exist yet, such as a move's destination, is
     // created on the drive of its nearest existing parent.
     auto handle = INVALID_HANDLE_VALUE;
@@ -126,21 +111,22 @@ Drives Drives::Of(std::filesystem::path const& folder)
             return unknown();
     }
     OwnedHandle owned(handle);
-    // A network folder, also through a mapped drive letter, is \\?\UNC\server\...
-    // The engine cannot see the server's disks, so the server is the drive.
-    constexpr std::wstring_view unc = LR"(\\?\UNC\)";
-    if (auto path = FinalPath(handle, VOLUME_NAME_DOS); path.starts_with(unc))
+    // A network folder, also through a mapped drive letter, has a UNC path.
+    if (auto path = FinalPath(handle, VOLUME_NAME_DOS))
     {
-        auto server = path.substr(unc.size(), path.find(L'\\', unc.size()) - unc.size());
-        for (auto& letter : server)
-            letter = static_cast<wchar_t>(std::towlower(letter));
-        drives.names.insert("server " + Utf8(server));
-        return drives;
+        if (auto server = Server(Win32Path(path->native()).value_or(*path)))
+        {
+            drives.names.insert(*server);
+            return drives;
+        }
     }
     // A local folder is \\?\Volume{...}\..., which names its volume.
     auto path = FinalPath(handle, VOLUME_NAME_GUID);
-    auto end = path.find(L'\\', 4);
-    if (end == std::wstring::npos || !AddDisks(path.substr(0, end), drives.names, 0))
+    if (!path)
+        return unknown();
+    auto const& name = path->native();
+    auto end = name.find(L'\\', 4);
+    if (end == std::wstring::npos || !AddDisks(name.substr(0, end), drives.names, 0))
         return unknown();
     return drives;
 }

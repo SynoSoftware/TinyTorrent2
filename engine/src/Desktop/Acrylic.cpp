@@ -1,4 +1,5 @@
 #include "Desktop/Acrylic.h"
+#include "Resources.h"
 #include <algorithm>
 #include <cmath>
 #include <dwmapi.h>
@@ -67,21 +68,18 @@ bool SetBlur(HWND window, bool enabled)
     return set(window, &data) != FALSE;
 }
 
-// The window surface holds premultiplied colour.
-BYTE Premultiply(BYTE channel, BYTE opacity)
+// `over` laid at `alpha`, from 0 to 1, on `under`, rounded to the nearest level.
+BYTE Blend(BYTE over, BYTE under, double alpha)
 {
-    return static_cast<BYTE>(channel * opacity / 255);
+    return static_cast<BYTE>(over * alpha + under * (1 - alpha) + 0.5);
 }
 
 // `over` laid at `opacity`, out of 255, on `under`.
 COLORREF Mix(COLORREF over, COLORREF under, BYTE opacity)
 {
-    auto mix = [opacity](BYTE top, BYTE bottom)
-    {
-        return static_cast<BYTE>(Premultiply(top, opacity) + Premultiply(bottom, 255 - opacity));
-    };
-    return RGB(mix(GetRValue(over), GetRValue(under)), mix(GetGValue(over), GetGValue(under)),
-        mix(GetBValue(over), GetBValue(under)));
+    auto alpha = opacity / 255.0;
+    return RGB(Blend(GetRValue(over), GetRValue(under), alpha), Blend(GetGValue(over), GetGValue(under), alpha),
+        Blend(GetBValue(over), GetBValue(under), alpha));
 }
 
 // How much of the pixel at `x`, `y` lies inside `bounds` with corners of
@@ -101,15 +99,34 @@ double Coverage(RECT const& bounds, int radius, int x, int y)
 // Lays `color` over a premultiplied pixel at `alpha`, from 0 to 1.
 void Blend(RGBQUAD& pixel, COLORREF color, double alpha)
 {
-    auto mix = [alpha](BYTE over, BYTE under)
-    {
-        return static_cast<BYTE>(over * alpha + under * (1 - alpha) + 0.5);
-    };
-    pixel.rgbRed = mix(GetRValue(color), pixel.rgbRed);
-    pixel.rgbGreen = mix(GetGValue(color), pixel.rgbGreen);
-    pixel.rgbBlue = mix(GetBValue(color), pixel.rgbBlue);
-    pixel.rgbReserved = mix(255, pixel.rgbReserved);
+    pixel.rgbRed = Blend(GetRValue(color), pixel.rgbRed, alpha);
+    pixel.rgbGreen = Blend(GetGValue(color), pixel.rgbGreen, alpha);
+    pixel.rgbBlue = Blend(GetBValue(color), pixel.rgbBlue, alpha);
+    pixel.rgbReserved = Blend(255, pixel.rgbReserved, alpha);
 }
+}
+
+int Scale(int value, UINT dpi)
+{
+    return MulDiv(value, dpi, USER_DEFAULT_SCREEN_DPI);
+}
+
+void Acrylic::Register(wchar_t const* name, WNDPROC procedure)
+{
+    WNDCLASSW type{};
+    type.lpfnWndProc = procedure;
+    type.hInstance = GetModuleHandleW(nullptr);
+    type.hIcon = LoadIconW(type.hInstance, MAKEINTRESOURCEW(IDI_TINYTORRENT));
+    type.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    type.lpszClassName = name;
+    RegisterClassW(&type);
+}
+
+LOGFONTW Acrylic::MessageFont(UINT dpi)
+{
+    NONCLIENTMETRICSW metrics{sizeof(metrics)};
+    SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof(metrics), &metrics, 0, dpi);
+    return metrics.lfMessageFont;
 }
 
 Acrylic::Acrylic() : buffered_(SUCCEEDED(BufferedPaintInit())) {}
@@ -156,6 +173,25 @@ void Acrylic::Apply(HWND window, Theme theme)
     InvalidateRect(window, nullptr, FALSE);
 }
 
+std::optional<LRESULT> Acrylic::Handle(HWND window, UINT message, Theme theme)
+{
+    switch (message)
+    {
+    case WM_NCCALCSIZE:
+    case WM_ERASEBKGND:
+        return 0;
+    case WM_NCHITTEST:
+        return HTCLIENT;
+    case WM_SETTINGCHANGE:
+    case WM_SYSCOLORCHANGE:
+    case WM_THEMECHANGED:
+    case WM_DWMCOMPOSITIONCHANGED:
+        Apply(window, theme);
+        return 0;
+    }
+    return std::nullopt;
+}
+
 Acrylic::Canvas::Canvas(Acrylic const& acrylic, HWND window) : acrylic_(acrylic), window_(window)
 {
     auto device = BeginPaint(window, &paint_);
@@ -167,9 +203,9 @@ Acrylic::Canvas::Canvas(Acrylic const& acrylic, HWND window) : acrylic_(acrylic)
     target_ = buffer_ ? bufferDevice : device;
     theme_ = OpenThemeData(window, L"CompositedWindow::Window");
     BYTE opacity = acrylic_.blurred_ && buffer_ && theme_ ? acrylic_.tint_ : 255;
-    auto const& background = acrylic_.background_;
-    SetDCBrushColor(target_, RGB(Premultiply(GetRValue(background), opacity),
-        Premultiply(GetGValue(background), opacity), Premultiply(GetBValue(background), opacity)));
+    // The window surface holds premultiplied colour: the background laid over
+    // transparent black.
+    SetDCBrushColor(target_, Mix(acrylic_.background_, RGB(0, 0, 0), opacity));
     FillRect(target_, &bounds_, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
     if (buffer_)
     {
@@ -265,5 +301,15 @@ void Acrylic::Canvas::Text(std::wstring const& text, RECT bounds, UINT format, H
         DrawTextW(target_, text.c_str(), -1, &bounds, format);
     }
     SelectObject(target_, previous);
+}
+
+void Acrylic::Canvas::Icon(POINT at, int size, HICON icon)
+{
+    if (!icon)
+    {
+        icon = static_cast<HICON>(LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_TINYTORRENT),
+            IMAGE_ICON, size, size, LR_SHARED));
+    }
+    DrawIconEx(target_, at.x, at.y, icon, size, size, 0, nullptr, DI_NORMAL);
 }
 }

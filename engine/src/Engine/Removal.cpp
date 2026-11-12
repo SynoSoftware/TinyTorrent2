@@ -1,4 +1,5 @@
 #include "Engine/State.h"
+#include "Owned.h"
 #include <Windows.h>
 #include <Shellapi.h>
 #include <ShlObj.h>
@@ -72,7 +73,7 @@ void Engine::State::Remove(std::vector<std::string> const& ids,
     std::erase_if(document.torrents, [&selected](auto const& entry) { return selected(entry.first); });
     std::erase_if(document.queueOrder, selected);
     auto order = document.queueOrder;
-    changes.Commit([document = std::move(document)] { return document.ToJson(); },
+    changes.Commit(std::move(document),
         [this, ids, ready, order = std::move(order), deletion, kept, completion, mode,
             givesBack = std::move(givesBack), sources = std::move(sources)](Outcome outcome)
     {
@@ -118,11 +119,7 @@ std::list<Engine::State::Deletion>::iterator Engine::State::PrepareDeletion(std:
     if (mode)
     {
         deleting.holds = std::move(scope.holds);
-        for (auto const& file : scope.files)
-        {
-            if (!std::binary_search(scope.kept.begin(), scope.kept.end(), file, PathBefore))
-                files.push_back(file);
-        }
+        files = scope.Deleted();
     }
     // libtorrent removes each torrent on the root of its save folder, where
     // its files lie too.
@@ -144,8 +141,7 @@ std::list<Engine::State::Deletion>::iterator Engine::State::PrepareDeletion(std:
         }
         deleting.names += torrent.Name();
     }
-    std::sort(deleting.holds.begin(), deleting.holds.end(), PathBefore);
-    deleting.holds.erase(std::unique(deleting.holds.begin(), deleting.holds.end(), SamePath), deleting.holds.end());
+    SortUnique(deleting.holds);
     Split(deleting, std::move(files), std::move(uses));
     return deletions.insert(deletions.end(), std::move(deleting));
 }
@@ -467,9 +463,9 @@ private:
 // further file and leaves the rest without a failure.
 void Recycle(std::vector<std::filesystem::path> const& files, std::stop_token stop)
 {
-    auto initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    Apartment apartment;
     IFileOperation* operation = nullptr;
-    auto result = FAILED(initialized) ? initialized : CoCreateInstance(CLSID_FileOperation, nullptr,
+    auto result = FAILED(apartment.Result()) ? apartment.Result() : CoCreateInstance(CLSID_FileOperation, nullptr,
         CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&operation));
     if (SUCCEEDED(result))
         result = operation->SetOperationFlags(FOFX_RECYCLEONDELETE | FOFX_EARLYFAILURE |
@@ -505,8 +501,6 @@ void Recycle(std::vector<std::filesystem::path> const& files, std::stop_token st
         result = operation->GetAnyOperationsAborted(&aborted);
     if (operation)
         operation->Release();
-    if (SUCCEEDED(initialized))
-        CoUninitialize();
     if (stop.stop_requested())
         return;
     if (FAILED(result))

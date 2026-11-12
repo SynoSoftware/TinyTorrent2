@@ -485,7 +485,7 @@ Forwarded Pipe::Forward(std::wstring const& sid, Json request,
         forwarded.outcome = hello.value("version", 0) == version ? Forwarding::Accepted : Forwarding::OtherVersion;
     }
     if (forwarded.outcome == Forwarding::Accepted && store &&
-        !SameFolder(Wide(hello.value("data_directory", std::string())), *store))
+        !Equivalent(Wide(hello.value("data_directory", std::string())), *store))
     {
         forwarded.outcome = Forwarding::OtherStore;
     }

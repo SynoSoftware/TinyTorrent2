@@ -158,8 +158,7 @@ void Engine::State::StartMove(std::vector<std::string> const& ids, std::string c
         destinations.insert(destinations.end(), to.begin(), to.end());
         destinations.insert(destinations.end(), logical.begin(), logical.end());
     }
-    std::sort(destinations.begin(), destinations.end(), PathBefore);
-    destinations.erase(std::unique(destinations.begin(), destinations.end(), SamePath), destinations.end());
+    SortUnique(destinations);
     for (auto const& [otherId, other] : torrents)
     {
         if (Contains(ids, otherId))
@@ -369,14 +368,10 @@ void Engine::State::PrepareMove(Move& moving)
     moving.job->worker->Run([this, handles, files, roots]() -> Destination
     {
         ReleaseFiles(handles);
-        auto present = [](auto const& path)
-        {
-            return std::filesystem::symlink_status(path).type() != std::filesystem::file_type::not_found;
-        };
         // Libtorrent can leave an empty placeholder before any bytes arrive.
-        auto occupied = [&present](auto const& path)
+        auto occupied = [](auto const& path)
         {
-            return present(path) && (!std::filesystem::is_regular_file(path) || std::filesystem::file_size(path) != 0);
+            return Present(path) && (!std::filesystem::is_regular_file(path) || std::filesystem::file_size(path) != 0);
         };
         Destination destination;
         std::map<std::string, bool, PathLess> answered;
@@ -395,9 +390,9 @@ void Engine::State::PrepareMove(Move& moving)
                 continue;
             // A continued member's unfinished copy is continued; see
             // Payload::Move.
-            if (auto partial = Payload::Partial(file.destination); present(partial) && !file.continued)
+            if (auto partial = Payload::Partial(file.destination); Present(partial) && !file.continued)
                 stale.push_back(partial);
-            if (!present(file.destination) && !present(file.logicalDestination))
+            if (!Present(file.destination) && !Present(file.logicalDestination))
                 continue;
             if (SamePath(file.source, file.destination))
             {
@@ -416,13 +411,13 @@ void Engine::State::PrepareMove(Move& moving)
             }
             bool sourced = occupied(file.source) || occupied(file.logicalSource);
             // A continued move already established which copies it placed.
-            bool alone = SamePath(file.destination, file.logicalDestination) || !present(file.logicalDestination);
+            bool alone = SamePath(file.destination, file.logicalDestination) || !Present(file.logicalDestination);
             if (file.continued && alone && Payload::IsCopy({file.source, file.destination}))
             {
                 destination.existing.push_back(file.destination);
                 continue;
             }
-            auto const& target = present(file.logicalDestination) ? file.logicalDestination : file.destination;
+            auto const& target = Present(file.logicalDestination) ? file.logicalDestination : file.destination;
             if (!std::filesystem::is_regular_file(target) || std::filesystem::file_size(target) != file.size)
             {
                 destination.problems.emplace(file.torrentId,
@@ -440,8 +435,8 @@ void Engine::State::PrepareMove(Move& moving)
         {
             if (destination.problems.contains(file.torrentId))
                 continue;
-            if (!SamePath(file.source, file.logicalSource) && present(file.logicalDestination) &&
-                present(file.source) && !occupied(file.source))
+            if (!SamePath(file.source, file.logicalSource) && Present(file.logicalDestination) &&
+                Present(file.source) && !occupied(file.source))
                 stale.push_back(file.source);
         }
         Payload::Delete(stale);
@@ -775,7 +770,7 @@ void Engine::State::ReloadMove(Move& moving)
         mode = moving.mode, destination = moving.destination, stop = exitStop.get_token()]
     {
         auto& params = replacement->params;
-        params = handle.get_resume_data(lt::torrent_handle::save_info_dict);
+        params = PrepareReload(handle, stop);
         if (mode == MoveMode::Download)
         {
             params.save_path = destination;
@@ -801,16 +796,10 @@ void Engine::State::ReloadMove(Move& moving)
             else
                 params.renamed_files[index] = std::move(path);
         }
-        params.flags &= ~(lt::torrent_flags::seed_mode | lt::torrent_flags::auto_managed);
-        params.flags |= lt::torrent_flags::paused;
         if (mode == MoveMode::Download)
             params.flags &= ~(lt::torrent_flags::no_verify_files | lt::torrent_flags::upload_mode);
         else
             params.flags |= lt::torrent_flags::no_verify_files;
-        // The paused torrent issues no disk job after this release.
-        ReleaseFiles({handle});
-        if (stop.stop_requested())
-            throw std::runtime_error("shutting_down");
     }, [this, &moving, id, handle, replacement](StorageOutcome outcome)
     {
         // Exit pauses and saves the torrent through its handle, so once Exit
@@ -929,7 +918,7 @@ void Engine::State::SaveMove(Move& moving)
         {
             relocate(id, Working(id).facts);
             returning.remove_if([&id](Returning const& running) { return running.TorrentId() == id; });
-            changes.Commit([document = Saved()] { return document.ToJson(); }, [this, id, settle](Outcome outcome)
+            changes.Commit(Saved(), [this, id, settle](Outcome outcome)
             {
                 if (outcome.error)
                     log.Write("move", id, outcome.detail);
@@ -1028,7 +1017,7 @@ void Engine::State::FailMove(Move& moving, Problem problem)
             if (torrents.contains(id))
                 settle(document.torrents.at(id), clears(id));
         }
-        changes.Commit([document = std::move(document)] { return document.ToJson(); }, [end](Outcome outcome)
+        changes.Commit(std::move(document), [end](Outcome outcome)
         {
             end(!outcome.error);
         });

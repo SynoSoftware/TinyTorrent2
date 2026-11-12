@@ -67,18 +67,6 @@ bool IsAppContainer()
     return container != 0;
 }
 
-std::filesystem::path FinalPath(HANDLE handle)
-{
-    std::wstring path(32768, L'\0');
-    auto length = GetFinalPathNameByHandleW(handle, path.data(), static_cast<DWORD>(path.size()), 0);
-    if (!length || length >= path.size())
-    {
-        throw std::runtime_error("Cannot resolve the application data location.");
-    }
-    path.resize(length);
-    return path;
-}
-
 // A launcher can redirect new AppData files into its private copy without
 // giving its child a package identity or changing the known-folder path, so a
 // disposable file shows where a write really lands. Windows keeps that copy
@@ -102,12 +90,16 @@ bool IsRedirected(std::filesystem::path const& directory)
         throw std::runtime_error("Cannot access the application data folder.");
     }
     tt::OwnedHandle file(probe);
-    auto root = FinalPath(parent.get()).wstring();
-    auto expected = (std::filesystem::path(root) / directory.filename() / name).wstring();
-    auto actual = FinalPath(file.get()).wstring();
-    auto inside = root + L"\\";
-    return _wcsicmp(expected.c_str(), actual.c_str()) != 0 &&
-        _wcsnicmp(actual.c_str(), inside.c_str(), inside.size()) == 0;
+    auto root = tt::FinalPath(parent.get(), VOLUME_NAME_DOS);
+    auto actual = tt::FinalPath(file.get(), VOLUME_NAME_DOS);
+    if (!root || !actual)
+    {
+        throw std::runtime_error("Cannot resolve the application data location.");
+    }
+    auto expected = *root / directory.filename() / name;
+    auto inside = root->native() + L"\\";
+    return !tt::SameName(expected.native(), actual->native()) &&
+        tt::SameName(std::wstring_view(actual->native()).substr(0, inside.size()), inside);
 }
 
 // Starts this engine again with Explorer as its parent, so it runs in the
@@ -173,11 +165,12 @@ std::wstring Describe(std::exception const& error)
 // of its own, and returns once the person closes it.
 void ShowRefusal(tt::Strings const& strings, tt::desktop::Refusal refusal)
 {
+    using tt::desktop::Popup;
     using tt::desktop::Toasts;
     tt::OwnedIcon icon(tt::desktop::ErrorIcon());
     // Only Retry starts another launch; selecting the message does nothing.
     // The refusal answers the person's launch, so it takes the focus.
-    tt::desktop::Popup popup(strings);
+    Popup popup(strings);
     Toasts::Failure failure{.code = std::move(refusal.key), .detail = std::move(refusal.detail),
         .interactive = true};
     if (refusal.retry)
@@ -199,16 +192,11 @@ void ShowRefusal(tt::Strings const& strings, tt::desktop::Refusal refusal)
     }
     if (refusal.folder)
     {
-        failure.actions.push_back(
-            Toasts::OpenFolder(strings, *refusal.folder, strings.Text("notification", "open_folder_tip")));
+        failure.actions.push_back(Toasts::OpenFolder(strings, [folder = *refusal.folder] { return folder; },
+            strings.Text("notification", "open_folder_tip")));
     }
     popup.Show(failure.Content(strings, icon.get()));
-    MSG message{};
-    while (popup.IsOpen() && GetMessageW(&message, nullptr, 0, 0) > 0)
-    {
-        TranslateMessage(&message);
-        DispatchMessageW(&message);
-    }
+    Popup::Wait([&popup] { return popup.IsOpen(); });
 }
 
 // Writes why this launch cannot start to the error output for scripts, and
@@ -249,17 +237,7 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
     // which needs an apartment on this thread. A single-threaded one delivers
     // their calls through this thread's message loop, so they never run
     // beside the popup's own code.
-    struct Apartment
-    {
-        HRESULT result = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-        ~Apartment()
-        {
-            if (SUCCEEDED(result))
-            {
-                CoUninitialize();
-            }
-        }
-    } apartment;
+    tt::Apartment apartment;
     tt::OwnedHandle lock;
     bool headless = false;
     try
@@ -303,7 +281,7 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
         // An engine with its own store, such as a test's, is not the person's
         // copy, so only the default store moves the registrations to it. A
         // restart names the default store explicitly, so compare the folders.
-        bool personal = tt::SameFolder(arguments.directory, standard);
+        bool personal = tt::Equivalent(arguments.directory, standard);
         if (personal && !exiting)
         {
             if (IsAppContainer())

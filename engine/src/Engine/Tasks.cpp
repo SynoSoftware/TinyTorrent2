@@ -321,12 +321,11 @@ Engine::State::Task::Deletion Engine::State::DeferredDeletion(std::vector<std::s
         unknown.insert(unknown.end(), folders.begin(), folders.end());
     });
     Task::Deletion deletion{ids, mode};
-    for (auto const& file : scope.files)
+    for (auto const& file : scope.Deleted())
     {
         auto folder = Utf8(file.parent_path().wstring());
-        if (!std::binary_search(scope.kept.begin(), scope.kept.end(), file, PathBefore) &&
-            std::none_of(unknown.begin(), unknown.end(), [&folder](auto const& used)
-                { return FoldersOverlap(used, folder); }))
+        if (std::none_of(unknown.begin(), unknown.end(), [&folder](auto const& used)
+            { return FoldersOverlap(used, folder); }))
             deletion.files.push_back(file);
     }
     for (auto const& id : ids)
@@ -350,7 +349,9 @@ void Engine::State::RecordTasks()
     changes.Queue([this]
     {
         auto document = Saved();
-        changes.Commit([document] { return document.ToJson(); }, [this, tasks = document.tasks](Outcome outcome)
+        // Read before the call, which moves the document into the commit.
+        auto saved = document.tasks;
+        changes.Commit(std::move(document), [this, saved = std::move(saved)](Outcome outcome)
         {
             if (outcome.error)
             {
@@ -358,7 +359,7 @@ void Engine::State::RecordTasks()
                 log.Write("tasks", "", outcome.detail);
             }
             else
-                recordedTasks = tasks;
+                recordedTasks = saved;
         });
     });
 }
@@ -522,7 +523,7 @@ void Engine::State::Answer(TaskAnswer answer, std::function<void(Outcome)> compl
                 found->second.unfinished.reset();
         }
         ContinueTasks(tasks);
-        changes.Commit([document = Saved()] { return document.ToJson(); }, done);
+        changes.Commit(Saved(), done);
     }))
     {
         completion({ErrorCode::Overloaded});
@@ -857,10 +858,6 @@ std::expected<GivenBack, std::string> Engine::State::GiveBack(std::vector<Payloa
     // Nothing to give back waits for no root.
     if (files.empty())
         return GivenBack::Deleted;
-    auto present = [](auto const& path)
-    {
-        return std::filesystem::symlink_status(path).type() != std::filesystem::file_type::not_found;
-    };
     auto given = GivenBack::Deleted;
     auto unanswered = Reach(folders, [&]
     {
@@ -873,12 +870,12 @@ std::expected<GivenBack, std::string> Engine::State::GiveBack(std::vector<Payloa
                 return;
             }
             ++done;
-            if (auto partial = Payload::Partial(file.destination); present(partial))
+            if (auto partial = Payload::Partial(file.destination); Present(partial))
                 copies.push_back(partial);
-            if (!present(file.destination))
+            if (!Present(file.destination))
                 continue;
             // Beside its source, only a complete copy is the move's.
-            if (present(file.source))
+            if (Present(file.source))
             {
                 if (Payload::IsCopy(file))
                     copies.push_back(file.destination);

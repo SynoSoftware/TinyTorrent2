@@ -1,6 +1,5 @@
 #include "Engine/State.h"
 #include <algorithm>
-#include <climits>
 
 namespace tt
 {
@@ -106,7 +105,7 @@ std::function<void(Outcome)> Acknowledge(Reply reply)
 {
     return [reply = std::move(reply)](Outcome outcome)
     {
-        reply(outcome.error ? Failure(*outcome.error, outcome.detail) : Success());
+        reply(Response(outcome));
     };
 }
 }
@@ -180,13 +179,13 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
     case Command::Settings:
         Configure(request.at("changes"), [this, reply](Outcome outcome)
         {
-            reply(outcome.error ? Failure(*outcome.error, outcome.detail) : Success(settings.ToJson()));
+            reply(Response(outcome, settings.ToJson()));
         });
         break;
     case Command::ResetSettings:
         ResetSettings([this, reply](Outcome outcome)
         {
-            reply(outcome.error ? Failure(*outcome.error, outcome.detail) : Success(settings.ToJson()));
+            reply(Response(outcome, settings.ToJson()));
         });
         break;
     case Command::ConnectionTest:
@@ -281,7 +280,7 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
             [this, destination = request.value("destination", ""), reply](Outcome outcome, Preview* preview)
         {
             if (outcome.error)
-                reply(Failure(*outcome.error, outcome.detail));
+                reply(Response(outcome));
             else
                 reply(Success(Describe(*preview, destination)));
         });
@@ -324,8 +323,8 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
         choices.queueTop = request.value("queue_top", settings.queueTop);
         Add(*preview, std::move(choices), [reply](Outcome outcome, Added added)
         {
-            reply(outcome.error ? Failure(*outcome.error, outcome.detail) :
-                Success({{"torrent_id", added.torrentId}, {"duplicate", added.kind == AdditionKind::Duplicate}}));
+            reply(Response(outcome,
+                {{"torrent_id", added.torrentId}, {"duplicate", added.kind == AdditionKind::Duplicate}}));
         });
         break;
     }
@@ -460,7 +459,7 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
         ++editing[id].edits;
         auto finish = [this, reply, id](Outcome outcome, Json data)
         {
-            reply(outcome.error ? Failure(*outcome.error, outcome.detail) : Success(std::move(data)));
+            reply(Response(outcome, std::move(data)));
             EndEdit(id);
         };
         if (request.contains("preview_id"))
@@ -604,8 +603,7 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
         auto kept = std::make_shared<std::optional<std::size_t>>();
         Act(TorrentIds(request), [reply, kept](Outcome outcome)
         {
-            reply(outcome.error ? Failure(*outcome.error, outcome.detail) :
-                Success({{"kept_files", *kept ? Json(**kept) : Json()}}));
+            reply(Response(outcome, {{"kept_files", *kept ? Json(**kept) : Json()}}));
         }, [this, files, torrentFiles, kept](auto const& ids, auto done)
         {
             Remove(ids, [kept, done](Outcome outcome, std::optional<std::size_t> count)
@@ -623,7 +621,7 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
         {
             if (outcome.error)
             {
-                reply(Failure(*outcome.error, outcome.detail));
+                reply(Response(outcome));
                 return;
             }
             auto scope = Describe(ids, FileScope(ids));
@@ -715,12 +713,12 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
             {
                 return std::nullopt;
             }
-            auto const& value = request.at(key);
-            if (!value.is_number_integer() || value < 0 || value > INT_MAX)
+            auto value = Whole<int>(request.at(key));
+            if (!value)
             {
                 throw std::invalid_argument("A speed limit is not a whole number of bytes a second.");
             }
-            return value.get<int>();
+            return value;
         };
         auto download = limit("download_limit");
         auto upload = limit("upload_limit");
@@ -775,7 +773,7 @@ void Engine::State::AnswerTree(Json const& request, std::string const& connectio
         auto listing = Listed(*preview);
         if (!listing)
         {
-            reply(Failure(*listing.error().error, listing.error().detail));
+            reply(Response(listing.error()));
             return;
         }
         ReadTree(std::move(*listing), std::move(target),
@@ -783,7 +781,7 @@ void Engine::State::AnswerTree(Json const& request, std::string const& connectio
         {
             if (!tree)
             {
-                reply(Failure(*tree.error().error, tree.error().detail));
+                reply(Response(tree.error()));
                 return;
             }
             (*tree)["preview_id"] = previewId;
@@ -801,14 +799,14 @@ void Engine::State::AnswerTree(Json const& request, std::string const& connectio
     auto listing = Listed(found->second);
     if (!listing)
     {
-        reply(Failure(*listing.error().error, listing.error().detail));
+        reply(Response(listing.error()));
         return;
     }
     ReadTree(std::move(*listing), std::move(target), [this, reply, torrentId](std::expected<Json, Outcome> tree)
     {
         if (!tree)
         {
-            reply(Failure(*tree.error().error, tree.error().detail));
+            reply(Response(tree.error()));
             return;
         }
         // Names on disk change, so they are read when the reply is sent.

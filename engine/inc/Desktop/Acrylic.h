@@ -7,13 +7,26 @@
 
 namespace tt::desktop
 {
+// A length of `value` effective pixels, in physical pixels at `dpi`.
+int Scale(int value, UINT dpi);
+
 // The translucent surface of the engine's own windows, the splash and the
 // popup: a blur behind a tint of the theme's background, or a solid
 // background when high contrast or Windows' transparency setting rules the
-// blur out.
+// blur out. It also owns what those windows share: their class, frame,
+// window messages and message font.
 class Acrylic
 {
 public:
+    // The window styles of an acrylic window. The frame keeps DWM's rounded
+    // corners and shadow; Handle removes its chrome.
+    static constexpr DWORD frame = WS_POPUP | WS_CAPTION | WS_THICKFRAME;
+    // Registers the window class `name`, with the product icon and the arrow
+    // pointer.
+    static void Register(wchar_t const* name, WNDPROC procedure);
+    // Windows' message font at `dpi`, which the windows' text starts from.
+    static LOGFONTW MessageFont(UINT dpi);
+
     Acrylic();
     ~Acrylic();
     Acrylic(Acrylic const&) = delete;
@@ -21,6 +34,11 @@ public:
     // Follows the app's theme choice and Windows' high contrast and
     // transparency settings.
     void Apply(HWND window, Theme theme);
+    // Answers the messages every acrylic window answers alike: the window has
+    // no frame to draw or hit, the canvas paints the whole of it, and a theme,
+    // contrast or transparency change applies `theme` again. A window
+    // procedure calls it after its own cases; it is empty for other messages.
+    std::optional<LRESULT> Handle(HWND window, UINT message, Theme theme);
     COLORREF Foreground() const { return foreground_; }
     COLORREF Disabled() const { return disabled_; }
     // The keyboard focus ring.
@@ -47,6 +65,9 @@ public:
         // outer corners of `radius` pixels.
         void Stroke(RECT const& bounds, COLORREF color, int width, int radius);
         void Text(std::wstring const& text, RECT bounds, UINT format, HFONT font, COLORREF color);
+        // Draws `icon`, or else the product icon, `size` pixels square with
+        // its top left corner at `at`.
+        void Icon(POINT at, int size, HICON icon = nullptr);
     private:
         Acrylic const& acrylic_;
         HWND window_;

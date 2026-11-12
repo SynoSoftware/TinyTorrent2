@@ -362,7 +362,8 @@ Popup::Content Toasts::Message(Toast const& toast) const
         if (!toast.detail.empty())
             content.body = ErrorText(strings_, toast.detail) + L"\n" + content.body;
         content.location = Popup::Location{strings_.Text("notification", "download_folder"), Wide(toast.folder)};
-        content.actions = {OpenFolder(strings_, Wide(toast.folder), strings_.Text("notification", "files_folder_tip"))};
+        content.actions = {OpenFolder(strings_, [folder = Wide(toast.folder)] { return folder; },
+            strings_.Text("notification", "files_folder_tip"))};
     }
     // Every torrent that waits for the person shares one notice, so one Retry
     // continues them all. Selecting it opens the window, which lists them.
@@ -426,35 +427,28 @@ Popup::Content Toasts::Message(Toast const& toast) const
             content.actions.push_back({.glyph = L'\uEA37', .label = strings_.Text("notification", "show_torrent"),
                 .tooltip = strings_.Text("notification", "show_torrent_tip"), .run = content.select,
                 .closes = false, .automationId = L"ShowTorrent"});
-            // Retry answers an error that the engine stopped retrying; the
-            // toast still names the folder for a person who fixes it there.
-            if (stopped)
+            // A stopped torrent offers Retry instead; the toast still names
+            // the folder for a person who fixes it there.
+            if (!stopped && !destinationError)
             {
-                content.actions.push_back(Retry(strings_, strings_.Text("notification", "retry_torrent_tip"),
-                    commands_.retryAll));
-            }
-            else if (!destinationError)
-            {
-                content.actions.push_back({.glyph = L'\uE838', .label = strings_.Text("notification", "open_folder"),
-                    .tooltip = strings_.Text("notification", "files_folder_tip"),
-                    .run = [this, id = toast.torrentId]
-                    {
-                        auto folder = commands_.folder(id);
-                        if (!folder.empty())
-                            ShowFolder(Wide(folder));
-                    }, .closes = false, .automationId = L"OpenFolder"});
+                content.actions.push_back(OpenFolder(strings_, [this, id = toast.torrentId]
+                {
+                    return Wide(commands_.folder(id));
+                }, strings_.Text("notification", "files_folder_tip")));
             }
         }
-        else
+        else if (!toast.folder.empty())
         {
-            if (!toast.folder.empty())
-                content.actions = {
-                    OpenFolder(strings_, Wide(toast.folder), strings_.Text("notification", "files_folder_tip"))};
-            // A removed torrent's give-back has no row to show, and its Retry
-            // still continues it.
-            if (stopped)
-                content.actions.push_back(Retry(strings_, strings_.Text("notification", "retry_torrent_tip"),
-                    commands_.retryAll));
+            content.actions = {OpenFolder(strings_, [folder = Wide(toast.folder)] { return folder; },
+                strings_.Text("notification", "files_folder_tip"))};
+        }
+        // Retry answers an error that the engine stopped retrying. A removed
+        // torrent's give-back has no row to show, and its Retry still
+        // continues it.
+        if (stopped)
+        {
+            content.actions.push_back(Retry(strings_, strings_.Text("notification", "retry_torrent_tip"),
+                commands_.retryAll));
         }
     }
     return content;
@@ -531,10 +525,25 @@ Popup::Action Toasts::Retry(Strings const& strings, std::wstring tooltip, std::f
 
 // Syno.Segoe.FolderOpen. Open alone would read as opening the window, so
 // the label names the folder. Showing a folder leaves the popup open.
-Popup::Action Toasts::OpenFolder(Strings const& strings, std::filesystem::path folder, std::wstring tooltip)
+Popup::Action Toasts::OpenFolder(Strings const& strings, std::function<std::filesystem::path()> folder,
+    std::wstring tooltip)
 {
     return {.glyph = L'\uE838', .label = strings.Text("notification", "open_folder"), .tooltip = std::move(tooltip),
-        .run = [folder = std::move(folder)] { ShowFolder(folder); }, .closes = false, .automationId = L"OpenFolder"};
+        .run = [folder = std::move(folder)]
+        {
+            auto path = folder();
+            if (!path.empty())
+            {
+                ShowFolder(path);
+            }
+        }, .closes = false, .automationId = L"OpenFolder"};
+}
+
+// Syno.Segoe.Power, as the tray's Exit shows.
+Popup::Action Toasts::Exit(Strings const& strings, std::wstring tooltip, std::function<void()> run)
+{
+    return {.glyph = L'\uE7E8', .label = strings.Text("tray", "exit"), .tooltip = std::move(tooltip),
+        .run = std::move(run), .automationId = L"Exit"};
 }
 
 // Syno.Segoe.Power, as the window's Exit command shows.

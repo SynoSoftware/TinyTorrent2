@@ -99,7 +99,11 @@ public:
     // The buttons that failures and prompts offer, so each looks and reads the
     // same wherever it shows.
     static Popup::Action Retry(Strings const& strings, std::wstring tooltip, std::function<void()> run);
-    static Popup::Action OpenFolder(Strings const& strings, std::filesystem::path folder, std::wstring tooltip);
+    // `folder` runs at the click, so a torrent's folder is the one it has
+    // then; an empty path shows nothing.
+    static Popup::Action OpenFolder(Strings const& strings, std::function<std::filesystem::path()> folder,
+        std::wstring tooltip);
+    static Popup::Action Exit(Strings const& strings, std::wstring tooltip, std::function<void()> run);
     static Popup::Action ForceExit(Strings const& strings, std::function<void()> run);
 #ifdef _DEBUG
     // Shows an Added toast for a sample torrent, whatever the switches say.

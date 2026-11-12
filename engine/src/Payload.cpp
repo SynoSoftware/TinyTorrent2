@@ -56,16 +56,6 @@ std::wstring Extended(std::filesystem::path const& path)
     return LR"(\\?\)" + text;
 }
 
-std::string Describe(std::filesystem::path const& path, std::error_code error)
-{
-    return Utf8(path.wstring()) + ": " + error.message();
-}
-
-std::string Describe(std::filesystem::path const& path, DWORD error)
-{
-    return Describe(path, std::error_code(static_cast<int>(error), std::system_category()));
-}
-
 // The running Windows build, whatever the executable's manifest declares.
 DWORD Build()
 {
@@ -94,17 +84,6 @@ struct Volume
     bool sparse = false;
 };
 
-// The root without the long-path prefix, which not every volume query
-// accepts. A root is short enough to need none.
-std::wstring Plain(std::wstring root)
-{
-    if (root.starts_with(LR"(\\?\UNC\)"))
-        return LR"(\\)" + root.substr(8);
-    if (root.starts_with(LR"(\\?\)") && root.size() > 5 && root[5] == L':')
-        return root.substr(4);
-    return root;
-}
-
 // The volume that holds `folder`. No query needs administrator rights.
 Volume Inspect(std::filesystem::path const& folder)
 {
@@ -117,7 +96,9 @@ Volume Inspect(std::filesystem::path const& folder)
         volume.name = volume.root;
         return volume;
     }
-    volume.root = Plain(root.c_str());
+    // Not every volume query accepts the long-path prefix, and a root is short
+    // enough to need none.
+    volume.root = Win32Path(root.c_str()).value_or(root.c_str()).native();
     volume.name = volume.root;
     volume.remote = GetDriveTypeW(volume.root.c_str()) == DRIVE_REMOTE;
     DWORD features = 0;
@@ -525,7 +506,7 @@ std::optional<std::string> Placement::Place(std::vector<File> const& files)
             created_.insert(missing);
         std::filesystem::create_directories(Extended(folder), error);
         if (error)
-            return Describe(folder, error);
+            return Describe(folder, static_cast<DWORD>(error.value()));
     }
     std::map<std::filesystem::path, Volume> volumes;
     auto volume = [&volumes](std::filesystem::path const& folder) -> Volume const&
@@ -856,7 +837,7 @@ bool HasRoom(std::vector<Source> const& sources)
             to = volumes.emplace(folder, Inspect(folder)).first;
         // Move renames a file within its volume, whichever mount point
         // names it, and copies it only to another volume.
-        if (_wcsicmp(source.volume.c_str(), to->second.name.c_str()) == 0)
+        if (SameName(source.volume, to->second.name))
             continue;
         bool keepsSparse = KeepsSparse(source.sparse, to->second);
         needed[to->second.root] +=
@@ -1101,7 +1082,7 @@ void Delete(std::vector<std::filesystem::path> const& files, std::stop_token sto
             {
                 std::lock_guard lock(gate);
                 if (!failure)
-                    failure = Describe(files[item], error);
+                    failure = Describe(files[item], static_cast<DWORD>(error.value()));
             }
         }
     });

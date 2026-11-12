@@ -162,13 +162,8 @@ Tree::Tree(Listing listing) : listing_(std::move(listing))
     // path answers most lookups.
     std::optional<std::string> last;
     int folder = 0;
-    for (auto index : storage.file_range())
+    VisitContent(storage, listing_.layout, [&](lt::file_index_t index, std::string const& path)
     {
-        if (storage.pad_file_at(index))
-        {
-            continue;
-        }
-        auto path = ContentPath(storage, index, listing_.layout);
         auto cut = path.rfind('/');
         auto parent = cut == std::string::npos ? std::string_view() : std::string_view(path).substr(0, cut);
         if (last != parent)
@@ -199,7 +194,7 @@ Tree::Tree(Listing listing) : listing_(std::move(listing))
                 node.downloaded += (*progress)[item];
             }
         }
-    }
+    });
 }
 
 int Tree::Ensure(std::string_view path)

@@ -82,11 +82,12 @@ struct Limit
     // holds, which no setting saves.
     std::optional<int> Nearest(Json const& value) const
     {
-        if (!value.is_number_integer() || value < 0 || value > INT_MAX)
+        auto number = Whole<int>(value);
+        if (!number)
         {
             return std::nullopt;
         }
-        return value < minimum ? minimum : maximum;
+        return *number < minimum ? minimum : maximum;
     }
 };
 
@@ -719,7 +720,7 @@ void Engine::State::SaveSettings(Settings next, std::function<void()> settled, s
     }
     auto document = Saved();
     document.settings = next;
-    changes.Commit([document = std::move(document)] { return document.ToJson(); },
+    changes.Commit(std::move(document),
         [this, next, finish, completion](Outcome outcome)
     {
         if (outcome.error)

@@ -33,7 +33,7 @@ void Changes::Next()
     }
 }
 
-void Changes::Commit(std::function<Json()> encode, std::function<void(Outcome)> completion)
+void Changes::Write(std::function<Json()> encode, std::function<void(Outcome)> completion)
 {
     committing_ = true;
     store_.Write(file_, [encode = std::move(encode)] { return encode().dump(); },

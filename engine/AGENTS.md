@@ -11,16 +11,20 @@ The engine draws its own popup, the custom Win32 acrylic window for toasts and
 prompts. Each behaviour has one owner, because a second copy in a caller drifts
 and the popups stop behaving alike:
 
+- `Acrylic` owns what the popup, its menu and the splash share: the acrylic
+  surface, the window class and frame, the window messages they answer alike,
+  `Scale` and the message font.
 - `Popup` owns window behaviour, rendering, focus, keyboard, accessibility,
   button states and dismissal, for both toasts and prompts. It adds Dismiss,
   last, to every toast, so no caller adds it. A caller passes
-  content and answers to `Show` or `Ask`, and ends a prompt through `Close`.
+  content and answers to `Show` or `Ask`, waits for the answer through `Wait`,
+  and ends a prompt through `Close`.
 - `Toasts` owns which toasts show, which share a popup, and the buttons that
-  failures and prompts reuse (`Retry`, `OpenFolder`, `ForceExit`). It owns
-  prompt suppression, opt-out menus and their save failures, so native prompt
-  callers supply an answer and an optional typed switch rather than repeating
-  checks, menus and persistence callbacks.
-- Callers, such as `ExitOther`, own their business logic: what each answer
+  failures and prompts reuse (`Retry`, `OpenFolder`, `Exit`, `ForceExit`). It
+  owns prompt suppression, opt-out menus and their save failures, so native
+  prompt callers supply an answer and an optional typed switch rather than
+  repeating checks, menus and persistence callbacks.
+- Callers, such as `Conflict`, own their business logic: what each answer
   does, when the prompt changes, and whether a failure answers the person's
   own action and so takes the focus.
 

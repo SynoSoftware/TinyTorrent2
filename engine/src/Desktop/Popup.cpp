@@ -1,6 +1,5 @@
 #include "Desktop/Popup.h"
 #include "Engine.h"
-#include "Resources.h"
 #include <algorithm>
 #include <cmath>
 #include <sstream>
@@ -88,11 +87,6 @@ constexpr BYTE pressedOpacity = 0x08;
 constexpr BYTE buttonOpacity = 0x0F;
 // Fluent's divider stroke, out of 255.
 constexpr BYTE dividerOpacity = 0x14;
-
-int Scale(int value, UINT dpi)
-{
-    return MulDiv(value, dpi, USER_DEFAULT_SCREEN_DPI);
-}
 
 // The monitor where Windows shows its notifications: the taskbar's.
 MONITORINFO Taskbar()
@@ -628,16 +622,8 @@ private:
 
 Popup::Popup(Strings const& strings) : strings_(strings)
 {
-    WNDCLASSW type{};
-    type.lpfnWndProc = Procedure;
-    type.hInstance = GetModuleHandleW(nullptr);
-    type.hIcon = LoadIconW(type.hInstance, MAKEINTRESOURCEW(IDI_TINYTORRENT));
-    type.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    type.lpszClassName = windowClass;
-    RegisterClassW(&type);
-    type.lpfnWndProc = MenuProcedure;
-    type.lpszClassName = menuClass;
-    RegisterClassW(&type);
+    Acrylic::Register(windowClass, Procedure);
+    Acrylic::Register(menuClass, MenuProcedure);
 }
 
 Popup::~Popup()
@@ -690,8 +676,7 @@ void Popup::Update(Content const& toast)
     content_.select = toast.select;
     auto previous = std::exchange(content_.actions, toast.actions);
     content_.actions.push_back(Dismiss());
-    Layout();
-    SetWindowTextW(window_, content_.title.c_str());
+    Refresh();
     Settle(previous);
     InvalidateRect(window_, nullptr, FALSE);
 }
@@ -778,8 +763,7 @@ void Popup::Ask(Prompt prompt, std::vector<MenuItem> menu)
         return;
     }
     auto previous = std::exchange(content_, std::move(content));
-    Layout();
-    SetWindowTextW(window_, content_.title.c_str());
+    Refresh();
     Settle(previous.actions);
     if (previous.title != content_.title || previous.body != content_.body)
     {
@@ -791,12 +775,11 @@ void Popup::Ask(Prompt prompt, std::vector<MenuItem> menu)
 void Popup::Create()
 {
     // Created hidden on the taskbar's monitor, so it has that monitor's DPI
-    // before Layout sizes it. The frame styles keep DWM's rounded corners and
-    // shadow; WM_NCCALCSIZE removes their chrome. A toast stays above other
-    // windows without a taskbar button, and only an interactive one takes the
-    // focus. A prompt has a taskbar button and an Alt+Tab entry, so the person
-    // can return to it, and is not topmost, so it never covers a window the
-    // person turns to, such as the other TinyTorrent's own confirmation.
+    // before Layout sizes it. A toast stays above other windows without a
+    // taskbar button, and only an interactive one takes the focus. A prompt
+    // has a taskbar button and an Alt+Tab entry, so the person can return to
+    // it, and is not topmost, so it never covers a window the person turns
+    // to, such as the other TinyTorrent's own confirmation.
     auto work = Taskbar().rcWork;
     DWORD style = WS_EX_TOOLWINDOW | WS_EX_TOPMOST;
     if (asking_)
@@ -807,7 +790,7 @@ void Popup::Create()
     {
         style |= WS_EX_NOACTIVATE;
     }
-    CreateWindowExW(style, windowClass, productName, WS_POPUP | WS_CAPTION | WS_THICKFRAME,
+    CreateWindowExW(style, windowClass, productName, Acrylic::frame,
         (work.left + work.right) / 2, (work.top + work.bottom) / 2, 1, 1, nullptr, nullptr,
         GetModuleHandleW(nullptr), this);
     if (!window_)
@@ -845,16 +828,21 @@ void Popup::Present()
     // New content stops a slide out, so the popup stays for its full time.
     KillTimer(window_, closeTimer);
     StopSlide();
-    Layout();
+    Refresh();
     acrylic_.Apply(window_, theme_);
-    // The taskbar and Alt+Tab name a prompt by its window text; accessibility
-    // reads the whole content from the popup's own object.
-    SetWindowTextW(window_, content_.title.c_str());
     if (!shown && Slides())
     {
         StartSlide(false);
     }
     ShowWindow(window_, Interactive() ? SW_SHOW : SW_SHOWNOACTIVATE);
+}
+
+// The taskbar and Alt+Tab name a prompt by its window text; accessibility
+// reads the whole content from the popup's own object.
+void Popup::Refresh()
+{
+    Layout();
+    SetWindowTextW(window_, content_.title.c_str());
 }
 
 void Popup::Close()
@@ -864,6 +852,31 @@ void Popup::Close()
         DestroyWindow(window_);
     }
     DeleteFonts();
+}
+
+void Popup::Wait(std::function<bool()> const& waiting, std::function<void(MSG const&)> const& thread)
+{
+    while (waiting())
+    {
+        MSG message{};
+        auto received = GetMessageW(&message, nullptr, 0, 0);
+        if (received == 0)
+        {
+            PostQuitMessage(static_cast<int>(message.wParam));
+            return;
+        }
+        if (received < 0)
+        {
+            return;
+        }
+        if (!message.hwnd && thread)
+        {
+            thread(message);
+            continue;
+        }
+        TranslateMessage(&message);
+        DispatchMessageW(&message);
+    }
 }
 
 void Popup::ScheduleClose()
@@ -909,13 +922,12 @@ void Popup::Layout()
 {
     auto dpi = GetDpiForWindow(window_);
     DeleteFonts();
-    NONCLIENTMETRICSW metrics{sizeof(metrics)};
-    SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof(metrics), &metrics, 0, dpi);
-    metrics.lfMessageFont.lfHeight = -Scale(captionSize, dpi);
-    caption_ = CreateFontIndirectW(&metrics.lfMessageFont);
-    metrics.lfMessageFont.lfHeight = -Scale(fontSize, dpi);
-    font_ = CreateFontIndirectW(&metrics.lfMessageFont);
-    auto headline = metrics.lfMessageFont;
+    auto message = Acrylic::MessageFont(dpi);
+    message.lfHeight = -Scale(captionSize, dpi);
+    caption_ = CreateFontIndirectW(&message);
+    message.lfHeight = -Scale(fontSize, dpi);
+    font_ = CreateFontIndirectW(&message);
+    auto headline = message;
     headline.lfWeight = FW_SEMIBOLD;
     headline_ = CreateFontIndirectW(&headline);
     LOGFONTW glyph{};
@@ -974,11 +986,8 @@ void Popup::Layout()
     auto lines = Lines();
     if (!lines.empty())
     {
-        auto previous = SelectObject(device, caption_);
-        TEXTMETRICW metrics{};
-        GetTextMetricsW(device, &metrics);
-        SelectObject(device, previous);
-        auto height = std::min<LONG>(static_cast<LONG>(lines.size()) * (metrics.tmHeight + Scale(lineGap, dpi)) -
+        auto line = LineHeight(device);
+        auto height = std::min<LONG>(static_cast<LONG>(lines.size()) * (line + Scale(lineGap, dpi)) -
             Scale(lineGap, dpi), Scale(textLimit, dpi));
         detail_ = {inset, bottom + Scale(detailGap, dpi), width - inset,
             bottom + Scale(detailGap, dpi) + height};
@@ -1010,6 +1019,15 @@ void Popup::Layout()
     auto order = asking_ ? SWP_NOZORDER : 0;
     SetWindowPos(window_, HWND_TOPMOST, place_.x, place_.y, width, height, SWP_NOACTIVATE | move | order);
     InvalidateRect(window_, nullptr, FALSE);
+}
+
+LONG Popup::LineHeight(HDC device) const
+{
+    auto previous = SelectObject(device, caption_);
+    TEXTMETRICW metrics{};
+    GetTextMetricsW(device, &metrics);
+    SelectObject(device, previous);
+    return metrics.tmHeight;
 }
 
 // Windows' animation effects setting stills the popup, as it stills Windows'
@@ -1073,10 +1091,7 @@ void Popup::Paint(HWND window)
     auto corner = Scale(radius, dpi);
     auto foreground = acrylic_.Foreground();
     auto size = Scale(iconSize, dpi);
-    auto icon = content_.icon ? content_.icon : static_cast<HICON>(LoadImageW(GetModuleHandleW(nullptr),
-        MAKEINTRESOURCEW(IDI_TINYTORRENT), IMAGE_ICON, size, size, LR_SHARED));
-    DrawIconEx(canvas.Device(), header_.left, (header_.top + header_.bottom - size) / 2, icon, size, size, 0,
-        nullptr, DI_NORMAL);
+    canvas.Icon({header_.left, (header_.top + header_.bottom - size) / 2}, size, content_.icon);
     // A mouse press shows while the pointer stays on its part, as on Windows'
     // buttons; a key press shows until its release.
     auto fill = [this](Target target, BYTE rest)
@@ -1107,25 +1122,22 @@ void Popup::Paint(HWND window)
     canvas.Text(closeGlyph, close_, DT_SINGLELINE | DT_CENTER | DT_VCENTER, glyphs_, foreground);
     canvas.Text(content_.title, title_, textFormat, headline_, foreground);
     canvas.Text(content_.body, body_, textFormat, font_, foreground);
-    auto previous = SelectObject(canvas.Device(), caption_);
-    TEXTMETRICW metrics{};
-    GetTextMetricsW(canvas.Device(), &metrics);
-    SelectObject(canvas.Device(), previous);
+    auto height = LineHeight(canvas.Device());
     auto bounds = detail_;
     for (auto const& line : Lines())
     {
-        if (bounds.top + metrics.tmHeight > detail_.bottom)
+        if (bounds.top + height > detail_.bottom)
         {
             break;
         }
-        bounds.bottom = bounds.top + metrics.tmHeight;
+        bounds.bottom = bounds.top + height;
         auto ellipsis = line.find(L'\\') == std::wstring::npos ? DT_END_ELLIPSIS : DT_PATH_ELLIPSIS;
         canvas.Text(line, bounds, detailFormat | ellipsis, caption_, foreground);
         bounds.top = bounds.bottom + Scale(lineGap, dpi);
     }
     auto iconWidth = Scale(actionIconSize, dpi) + Scale(actionIconGap, dpi);
     auto focused = GetFocus() == window_;
-    previous = SelectObject(canvas.Device(), font_);
+    auto previous = SelectObject(canvas.Device(), font_);
     for (std::size_t index = 0; index < actions_.size(); ++index)
     {
         auto const& action = content_.actions[index];
@@ -1688,25 +1700,17 @@ LRESULT Popup::Handle(HWND window, UINT message, WPARAM first, LPARAM second)
     case WM_CANCELMODE:
         pressed_.reset();
         break;
-    case WM_NCCALCSIZE:
-        return 0;
-    case WM_NCHITTEST:
-        return HTCLIENT;
-    case WM_ERASEBKGND:
-        return 0;
     case WM_PAINT:
         Paint(window);
         return 0;
     case WM_DPICHANGED:
+        Layout();
+        return 0;
+    // A new message font or work area changes the popup's size and place;
+    // Acrylic then applies the theme.
     case WM_SETTINGCHANGE:
         Layout();
-        acrylic_.Apply(window, theme_);
-        return 0;
-    case WM_SYSCOLORCHANGE:
-    case WM_THEMECHANGED:
-    case WM_DWMCOMPOSITIONCHANGED:
-        acrylic_.Apply(window, theme_);
-        return 0;
+        break;
     case WM_NCDESTROY:
         if (accessibility_)
         {
@@ -1724,6 +1728,10 @@ LRESULT Popup::Handle(HWND window, UINT message, WPARAM first, LPARAM second)
         asking_ = false;
         sliding_.reset();
         break;
+    }
+    if (auto result = acrylic_.Handle(window, message, theme_))
+    {
+        return *result;
     }
     return DefWindowProcW(window, message, first, second);
 }
@@ -1832,8 +1840,7 @@ void Popup::OpenMenu(bool keyboard)
     {
         y = anchor.bottom + Scale(menuGap, dpi);
     }
-    // The frame styles keep DWM's rounded corners and shadow, as on the popup.
-    CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST, menuClass, productName, WS_POPUP | WS_CAPTION | WS_THICKFRAME,
+    CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST, menuClass, productName, Acrylic::frame,
         x, y, width, height, window_, nullptr, GetModuleHandleW(nullptr), this);
     if (!menu_)
     {
@@ -1899,21 +1906,15 @@ int Popup::MenuIconsWidth(UINT dpi) const
 
 std::optional<std::size_t> Popup::MenuItemAt(POINT point) const
 {
-    RECT bounds{};
-    GetClientRect(menu_, &bounds);
-    auto dpi = GetDpiForWindow(menu_);
-    auto padding = Scale(menuPadding, dpi);
-    auto top = MenuItemsTop(dpi);
-    if (point.x < padding || point.x >= bounds.right - padding || point.y < top)
+    for (std::size_t item = 0; item < content_.menu.size(); ++item)
     {
-        return std::nullopt;
+        auto bounds = MenuBounds(item);
+        if (PtInRect(&bounds, point))
+        {
+            return item;
+        }
     }
-    auto item = static_cast<std::size_t>((point.y - top) / menuRow_);
-    if (item >= content_.menu.size())
-    {
-        return std::nullopt;
-    }
-    return item;
+    return std::nullopt;
 }
 
 RECT Popup::MenuBounds(std::size_t item) const
@@ -2029,20 +2030,8 @@ LRESULT Popup::HandleMenu(HWND window, UINT message, WPARAM first, LPARAM second
             PostMessageW(window, WM_CLOSE, 0, 0);
         }
         break;
-    case WM_NCCALCSIZE:
-        return 0;
-    case WM_NCHITTEST:
-        return HTCLIENT;
-    case WM_ERASEBKGND:
-        return 0;
     case WM_PAINT:
         PaintMenu(window);
-        return 0;
-    case WM_SETTINGCHANGE:
-    case WM_SYSCOLORCHANGE:
-    case WM_THEMECHANGED:
-    case WM_DWMCOMPOSITIONCHANGED:
-        acrylic_.Apply(window, theme_);
         return 0;
     case WM_NCDESTROY:
         NotifyWinEvent(EVENT_SYSTEM_MENUPOPUPEND, window, OBJID_CLIENT, CHILDID_SELF);
@@ -2060,6 +2049,10 @@ LRESULT Popup::HandleMenu(HWND window, UINT message, WPARAM first, LPARAM second
             InvalidateRect(window_, nullptr, FALSE);
         }
         break;
+    }
+    if (auto result = acrylic_.Handle(window, message, theme_))
+    {
+        return *result;
     }
     return DefWindowProcW(window, message, first, second);
 }

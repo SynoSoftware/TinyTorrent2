@@ -39,9 +39,8 @@ std::vector<std::string> Engine::State::SharedFiles(std::shared_ptr<lt::torrent_
     auto const& layout = metadata->layout();
     auto visitPaths = [this, &layout](auto const& visit)
     {
-        for (auto index : layout.file_range())
-            if (!layout.pad_file_at(index))
-                visit(ContentPath(layout, index, settings.layout));
+        VisitContent(layout, settings.layout,
+            [&visit](lt::file_index_t, std::string path) { visit(std::move(path)); });
     };
     for (auto const& part : Tops(visitPaths))
         tops.push_back(join(destination, part));

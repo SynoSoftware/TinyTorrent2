@@ -370,7 +370,7 @@ void Engine::State::SaveTransfers()
     {
         auto document = Saved();
         auto totals = document.transfers;
-        changes.Commit([document = std::move(document)] { return document.ToJson(); }, [this, totals](Outcome outcome)
+        changes.Commit(std::move(document), [this, totals](Outcome outcome)
         {
             transfersPending = false;
             if (!outcome.error)
@@ -474,10 +474,9 @@ void Engine::State::Document::Read(Json const& saved)
             // files when its metadata is known.
             for (auto const& file : files)
             {
-                if (file.is_number_integer() && file.get<std::int64_t>() >= 0 &&
-                    file.get<std::int64_t>() <= (std::numeric_limits<int>::max)())
+                if (auto index = Whole<int>(file))
                 {
-                    unmarked[id].insert(lt::file_index_t(file.get<int>()));
+                    unmarked[id].insert(lt::file_index_t(*index));
                 }
             }
         }
@@ -525,7 +524,7 @@ void Engine::State::CommitFacts(std::vector<std::string> const& ids,
         done({}, changed);
         return;
     }
-    changes.Commit([document = std::move(document)] { return document.ToJson(); },
+    changes.Commit(std::move(document),
         [this, changed, edit = std::move(edit), done = std::move(done)](Outcome outcome)
     {
         if (!outcome.error)

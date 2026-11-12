@@ -156,6 +156,19 @@ enum class Copy
     Missing
 };
 
+// The owner of the registry key that holds a value of the handler
+// registration, which decides how removal and the start's checks treat it.
+enum class KeyOwner
+{
+    // TinyTorrent's own key: removal deletes the key with everything in it.
+    TinyTorrent,
+    // A key that other applications use too: removal deletes only the value.
+    Shared,
+    // A key where Windows writes the same records itself: removal deletes
+    // only the value, and the value alone is not a registration.
+    Windows
+};
+
 enum class AdditionPhase
 {
     // Waits until the engine knows where its save folder really is, so its

@@ -35,22 +35,21 @@ Json Catalogue(WORD resource)
     return Json::parse(std::string_view(bytes, SizeofResource(module, found)), nullptr, false);
 }
 
-std::string_view Match(std::string_view tag)
+// The shipped catalogues of `tag` and of its parent languages, nearest first:
+// pt-BR, then pt, when both ship.
+std::vector<std::string_view> Shipped(std::string_view tag)
 {
+    std::vector<std::string_view> shipped;
     while (!tag.empty())
     {
         if (Parse(catalogues, tag))
         {
-            return tag;
+            shipped.push_back(tag);
         }
         auto separator = tag.rfind('-');
-        if (separator == std::string_view::npos)
-        {
-            break;
-        }
-        tag = tag.substr(0, separator);
+        tag = separator == std::string_view::npos ? std::string_view() : tag.substr(0, separator);
     }
-    return "en";
+    return shipped;
 }
 
 std::set<std::string> Placeholders(std::string const& text)
@@ -71,25 +70,19 @@ std::set<std::string> Placeholders(std::string const& text)
     }
     return found;
 }
-}
 
-Strings::Strings(std::string language)
-    : language_(std::move(language)), catalogue_(Catalogue(IDR_ENGLISH_TEXT))
+// Replaces each message of `catalogue` that `translated` translates with the
+// same placeholders.
+void Translate(Json& catalogue, Json const& translated)
 {
-    auto resource = Parse(catalogues, Match(language_));
-    if (!resource || *resource == IDR_ENGLISH_TEXT)
-    {
-        return;
-    }
-    auto translated = Catalogue(*resource);
     if (!translated.is_object())
     {
         return;
     }
     for (auto const& [group, messages] : translated.items())
     {
-        auto english = catalogue_.find(group);
-        if (english == catalogue_.end() || !messages.is_object())
+        auto english = catalogue.find(group);
+        if (english == catalogue.end() || !messages.is_object())
         {
             continue;
         }
@@ -104,6 +97,23 @@ Strings::Strings(std::string language)
         }
     }
 }
+}
+
+// A message that the language lacks comes from its nearest shipped parent
+// language, then English, so each shipped catalogue replaces English's
+// messages in turn, from the most general language to the language itself.
+Strings::Strings(std::string language)
+    : language_(std::move(language)), catalogue_(Catalogue(IDR_ENGLISH_TEXT))
+{
+    auto shipped = Shipped(language_);
+    for (auto tag = shipped.rbegin(); tag != shipped.rend(); ++tag)
+    {
+        if (auto resource = *Parse(catalogues, *tag); resource != IDR_ENGLISH_TEXT)
+        {
+            Translate(catalogue_, Catalogue(resource));
+        }
+    }
+}
 
 // First use matches the Windows display language against the shipped
 // catalogues and falls back to English.
@@ -112,7 +122,8 @@ std::string Strings::DefaultLanguage()
     wchar_t name[LOCALE_NAME_MAX_LENGTH] = {};
     LCIDToLocaleName(GetUserDefaultUILanguage(), name, LOCALE_NAME_MAX_LENGTH, LOCALE_ALLOW_NEUTRAL_NAMES);
     auto tag = Utf8(name);
-    return std::string(Match(tag));
+    auto shipped = Shipped(tag);
+    return shipped.empty() ? "en" : std::string(shipped.front());
 }
 
 bool Strings::Supports(std::string_view language)

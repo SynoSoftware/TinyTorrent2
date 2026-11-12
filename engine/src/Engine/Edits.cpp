@@ -2,7 +2,6 @@
 #include <libtorrent/aux_/parse_url.hpp>
 #include <libtorrent/aux_/string_util.hpp>
 #include <algorithm>
-#include <climits>
 #include <set>
 
 namespace tt
@@ -39,14 +38,13 @@ std::expected<Engine::State::EditChoices, ErrorCode> Engine::State::ReadChoices(
             }
             return Want{};
         }
-        auto const& value = entry["priority"];
-        if (!value.is_number_integer() || value < 0 || value > static_cast<std::uint8_t>(lt::top_priority) ||
-            !IsChoice(lt::download_priority_t(value.get<std::uint8_t>())))
+        auto priority = Whole<std::uint8_t>(entry["priority"]);
+        if (!priority || !IsChoice(lt::download_priority_t(*priority)))
         {
             invalid = true;
             return std::nullopt;
         }
-        return lt::download_priority_t(value.get<std::uint8_t>());
+        return lt::download_priority_t(*priority);
     };
     EditChoices choices;
     std::vector<FileChoice> folders;
@@ -74,17 +72,12 @@ std::expected<Engine::State::EditChoices, ErrorCode> Engine::State::ReadChoices(
                     folders.push_back({Tree::Folder{entry["path"].get<std::string>()}, *action});
                     continue;
                 }
-                if (!entry.contains("index") || !entry["index"].is_number_integer() || entry["index"] < 0 ||
-                    entry["index"] > INT_MAX)
+                auto index = entry.contains("index") ? Whole<int>(entry["index"]) : std::nullopt;
+                if (!index || !indexes.insert(*index).second)
                 {
                     return std::unexpected(ErrorCode::InvalidPriorities);
                 }
-                auto index = entry["index"].get<int>();
-                if (!indexes.insert(index).second)
-                {
-                    return std::unexpected(ErrorCode::InvalidPriorities);
-                }
-                files.push_back({lt::file_index_t(index), *action});
+                files.push_back({lt::file_index_t(*index), *action});
             }
         }
         else if (key == "query" && values.is_object() && values.contains("text") && values["text"].is_string())
@@ -103,9 +96,9 @@ std::expected<Engine::State::EditChoices, ErrorCode> Engine::State::ReadChoices(
             std::set<std::string> urls;
             for (auto const& entry : values)
             {
-                if (!entry.is_object() || !entry.contains("url") || !entry["url"].is_string() ||
-                    !entry.contains("tier") || !entry["tier"].is_number_integer() ||
-                    entry["tier"] < 0 || entry["tier"] > 255)
+                auto tier = entry.is_object() && entry.contains("tier") ? Whole<std::uint8_t>(entry["tier"]) :
+                    std::nullopt;
+                if (!tier || !entry.contains("url") || !entry["url"].is_string())
                 {
                     return std::unexpected(ErrorCode::InvalidTrackers);
                 }
@@ -122,7 +115,7 @@ std::expected<Engine::State::EditChoices, ErrorCode> Engine::State::ReadChoices(
                     continue;
                 }
                 choices.trackers->emplace_back(url);
-                choices.trackers->back().tier = entry["tier"].get<std::uint8_t>();
+                choices.trackers->back().tier = *tier;
             }
             std::stable_sort(choices.trackers->begin(), choices.trackers->end(),
                 [](auto const& left, auto const& right) { return left.tier < right.tier; });

@@ -1,5 +1,4 @@
 #include "Engine/State.h"
-#include <Windows.h>
 #include <algorithm>
 
 namespace tt
@@ -38,7 +37,7 @@ void Engine::State::WatchFolder()
         for (auto const& entry : std::filesystem::directory_iterator(Wide(folder)))
         {
             if (!entry.is_regular_file() || entry.is_symlink() ||
-                CompareStringOrdinal(entry.path().extension().c_str(), -1, L".torrent", -1, TRUE) != CSTR_EQUAL)
+                !SameName(entry.path().extension().native(), L".torrent"))
                 continue;
             auto path = FullPath(entry.path());
             auto stamp = std::to_string(entry.file_size()) + ":" +
@@ -76,7 +75,7 @@ void Engine::State::WatchFolder()
                 auto document = Saved();
                 std::erase_if(document.watchedSources, absent);
                 auto retained = document.watchedSources;
-                changes.Commit([document = std::move(document)] { return document.ToJson(); },
+                changes.Commit(std::move(document),
                     [this, folder, isCurrent, retained = std::move(retained)](Outcome outcome)
                 {
                     watchPhase = WatchPhase::Idle;

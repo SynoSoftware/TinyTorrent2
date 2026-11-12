@@ -267,8 +267,7 @@ void Engine::State::On(lt::state_update_alert const& alert)
             torrent->Update(status, alert.timestamp());
             // A recheck passes through checking_resume_data while the reads of
             // the check it replaces may remain.
-            if (status.state != lt::torrent_status::checking_files &&
-                status.state != lt::torrent_status::checking_resume_data)
+            if (!Checks(status.state))
                 torrent->checkReads = CheckReads::None;
             else if (torrent->ChecksFiles(Paused().has_value()) && torrent->checkReads == CheckReads::None)
                 torrent->checkReads = CheckReads::Reading;
@@ -460,15 +459,15 @@ void Engine::State::QueryCompletions()
 {
     if (IsShuttingDown())
         return;
-    auto pending = std::count_if(torrents.begin(), torrents.end(), [](auto const& entry)
+    auto pending = static_cast<std::size_t>(std::count_if(torrents.begin(), torrents.end(), [](auto const& entry)
     {
         return entry.second.queries.contains(DetailKind::Status);
-    });
+    }));
     // A dropped batch can affect every torrent; recovery must not fill
     // the alert queue again.
     for (auto& [id, torrent] : torrents)
     {
-        if (pending >= 64)
+        if (pending >= queryLimit)
             break;
         bool fails = !torrent.control.Holds() && StatusFailure(torrent, torrent.status);
         if ((!torrent.completion.NeedsSample() && !fails) || torrent.waiting ||

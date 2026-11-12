@@ -191,15 +191,25 @@ std::filesystem::path Engine::State::FullPath(std::filesystem::path const& path)
     return full.has_filename() || !full.has_relative_path() ? full : full.parent_path();
 }
 
-// Windows compares file names without case.
 bool Engine::State::PathBefore(std::filesystem::path const& left, std::filesystem::path const& right)
 {
-    return CompareStringOrdinal(left.c_str(), -1, right.c_str(), -1, TRUE) == CSTR_LESS_THAN;
+    return CompareNames(left.native(), right.native()) < 0;
 }
 
 bool Engine::State::SamePath(std::filesystem::path const& left, std::filesystem::path const& right)
 {
-    return !PathBefore(left, right) && !PathBefore(right, left);
+    return SameName(left.native(), right.native());
+}
+
+void Engine::State::SortUnique(std::vector<std::filesystem::path>& paths)
+{
+    std::sort(paths.begin(), paths.end(), PathBefore);
+    paths.erase(std::unique(paths.begin(), paths.end(), SamePath), paths.end());
+}
+
+bool Engine::State::Present(std::filesystem::path const& path)
+{
+    return std::filesystem::symlink_status(path).type() != std::filesystem::file_type::not_found;
 }
 
 bool Engine::State::PathLess::operator()(std::string const& left, std::string const& right) const
@@ -306,12 +316,7 @@ void Engine::State::ContinueNames()
         VolumeWorker(torrent.facts.savePath).Run([this, params = std::move(params), handle = torrent.handle,
             appendsSuffix = torrent.facts.appendsSuffix, layout = torrent.facts.layout]() mutable
         {
-            ReleaseFiles({handle});
-            auto current = handle.get_renamed_files();
-            params.renamed_files = current.export_filenames(params.ti->layout());
-            PrepareNames(params, appendsSuffix, layout);
-            auto renames = Renames(params, current);
-            return NameChoice{std::move(params), std::move(renames)};
+            return ChooseNames(handle, std::move(params), appendsSuffix, layout);
         }, [this, id](std::expected<NameChoice, StorageOutcome> choice)
         {
             auto found = FindWorking(id);
@@ -358,34 +363,39 @@ void Engine::State::PrepareNames(lt::add_torrent_params& params, bool appendsSuf
     // missing, which would give each the unfinished suffix, so preparation
     // fails unless the folder answers before and after it reads them.
     CheckReachable(root);
-    for (auto index : files.file_range())
+    VisitContent(files, layout, [&](lt::file_index_t index, std::string const& name)
     {
-        if (files.pad_file_at(index))
-            continue;
-        auto name = ContentPath(files, index, layout);
         auto path = root / Wide(name);
         if (auto renamed = params.renamed_files.find(index); renamed != params.renamed_files.end())
         {
-            if (IsUnfinished(renamed->second, name) &&
-                std::filesystem::symlink_status(root / Wide(renamed->second)).type() ==
-                    std::filesystem::file_type::not_found &&
-                std::filesystem::symlink_status(path).type() != std::filesystem::file_type::not_found)
+            if (IsUnfinished(renamed->second, name) && !Present(root / Wide(renamed->second)) && Present(path))
             {
                 if (SamePath(FullPath(Wide(name)), FullPath(Wide(files.file_path(index)))))
                     params.renamed_files.erase(renamed);
                 else
                     renamed->second = name;
             }
-            continue;
+            return;
         }
-        if (appendsSuffix && std::filesystem::symlink_status(path).type() == std::filesystem::file_type::not_found)
+        if (appendsSuffix && !Present(path))
         {
             params.renamed_files[index] = name + unfinishedSuffix;
         }
         else if (!SamePath(FullPath(Wide(name)), FullPath(Wide(files.file_path(index)))))
             params.renamed_files[index] = name;
-    }
+    });
     CheckReachable(root);
+}
+
+Engine::State::NameChoice Engine::State::ChooseNames(lt::torrent_handle const& handle, lt::add_torrent_params params,
+    bool appendsSuffix, Layout layout)
+{
+    ReleaseFiles({handle});
+    auto current = handle.get_renamed_files();
+    params.renamed_files = current.export_filenames(params.ti->layout());
+    PrepareNames(params, appendsSuffix, layout);
+    auto renames = Renames(params, current);
+    return NameChoice{std::move(params), std::move(renames)};
 }
 
 std::vector<std::pair<lt::file_index_t, std::string>> Engine::State::Renames(lt::add_torrent_params const& prepared,
@@ -1050,13 +1060,11 @@ std::vector<std::filesystem::path> Engine::State::FilePaths(lt::torrent_info con
 {
     std::filesystem::path root = Wide(folder);
     std::vector<std::filesystem::path> files;
-    for (auto index : metadata.layout().file_range())
+    VisitContent(metadata.layout(), layout, [&root, &files](lt::file_index_t, std::string const& path)
     {
-        if (!metadata.layout().pad_file_at(index))
-            files.push_back(FullPath(root / Wide(ContentPath(metadata.layout(), index, layout))));
-    }
-    std::sort(files.begin(), files.end(), PathBefore);
-    files.erase(std::unique(files.begin(), files.end(), SamePath), files.end());
+        files.push_back(FullPath(root / Wide(path)));
+    });
+    SortUnique(files);
     return files;
 }
 
@@ -1072,8 +1080,7 @@ std::vector<std::filesystem::path> Engine::State::FilePaths(Torrent const& torre
         for (auto const& path : paths)
             files.push_back(FullPath(root / path));
     }
-    std::sort(files.begin(), files.end(), PathBefore);
-    files.erase(std::unique(files.begin(), files.end(), SamePath), files.end());
+    SortUnique(files);
     return files;
 }
 
@@ -1082,8 +1089,7 @@ std::vector<std::filesystem::path> Engine::State::Footprint(Torrent const& torre
     auto paths = FilePaths(torrent);
     auto physical = FilePaths(torrent, std::nullopt, false);
     paths.insert(paths.end(), physical.begin(), physical.end());
-    std::sort(paths.begin(), paths.end(), PathBefore);
-    paths.erase(std::unique(paths.begin(), paths.end(), SamePath), paths.end());
+    SortUnique(paths);
     return paths;
 }
 
@@ -1212,10 +1218,8 @@ Engine::State::Scope Engine::State::FileScope(std::vector<std::string> const& id
                 names.emplace_back(FullPath(root / physical[index]), FullPath(root / logical[index]));
         }
     }
-    std::sort(scope.files.begin(), scope.files.end(), PathBefore);
-    scope.files.erase(std::unique(scope.files.begin(), scope.files.end(), SamePath), scope.files.end());
-    std::sort(scope.holds.begin(), scope.holds.end(), PathBefore);
-    scope.holds.erase(std::unique(scope.holds.begin(), scope.holds.end(), SamePath), scope.holds.end());
+    SortUnique(scope.files);
+    SortUnique(scope.holds);
     auto paths = scope.holds;
     std::set<std::filesystem::path, decltype(&PathBefore)> used(PathBefore);
     auto group = ids;
@@ -1278,6 +1282,13 @@ Engine::State::Scope Engine::State::FileScope(std::vector<std::string> const& id
     std::set_intersection(scope.files.begin(), scope.files.end(), retained.begin(), retained.end(),
         std::back_inserter(scope.kept), PathBefore);
     return scope;
+}
+
+std::vector<std::filesystem::path> Engine::State::Scope::Deleted() const
+{
+    std::vector<std::filesystem::path> deleted;
+    std::set_difference(files.begin(), files.end(), kept.begin(), kept.end(), std::back_inserter(deleted), PathBefore);
+    return deleted;
 }
 
 Json Engine::State::Describe(std::vector<std::string> const& ids, Scope const& scope) const

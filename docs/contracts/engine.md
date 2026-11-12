@@ -97,7 +97,8 @@ Headless execution uses the same owner without showing tray or splash surfaces.
 A worker completion, an alert, or one torrent's turn in the second's
 maintenance that throws is written to diagnostics and ends only its own step;
 the rest of the batch still runs, because one failed item never hides the
-others.
+others. A loop that waits for the person's answer to a popup posts the
+`WM_QUIT` it takes again, so the thread's own loop ends too.
 
 Keep blocking storage and serialization off the tray message loop and libtorrent
 alert callbacks. Use libtorrent's existing asynchronous operations and
@@ -225,6 +226,16 @@ last successful checkpoint. Clean shutdown samples after transfers have paused
 and waits for the final commit. A missing final sample or failed save uses the
 existing shutdown failure path. Accounting starts when this version first runs;
 older sessions cannot be reconstructed from the remaining torrents.
+
+The engine compares each name that Windows compares, such as a path, a file,
+volume or program name, or a registry class, as Windows compares names:
+ordinally and without case, by the file system's case table, as
+`CompareStringOrdinal` does. In each comparison and key the engine makes this
+way, two spellings that Windows takes for one file or key are one: a folder
+written in another case is never a second folder, also when its name has
+letters outside A to Z. The key of a storage root is libtorrent's own
+(`storage_root_key`), which folds case only from A to Z, so a root whose name
+has other letters in another case can have two keys.
 
 ## Committed edits
 

@@ -52,7 +52,7 @@ bool ForceExit(Forwarded const& other)
         found = Process32NextW(processes.get(), &entry))
     {
         DWORD owner = 0;
-        if (_wcsicmp(entry.szExeFile, TT_WINDOW_FILE) != 0 ||
+        if (!SameName(entry.szExeFile, TT_WINDOW_FILE) ||
             !ProcessIdToSessionId(entry.th32ProcessID, &owner) || owner != session)
         {
             continue;
@@ -64,7 +64,7 @@ bool ForceExit(Forwarded const& other)
             continue;
         }
         auto image = ProcessImage(process.get());
-        if (image && _wcsicmp(image->c_str(), executable.c_str()) == 0)
+        if (image && SameName(image->native(), executable.native()))
         {
             windows.push_back(std::move(process));
         }
@@ -165,17 +165,13 @@ bool Conflict::Resolve()
     {
         throw std::system_error(static_cast<int>(GetLastError()), std::system_category(), "SetTimer");
     }
-    MSG message{};
-    while (popup_.IsOpen() && GetMessageW(&message, nullptr, 0, 0) > 0)
+    Popup::Wait([this] { return popup_.IsOpen(); }, [this, timer](MSG const& message)
     {
-        if (!message.hwnd && message.message == WM_TIMER && message.wParam == timer)
+        if (message.message == WM_TIMER && message.wParam == timer)
         {
             Check();
-            continue;
         }
-        TranslateMessage(&message);
-        DispatchMessageW(&message);
-    }
+    });
     KillTimer(nullptr, timer);
     return ended_;
 }
@@ -203,13 +199,13 @@ void Conflict::Ask()
         reason = "failed";
         break;
     }
-    // Syno.Segoe.Power, as the tray's Exit shows. A pending request
-    // disables it, because a second one would wait behind the first.
-    Popup::Action exit{.glyph = L'\uE7E8', .label = strings_.Text("tray", "exit"),
-        .tooltip = strings_.Text("conflict", "exit_tip"), .run = [this] { Exit(); }, .closes = false,
-        .enabled = !request_.valid(), .automationId = L"Exit"};
-    // Both answers leave the prompt open until the other engine has ended.
+    auto exit = Toasts::Exit(strings_, strings_.Text("conflict", "exit_tip"), [this] { Exit(); });
     auto force = Toasts::ForceExit(strings_, [this] { Force(); });
+    // A pending request disables Exit, because a second one would wait
+    // behind the first.
+    exit.enabled = !request_.valid();
+    // Both answers leave the prompt open until the other engine has ended.
+    exit.closes = false;
     force.closes = false;
     Popup::Prompt prompt(strings_.Text("conflict", "title"), strings_.Text("conflict", reason), std::move(exit));
     prompt.location = Popup::Location{strings_.Text("conflict", "location"), *other_.engine};

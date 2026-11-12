@@ -1,10 +1,12 @@
 #include "Registration.h"
+#include "Owned.h"
 #include <windows.h>
 #include <shobjidl.h>
 #include <shlobj.h>
 #include <shlwapi.h>
 #include <algorithm>
 #include <chrono>
+#include <cwchar>
 #include <cwctype>
 #include <filesystem>
 #include <future>
@@ -19,8 +21,6 @@ namespace
 {
 constexpr wchar_t registered[] = L"Software\\RegisteredApplications";
 constexpr wchar_t capabilities[] = L"Software\\TinyTorrent\\Capabilities";
-constexpr wchar_t fileAssociations[] = L"Software\\TinyTorrent\\Capabilities\\FileAssociations";
-constexpr wchar_t urlAssociations[] = L"Software\\TinyTorrent\\Capabilities\\URLAssociations";
 constexpr wchar_t openWith[] = L"Software\\Classes\\.torrent\\OpenWithProgids";
 constexpr wchar_t run[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 constexpr wchar_t approved[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run";
@@ -50,11 +50,6 @@ constexpr Kind kinds[] = {
     {L"magnet", AT_URLPROTOCOL, L"URLAssociations", magnetClass,
         L"Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\magnet\\UserChoice"}};
 
-bool Same(std::wstring const& first, std::wstring const& second)
-{
-    return CompareStringOrdinal(first.c_str(), -1, second.c_str(), -1, TRUE) == CSTR_EQUAL;
-}
-
 std::wstring Key(std::wstring const& progId)
 {
     return L"Software\\Classes\\" + progId;
@@ -78,11 +73,9 @@ std::wstring Read(std::wstring const& key, wchar_t const* name = nullptr, HKEY r
     {
         return {};
     }
-    value.resize(size / sizeof(wchar_t));
-    if (!value.empty() && value.back() == L'\0')
-    {
-        value.pop_back();
-    }
+    // The text ends at its first NUL: another program can store a value with
+    // more than one, and Windows reads a name only up to the first.
+    value.resize(std::wcslen(value.c_str()));
     return value;
 }
 
@@ -103,15 +96,20 @@ void Check(LSTATUS status)
     }
 }
 
-void Write(std::wstring const& key, wchar_t const* name, std::wstring const& value)
+// Sets a value of the current user's `key`, which it creates when missing.
+void Write(std::wstring const& key, wchar_t const* name, DWORD type, void const* data, DWORD size)
 {
     HKEY handle = nullptr;
     Check(RegCreateKeyExW(HKEY_CURRENT_USER, key.c_str(), 0, nullptr, 0, KEY_SET_VALUE,
         nullptr, &handle, nullptr));
-    auto status = RegSetValueExW(handle, name, 0, REG_SZ, reinterpret_cast<BYTE const*>(value.c_str()),
-        static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t)));
+    auto status = RegSetValueExW(handle, name, 0, type, static_cast<BYTE const*>(data), size);
     RegCloseKey(handle);
     Check(status);
+}
+
+void Write(std::wstring const& key, wchar_t const* name, std::wstring const& value)
+{
+    Write(key, name, REG_SZ, value.c_str(), static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t)));
 }
 
 void Remove(std::wstring const& key, wchar_t const* name, HKEY root = HKEY_CURRENT_USER)
@@ -162,7 +160,7 @@ std::vector<std::pair<std::wstring, std::wstring>> Values(HKEY root, std::wstrin
 // empty when Windows does not say.
 std::wstring Default(wchar_t const* extension, ASSOCIATIONTYPE type)
 {
-    auto initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    Apartment apartment;
     IApplicationAssociationRegistration* association = nullptr;
     auto result = CoCreateInstance(CLSID_ApplicationAssociationRegistration, nullptr, CLSCTX_INPROC_SERVER,
         IID_PPV_ARGS(&association));
@@ -176,10 +174,6 @@ std::wstring Default(wchar_t const* extension, ASSOCIATIONTYPE type)
     if (association)
     {
         association->Release();
-    }
-    if (SUCCEEDED(initialized))
-    {
-        CoUninitialize();
     }
     return value;
 }
@@ -196,7 +190,7 @@ std::string Readable(std::wstring const& text)
 
 bool IsExe(std::wstring const& path)
 {
-    return path.size() >= 4 && Same(path.substr(path.size() - 4), L".exe");
+    return path.size() >= 4 && SameName(path.substr(path.size() - 4), L".exe");
 }
 
 // The runs of leading words of an unquoted command that end in ".exe",
@@ -246,7 +240,7 @@ Copy Identify(std::wstring const& command)
 {
     auto target = Target(command);
     auto executable = Executable();
-    if (Same(target, executable))
+    if (SameName(target, executable))
     {
         return Copy::This;
     }
@@ -313,7 +307,7 @@ bool Opens(std::wstring const& choice, wchar_t const* ours)
 {
     auto command = Read(choice + L"\\shell\\open\\command", nullptr, HKEY_CLASSES_ROOT);
     return !command.empty() &&
-        (Same(choice, ours) ? Identify(command) != Copy::Missing : Identify(command) == Copy::This);
+        (SameName(choice, ours) ? Identify(command) != Copy::Missing : Identify(command) == Copy::This);
 }
 
 // True when the person's default for `extension` or protocol opens with
@@ -360,22 +354,66 @@ std::wstring HandlerCommand()
     return found;
 }
 
-// Any handler entry is present, apart from the RegisteredApplications value
-// that records the request.
-bool HandlersPresent()
+// A value of TinyTorrent's handler registration. An empty name is the key's
+// default value, as the registry functions read it.
+struct Entry
 {
+    KeyOwner owner;
+    std::wstring key;
+    std::wstring name;
+    // REG_SZ with `text`, REG_NONE with no data, or REG_DWORD written as 0.
+    DWORD type;
+    std::wstring text;
+};
+
+// TinyTorrent's handler registration for the copy at `path`, in the order
+// registration writes it. The RegisteredApplications value, which records the
+// request, is not in it: registration writes that value last and removal
+// deletes it first.
+std::vector<Entry> Handlers(std::wstring const& path = Executable())
+{
+    std::vector<Entry> entries;
     for (auto const* progId : classes)
     {
-        if (Exists(Key(progId)))
-        {
-            return true;
-        }
+        entries.push_back({KeyOwner::TinyTorrent, Key(progId), L"", REG_SZ, productName});
+        entries.push_back({KeyOwner::TinyTorrent, Key(progId) + L"\\DefaultIcon", L"", REG_SZ, Icon(path)});
+        entries.push_back({KeyOwner::TinyTorrent, Key(progId) + L"\\shell\\open\\command", L"", REG_SZ,
+            OpenCommand(path)});
     }
-    return Exists(capabilities) || Has(openWith, torrentClass, REG_NONE);
+    entries.push_back({KeyOwner::TinyTorrent, Key(magnetClass), L"URL Protocol", REG_SZ, L""});
+    entries.push_back({KeyOwner::Shared, openWith, torrentClass, REG_NONE, L""});
+    entries.push_back({KeyOwner::TinyTorrent, capabilities, L"ApplicationName", REG_SZ, productName});
+    entries.push_back({KeyOwner::TinyTorrent, capabilities, L"ApplicationIcon", REG_SZ, Icon(path)});
+    entries.push_back({KeyOwner::TinyTorrent, capabilities, L"ApplicationDescription", REG_SZ, productName});
+    for (auto const& kind : kinds)
+    {
+        entries.push_back({KeyOwner::TinyTorrent, std::wstring(capabilities) + L"\\" + kind.associations, kind.name,
+            REG_SZ, kind.progId});
+    }
+    // Without this record that Windows has announced the class, Windows asks
+    // which app to use at the next open even while TinyTorrent is the default.
+    for (auto const& kind : kinds)
+    {
+        entries.push_back({KeyOwner::Windows, toasts, std::wstring(kind.progId) + L"_" + kind.name, REG_DWORD, L""});
+    }
+    return entries;
+}
+
+// Any handler entry is present, apart from the RegisteredApplications value
+// that records the request. Windows writes its records itself, so they show
+// no registration.
+bool HandlersPresent()
+{
+    return std::ranges::any_of(Handlers(), [](Entry const& entry)
+    {
+        return entry.owner == KeyOwner::TinyTorrent ? Exists(entry.key) :
+            entry.owner == KeyOwner::Shared && Has(entry.key, entry.name.c_str(), entry.type);
+    });
 }
 
 // Every handler entry is present and starts this copy, through the one path
-// the entries share.
+// the entries share. A record of Windows' counts by its type, because Windows
+// writes the same records and documents no data for them.
 bool HandlersComplete()
 {
     auto command = HandlerCommand();
@@ -383,20 +421,11 @@ bool HandlersComplete()
     {
         return false;
     }
-    auto path = Target(command);
-    bool handlers = Read(registered, productName) == capabilities &&
-        Read(capabilities, L"ApplicationName") == productName &&
-        Read(capabilities, L"ApplicationIcon") == Icon(path) &&
-        Has(Key(magnetClass), L"URL Protocol", REG_SZ) && Read(Key(magnetClass), L"URL Protocol").empty() &&
-        Has(openWith, torrentClass, REG_NONE) &&
-        Read(fileAssociations, L".torrent") == torrentClass &&
-        Read(urlAssociations, L"magnet") == magnetClass;
-    for (auto const* progId : classes)
+    return std::ranges::all_of(Handlers(Target(command)), [](Entry const& entry)
     {
-        handlers = handlers && Read(Key(progId) + L"\\shell\\open\\command") == OpenCommand(path) &&
-            Read(Key(progId) + L"\\DefaultIcon") == Icon(path);
-    }
-    return handlers;
+        return Has(entry.key, entry.name.c_str(), entry.type) &&
+            (entry.type != REG_SZ || Read(entry.key, entry.name.c_str()) == entry.text);
+    });
 }
 
 // Every class Windows may open `kind` with, whichever application wrote it:
@@ -433,7 +462,7 @@ std::vector<std::wstring> References(Kind const& kind)
     std::vector<std::wstring> distinct;
     for (auto& progId : found)
     {
-        if (std::ranges::none_of(distinct, [&](auto const& kept) { return Same(kept, progId); }))
+        if (std::ranges::none_of(distinct, [&](auto const& kept) { return SameName(kept, progId); }))
         {
             distinct.push_back(std::move(progId));
         }
@@ -482,7 +511,7 @@ std::vector<Broken> FindBroken()
 void RemoveCommand(HKEY root, std::wstring const& progId, std::wstring const& program)
 {
     auto name = std::filesystem::path(program).filename().wstring();
-    bool application = Same(progId, L"Applications\\" + name);
+    bool application = SameName(progId, L"Applications\\" + name);
     Check(RegDeleteTreeW(root, (Key(progId) + (application ? L"" : L"\\shell\\open")).c_str()));
 }
 
@@ -497,21 +526,21 @@ void Remove(Broken const& broken)
     // class takes over, and while it works, the references still lead to a
     // working program.
     auto remaining = Read(broken.progId + L"\\shell\\open\\command", nullptr, HKEY_CLASSES_ROOT);
-    if (Same(broken.progId, kind.name) || (!remaining.empty() && Identify(remaining) != Copy::Missing))
+    if (SameName(broken.progId, kind.name) || (!remaining.empty() && Identify(remaining) != Copy::Missing))
     {
         return;
     }
     Remove(Key(kind.name) + L"\\OpenWithProgids", broken.progId.c_str());
     Remove(L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\" + std::wstring(kind.name) +
         L"\\OpenWithProgids", broken.progId.c_str());
-    if (Same(Read(Key(kind.name)), broken.progId))
+    if (SameName(Read(Key(kind.name)), broken.progId))
     {
         Remove(Key(kind.name), nullptr);
     }
     for (auto const& [name, path] : Values(HKEY_CURRENT_USER, registered))
     {
         auto associations = path + L"\\" + kind.associations;
-        if (Same(Read(associations, kind.name), broken.progId))
+        if (SameName(Read(associations, kind.name), broken.progId))
         {
             Remove(associations, kind.name);
         }
@@ -538,7 +567,7 @@ std::string AppName(Kind const& kind)
     {
         wchar_t system[MAX_PATH]{};
         GetSystemDirectoryW(system, MAX_PATH);
-        if (Same(program, (std::filesystem::path(system) / L"OpenWith.exe").wstring()))
+        if (SameName(program, (std::filesystem::path(system) / L"OpenWith.exe").wstring()))
         {
             return {};
         }
@@ -634,14 +663,14 @@ void RepairShortcuts()
         std::error_code error;
         for (auto const& entry : std::filesystem::directory_iterator(std::filesystem::path(folder) / L"TaskBar", error))
         {
-            if (Same(entry.path().extension().wstring(), L".lnk"))
+            if (SameName(entry.path().extension().wstring(), L".lnk"))
             {
                 files.push_back(entry.path());
             }
         }
     }
     CoTaskMemFree(folder);
-    auto initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    Apartment apartment;
     for (auto const& file : files)
     {
         IShellLinkW* link = nullptr;
@@ -659,7 +688,7 @@ void RepairShortcuts()
             wchar_t raw[MAX_PATH]{};
             link->GetPath(raw, MAX_PATH, nullptr, SLGP_RAWPATH);
             auto target = expand(raw);
-            if (Same(std::filesystem::path(target).filename().wstring(), name) &&
+            if (SameName(std::filesystem::path(target).filename().wstring(), name) &&
                 Identify(L"\"" + target + L"\"") == Copy::Missing)
             {
                 wchar_t icon[MAX_PATH]{};
@@ -670,7 +699,7 @@ void RepairShortcuts()
                 link->SetPath(executable.c_str());
                 link->SetArguments(L"");
                 link->SetWorkingDirectory(std::filesystem::path(executable).parent_path().c_str());
-                if (Same(expand(icon), target))
+                if (SameName(expand(icon), target))
                 {
                     link->SetIconLocation(executable.c_str(), index);
                 }
@@ -685,10 +714,6 @@ void RepairShortcuts()
         {
             link->Release();
         }
-    }
-    if (SUCCEEDED(initialized))
-    {
-        CoUninitialize();
     }
 }
 
@@ -731,7 +756,7 @@ std::vector<std::string> Registration::MissingPrograms() const
     std::vector<std::wstring> found;
     for (auto const& broken : FindBroken())
     {
-        if (std::ranges::none_of(found, [&](auto const& kept) { return Same(kept, broken.program); }))
+        if (std::ranges::none_of(found, [&](auto const& kept) { return SameName(kept, broken.program); }))
         {
             found.push_back(broken.program);
         }
@@ -833,31 +858,15 @@ void Registration::Repair() const
 
 void Registration::RegisterHandlers() const
 {
-    for (auto const* progId : classes)
+    DWORD const zero = 0;
+    for (auto const& entry : Handlers())
     {
-        Write(Key(progId), nullptr, productName);
-        Write(Key(progId) + L"\\DefaultIcon", nullptr, Icon());
-        Write(Key(progId) + L"\\shell\\open\\command", nullptr, OpenCommand());
-    }
-    Write(Key(magnetClass), L"URL Protocol", L"");
-    HKEY handle = nullptr;
-    Check(RegCreateKeyExW(HKEY_CURRENT_USER, openWith, 0, nullptr, 0, KEY_SET_VALUE,
-        nullptr, &handle, nullptr));
-    auto status = RegSetValueExW(handle, torrentClass, 0, REG_NONE, nullptr, 0);
-    RegCloseKey(handle);
-    Check(status);
-    Write(capabilities, L"ApplicationName", productName);
-    Write(capabilities, L"ApplicationIcon", Icon());
-    Write(capabilities, L"ApplicationDescription", productName);
-    Write(fileAssociations, L".torrent", torrentClass);
-    Write(urlAssociations, L"magnet", magnetClass);
-    // Without this record that Windows has announced the class, Windows asks
-    // which app to use at the next open even while TinyTorrent is the default.
-    for (auto const& kind : kinds)
-    {
-        DWORD const announced = 0;
-        Check(RegSetKeyValueW(HKEY_CURRENT_USER, toasts, (std::wstring(kind.progId) + L"_" + kind.name).c_str(),
-            REG_DWORD, &announced, sizeof(announced)));
+        if (entry.type == REG_SZ)
+            Write(entry.key, entry.name.c_str(), entry.text);
+        else if (entry.type == REG_DWORD)
+            Write(entry.key, entry.name.c_str(), REG_DWORD, &zero, sizeof(zero));
+        else
+            Write(entry.key, entry.name.c_str(), REG_NONE, nullptr, 0);
     }
     Write(registered, productName, capabilities);
 }
@@ -865,16 +874,15 @@ void Registration::RegisterHandlers() const
 void Registration::UnregisterHandlers() const
 {
     Remove(registered, productName);
-    for (auto const* progId : classes)
+    // A key's subkeys follow it in the table, so they are gone when their own
+    // entries come, and Check accepts the missing key.
+    for (auto const& entry : Handlers())
     {
-        Check(RegDeleteTreeW(HKEY_CURRENT_USER, Key(progId).c_str()));
+        if (entry.owner == KeyOwner::TinyTorrent)
+            Check(RegDeleteTreeW(HKEY_CURRENT_USER, entry.key.c_str()));
+        else
+            Remove(entry.key, entry.name.c_str());
     }
-    Remove(openWith, torrentClass);
-    for (auto const& kind : kinds)
-    {
-        Remove(toasts, (std::wstring(kind.progId) + L"_" + kind.name).c_str());
-    }
-    Check(RegDeleteTreeW(HKEY_CURRENT_USER, capabilities));
     SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
 }
 

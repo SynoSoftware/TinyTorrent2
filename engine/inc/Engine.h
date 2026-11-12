@@ -2,6 +2,7 @@
 
 #include "Enums.h"
 #include <nlohmann/json.hpp>
+#include <compare>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
@@ -222,6 +223,18 @@ std::optional<Value> Parse(std::pair<std::string_view, Value> const (&names)[Siz
     return std::nullopt;
 }
 
+// The JSON value as a whole number from 0 to the largest `Value`, such as a
+// count, an index or a limit; nothing for any other value.
+template <typename Value>
+std::optional<Value> Whole(Json const& value)
+{
+    if (!value.is_number_integer() || value < 0 || value > (std::numeric_limits<Value>::max)())
+    {
+        return std::nullopt;
+    }
+    return value.get<Value>();
+}
+
 // Reads a value from settings.json, or returns `fallback` when the key is
 // missing or holds a value of another type, so a damaged file still loads with
 // every value it holds correctly. Every whole number saved there is zero or
@@ -236,23 +249,16 @@ Value ReadSaved(Json const& saved, char const* key, Value fallback)
     }
     if constexpr (std::is_same_v<Value, bool>)
     {
-        if (!found->is_boolean())
-        {
-            return fallback;
-        }
+        return found->is_boolean() ? found->get<bool>() : fallback;
     }
     else if constexpr (std::is_same_v<Value, std::string>)
     {
-        if (!found->is_string())
-        {
-            return fallback;
-        }
+        return found->is_string() ? found->get<std::string>() : fallback;
     }
-    else if (!found->is_number_integer() || *found < 0 || *found > (std::numeric_limits<Value>::max)())
+    else
     {
-        return fallback;
+        return Whole<Value>(*found).value_or(fallback);
     }
-    return found->get<Value>();
 }
 
 // The protocol word for a value, from the same table that Parse reads.
@@ -271,8 +277,38 @@ std::string_view Word(std::pair<std::string_view, Value> const (&names)[Size], V
 
 std::string Utf8(std::wstring const& value);
 std::wstring Wide(std::string const& value);
-// Whether two paths name one folder, also when they are spelled differently.
-bool SameFolder(std::filesystem::path const& first, std::filesystem::path const& second);
+// Orders two names, such as paths, file and volume names or registry classes,
+// as Windows compares names: ordinally and without case, by the file system's
+// case table.
+std::weak_ordering CompareNames(std::wstring_view first, std::wstring_view second);
+inline bool SameName(std::wstring_view first, std::wstring_view second)
+{
+    return CompareNames(first, second) == 0;
+}
+// `name` in upper case by that case table, so names that compare equal have
+// one key.
+std::wstring NameKey(std::wstring_view name);
+// Whether two paths name one folder: the same text, or one folder on disk
+// however each is spelled. Engine::State::SameFolder compares only the text.
+bool Equivalent(std::filesystem::path const& first, std::filesystem::path const& second);
+// The path Windows gives the open file or folder `handle`, after every link,
+// in the form `flags` asks for, such as VOLUME_NAME_DOS; nothing when Windows
+// does not give it.
+std::optional<std::filesystem::path> FinalPath(void* handle, unsigned long flags);
+// The Win32 form of a path with the long-path or NT prefix, as a final path, a
+// link's target or a drive letter's device has it: \\?\C:\a and \??\C:\a are
+// C:\a, \\?\UNC\nas\a is \\nas\a, and a volume is its drive letter. A path with
+// a drive letter stays as it is. Nothing for any other form, such as a UNC
+// path without the prefix or a volume without a drive letter.
+std::optional<std::filesystem::path> Win32Path(std::wstring path);
+// Windows' own words for `error`, a Windows error code, in the person's
+// language, because the person reads them; nothing when Windows has none.
+// `file` fills the placeholder of a message that names one file, such as
+// ERROR_BAD_EXE_FORMAT's; a message with more placeholders must not get it.
+std::optional<std::wstring> Reason(unsigned long error, wchar_t const* file = nullptr);
+// A failed file's detail: the path and the Reason for `error`, or its number
+// when Windows has no words for it.
+std::string Describe(std::filesystem::path const& path, unsigned long error);
 std::string Base64(std::string_view bytes);
 std::wstring Executable();
 // The executable of `process`, a Windows process handle with query access;
@@ -282,6 +318,9 @@ char const* ToString(ToastKind kind);
 char const* ToString(ErrorCode code);
 Json Success(Json data = Json::object());
 Json Failure(ErrorCode code, std::string detail = {});
+// The reply to an operation's outcome: a failure with the outcome's error code
+// and detail, or a success that carries `data`.
+Json Response(Outcome const& outcome, Json data = Json::object());
 // A JSON value already written as text, which the pipe writes as it is, so a
 // long list needs no JSON object per item. It is only ever an object's member,
 // never an array's item, so the pipe never searches the long arrays of a

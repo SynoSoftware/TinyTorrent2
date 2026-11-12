@@ -221,6 +221,9 @@ but lets the person's account delete it, and without one Windows opens the
 per-user association just written. Registration also records each TinyTorrent
 class in `ApplicationAssociationToasts`, because without that record Windows
 asks which app to use at the next open even while TinyTorrent is the default.
+Windows writes the same records for the handlers it announces, so the start's
+check counts a record by its presence, and a record alone is not a
+registration.
 The direct associations and the deletion happen only on an explicit
 registration request, because startup repair must not reclaim associations from
 another app. A deletion Windows refuses fails the request and reports the

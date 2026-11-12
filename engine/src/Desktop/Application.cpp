@@ -370,7 +370,7 @@ void Application::Receive(std::shared_ptr<Pipe::Connection> const& client, Json 
             {
                 auto outcome = registration_.Execute(action);
                 // A failure also reports what Windows holds, which it kept.
-                auto response = outcome.error ? Failure(*outcome.error, outcome.detail) : Success();
+                auto response = Response(outcome);
                 response["data"] = registration_.Observe();
                 return response;
             }, [reply](std::expected<Json, StorageOutcome> response)
@@ -380,8 +380,7 @@ void Application::Receive(std::shared_ptr<Pipe::Connection> const& client, Json 
                     reply(std::move(*response));
                     return;
                 }
-                auto failure = response.error().ToOutcome(ErrorCode::RegistrationFailed);
-                reply(Failure(*failure.error, failure.detail));
+                reply(Response(response.error().ToOutcome(ErrorCode::RegistrationFailed)));
             });
             break;
         }
@@ -497,20 +496,9 @@ bool Application::ConfirmExit()
 {
     bool confirmed = false;
     exit_ = ExitPhase::Confirming;
-    // Syno.Segoe.Power, as the tray's Exit shows.
     toasts_->Ask({strings_.Text("exit", "title"), strings_.Text("exit", "active"),
-        {.glyph = L'\uE7E8', .label = strings_.Text("tray", "exit"),
-            .run = [&confirmed] { confirmed = true; }, .automationId = L"Exit"}}, Setting::ConfirmExit);
-    MSG message{};
-    while (toasts_->IsOpen() && exit_ == ExitPhase::Confirming && GetMessageW(&message, nullptr, 0, 0) > 0)
-    {
-        TranslateMessage(&message);
-        DispatchMessageW(&message);
-    }
-    if (message.message == WM_QUIT)
-    {
-        PostQuitMessage(static_cast<int>(message.wParam));
-    }
+        Toasts::Exit(strings_, {}, [&confirmed] { confirmed = true; })}, Setting::ConfirmExit);
+    Popup::Wait([this] { return toasts_->IsOpen() && exit_ == ExitPhase::Confirming; });
     toasts_->Close();
     // Windows can end the session while the prompt is open.
     if (exit_ != ExitPhase::Confirming)

@@ -44,46 +44,6 @@ struct Opaque
 // cannot follow, or the target of a link.
 using Entry = std::variant<std::monostate, Opaque, std::filesystem::path>;
 
-// The Win32 path of a path that a link or a drive letter names: \??\C:\a is
-// C:\a, \??\UNC\nas\a is \\nas\a, and a volume is its drive letter. Nothing for
-// another form, such as a volume without a letter.
-std::optional<std::filesystem::path> Win32Path(std::wstring path)
-{
-    for (std::wstring_view prefix : {LR"(\??\)", LR"(\\?\)"})
-    {
-        if (path.starts_with(prefix))
-        {
-            path.erase(0, prefix.size());
-            break;
-        }
-    }
-    if (path.starts_with(LR"(UNC\)"))
-        return std::filesystem::path(LR"(\\)" + path.substr(4));
-    if (path.size() >= 2 && path[1] == L':')
-        return std::filesystem::path(path);
-    if (!path.starts_with(L"Volume{"))
-        return std::nullopt;
-    auto end = path.find(L'\\');
-    auto volume = LR"(\\?\)" + path.substr(0, end) + L'\\';
-    auto rest = end == std::wstring::npos ? std::wstring() : path.substr(end + 1);
-    std::wstring names(MAX_PATH, L'\0');
-    DWORD needed = 0;
-    while (!GetVolumePathNamesForVolumeNameW(volume.c_str(), names.data(), static_cast<DWORD>(names.size()), &needed))
-    {
-        if (GetLastError() != ERROR_MORE_DATA || needed <= names.size())
-            return std::nullopt;
-        names.resize(needed);
-    }
-    // The names are a list of strings that ends with an empty one.
-    for (auto name = names.c_str(); *name; name += std::wcslen(name) + 1)
-    {
-        std::wstring_view mount(name);
-        if (mount.size() == 3 && mount[1] == L':')
-            return std::filesystem::path(mount) / rest;
-    }
-    return std::nullopt;
-}
-
 // The folder or share that a subst or mapped drive letter, such as T:, stands
 // for. Nothing for the letter of a local volume, or a letter not defined.
 // QueryDosDevice reads the letter's definition, so it touches no drive.
@@ -240,11 +200,7 @@ std::string Engine::State::NoticeRootOf(Torrent const& torrent) const
 std::optional<std::string> Engine::State::NoticeRoot(std::string const& location) const
 {
     auto folder = Wide(RealPath(location));
-    if (folder.starts_with(LR"(\\?\UNC\)"))
-        folder = LR"(\\)" + folder.substr(8);
-    else if (folder.starts_with(LR"(\\?\)"))
-        folder.erase(0, 4);
-    auto path = std::filesystem::path(folder);
+    auto path = Win32Path(folder).value_or(folder);
     path.make_preferred();
     auto root = ShareRoot(path);
     if (root.empty())

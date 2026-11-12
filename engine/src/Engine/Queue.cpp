@@ -99,7 +99,7 @@ void Engine::State::Queue(std::vector<std::string> const& ids, QueueMove move, s
     order = Reorder(std::move(order), ids, move, before);
     auto document = Saved();
     document.queueOrder = order;
-    changes.Commit([document = std::move(document)] { return document.ToJson(); },
+    changes.Commit(std::move(document),
         [this, order, completion](Outcome outcome)
     {
         if (!outcome.error)

@@ -21,11 +21,10 @@ constexpr lt::resume_data_flags_t dirty = lt::torrent_handle::if_download_progre
     lt::torrent_handle::if_config_changed | lt::torrent_handle::if_state_changed |
     lt::torrent_handle::if_metadata_changed;
 
-// libtorrent checks the torrent's files in this state.
-bool Checks(lt::torrent_status::state_t state)
-{
-    return state == lt::torrent_status::checking_files || state == lt::torrent_status::checking_resume_data;
-}
+// The priorities a person can choose for a file, which IsChoice and
+// NearestChoice share.
+constexpr lt::download_priority_t choices[] = {lt::dont_download, lt::low_priority, lt::default_priority,
+    lt::top_priority};
 
 char const* ToString(Status status)
 {
@@ -46,25 +45,11 @@ char const* ToString(Status status)
     }
     return "";
 }
-
-// A file priority as the document and the add command write it.
-bool IsPriority(Json const& value)
-{
-    return value.is_number_integer() && value >= 0 && value <= 255;
 }
 
-// The priority a person can choose that is nearest to a saved one, so a
-// saved value that is not a choice never makes a later edit fail.
-lt::download_priority_t NearestChoice(std::uint8_t saved)
+bool Checks(lt::torrent_status::state_t state)
 {
-    if (saved == 0)
-        return lt::dont_download;
-    if (saved <= 2)
-        return lt::low_priority;
-    if (saved <= 5)
-        return lt::default_priority;
-    return lt::top_priority;
-}
+    return state == lt::torrent_status::checking_files || state == lt::torrent_status::checking_resume_data;
 }
 
 Problem Problem::From(Outcome const& failure, ProblemKind kind)
@@ -216,7 +201,7 @@ lt::download_priority_t DefaultPriority(lt::file_storage const& files, lt::file_
         while (file < name.size())
         {
             if (pattern < mask.size() && (mask[pattern] == L'?' ||
-                CompareStringOrdinal(&name[file], 1, &mask[pattern], 1, TRUE) == CSTR_EQUAL))
+                SameName({&name[file], 1}, {&mask[pattern], 1})))
             {
                 ++file;
                 ++pattern;
@@ -267,6 +252,21 @@ std::vector<lt::download_priority_t> DefaultPriorities(lt::file_storage const& f
     return priorities;
 }
 
+bool IsChoice(lt::download_priority_t priority)
+{
+    return std::ranges::find(choices, priority) != std::end(choices);
+}
+
+lt::download_priority_t NearestChoice(std::uint8_t saved)
+{
+    auto distance = [saved](lt::download_priority_t choice)
+    {
+        auto value = static_cast<std::uint8_t>(choice);
+        return value > saved ? value - saved : saved - value;
+    };
+    return std::ranges::min(choices, {}, distance);
+}
+
 std::vector<std::string> Tops(std::function<void(std::function<void(std::string)> const&)> const& visitPaths)
 {
     auto separator = [](char character) { return character == '/' || character == '\\'; };
@@ -307,9 +307,7 @@ void Torrent::VisitPaths(bool logical, std::function<void(std::string)> const& v
     auto const& layout = metadata->layout();
     if (logical)
     {
-        for (auto index : layout.file_range())
-            if (!layout.pad_file_at(index))
-                visit(ContentPath(layout, index, facts.layout));
+        VisitContent(layout, facts.layout, [&visit](lt::file_index_t, std::string path) { visit(std::move(path)); });
         return;
     }
     lt::renamed_files restored;
@@ -443,8 +441,8 @@ Facts Facts::Read(Json const& saved)
     {
         for (auto const& value : *found)
         {
-            facts.priorities.push_back(IsPriority(value) ? NearestChoice(value.get<std::uint8_t>()) :
-                lt::default_priority);
+            auto saved = Whole<std::uint8_t>(value);
+            facts.priorities.push_back(saved ? NearestChoice(*saved) : lt::default_priority);
         }
     }
     if (auto found = saved.find("hashes"); found != saved.end() && found->is_array())
@@ -521,23 +519,21 @@ std::string Torrent::Folder() const
         return Utf8(folder.wstring());
     std::optional<std::filesystem::path> first;
     bool multiple = false;
-    for (auto index : metadata->layout().file_range())
+    // The files share no top folder.
+    bool apart = false;
+    VisitContent(metadata->layout(), facts.layout, [&](lt::file_index_t, std::string const& name)
     {
-        if (metadata->layout().pad_file_at(index))
-            continue;
-        auto path = std::filesystem::path(Wide(ContentPath(metadata->layout(), index, facts.layout)));
+        auto path = std::filesystem::path(Wide(name));
         if (!first)
         {
             first = std::move(path);
+            return true;
         }
-        else
-        {
-            multiple = true;
-            if (!first->has_parent_path() || *path.begin() != *first->begin())
-                return Utf8(folder.wstring());
-        }
-    }
-    if (first)
+        multiple = true;
+        apart = !first->has_parent_path() || *path.begin() != *first->begin();
+        return !apart;
+    });
+    if (first && !apart)
         folder = multiple ? folder / *first->begin() : (folder / *first).parent_path();
     return Utf8(folder.wstring());
 }
@@ -707,6 +703,11 @@ bool Torrent::ChecksFiles(bool sessionPaused) const
 {
     return !sessionPaused && status.state == lt::torrent_status::checking_files &&
         !(status.flags & lt::torrent_flags::paused) && !PathWork() && !CheckWaits();
+}
+
+bool Torrent::SeedLimited() const
+{
+    return status.is_finished && facts.intent != Intent::Paused && !facts.ignoresSeedLimits;
 }
 
 bool Torrent::MoveBlocked() const
@@ -1609,8 +1610,9 @@ void Torrent::PrioritizePieces(std::vector<lt::download_priority_t> const& prior
         {
             continue;
         }
-        auto first = static_cast<int>(files.file_offset(index) / length);
-        auto last = static_cast<int>((files.file_offset(index) + size - 1) / length);
+        auto range = Pieces(*metadata, index);
+        auto first = static_cast<int>(range.first);
+        auto last = static_cast<int>(range.end) - 1;
         for (auto piece = first; piece <= last; ++piece)
         {
             pieces[piece] = std::max(pieces[piece], priority);

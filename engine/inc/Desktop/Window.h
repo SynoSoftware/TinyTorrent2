@@ -109,6 +109,9 @@ private:
     // engine, showing its own failure, such as an engine of another version.
     HWND Shown() const;
     void Forget();
+    // Starts waiting for the window's `ready`, with the splash that covers
+    // the wait.
+    void AwaitReady();
     void ShowSplash();
     void OpenTarget(Target target);
     void ShowTarget();

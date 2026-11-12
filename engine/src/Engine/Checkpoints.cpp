@@ -123,8 +123,7 @@ void Engine::State::SaveCheckpoint(Torrent& torrent, lt::add_torrent_params para
         store.Run([handle, pieces]
         {
             auto current = handle.status(lt::torrent_handle::query_pieces);
-            if (current.state == lt::torrent_status::checking_files ||
-                current.state == lt::torrent_status::checking_resume_data)
+            if (Checks(current.state))
                 return false;
             for (int index = 0; index < pieces.size(); ++index)
             {

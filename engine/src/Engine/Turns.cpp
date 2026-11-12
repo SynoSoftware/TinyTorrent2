@@ -1,5 +1,4 @@
 #include "Engine/State.h"
-#include <Windows.h>
 #include <algorithm>
 #include <iterator>
 
@@ -171,8 +170,7 @@ void Engine::State::AssignDrives()
     {
         // A check continued at start keeps its saved turn while libtorrent
         // reads its resume data.
-        bool checking = torrent.status.state == lt::torrent_status::checking_files ||
-            torrent.status.state == lt::torrent_status::checking_resume_data;
+        bool checking = Checks(torrent.status.state);
         bool stopped = torrent.facts.intent == Intent::Paused;
         // libtorrent stops a check whose file fails with a torrent error.
         bool failed = torrent.control.Cause() || bool(torrent.status.errc);
@@ -390,17 +388,7 @@ std::optional<Drives> Engine::State::FindDrives(std::vector<std::string> const& 
 
 std::string Engine::State::RootKey(std::filesystem::path const& root)
 {
-    // The file system's case rule, which PathBefore also compares by.
-    auto name = root.wstring();
-    if (name.empty())
-        return {};
-    auto size = static_cast<int>(name.size());
-    std::wstring key(static_cast<std::size_t>(
-        LCMapStringEx(LOCALE_NAME_INVARIANT, LCMAP_UPPERCASE, name.c_str(), size, nullptr, 0, nullptr, nullptr, 0)),
-        L'\0');
-    LCMapStringEx(LOCALE_NAME_INVARIANT, LCMAP_UPPERCASE, name.c_str(), size, key.data(),
-        static_cast<int>(key.size()), nullptr, nullptr, 0);
-    return Utf8(key);
+    return Utf8(NameKey(root.native()));
 }
 
 Store& Engine::State::Worker(WorkerKind kind, std::string const& root)

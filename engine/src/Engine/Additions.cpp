@@ -51,27 +51,14 @@ std::optional<std::vector<lt::download_priority_t>> Engine::State::Priorities(
     return chosen;
 }
 
-// The priorities a person can choose for a file: skip, low, normal or high.
-bool Engine::State::IsChoice(lt::download_priority_t priority)
-{
-    return priority == lt::dont_download || priority == lt::low_priority ||
-        priority == lt::default_priority || priority == lt::top_priority;
-}
-
 // Starts adding the previewed content. The preview ends here, and its
 // guarded torrent, if any, becomes the new torrent.
 void Engine::State::Add(Preview& preview, Addition::Choices choices, std::function<void(Outcome, Added)> completion)
 {
     UpdatePreview(preview);
     // A preview opened before the removal began is confirmed here.
-    if (Removing(preview.InfoHashes()))
+    if (EndDuplicate(preview.InfoHashes(), completion))
     {
-        completion({ErrorCode::TorrentRemoving}, {});
-        return;
-    }
-    if (auto duplicate = FindDuplicate(preview.InfoHashes()))
-    {
-        completion({}, {AdditionKind::Duplicate, *duplicate});
         return;
     }
     if (!IsAbsolute(choices.destination))
@@ -211,12 +198,7 @@ void Engine::State::PrepareAddition(std::string const& id, lt::torrent_handle ha
     AdditionWorker(addition.facts.savePath).Run([this, params = std::move(params), handle,
         appendsSuffix = addition.facts.appendsSuffix, layout = addition.facts.layout]() mutable
     {
-        ReleaseFiles({handle});
-        auto current = handle.get_renamed_files();
-        params.renamed_files = current.export_filenames(params.ti->layout());
-        PrepareNames(params, appendsSuffix, layout);
-        auto renames = Renames(params, current);
-        return NameChoice{std::move(params), std::move(renames)};
+        return ChooseNames(handle, std::move(params), appendsSuffix, layout);
     }, [this, id](std::expected<NameChoice, StorageOutcome> choice)
     {
         auto found = additions.find(id);
@@ -300,7 +282,7 @@ void Engine::State::RecordWatch(std::string source, std::string stamp, std::func
         }
         auto document = Saved();
         document.watchedSources[source] = stamp;
-        changes.Commit([document = std::move(document)] { return document.ToJson(); },
+        changes.Commit(std::move(document),
             [this, source, stamp, completion](Outcome outcome)
         {
             if (outcome.error)
@@ -359,7 +341,7 @@ void Engine::State::CommitAddition(std::string const& id)
     auto order = document.queueOrder;
     auto folder = document.settings.lastFolder;
     auto watched = document.watchedSources;
-    changes.Commit([document = std::move(document)] { return document.ToJson(); },
+    changes.Commit(std::move(document),
         [this, id, order = std::move(order), folder = std::move(folder), watched = std::move(watched)](Outcome outcome)
     {
         if (outcome.error)
@@ -535,18 +517,27 @@ void Engine::State::On(lt::add_torrent_alert const& alert)
         PrepareAddition(found->first, alert.handle);
         return;
     }
-    if (Removing(alert.params.info_hashes))
+    auto id = found->first;
+    auto end = [this, &id](Outcome outcome, Added added) { Abandon(id, std::move(outcome), std::move(added)); };
+    if (!EndDuplicate(alert.params.info_hashes, end))
     {
-        Abandon(found->first, {ErrorCode::TorrentRemoving});
+        Abandon(id, {ErrorCode::AddFailed, alert.error.message()});
     }
-    else if (auto duplicate = FindDuplicate(alert.params.info_hashes))
+}
+
+bool Engine::State::EndDuplicate(lt::info_hash_t const& hashes, std::function<void(Outcome, Added)> const& end)
+{
+    if (Removing(hashes))
     {
-        Abandon(found->first, {}, {AdditionKind::Duplicate, *duplicate});
+        end({ErrorCode::TorrentRemoving}, {});
+        return true;
     }
-    else
+    if (auto duplicate = FindDuplicate(hashes))
     {
-        Abandon(found->first, {ErrorCode::AddFailed, alert.error.message()});
+        end({}, {AdditionKind::Duplicate, *duplicate});
+        return true;
     }
+    return false;
 }
 
 void Engine::State::On(lt::storage_moved_alert const& alert)

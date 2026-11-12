@@ -34,6 +34,9 @@ by TinyTorrent. Shared file paths alone do not make torrents duplicates.
 priority; an unwanted file is excluded from that choice.
 _Avoid_: selected file, when referring to download choice rather than UI selection.
 
+**Padding file**: a file that a torrent's metadata lists only to align its
+pieces. It is never downloaded or shown, and it is not part of the content.
+
 **Completion**: the point when all currently wanted files have finished
 downloading and their received payload is ready on disk; unwanted files can
 remain incomplete.
@@ -154,6 +157,10 @@ selects Start. Stop and Start are its commands; a seeding limit and Don't start
 in the Add dialog also stop a torrent. The protocol, saved files and code call
 this intent `paused`.
 _Avoid_: paused, for one torrent's own choice.
+
+**Seeding limit**: a share ratio, a seeding time or an inactivity time after
+which a finished torrent is stopped. A finished torrent that the person starts
+again is exempt from the seeding limits.
 
 **Paused**: held by something outside the torrent, such as a session pause or
 a scheduled pause period. The torrent continues by itself when that hold ends.
@@ -319,6 +326,11 @@ without sending requests, and movies from every provider show their IMDb rating
 from it.
 _Avoid_: IMDb database, which suggests the person's own saved information.
 
+**Dataset**: reference data that TinyTorrent downloads only when the person
+asks and keeps on this computer as a replaceable copy: City data and IMDb
+data.
+_Avoid_: database, which suggests the person's own saved information.
+
 **Series**: a TV show whose files Library identifies by season and episode
 number.
 _Avoid_: show, TV.
@@ -333,6 +345,10 @@ represents. Its name decides first: a name with a season, such as S01E02,
 1x02 or Season 1, is a TV episode, and every other video is a movie, with the
 name's four-digit year. A provider match then replaces that with the
 provider's title, type and year; the user fetches or erases metadata.
+
+**Release name**: the name a video file or torrent carries, from which
+identification reads the title, year, season and episode.
+_Avoid_: release alone, which also means a published version of TinyTorrent.
 
 ### Subtitles
 
@@ -411,6 +427,10 @@ after the originating window closes.
 
 **Outcome**: the known completion or failure of an operation.
 _Avoid_: result, when naming an operation's outcome.
+
+**Refusal**: the engine's answer that it does not accept a command, with the
+reason, such as a folder it cannot use. Engine state does not change.
+_Avoid_: failure, which is the outcome of an accepted operation.
 
 **Snapshot**: a coherent, completed copy of engine state for presentation.
 _Avoid_: observation, when it means the same copy.

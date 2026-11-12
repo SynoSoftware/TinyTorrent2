@@ -683,6 +683,18 @@ void Engine::State::ReloadStorage(lt::torrent_handle const& handle, Replacement&
     replacement.status = replacement.handle.status(routineQuery);
 }
 
+lt::add_torrent_params Engine::State::PrepareReload(lt::torrent_handle const& handle, std::stop_token stop)
+{
+    auto params = handle.get_resume_data(lt::torrent_handle::save_info_dict);
+    params.flags &= ~(lt::torrent_flags::seed_mode | lt::torrent_flags::auto_managed);
+    params.flags |= lt::torrent_flags::paused;
+    // The paused torrent issues no disk job after this release.
+    ReleaseFiles({handle});
+    if (stop.stop_requested())
+        throw std::runtime_error("shutting_down");
+    return params;
+}
+
 void Engine::State::SwapHandle(Torrent& torrent, Replacement& replacement)
 {
     handles.erase(torrent.handle);
@@ -775,15 +787,9 @@ void Engine::State::Reload(Torrent& torrent, std::shared_ptr<Control::Job const>
     // and the release. The engine thread, which owns the handle, replaces it.
     VolumeWorker(torrent.facts.savePath).Run([this, handle, params, lost = torrent.control.Lost(), stop = exitStop.get_token()]
     {
-        *params = handle.get_resume_data(lt::torrent_handle::save_info_dict);
+        *params = PrepareReload(handle, stop);
         DropPieces(*params, lost);
-        params->flags &= ~(lt::torrent_flags::seed_mode | lt::torrent_flags::no_verify_files |
-            lt::torrent_flags::auto_managed | lt::torrent_flags::upload_mode);
-        params->flags |= lt::torrent_flags::paused;
-        // The paused torrent issues no disk job after this release.
-        ReleaseFiles({handle});
-        if (stop.stop_requested())
-            throw std::runtime_error("shutting_down");
+        params->flags &= ~(lt::torrent_flags::no_verify_files | lt::torrent_flags::upload_mode);
     }, [this, id, handle, job, params](StorageOutcome outcome)
     {
         auto torrent = FindWorking(id);

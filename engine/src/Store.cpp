@@ -27,25 +27,6 @@ DWORD Retried(Attempt attempt)
     }
     return error;
 }
-
-// The file and Windows' own words for `error`, in the person's language,
-// because the person reads the failure.
-std::string WriteFailure(std::filesystem::path const& path, DWORD error)
-{
-    wchar_t reason[512]{};
-    auto length = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS |
-        FORMAT_MESSAGE_MAX_WIDTH_MASK, nullptr, error, 0, reason, static_cast<DWORD>(std::size(reason)), nullptr);
-    std::wstring text(reason, length);
-    while (!text.empty() && text.back() == L' ')
-    {
-        text.pop_back();
-    }
-    if (text.empty())
-    {
-        text = std::to_wstring(error);
-    }
-    return Utf8(path.wstring() + L": " + text);
-}
 }
 
 Outcome StorageOutcome::ToOutcome(ErrorCode code) const
@@ -170,7 +151,7 @@ void Store::Write(std::filesystem::path path, std::function<std::string()> encod
             return file == INVALID_HANDLE_VALUE ? GetLastError() : ERROR_SUCCESS;
         }); error != ERROR_SUCCESS)
         {
-            throw std::runtime_error(WriteFailure(path, error));
+            throw std::runtime_error(Describe(path, error));
         }
         DWORD written = 0;
         bool success = WriteFile(file, bytes.data(), static_cast<DWORD>(bytes.size()),
@@ -194,7 +175,7 @@ void Store::Write(std::filesystem::path path, std::function<std::string()> encod
         {
             // A temporary file left behind is replaced by the next write.
             DeleteFileW(temporary.c_str());
-            throw std::runtime_error(WriteFailure(path, error));
+            throw std::runtime_error(Describe(path, error));
         }
     }, std::move(completion));
 }

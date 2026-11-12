@@ -128,6 +128,12 @@ public:
     // enabled, so the focus ring shows where Enter goes.
     void Ask(Prompt prompt, std::vector<MenuItem> menu = {});
     void Close();
+    // Runs this thread's messages while `waiting` returns true, so a caller
+    // waits for the person to answer a popup. A message without a window, such
+    // as a thread timer's, goes to `thread` when given, outside every window
+    // procedure. A WM_QUIT ends the wait and is posted again, so the thread's
+    // own loop ends too.
+    static void Wait(std::function<bool()> const& waiting, std::function<void(MSG const&)> const& thread = {});
     void SetTheme(Theme theme);
     bool IsOpen() const { return window_ != nullptr; }
     bool IsPersistent() const { return window_ && content_.stay != ToastStay::Timed; }
@@ -181,6 +187,8 @@ private:
     std::size_t Answer() const;
     // Shows the current content, creating the window when there is none.
     void Present();
+    // Lays out content that changed and names the window by its title.
+    void Refresh();
     void OpenMenu(bool keyboard = false);
     void PaintMenu(HWND window);
     // Where the first menu item begins, below the title and separator.
@@ -192,6 +200,8 @@ private:
     void HoverMenu(std::optional<std::size_t> item);
     void Choose(std::size_t item);
     void Layout();
+    // The height of one line under the message, in the caption font.
+    LONG LineHeight(HDC device) const;
     bool Slides() const;
     void StartSlide(bool leaving);
     void StopSlide();

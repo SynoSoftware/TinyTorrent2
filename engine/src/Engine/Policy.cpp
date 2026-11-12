@@ -122,8 +122,8 @@ std::optional<Engine::State::Settings::Period> Engine::State::Settings::Period::
     }
     for (auto key : {"start", "end"})
     {
-        if (!value.contains(key) || !value.at(key).is_number_integer() ||
-            value.at(key) < 0 || value.at(key) >= dayMinutes)
+        auto minute = value.contains(key) ? Whole<int>(value.at(key)) : std::nullopt;
+        if (!minute || *minute >= dayMinutes)
         {
             return std::nullopt;
         }
@@ -136,14 +136,14 @@ std::optional<Engine::State::Settings::Period> Engine::State::Settings::Period::
     period.start = value.at("start");
     period.end = value.at("end");
     period.mode = value.at("mode") == "paused" ? ScheduleMode::Paused : ScheduleMode::Alternative;
-    for (auto const& day : value.at("days"))
+    for (auto const& entry : value.at("days"))
     {
-        if (!day.is_number_integer() || day < 0 || day > 6 ||
-            std::find(period.days.begin(), period.days.end(), day.get<int>()) != period.days.end())
+        auto day = Whole<int>(entry);
+        if (!day || *day > 6 || std::find(period.days.begin(), period.days.end(), *day) != period.days.end())
         {
             return std::nullopt;
         }
-        period.days.push_back(day.get<int>());
+        period.days.push_back(*day);
     }
     return period;
 }
@@ -481,18 +481,16 @@ void Engine::State::ApplyPolicy(lt::torrent_handle const& handle)
 
 void Engine::State::LimitSeeds()
 {
-    if (settings.ratio == 0 && settings.seedingMinutes == 0 && settings.inactiveMinutes == 0)
+    if (!settings.LimitsSeeding())
     {
         return;
     }
-    if ((settings.seedingMinutes > 0 || settings.inactiveMinutes > 0) &&
-        seedQueue.empty() && seedQueries.empty())
+    if (settings.LimitsSeedingTime() && seedQueue.empty() && seedQueries.empty())
     {
         // Idle torrents do not emit state updates as their elapsed durations increase.
         for (auto const& [id, torrent] : torrents)
         {
-            if (!torrent.waiting && torrent.status.is_finished &&
-                torrent.facts.intent != Intent::Paused && !torrent.facts.ignoresSeedLimits)
+            if (!torrent.waiting && torrent.SeedLimited())
             {
                 seedQueue.push_back(torrent.handle);
             }
@@ -545,21 +543,17 @@ void Engine::State::LimitSeeds()
 
 void Engine::State::QuerySeeds()
 {
-    if (IsShuttingDown() || (settings.seedingMinutes == 0 && settings.inactiveMinutes == 0))
+    if (IsShuttingDown() || !settings.LimitsSeedingTime())
     {
         seedQueue.clear();
         return;
     }
-    // Each query produces a separate alert; a large library must not fill
-    // libtorrent's alert queue before the engine can drain it.
-    constexpr std::size_t pendingLimit = 64;
-    while (!seedQueue.empty() && seedQueries.size() < pendingLimit)
+    while (!seedQueue.empty() && seedQueries.size() < queryLimit)
     {
         auto handle = seedQueue.back();
         seedQueue.pop_back();
         auto torrent = Find(handle);
-        if (!torrent || !torrent->status.is_finished ||
-            torrent->facts.intent == Intent::Paused || torrent->facts.ignoresSeedLimits)
+        if (!torrent || !torrent->SeedLimited())
         {
             continue;
         }
@@ -573,10 +567,7 @@ bool Engine::State::ReachedSeedLimit(Torrent const& torrent) const
     bool blockedMove = torrent.completion.IsSettling() &&
         !torrent.facts.finalFolder.empty() && !torrent.facts.marker &&
         !torrent.FilesBusy() && torrent.MoveBlocked();
-    if ((settings.ratio == 0 && settings.seedingMinutes == 0 && settings.inactiveMinutes == 0) ||
-        !torrent.status.is_finished || (!torrent.completion.IsIdle() && !blockedMove) ||
-        torrent.facts.intent == Intent::Paused ||
-        torrent.facts.ignoresSeedLimits)
+    if (!settings.LimitsSeeding() || !torrent.SeedLimited() || (!torrent.completion.IsIdle() && !blockedMove))
     {
         return false;
     }

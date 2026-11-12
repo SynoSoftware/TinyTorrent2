@@ -52,6 +52,16 @@ HWND FindWinUiWindow(DWORD processId)
     return target.window;
 }
 
+// Lets the window's process take the foreground. A connection whose process
+// the pipe could not identify has 0.
+void AllowForeground(DWORD processId)
+{
+    if (processId)
+    {
+        AllowSetForegroundWindow(processId);
+    }
+}
+
 // The window stays cloaked until it is ready or has a connection failure to show.
 bool IsShown(HWND window)
 {
@@ -70,7 +80,7 @@ void SetRelaunch(DWORD processId)
         return;
     }
     auto executable = Executable();
-    auto initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    Apartment apartment;
     IPropertyStore* properties = nullptr;
     auto outcome = SHGetPropertyStoreForWindow(window, IID_PPV_ARGS(&properties));
     if (SUCCEEDED(outcome))
@@ -104,10 +114,6 @@ void SetRelaunch(DWORD processId)
     {
         OutputDebugStringW(L"TinyTorrent could not set taskbar relaunch properties.\n");
     }
-    if (SUCCEEDED(initialized))
-    {
-        CoUninitialize();
-    }
 }
 }
 
@@ -132,10 +138,7 @@ bool Window::Open()
     reopen_ = true;
     if (client_)
     {
-        if (client_->processId)
-        {
-            AllowSetForegroundWindow(client_->processId);
-        }
+        AllowForeground(client_->processId);
         client_->Send(Json{{"type", "activate"}});
         // A window asking to confirm Exit keeps that wait, so a window that
         // stops answering still cancels Exit.
@@ -164,18 +167,14 @@ bool Window::Open()
         }
         if (!wait_)
         {
-            wait_ = Wait{WindowWait::Ready, GetTickCount64()};
-            launch_ = engine_.IsLoading() ? Launch::Cold : Launch::Warm;
-            ShowSplash();
+            AwaitReady();
         }
         return true;
     }
     process_.reset();
     reopen_ = false;
     // Starting the window process takes time, so the splash appears first.
-    wait_ = Wait{WindowWait::Ready, GetTickCount64()};
-    launch_ = engine_.IsLoading() ? Launch::Cold : Launch::Warm;
-    ShowSplash();
+    AwaitReady();
     auto executable = WindowExecutable();
     std::wstring arguments = L"\"" + executable.wstring() + L"\" --engine";
     STARTUPINFOW startup{sizeof(startup)};
@@ -209,25 +208,19 @@ bool Window::Open()
             key = "window_dependency";
             break;
         }
-        wchar_t reason[2048]{};
         auto name = executable.filename().wstring();
-        DWORD_PTR inserts[]{reinterpret_cast<DWORD_PTR>(name.c_str())};
-        auto format = FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_MAX_WIDTH_MASK;
-        format |= error == ERROR_BAD_EXE_FORMAT || error == ERROR_EXE_MACHINE_TYPE_MISMATCH ?
-            FORMAT_MESSAGE_ARGUMENT_ARRAY : FORMAT_MESSAGE_IGNORE_INSERTS;
-        FormatMessageW(format, nullptr, error, 0, reason, static_cast<DWORD>(std::size(reason)),
-            reinterpret_cast<va_list*>(inserts));
+        bool named = error == ERROR_BAD_EXE_FORMAT || error == ERROR_EXE_MACHINE_TYPE_MISMATCH;
         auto detail = strings_.Format("notification", "windows_error", {std::to_wstring(error)});
-        if (*reason)
+        if (auto reason = Reason(error, named ? name.c_str() : nullptr))
         {
-            detail += L" \u00B7 " + std::wstring(reason);
+            detail += L" \u00B7 " + *reason;
         }
         ShowStartError({.code = key, .detail = executable.wstring() + L"\n" + detail, .interactive = true});
         return true;
     }
     CloseHandle(process.hThread);
     process_.reset(process.hProcess);
-    AllowSetForegroundWindow(process.dwProcessId);
+    AllowForeground(process.dwProcessId);
     return true;
 }
 
@@ -273,10 +266,7 @@ bool Window::Confirm()
     {
         return false;
     }
-    if (client_->processId)
-    {
-        AllowSetForegroundWindow(client_->processId);
-    }
+    AllowForeground(client_->processId);
     wait_ = Wait{WindowWait::Confirmation, GetTickCount64()};
     client_->Send(Json{{"type", "confirm_exit"}});
     return true;
@@ -387,10 +377,7 @@ void Window::OnReady(std::shared_ptr<Pipe::Connection> const& client, Reply cons
     // the splash.
     splash_.Finish([this, client, reply]
     {
-        if (client->processId)
-        {
-            AllowSetForegroundWindow(client->processId);
-        }
+        AllowForeground(client->processId);
         reply(Success());
         if (client_ != client)
         {
@@ -668,6 +655,13 @@ void Window::Forget()
     }
 }
 
+void Window::AwaitReady()
+{
+    wait_ = Wait{WindowWait::Ready, GetTickCount64()};
+    launch_ = engine_.IsLoading() ? Launch::Cold : Launch::Warm;
+    ShowSplash();
+}
+
 // The splash covers the wait for a window to appear when the saved choice
 // allows it. Before startup has read the settings that choice is unknown, and
 // Refresh asks again once they are read.
@@ -702,7 +696,7 @@ void Window::ShowStartError(Toasts::Failure failure)
 {
     failure.actions.push_back(
         Toasts::Retry(strings_, strings_.Text("notification", "retry_tip"), [this] { Open(); }));
-    failure.actions.push_back(Toasts::OpenFolder(strings_, WindowExecutable().parent_path(),
+    failure.actions.push_back(Toasts::OpenFolder(strings_, [] { return WindowExecutable().parent_path(); },
         strings_.Text("notification", "open_folder_tip")));
     toasts_.Report(std::move(failure));
 }

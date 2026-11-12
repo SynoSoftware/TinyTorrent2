@@ -2,11 +2,18 @@
 #include "Engine/State.h"
 #include <Windows.h>
 #include <wincrypt.h>
+#include <cwchar>
 #include <system_error>
 #include <utility>
 
 namespace tt
 {
+namespace
+{
+// The longest Windows path, 32,767 characters, with its terminating NUL.
+constexpr std::size_t pathLimit = 32'768;
+}
+
 std::string Utf8(std::wstring const& value)
 {
     if (value.empty())
@@ -43,10 +50,128 @@ std::wstring Wide(std::string const& value)
     return text;
 }
 
-bool SameFolder(std::filesystem::path const& first, std::filesystem::path const& second)
+std::weak_ordering CompareNames(std::wstring_view first, std::wstring_view second)
+{
+    auto order = CompareStringOrdinal(first.data(), static_cast<int>(first.size()), second.data(),
+        static_cast<int>(second.size()), TRUE);
+    return order == CSTR_LESS_THAN ? std::weak_ordering::less :
+        order == CSTR_EQUAL ? std::weak_ordering::equivalent : std::weak_ordering::greater;
+}
+
+// Without LCMAP_LINGUISTIC_CASING, LCMapStringEx cases by the file system's
+// rules, the table CompareStringOrdinal compares by.
+std::wstring NameKey(std::wstring_view name)
+{
+    if (name.empty())
+    {
+        return {};
+    }
+    auto size = static_cast<int>(name.size());
+    std::wstring key(static_cast<std::size_t>(
+        LCMapStringEx(LOCALE_NAME_INVARIANT, LCMAP_UPPERCASE, name.data(), size, nullptr, 0, nullptr, nullptr, 0)),
+        L'\0');
+    LCMapStringEx(LOCALE_NAME_INVARIANT, LCMAP_UPPERCASE, name.data(), size, key.data(),
+        static_cast<int>(key.size()), nullptr, nullptr, 0);
+    return key;
+}
+
+bool Equivalent(std::filesystem::path const& first, std::filesystem::path const& second)
 {
     std::error_code error;
     return first == second || std::filesystem::equivalent(first, second, error);
+}
+
+std::optional<std::filesystem::path> FinalPath(HANDLE handle, DWORD flags)
+{
+    std::wstring path(MAX_PATH, L'\0');
+    for (;;)
+    {
+        // Too small a buffer returns the size it needs, with the terminator.
+        auto length = GetFinalPathNameByHandleW(handle, path.data(), static_cast<DWORD>(path.size()), flags);
+        if (length == 0)
+        {
+            return std::nullopt;
+        }
+        bool fits = length < path.size();
+        path.resize(length);
+        if (fits)
+        {
+            return std::filesystem::path(std::move(path));
+        }
+    }
+}
+
+std::optional<std::filesystem::path> Win32Path(std::wstring path)
+{
+    for (std::wstring_view prefix : {LR"(\??\)", LR"(\\?\)"})
+    {
+        if (path.starts_with(prefix))
+        {
+            path.erase(0, prefix.size());
+            break;
+        }
+    }
+    if (path.starts_with(LR"(UNC\)"))
+    {
+        return std::filesystem::path(LR"(\\)" + path.substr(4));
+    }
+    if (path.size() >= 2 && path[1] == L':')
+    {
+        return std::filesystem::path(path);
+    }
+    if (!path.starts_with(L"Volume{"))
+    {
+        return std::nullopt;
+    }
+    auto end = path.find(L'\\');
+    auto volume = LR"(\\?\)" + path.substr(0, end) + L'\\';
+    auto rest = end == std::wstring::npos ? std::wstring() : path.substr(end + 1);
+    std::wstring names(MAX_PATH, L'\0');
+    DWORD needed = 0;
+    while (!GetVolumePathNamesForVolumeNameW(volume.c_str(), names.data(), static_cast<DWORD>(names.size()), &needed))
+    {
+        if (GetLastError() != ERROR_MORE_DATA || needed <= names.size())
+        {
+            return std::nullopt;
+        }
+        names.resize(needed);
+    }
+    // The names are a list of strings that ends with an empty one.
+    for (auto name = names.c_str(); *name; name += std::wcslen(name) + 1)
+    {
+        std::wstring_view mount(name);
+        if (mount.size() == 3 && mount[1] == L':')
+        {
+            return std::filesystem::path(mount) / rest;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<std::wstring> Reason(unsigned long error, wchar_t const* file)
+{
+    DWORD_PTR inserts[]{reinterpret_cast<DWORD_PTR>(file)};
+    DWORD flags = FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_MAX_WIDTH_MASK |
+        (file ? FORMAT_MESSAGE_ARGUMENT_ARRAY : FORMAT_MESSAGE_IGNORE_INSERTS);
+    LPWSTR text = nullptr;
+    auto length = FormatMessageW(flags, nullptr, error, 0, reinterpret_cast<LPWSTR>(&text), 0,
+        file ? reinterpret_cast<va_list*>(inserts) : nullptr);
+    std::wstring reason = length ? std::wstring(text, length) : std::wstring();
+    LocalFree(text);
+    while (!reason.empty() && reason.back() == L' ')
+    {
+        reason.pop_back();
+    }
+    if (reason.empty())
+    {
+        return std::nullopt;
+    }
+    return reason;
+}
+
+std::string Describe(std::filesystem::path const& path, unsigned long error)
+{
+    return Utf8(path.wstring() + L": " + Reason(error).value_or(std::to_wstring(error)));
 }
 
 std::string Base64(std::string_view bytes)
@@ -121,6 +246,11 @@ Json Failure(ErrorCode code, std::string detail)
     return {{"ok", false}, {"error", {{"code", ToString(code)}, {"detail", std::move(detail)}}}};
 }
 
+Json Response(Outcome const& outcome, Json data)
+{
+    return outcome.error ? Failure(*outcome.error, outcome.detail) : Success(std::move(data));
+}
+
 namespace
 {
 // Marks the binary values that hold JSON text; the engine sends no other binary.
@@ -139,8 +269,7 @@ bool IsFragment(Json const& value)
 
 std::wstring Executable()
 {
-    // Windows paths are at most 32,767 characters.
-    std::wstring path(32'768, L'\0');
+    std::wstring path(pathLimit, L'\0');
     auto size = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
     if (!size || size == path.size())
     {
@@ -152,7 +281,7 @@ std::wstring Executable()
 
 std::optional<std::filesystem::path> ProcessImage(HANDLE process)
 {
-    std::wstring path(32'768, L'\0');
+    std::wstring path(pathLimit, L'\0');
     auto size = static_cast<DWORD>(path.size());
     if (!QueryFullProcessImageNameW(process, 0, path.data(), &size))
     {
@@ -311,11 +440,11 @@ std::vector<Toast> Engine::Conditions() const
 }
 std::string Engine::Language() const { return state_->language; }
 
-// Windows paths are at most 32,767 characters, and a NUL would cut a path
-// short at the file system.
+// A source is no longer than a Windows path, and a NUL would cut a path short
+// at the file system.
 bool Engine::IsSource(std::string const& source)
 {
-    return !source.empty() && source.size() <= 32'768 && source.find('\0') == std::string::npos;
+    return !source.empty() && source.size() <= pathLimit && source.find('\0') == std::string::npos;
 }
 
 bool Engine::IsShuttingDown() const { return state_->IsShuttingDown(); }

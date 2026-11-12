@@ -5,6 +5,7 @@
 #include "SpeedHistory.h"
 #include <libtorrent/add_torrent_params.hpp>
 #include <libtorrent/announce_entry.hpp>
+#include <libtorrent/file_storage.hpp>
 #include <libtorrent/peer_info.hpp>
 #include <libtorrent/torrent_handle.hpp>
 #include <libtorrent/torrent_status.hpp>
@@ -18,6 +19,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <type_traits>
 #include <variant>
 #include <vector>
 
@@ -736,6 +738,9 @@ struct Torrent
     std::shared_ptr<lt::torrent_info const> Metadata() const;
     // libtorrent checks its files now, as the last status reports.
     bool ChecksFiles(bool sessionPaused) const;
+    // The seeding limits can stop it: it has finished, it is not stopped, and
+    // the person did not start it again after it finished.
+    bool SeedLimited() const;
     Status Classify(bool sessionPaused) const;
     // The status without a move that runs or waits.
     Status ClassifyTransfer(bool sessionPaused) const;
@@ -786,6 +791,9 @@ private:
     WorkQuery work_;
 };
 
+// libtorrent checks the torrent's files in this state.
+bool Checks(lt::torrent_status::state_t state);
+
 // Rules about torrent content that previews share with torrents.
 // The hashes as hexadecimal text, v1 first.
 std::vector<std::string> Hashes(lt::info_hash_t const& hashes);
@@ -795,7 +803,38 @@ std::vector<std::wstring> SkipMasks(std::string const& patterns);
 lt::download_priority_t DefaultPriority(lt::file_storage const& files, lt::file_index_t index,
     std::vector<std::wstring> const& masks);
 std::vector<lt::download_priority_t> DefaultPriorities(lt::file_storage const& files, std::string const& patterns = {});
+// Whether a person can choose the priority for a file: skip, low, normal or
+// high.
+bool IsChoice(lt::download_priority_t priority);
+// The choice nearest to a saved priority, so a saved value that is not a
+// choice never makes a later edit fail.
+lt::download_priority_t NearestChoice(std::uint8_t saved);
 std::string ContentPath(lt::file_storage const& files, lt::file_index_t index, Layout layout);
+// Calls `visit` with the index and the path under `layout` of each file of the
+// content, which leaves out padding files, in file order. A `visit` that
+// returns bool ends the walk by returning false.
+template <typename Visit>
+void VisitContent(lt::file_storage const& files, Layout layout, Visit const& visit)
+{
+    for (auto index : files.file_range())
+    {
+        if (files.pad_file_at(index))
+        {
+            continue;
+        }
+        if constexpr (std::is_same_v<std::invoke_result_t<Visit const&, lt::file_index_t, std::string>, bool>)
+        {
+            if (!visit(index, ContentPath(files, index, layout)))
+            {
+                return;
+            }
+        }
+        else
+        {
+            visit(index, ContentPath(files, index, layout));
+        }
+    }
+}
 // A large torrent's file list goes in pages, one `files` reply each, so
 // neither side ever holds the whole list as one message. A page ends at
 // `filePage` files or once its paths reach `filePageNames` bytes, which keeps

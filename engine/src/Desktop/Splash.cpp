@@ -1,5 +1,4 @@
 #include "Desktop/Splash.h"
-#include "Resources.h"
 #include <algorithm>
 #include <numeric>
 #include <utility>
@@ -18,22 +17,11 @@ constexpr SIZE openingSize{350, 170};
 constexpr int iconSize = 48;
 constexpr int iconGap = 12;
 constexpr int textInset = 16;
-
-int Scale(int value, UINT dpi)
-{
-    return MulDiv(value, dpi, USER_DEFAULT_SCREEN_DPI);
-}
 }
 
 Splash::Splash(Strings const& strings) : strings_(strings)
 {
-    WNDCLASSW type{};
-    type.lpfnWndProc = Procedure;
-    type.hInstance = GetModuleHandleW(nullptr);
-    type.hIcon = LoadIconW(type.hInstance, MAKEINTRESOURCEW(IDI_TINYTORRENT));
-    type.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    type.lpszClassName = windowClass;
-    RegisterClassW(&type);
+    Acrylic::Register(windowClass, Procedure);
 }
 
 Splash::~Splash()
@@ -62,9 +50,8 @@ void Splash::Show(Launch launch)
     GetCursorPos(&point);
     MONITORINFO monitor{sizeof(monitor)};
     GetMonitorInfoW(MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST), &monitor);
-    // Retain the frame styles for DWM rounding; WM_NCCALCSIZE removes their chrome.
     window_ = CreateWindowExW(WS_EX_TOOLWINDOW, windowClass, productName,
-        WS_POPUP | WS_CAPTION | WS_THICKFRAME, point.x, point.y, openingSize.cx, openingSize.cy,
+        Acrylic::frame, point.x, point.y, openingSize.cx, openingSize.cy,
         nullptr, nullptr, GetModuleHandleW(nullptr), this);
     if (!window_)
     {
@@ -164,13 +151,12 @@ void Splash::SetTheme(Theme theme)
 
 void Splash::ApplyDpi(UINT dpi, RECT const* bounds)
 {
-    NONCLIENTMETRICSW metrics{sizeof(metrics)};
-    SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof(metrics), &metrics, 0, dpi);
+    auto font = Acrylic::MessageFont(dpi);
     if (font_)
     {
         DeleteObject(font_);
     }
-    font_ = CreateFontIndirectW(&metrics.lfMessageFont);
+    font_ = CreateFontIndirectW(&font);
     if (bounds)
     {
         SetWindowPos(window_, nullptr, bounds->left, bounds->top, bounds->right - bounds->left,
@@ -193,10 +179,7 @@ void Splash::Paint(HWND window)
     auto size = Scale(iconSize, dpi);
     auto gap = Scale(iconGap, dpi);
     auto top = std::max<LONG>(0, (bounds.bottom - size - gap - measured.bottom) / 2);
-    auto icon = LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_TINYTORRENT),
-        IMAGE_ICON, size, size, LR_SHARED);
-    DrawIconEx(target, (bounds.right - size) / 2, top, static_cast<HICON>(icon),
-        size, size, 0, nullptr, DI_NORMAL);
+    canvas.Icon({(bounds.right - size) / 2, top}, size);
     RECT textBounds{Scale(textInset, dpi), top + size + gap,
         bounds.right - Scale(textInset, dpi), bounds.bottom};
     canvas.Text(text, textBounds, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX, font_, acrylic_.Foreground());
@@ -226,12 +209,7 @@ LRESULT Splash::Handle(HWND window, UINT message, WPARAM first, LPARAM second)
             std::exchange(show_, nullptr)();
         }
         return 0;
-    case WM_NCCALCSIZE:
-        return 0;
-    case WM_NCHITTEST:
-        return HTCLIENT;
     case WM_CLOSE:
-    case WM_ERASEBKGND:
         return 0;
     case WM_PAINT:
         Paint(window);
@@ -239,15 +217,13 @@ LRESULT Splash::Handle(HWND window, UINT message, WPARAM first, LPARAM second)
     case WM_DPICHANGED:
         ApplyDpi(LOWORD(first), reinterpret_cast<RECT const*>(second));
         return 0;
-    case WM_SETTINGCHANGE:
-    case WM_SYSCOLORCHANGE:
-    case WM_THEMECHANGED:
-    case WM_DWMCOMPOSITIONCHANGED:
-        acrylic_.Apply(window, theme_);
-        return 0;
     case WM_NCDESTROY:
         window_ = nullptr;
         break;
+    }
+    if (auto result = acrylic_.Handle(window, message, theme_))
+    {
+        return *result;
     }
     return DefWindowProcW(window, message, first, second);
 }

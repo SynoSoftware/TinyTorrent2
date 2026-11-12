@@ -73,9 +73,7 @@ void Engine::State::SaveDocument(std::function<void()> saved)
 {
     if (!changes.Queue([this, saved = std::move(saved)]
     {
-        auto document = Saved();
-        changes.Commit([document = std::move(document)] { return document.ToJson(); },
-            [this, saved](Outcome outcome)
+        changes.Commit(Saved(), [this, saved](Outcome outcome)
         {
             if (outcome.error)
                 FailFinalSave(outcome.detail);

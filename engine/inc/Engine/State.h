@@ -273,6 +273,12 @@ public:
         std::string SavePath(std::string const& destination) const;
         std::string const& AdditionFolder() const;
         Limits Caps(LimitMode mode) const;
+        // A seeding limit is set: a ratio, a seeding time or an inactivity
+        // time.
+        bool LimitsSeeding() const { return ratio != 0 || seedingMinutes != 0 || inactiveMinutes != 0; }
+        // A seeding limit that time reaches is set: a seeding time or an
+        // inactivity time.
+        bool LimitsSeedingTime() const { return seedingMinutes != 0 || inactiveMinutes != 0; }
         // The mode's name in settings.json, the settings command and the snapshot.
         static char const* Name(LimitMode mode);
         static std::optional<LimitMode> Named(Json const& value);
@@ -780,6 +786,10 @@ public:
         std::vector<std::filesystem::path> holds;
         // The selection's files that an outside torrent also uses.
         std::vector<std::filesystem::path> kept;
+
+        // The selection's files that a deletion removes: those no outside
+        // torrent uses.
+        std::vector<std::filesystem::path> Deleted() const;
     };
     struct Move
     {
@@ -1046,6 +1056,10 @@ public:
     // libtorrent's alert queue drops alerts past its size, so at most this
     // many collections have queries outstanding at once.
     static constexpr std::size_t collectionLimit = 8;
+    // Each status query posts its own alert, and libtorrent's alert queue
+    // drops alerts past its size, so completion recovery and the seeding
+    // limits each keep at most this many queries outstanding.
+    static constexpr std::size_t queryLimit = 64;
     std::set<std::string> collecting;
     // Collections that wait for room: new demand first, then the periodic
     // refresh of held subscriptions.
@@ -1220,11 +1234,15 @@ public:
     static void Guard(lt::add_torrent_params& params);
     static std::optional<std::vector<lt::download_priority_t>> Priorities(
         std::vector<lt::download_priority_t> chosen, std::shared_ptr<lt::torrent_info const> const& metadata);
-    static bool IsChoice(lt::download_priority_t priority);
     void SaveAddition(std::string id, lt::torrent_handle handle);
     void PrepareAddition(std::string const& id, lt::torrent_handle handle);
     void CommitAddition(std::string const& id);
     void Abandon(std::string id, Outcome outcome, Added added = {});
+    // Ends an addition of content the list holds, through `end`: refused
+    // with torrent_removing while that torrent is being removed, or as that
+    // torrent's duplicate. Returns false, and calls nothing, for content the
+    // list does not hold.
+    bool EndDuplicate(lt::info_hash_t const& hashes, std::function<void(Outcome, Added)> const& end);
     std::optional<std::string> MovingAddition(lt::torrent_handle const& handle) const;
     void RecoverAdditions();
     void On(lt::add_torrent_alert const& alert);
@@ -1278,6 +1296,13 @@ public:
     static std::filesystem::path FullPath(std::filesystem::path const& path);
     static bool PathBefore(std::filesystem::path const& left, std::filesystem::path const& right);
     static bool SamePath(std::filesystem::path const& left, std::filesystem::path const& right);
+    // Sorts the paths by PathBefore and keeps one of each path that SamePath
+    // finds equal.
+    static void SortUnique(std::vector<std::filesystem::path>& paths);
+    // Whether anything has the path's name, also a link whose target is gone,
+    // which std::filesystem::exists reports as missing. Throws when Windows
+    // cannot tell.
+    static bool Present(std::filesystem::path const& path);
     static bool SameFolder(std::string const& left, std::string const& right);
     // Whether one folder is the other or lies inside it.
     static bool FoldersOverlap(std::string const& left, std::string const& right);
@@ -1473,6 +1498,10 @@ public:
         lt::time_point statusAt{};
         lt::error_code error;
     };
+    // On the torrent's worker: the parameters to add the torrent again from
+    // its resume data, paused and outside libtorrent's queue, read before its
+    // files are released. Throws once Exit has begun.
+    lt::add_torrent_params PrepareReload(lt::torrent_handle const& handle, std::stop_token stop);
     // Removes the torrent from libtorrent and adds it again from
     // `replacement.params`. Runs on the engine thread, which owns the
     // handle, so no engine call sees the removed one.
@@ -1588,6 +1617,11 @@ public:
         // that name.
         std::vector<std::pair<lt::file_index_t, std::string>> renames;
     };
+    // On the worker of the torrent's folder: releases its files, reads the
+    // names libtorrent holds, and chooses the names `params` asks for, with the
+    // renames that give them. Blocks on the drive and on libtorrent.
+    NameChoice ChooseNames(lt::torrent_handle const& handle, lt::add_torrent_params params, bool appendsSuffix,
+        Layout layout);
     // Whether a file named `actual` still carries the suffix of an unfinished
     // download of the file `name`.
     static bool IsUnfinished(std::string const& actual, std::string const& name);
