@@ -280,6 +280,12 @@ public sealed partial class MainWindow
         var map = CaptureElements(InspectorContent).OfType<PiecesMap>().Single();
         var bitmap = (Image)map.FindName("Bitmap");
         var drawing = (FrameworkElement)map.FindName("Drawing");
+        // The map draws into the same bitmap and pixel array while its size
+        // holds, so each finished drawing shows as a new layout record.
+        var drawn = typeof(PiecesMap).GetField(
+            "_layout",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+        )!;
         var alternate = Model.VisibleTorrents.First(torrent => torrent != target);
         await Switch(false);
         target = alternate;
@@ -289,19 +295,36 @@ public sealed partial class MainWindow
         async Task Switch(bool rapid)
         {
             var previous =
-                bitmap.Source
-                ?? throw new InvalidOperationException("The initial Pieces map has no bitmap.");
+                drawn.GetValue(map)
+                ?? throw new InvalidOperationException("The initial Pieces map has no drawing.");
             var expected = rapid ? target : alternate;
+            var previousCount = Model.Inspector.Pieces?.Count;
             var clock = Stopwatch.StartNew();
             var samples = new List<object>();
             var ready = new TaskCompletionSource(
                 TaskCreationOptions.RunContinuationsAsynchronously
             );
             var stage = "before";
-            void Sample()
+            var staleFrames = 0;
+            void Sample(bool rendered = false)
             {
-                var retained = ReferenceEquals(bitmap.Source, previous);
-                if (Model.Inspector.Target != target && retained && drawing.IsHitTestVisible)
+                var retained = ReferenceEquals(drawn.GetValue(map), previous);
+                // The Inspector keeps the previous torrent's content and heading
+                // until the new detail is available, and the map keeps its bitmap
+                // until the replacement has rendered (ui/torrents.md). A retained
+                // bitmap may take input only while its layout is the new data's,
+                // the same piece count, so a point finds the new torrent's piece.
+                // The Inspector shows a change on its next frame, so a second
+                // rendered frame must still show the defect.
+                var stale =
+                    Model.Inspector.Target != target
+                    && !Model.Inspector.IsReplacing
+                    && Model.Inspector.Pieces is { } shown
+                    && shown.Count != previousCount
+                    && retained
+                    && drawing.IsHitTestVisible;
+                staleFrames = !stale ? 0 : rendered ? staleFrames + 1 : staleFrames;
+                if (staleFrames > 1)
                     ready.TrySetException(
                         new InvalidOperationException(
                             "The retained Pieces map still accepts input for another torrent."
@@ -332,7 +355,7 @@ public sealed partial class MainWindow
                 )
                     ready.TrySetResult();
             }
-            void Frame(object? sender, object args) => Sample();
+            void Frame(object? sender, object args) => Sample(rendered: true);
             CompositionTarget.Rendering += Frame;
             try
             {
