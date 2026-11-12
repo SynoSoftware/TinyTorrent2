@@ -2,8 +2,6 @@ namespace Syno.TinyTorrent.Shared.Storage;
 
 internal sealed partial class Database
 {
-    internal const string Invalidate = "UPDATE library_state SET valid=0 WHERE singleton=1;";
-
     internal const string PruneVideos = """
         DELETE FROM video_information WHERE NOT EXISTS (
             SELECT 1 FROM identifications i WHERE i.catalog_id=video_information.catalog_id

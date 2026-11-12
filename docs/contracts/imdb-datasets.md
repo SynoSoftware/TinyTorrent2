@@ -530,8 +530,8 @@ on `imdb.db`. The table and the Details card use the same rule. Library sorts
 ratings in C# and no SQL filter reads them, so a SQL join would gain nothing.
 Attaching `imdb.db` to the Library connection would need four mechanisms in
 the shared Database owner: attaching, telling a damaged `imdb.db` from a
-damaged `library.db`, a file swap outside transactions, and invalidating the
-row snapshot. The C# read needs none of them:
+damaged `library.db`, a file swap outside transactions, and keeping the
+search snapshot current. The C# read needs none of them:
 
 1. **Damage.** `Dataset` reads on its own connection, so an error from
    `imdb.db` never reaches the Database owner. A rating read that fails returns

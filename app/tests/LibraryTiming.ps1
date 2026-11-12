@@ -46,7 +46,6 @@ try {
         try {
             $command.CommandText = @'
 BEGIN;
-UPDATE library_state SET valid=0 WHERE singleton=1;
 DELETE FROM source_files;
 DELETE FROM contributions;
 DELETE FROM file_reads;
@@ -73,6 +72,9 @@ SELECT origin,file_index,'timing',CAST(entry_id AS TEXT),0,1700000000,name FROM 
 INSERT INTO file_facts(origin,file_index,created,modified,title,artist,album,track,year,genre,duration,search)
 SELECT origin,file_index,1700000000,1700000100,'Song ' || entry_id,'Artist ' || (entry_id%17),'Album ' || (entry_id%53),
     entry_id%12+1,2024,'Rock',180,'artist album rock' FROM source_files WHERE kind=1;
+DELETE FROM library_changes;
+DELETE FROM library_rows;
+INSERT INTO library_rows SELECT * FROM library_entries;
 COMMIT;
 '@
             $command.Parameters.AddWithValue('$count', $count) | Out-Null

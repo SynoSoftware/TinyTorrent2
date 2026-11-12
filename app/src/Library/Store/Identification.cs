@@ -199,7 +199,7 @@ internal sealed partial class Store
                 DELETE FROM video_searches WHERE ($provider IS NULL OR catalog_id=$provider)
                     AND (rejected=1 OR json_array_length(choices)=0);
                 DELETE FROM video_attempts WHERE $provider IS NULL OR catalog_id=$provider;
-                """ + Database.Invalidate;
+                """;
         command.Parameters.AddWithValue("$provider", (object?)providerId ?? DBNull.Value);
         command.ExecuteNonQuery();
     }
@@ -209,8 +209,7 @@ internal sealed partial class Store
             connection =>
             {
                 using var command = connection.CreateCommand();
-                command.CommandText =
-                    "DELETE FROM video_attempts WHERE catalog_id=$catalog;" + Database.Invalidate;
+                command.CommandText = "DELETE FROM video_attempts WHERE catalog_id=$catalog;";
                 command.Parameters.AddWithValue("$catalog", catalogId);
                 return command.ExecuteNonQuery();
             },
@@ -435,7 +434,7 @@ internal sealed partial class Store
                             video,
                             attempt.Target.Kind == LookupKind.Explicit || attempt.Explicit
                         );
-                    command.CommandText = Database.PruneVideos + Database.Invalidate;
+                    command.CommandText = Database.PruneVideos;
                     command.ExecuteNonQuery();
                 }
                 return accepted;
@@ -452,16 +451,23 @@ internal sealed partial class Store
             connection =>
             {
                 using var command = TargetCommand(connection, target);
+                // The siblings are the files of the same origin in the same
+                // folder. They are found through the location index, because
+                // the disk contribution's origin holds every disk file.
                 command.CommandText = """
                     SELECT f.name,f.path,current.path,v.series_id,v.series_type,v.series_title,v.series_year
                     FROM collected_files current
-                    JOIN source_files f ON f.origin=current.origin
+                    JOIN locations l ON l.path>=$folder AND l.path<$beyond
+                    JOIN source_files f ON f.entry_id=l.entry_id AND f.origin=current.origin
                     JOIN entry_identifications i ON i.entry_id=f.entry_id
                     JOIN video_information v ON v.catalog_id=i.catalog_id AND v.video_id=i.video_id
                     WHERE current.entry_id=$entry AND current.name=$name AND current.path=$path COLLATE PATH
                         AND i.explicit=0
                         AND v.catalog_id=$catalog AND v.series_catalog=$catalog AND v.series_id IS NOT NULL;
                     """;
+                var (folder, beyond) = FileSources.PathRange(Path.GetDirectoryName(target.Entry.Path)!);
+                command.Parameters.AddWithValue("$folder", folder);
+                command.Parameters.AddWithValue("$beyond", beyond);
                 using var reader = command.ExecuteReader();
                 var keys = FileName.TitleKeys(release.Title);
                 VideoChoice? series = null;

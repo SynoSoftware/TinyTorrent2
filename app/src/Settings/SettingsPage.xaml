@@ -486,6 +486,64 @@
                 <Grid x:Name="CategoryContent">
                   <StackPanel x:Name="Plugins" x:Load="False" Spacing="8" Visibility="Collapsed">
                     <controls:SettingsSection
+                      x:Name="MediaSection"
+                      Header="{x:Bind Model.Text.Get('discovery', 'title'), Mode=OneWay}"
+                      Summary="{x:Bind Model.MediaSummary, Mode=OneWay}"
+                      Glyph="{x:Bind icons:Segoe.FolderSearch}"
+                    >
+                      <StackPanel>
+                        <controls:SettingsRow
+                          Header="{x:Bind Model.Text.Get('discovery', 'option'), Mode=OneWay}"
+                          Description="{x:Bind Model.Text.Get('discovery', 'option_hint'), Mode=OneWay}"
+                          StateText="{x:Bind controls:SettingsRow.State(MediaSwitch.IsOn, Model.OnText, Model.OffText), Mode=OneWay}"
+                        >
+                          <ToggleSwitch
+                            x:Name="MediaSwitch"
+                            IsOn="{x:Bind Model.DiscoversMedia, Mode=OneWay}"
+                            IsEnabled="{x:Bind Model.CanDiscoverMedia, Mode=OneWay}"
+                            Toggled="OnMediaSwitch"
+                            AutomationProperties.Name="{x:Bind Model.Text.Get('discovery', 'option'), Mode=OneWay}"
+                            AutomationProperties.AutomationId="MediaDiscovery"
+                          />
+                        </controls:SettingsRow>
+                        <controls:SettingsRow
+                          Header="{x:Bind Model.Text.Get('discovery', 'gozler'), Mode=OneWay}"
+                          Description="{x:Bind Model.GozlerState, Mode=OneWay}"
+                        >
+                          <StackPanel Orientation="Horizontal" Spacing="8">
+                            <controls:ActionButton
+                              Click="OnGozlerInstall"
+                              Visibility="{x:Bind Model.ShowsGozlerInstall, Mode=OneWay}"
+                              IsEnabled="{x:Bind Model.CanDiscoverMedia, Mode=OneWay}"
+                              Glyph="{x:Bind icons:Segoe.Download}"
+                              Text="{x:Bind Model.Text.Get('gozler', 'install'), Mode=OneWay}"
+                              ToolTipService.ToolTip="{x:Bind Model.Text.Get('discovery', 'install_tip'), Mode=OneWay}"
+                              AutomationProperties.AutomationId="GozlerInstall"
+                            />
+                            <controls:ActionButton
+                              Click="OnMediaRetry"
+                              Visibility="{x:Bind Model.ShowsMediaRetry, Mode=OneWay}"
+                              Glyph="{x:Bind icons:Segoe.RotateCcw}"
+                              Text="{x:Bind Model.Text.Get('inspector', 'retry'), Mode=OneWay}"
+                              ToolTipService.ToolTip="{x:Bind Model.Text.Get('discovery', 'retry_tip'), Mode=OneWay}"
+                              AutomationProperties.AutomationId="MediaRetry"
+                            />
+                          </StackPanel>
+                        </controls:SettingsRow>
+                        <controls:SettingsRow
+                          x:Name="HiddenRow"
+                          Header="{x:Bind Model.Text.Get('discovery', 'hidden'), Mode=OneWay}"
+                          Description="{x:Bind Model.Text.Get('discovery', 'hidden_hint'), Mode=OneWay}"
+                        >
+                          <TextBlock
+                            Text="{x:Bind Model.HiddenSummary, Mode=OneWay}"
+                            Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
+                          />
+                        </controls:SettingsRow>
+                        <StackPanel x:Name="HiddenFolders" />
+                      </StackPanel>
+                    </controls:SettingsSection>
+                    <controls:SettingsSection
                       Header="{x:Bind Model.Text.Get('settings', 'video_information'), Mode=OneWay}"
                       Summary="{x:Bind Model.VideoSummary, Mode=OneWay}"
                       Glyph="{x:Bind icons:Segoe.Film}"

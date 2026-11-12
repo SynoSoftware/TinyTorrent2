@@ -94,7 +94,7 @@ internal sealed partial class Acquisition
                                 removed = true;
                             }
                             if (removed)
-                                Execute(connection, Database.Cleanup + Database.Invalidate);
+                                Execute(connection, Database.Cleanup);
                             return removed;
                         },
                         cancellation
@@ -133,8 +133,6 @@ internal sealed partial class Acquisition
                                     AssociateOutput(connection, target);
                                     updated = true;
                                 }
-                            if (updated)
-                                Execute(connection, Database.Invalidate);
                             return updated;
                         },
                         cancellation
@@ -142,7 +140,7 @@ internal sealed partial class Acquisition
                     .ConfigureAwait(false);
                 continue;
             }
-            if (moved.Length != 1 || moved[0].IsAmbiguous || targets.Contains(group.Key))
+            if (moved.Length != 1 || moved[0].IsAmbiguous || targets.Keeps(group.Key))
                 continue;
             var destination = moved[0];
             if (
@@ -173,7 +171,6 @@ internal sealed partial class Acquisition
                                     "DELETE FROM subtitle_outputs WHERE path=$path;",
                                     ("$path", group.Key)
                                 );
-                                Execute(connection, Database.Invalidate);
                                 return true;
                             },
                             cancellation
@@ -220,7 +217,7 @@ internal sealed partial class Acquisition
                             "DELETE FROM subtitle_outputs WHERE path=$path;",
                             ("$path", group.Key)
                         );
-                        Execute(connection, Database.Cleanup + Database.Invalidate);
+                        Execute(connection, Database.Cleanup);
                         return true;
                     },
                     CancellationToken.None
@@ -231,17 +228,25 @@ internal sealed partial class Acquisition
             LanguagesChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    // Only torrents count. A gozler that does not answer must not hold subtitle
+    // moves and deletions, and a subtitle that TinyTorrent saved must stay
+    // movable and deletable after gozler reports it. A found subtitle is
+    // protected by created=0 instead.
     private Task<SubtitlePathAccess> PathAccess(string path, CancellationToken cancellation) =>
         Run(
             connection =>
             {
                 using var command = connection.CreateCommand();
-                command.CommandText = "SELECT COUNT(*) FROM pending_origins;";
+                command.CommandText = """
+                    SELECT COUNT(*) FROM pending_origins
+                    WHERE origin NOT IN (SELECT origin FROM contributions WHERE data_source='disk');
+                    """;
                 if (Convert.ToInt64(command.ExecuteScalar()) > 0 || !_connected)
                     return SubtitlePathAccess.Pending;
                 command.CommandText = """
                     SELECT f.origin FROM source_files f JOIN locations l USING(entry_id)
-                    WHERE f.path=$path COLLATE PATH OR l.path=$path COLLATE PATH;
+                    JOIN contributions c ON c.origin=f.origin
+                    WHERE c.data_source='torrent' AND (f.path=$path COLLATE PATH OR l.path=$path COLLATE PATH);
                     """;
                 command.Parameters.AddWithValue("$path", path);
                 using (var reader = command.ExecuteReader())
@@ -263,22 +268,40 @@ internal sealed partial class Acquisition
                         var result = new List<(string Path, string Language)>();
                         using var command = connection.CreateCommand();
                         command.CommandText = """
-                            SELECT s.path,s.origin,s.language FROM subtitle_output_sources s
+                            SELECT s.path,s.origin,s.language,
+                                s.origin IN (SELECT origin FROM contributions WHERE data_source='disk')
+                            FROM subtitle_output_sources s
                             JOIN subtitle_outputs o USING(path,language) WHERE o.created=1;
                             """;
                         using var reader = command.ExecuteReader();
-                        var rows = new List<(string Path, string Origin, string Language)>();
+                        var rows = new List<(
+                            string Path,
+                            string Origin,
+                            string Language,
+                            bool Disk
+                        )>();
                         while (reader.Read())
                             rows.Add(
-                                (reader.GetString(0), reader.GetString(1), reader.GetString(2))
+                                (
+                                    reader.GetString(0),
+                                    reader.GetString(1),
+                                    reader.GetString(2),
+                                    reader.GetBoolean(3)
+                                )
                             );
+                        // A disk association names the deleted torrent's movie
+                        // file, which is deleted with the torrent, so it keeps
+                        // no subtitle.
                         foreach (
                             var group in rows.GroupBy(
                                 row => row.Path,
                                 StringComparer.OrdinalIgnoreCase
                             )
                         )
-                            if (group.All(row => membership.Contains(row.Origin)))
+                            if (
+                                group.Any(row => membership.Contains(row.Origin))
+                                && group.All(row => row.Disk || membership.Contains(row.Origin))
+                            )
                                 result.Add((group.Key, group.First().Language));
                         return result.ToArray();
                     },
@@ -351,12 +374,12 @@ internal sealed partial class Acquisition
                     continue;
                 // Read targets after membership, so a withdrawn origin cannot
                 // protect its old caption and consume the accepted deletion.
-                var targets = await Targets(cancellation).ConfigureAwait(false);
+                var targets = new TargetIndex(
+                    await Targets(cancellation).ConfigureAwait(false)
+                );
                 if (
                     access != SubtitlePathAccess.Protected
-                    && !targets.Any(target =>
-                        StringComparer.OrdinalIgnoreCase.Equals(target.Path, path)
-                    )
+                    && !targets.Keeps(path)
                     && SubtitleFile.Exists(path)
                 )
                 {

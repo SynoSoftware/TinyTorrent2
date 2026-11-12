@@ -8,8 +8,8 @@ controller row removed as wrong), the trust of a payload that plainly moved
 to another drive (decision 5), and [The dialog](#the-dialog). The owner
 accepted the dialog's design; its rendered layout is not checked. No
 decision is open. It is
-the engine's part of [plan 13](13-using-gozler.md) and a benefit of it: plan
-13 brings gozler, and with gozler TinyTorrent finds a payload that the person
+the engine's part of [disk discovery](../contracts/library/disk.md) and a
+benefit of it: disk discovery brings gozler, and with gozler TinyTorrent finds a payload that the person
 moved to another drive. The [engine](../contracts/engine.md),
 [pipe API](../contracts/pipe-api.md) and [UI](../contracts/ui.md) contracts own
 current behavior; update them alongside implementation.
@@ -445,7 +445,7 @@ After Redownload the file is an ordinary file without data, and gets the
 unfinished name at the name preparation that the answer asks for.
 
 **The app asks for a look.** Library asks when its own presence check finds a
-torrent's file gone ([plan 13](13-using-gozler.md)). The window asks when an
+torrent's file gone ([disk discovery](../contracts/library/disk.md#file-presence)). The window asks when an
 Open or Open folder command gets "path not found" from Windows for a torrent.
 The reply says whether the torrent followed, and the window then opens the
 new path. The window waits 2 seconds for this reply and then reports the path

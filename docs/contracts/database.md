@@ -9,18 +9,24 @@ this database.
 
 ## Ownership and initialization
 
-`Shared/Storage/Database/Schema.cs` is the authoritative schema: the revision 9
-tables, indexes, views and defaults, the migrations after it, and the temporary
-working tables. `Database.Open` registers path comparison, the `starts_word`
-search test and the `title_key` function (`FileName.TitleKey`), enables foreign
-keys, reads `PRAGMA user_version`, and initializes the schema transactionally
-before exposing the connection to any feature. A new database runs the revision
-9 schema and then every migration, and receives the current revision in the
-same transaction, so each change has one implementation for new and saved
-databases. Version 0 initializes only an empty schema; existing unversioned
-storage is incompatible. The temporary projection is recreated for every
-connection. A version below 9 or above the current revision fails without
-changing its data.
+`Shared/Storage/Database/Schema.cs` is the authoritative schema, including
+tables, indexes, views, defaults and temporary working tables. Its `Schema` text
+is revision 9, the baseline, and its ordered `Migrations` list holds every later
+change, one revision each; the current revision is 11. `Database.Open`
+registers path comparison, the `starts_word` search test and the `title_key`
+function (`FileName.TitleKey`), reads `PRAGMA user_version`, and initializes the
+schema transactionally before exposing the connection to any feature. Foreign
+keys stay off until the schema is current, because a migration that rebuilds a
+table drops the old one, and with foreign keys on that drop deletes the saved
+child rows; a migration that leaves a broken reference fails
+`PRAGMA foreign_key_check` and is rolled back. A new database runs the baseline
+and then every migration, so each migration also runs on every new database. A
+saved database runs the migrations it lacks. Both receive the current revision
+in the same transaction. A current database is not written while it opens, so a
+read-only file still opens. Version 0 initializes only an empty schema; existing
+unversioned storage is incompatible. The temporary projection is recreated for
+every connection. Unsupported versions, older than 9 or newer than the current
+revision, fail without changing their data.
 
 **Owner ruling: the schema at revision 9 is the baseline that saved databases
 hold. Never change it destructively.** A schema change that only edits the
@@ -37,11 +43,12 @@ database. There is no second upgrade mechanism in a domain or in startup wiring.
 10, and each next one upgrades its predecessor's result. A saved database runs
 only the migrations after its revision, all in one transaction with the new
 `PRAGMA user_version`, so a failure leaves it at its old revision. The current
-revision is 10:
+revision is 11:
 
 | Revision | Change |
 | --- | --- |
 | 10 | `video_choices.name` and `original_name` hold `FileName.TitleKey` of the title and original title instead of the title in lower case without accents. A choice saved for "Ocean's Eleven" is then found for a file named Oceans.Eleven. The migration rewrites both keys of every saved row. Rows stay keyed by catalogue and video, so two saved videos whose titles now share a key both remain, and a search of that title offers both, as the provider would. The subtitle search count is keyed by `TitleKey` from the same version. Its saved keys are digests that SQL cannot recompute, so for a title whose punctuation the key drops, the count starts again once and a queued manual job's fresh-search request falls back to the saved answer. That costs at most one more round of searches for such a title. |
+| 11 | Disk discovery's tables and columns, listed in the table below. |
 
 A change to `FileName.TitleKey` changes these saved keys, so it needs a
 migration that rewrites them again; otherwise the saved choices are not found.
@@ -53,9 +60,9 @@ reset loses saved metadata and choices.
 Library owns identification, provider reuse, file facts and search queries.
 Subtitles owns accepted work, supplier policy and subtitle-file operations.
 Their SQL executes through `Database.Run`; network requests and file reads run
-outside it. `Database/Files.cs` owns the shared reconciliation, cleanup and
-search invalidation SQL so membership changes commit consistently across both
-domains. `FileSources` applies source facts through that transaction boundary
+outside it. `Database/Files.cs` owns the shared reconciliation and cleanup SQL
+so membership changes commit consistently across both domains, and Database
+keeps the search snapshot current in every transaction. `FileSources` applies source facts through that transaction boundary
 and owns contribution scheduling, readiness and the checked timestamps;
 `LibrarySource` obtains those facts from coherent engine replies and
 coordinates engine reads without SQL of its own. It keeps its own range-checked
@@ -101,7 +108,8 @@ measurement.
 | `request_holds`, `request_usage` | Access holds, failure streaks and outbound reservations. Reset clears local backoff while preserving remote waits and pacing. |
 | `video_searches`, `subtitle_searches` | Feature-owned completed query answers and completion times, separate from local matching. A fresh batch reuses answers completed after its acceptance. Reset invalidates rejected or empty query reuse while retaining successful facts and candidates. |
 | `file_facts` | Successful reads of file dates and media properties, including a successful empty result, so the window need not repeat filesystem reads. Shared contributors inherit them; confirmed withdrawal removes them. Failed reads remain session work. |
-| `library_settings`, `subtitle_settings` | Typed singleton settings. Subtitle credentials are protected for the Windows user. The saved automatic extras count remains part of the subtitle contract. Each domain validates readable saved settings; RequestPolicy owns allowance deadlines. Reset all settings returns these rows and `request_settings` to the schema defaults and deletes `provider_keys`, after the features close. |
+| `library_settings`, `subtitle_settings` | Typed singleton settings. Subtitle credentials are protected for the Windows user. The saved automatic extras count remains part of the subtitle contract. Each domain validates readable saved settings; RequestPolicy owns allowance deadlines. Reset all settings returns these rows and `request_settings` to the schema defaults and deletes `provider_keys` and `hidden_folders`, after the features close. |
+| `disk_files`, `hidden_folders`, `disk_numbers`; `contributions.data_source`, `locations.absent`, `library_settings.discovery` | Revision 11 adds them for [disk discovery](library/disk.md): a contribution's data source (`torrent` or `disk`), a disk file's volume, file ID and last write time as gozler reported them, a location the person's own check found gone, the folders the person hid from Library, the number the next new disk file takes (never used again, so a withdrawn file's kept facts never pass to another), and the option that switches discovery on. A `disk_files` row ends with its source file. Each source withdraws only contributions of its own data source. |
 | `provider_keys` | The person's own API key for a Library provider, protected for the Windows user. It replaces the key built into the release until the person removes it. A key that cannot be decrypted is removed, so the provider uses its built-in key again. |
 | `subtitle_outputs` | Actual subtitle path, language, created/found ownership and supplier reference. These facts distinguish files the app created from files it merely found. |
 | `subtitle_output_sources` | Associations of actual subtitle outputs with source files and the movie location they served. A failed move retains old ownership without claiming a subtitle at the new location. Deleting an output cascades its associations. |
@@ -121,14 +129,15 @@ never recreates an association after its last source leaves.
 
 | Temporary tables and views | Reason to exist |
 | --- | --- |
-| `file_reads` | Current engine summary, file-list confirmation and scheduling. A reconnect clears confirmation; a command only schedules every list for another read while confirmed lists stay in use. Process-relative retry times never survive the connection. Every connection still reads every torrent's files in the background, because the summary stamp (save path, completion, settlement, size) cannot see a renamed file or one file finishing inside an incomplete torrent. |
+| `file_reads` | The torrent source's current engine summary, file-list confirmation and scheduling; it never holds the disk contribution. A reconnect clears confirmation; a command only schedules every list for another read while confirmed lists stay in use. Process-relative retry times never survive the connection. Every connection still reads every torrent's files in the background, because the summary stamp (save path, completion, settlement, size) cannot see a renamed file or one file finishing inside an incomplete torrent. |
 | `present`, `received` | Transaction scratch sets for replacing complete origin and file lists without treating partial reads as deletion. |
 | `new_origins` | Present torrents missing from `known_torrents`. Source reconciliation adds them; the subtitle completion decision moves each one to `known_torrents`. |
-| `collected_files`, `pending_origins`, `current_files` | Shared membership and file-read readiness rules, including path settlement. |
+| `disk_reads` | The disk contribution once this connection accepted an answer from gozler: its File confirmation. |
+| `collected_files`, `pending_origins`, `current_files` | Shared membership and file-read readiness rules, including path settlement, for both data sources. `current_files` leaves out absent locations. A location that a torrent lists takes completion and readability from the torrents; one that only disk discovery lists is complete, and readable once confirmed unless it is a cloud placeholder. |
 | `video_attempts`, `fact_attempts` | In-flight work and session failures/misses. A blocked video attempt names its required request; batch projection joins the current RequestPolicy hold instead of copying it. Reopening clears attempts; durable remote history belongs to RequestPolicy. Withdrawn locations are pruned. |
 | `subtitle_languages` | Languages actually associated with a movie's current location, derived from ownership and current source facts. |
 | `entry_identifications` | The identification that decides each Library entry: the latest explicit choice of its files, including Clear, else the latest provider match whose file still has the name it was matched under. Rows, details, Fetch metadata and video lookups read it, so they agree. Source reconciliation shares explicit choices among confirmed files only and does not read it. |
-| `library_entries`, `library_rows`, `library_state`, `library_matches` | Joined display/search data, a rebuildable row snapshot, its validity and the current match set. Actual changes invalidate it in the same transaction as their writes; confirming an unchanged list does not. |
+| `library_entries`, `library_rows`, `library_changes`, `library_matches` | Joined display/search data; the search snapshot, a copy of it that the connection builds when it opens; the entries the open transaction changed; and the current match set. A temporary trigger on each table whose rows decide what `library_entries` shows adds the entries of every written row to `library_changes` (`subtitle_outputs` reaches the view only through its cascade, and `file_reads`, `disk_reads` and `contributions` decide no shown column), and every transaction copies those entries into the snapshot before it commits. So a search never copies the catalogue, and a change to five entries writes five snapshot rows; confirming an unchanged list writes none. |
 
 The former TEMP-only catalogue structurally excluded rows not supplied by the
 current connection. Retaining last-known lists deliberately replaces that
@@ -148,13 +157,13 @@ Confirmation follows these rules:
   confirmation for that torrent only, until its new list arrives.
 - A failed or unusable read keeps whatever confirmation the list had and
   retries later.
-- Confirming an identical list updates only `file_reads` and leaves the search
-  snapshot valid.
+- Confirming an identical list updates only `file_reads` and writes no search
+  snapshot row.
 
 Media bytes, transfer progress history, selection, scroll position, network
-clients and active cancellation tokens do not belong in this database. Search
-validity is explicit state; no reader changes behavior because a table happens
-to exist. No feature creates or alters production tables during a query.
+clients and active cancellation tokens do not belong in this database. No
+reader changes behavior because a table happens to exist. No feature creates
+or alters production tables during a query.
 
 ## Lifecycle and recovery
 
@@ -168,7 +177,7 @@ Disconnect pauses engine-dependent work while cached search, inspection and loca
 Open remain available. Reconnection reconciles the complete summary before
 publishing surviving cached rows. Successful reads replace one entire torrent
 list per transaction; failed reads retain its cache without confirming it.
-Unchanged confirmation only updates TEMP state and does not invalidate search.
+Unchanged confirmation only updates TEMP state and writes no search snapshot row.
 Confirmed source removal and domain cleanup are one
 transaction, whether enrichment and automatic subtitles are enabled or not.
 

@@ -21,7 +21,7 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT DISTINCT c.origin,c.name,f.file_index FROM source_files f
-            JOIN contributions c USING(origin) WHERE f.entry_id=$entry;
+            JOIN contributions c USING(origin) WHERE f.entry_id=$entry AND c.data_source='torrent';
             """;
         command.Parameters.AddWithValue("$entry", entryId);
         var origins = new List<Origin>();
@@ -84,7 +84,7 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
                         CASE WHEN kind=$audio THEN 'example artist album rock' ELSE '' END
                     FROM source_files;
                     DROP TABLE timing_videos;
-                    """ + Database.Invalidate;
+                    """;
             command.Parameters.AddWithValue("$video", (int)FileKind.Video);
             command.Parameters.AddWithValue("$audio", (int)FileKind.Audio);
             command.ExecuteNonQuery();
@@ -148,16 +148,6 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
             {
                 var terms = FileName.SearchWords(query.Text);
                 using var snapshot = connection.CreateCommand();
-                snapshot.CommandText = "SELECT valid FROM library_state WHERE singleton=1;";
-                if (Convert.ToInt64(snapshot.ExecuteScalar()) == 0)
-                {
-                    snapshot.CommandText = """
-                        DELETE FROM library_rows;
-                        INSERT INTO library_rows SELECT * FROM library_entries;
-                        UPDATE library_state SET valid=1 WHERE singleton=1;
-                        """;
-                    snapshot.ExecuteNonQuery();
-                }
                 var text = new StringBuilder("1=1");
                 for (var index = 0; index < terms.Length; index++)
                 {
@@ -488,7 +478,7 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
                     }
                     SaveIdentification(connection, entry.EntryId, null, true);
                 }
-                command.CommandText = Database.PruneVideos + Database.Invalidate;
+                command.CommandText = Database.PruneVideos;
                 command.ExecuteNonQuery();
                 return failure;
             },

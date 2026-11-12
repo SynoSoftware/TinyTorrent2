@@ -19,12 +19,14 @@ public sealed partial class EmptyState : UserControl
         Loaded += (_, _) =>
         {
             Torrents.Command = model.ShowTorrents;
+            Discover.Command = model.DiscoverMedia;
             ClearFilters.Command = model.ClearFilters;
             Refresh();
         };
         Unloaded += (_, _) =>
         {
             Torrents.Command = null;
+            Discover.Command = null;
             ClearFilters.Command = null;
         };
     }
@@ -40,6 +42,10 @@ public sealed partial class EmptyState : UserControl
         Torrents.Visibility = _model.IsEmpty ? Visibility.Visible : Visibility.Collapsed;
         Torrents.Text = _model.Text.Get("window", "torrents");
         ToolTipService.SetToolTip(Torrents, _model.Text.Get("library", "show_torrents"));
+        Discover.Visibility =
+            _model.IsEmpty && _model.CanDiscover ? Visibility.Visible : Visibility.Collapsed;
+        Discover.Text = _model.Text.Get("discovery", "discover");
+        ToolTipService.SetToolTip(Discover, _model.Text.Get("discovery", "discover_tip"));
         ClearSearch.Visibility = Query.Visibility;
         ClearSearch.Text = _model.Text.Get("library", "clear_search");
         ToolTipService.SetToolTip(ClearSearch, _model.Text.Get("library", "clear_search_tip"));

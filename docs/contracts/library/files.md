@@ -120,9 +120,11 @@ not match strings shorter than three characters, as documented in the
 
 ## File access and unavailable entries
 
-Library performs no folder walking, drive scanning, directory watching,
-startup path sweep or periodic file-existence check. The torrent adapter needs
-no elevated process, privileged indexing service or Everything installation.
+Library performs no folder walking, drive scanning, directory watching or
+startup path sweep. Its one file-existence check belongs to
+[disk discovery](disk.md#file-presence), for a path that gozler stopped
+reporting. The torrent adapter needs no elevated process, privileged indexing
+service or Everything installation.
 Existing unrelated watched-folder torrent-import behavior is not changed by
 this feature.
 

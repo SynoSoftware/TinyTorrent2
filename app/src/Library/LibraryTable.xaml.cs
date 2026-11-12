@@ -65,7 +65,8 @@ public sealed partial class LibraryTable : UserControl
     {
         if (
             args.PropertyName is nameof(Browser.Rows) or nameof(Browser.Configuration) or ""
-            || args.PropertyName == nameof(Browser.EmptyText) && _model.Rows.Count == 0
+            || args.PropertyName is nameof(Browser.EmptyText) or nameof(Browser.CanDiscover)
+                && _model.Rows.Count == 0
         )
             Refresh();
         else if (

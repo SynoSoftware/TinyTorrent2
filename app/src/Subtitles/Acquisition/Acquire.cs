@@ -854,7 +854,7 @@ internal sealed partial class Acquisition
             }
             work = CancellationTokenSource.CreateLinkedTokenSource(requests, stop.Token);
             var cancellation = work.Token;
-            var targets = (await Targets(cancellation).ConfigureAwait(false))
+            var targets = (await Targets(cancellation, entries).ConfigureAwait(false))
                 .Where(Eligible)
                 .ToArray();
             var command = DateTimeOffset.UtcNow.UtcTicks;

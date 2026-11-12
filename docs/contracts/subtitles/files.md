@@ -52,7 +52,7 @@ in place. Re-enabling does not revive cancelled finished targets.
 
 A torrent's folders are inspected once when it finishes, under the
 [completion ruling](../subtitles.md#outcome), before its completion search. A
-movie Library displays has its folder inspected once per path and torrent
+movie Library displays has its folder inspected once per path and file-list
 stamp, in the background, as the
 [no-scan ruling](../library.md#purpose-and-experience) allows, so a move or a
 later bundled download shows its languages when the row is on screen. The
@@ -62,7 +62,12 @@ chooses it. Nothing else inspects a folder, because a walk over the library
 costs disk work the person did not ask for. Discovery walks the content folder
 derived from confirmed mapped file paths, including nested folders; when the
 files sit directly in the save path, it checks only siblings and
-Subs/Subtitles folders to avoid other torrents.
+Subs/Subtitles folders to avoid other torrents. A disk movie, which
+[disk discovery](../library/disk.md#subtitles) found, has no content folder:
+its subtitle files come from the saved catalogue, from its own folder and its
+Subs/Subtitles folders, and its stamp changes only when a refresh adds, removes
+or moves a subtitle file. A batch over the whole collection covers torrent
+movies only.
 Directory links are not followed. A subtitle must identify one movie through its
 name or containing folder, or belong to a folder with only one movie. Language
 tags and names take precedence; otherwise a text sample is detected locally.
@@ -116,7 +121,7 @@ names, so it compares equal to a wanted one.
 
 Each identified subtitle becomes a found record with its association, after
 the video is confirmed current. Created records never become found. A scan
-marker records each video's path and torrent stamp, so a completion scan that
+marker records each video's path and file-list stamp, so a completion scan that
 a settings change interrupted continues at the next reconciliation without
 repeating the folders it finished, and a displayed movie is inspected again
 only after its path or stamp changes. A folder that cannot be read keeps its

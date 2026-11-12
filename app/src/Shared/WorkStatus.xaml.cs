@@ -179,6 +179,7 @@ public sealed partial class WorkStatus : UserControl
                     WorkDescription.FileProperties => Segoe.Files,
                     WorkDescription.Update => Segoe.RefreshCw,
                     WorkDescription.Sources => Segoe.FilePlus,
+                    WorkDescription.Discovery => Segoe.FolderSearch,
                     _ => Segoe.Wrench,
                 };
         Icon.Visibility = _minimal && !IsExpanded ? Visibility.Collapsed : Visibility.Visible;

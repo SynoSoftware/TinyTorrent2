@@ -57,6 +57,25 @@ internal enum UpdateFailure
     Setup,
 }
 
+// Why gozler's setup did not install gozler.
+internal enum InstallFailure
+{
+    // This build has no pinned download, so it runs no setup.
+    Unavailable,
+    Download,
+    Damaged,
+    Declined,
+    NotInstalled,
+}
+
+// The action that resolves a disk discovery state.
+internal enum DiskRecovery
+{
+    None,
+    Install,
+    Retry,
+}
+
 internal enum RatingSample
 {
     Unknown,
@@ -965,5 +984,6 @@ internal enum CaptureMode
     Memory,
     Footer,
     Workspace,
+    Discovery,
 }
 #endif

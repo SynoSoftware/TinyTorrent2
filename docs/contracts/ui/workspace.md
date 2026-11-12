@@ -369,8 +369,9 @@ An empty list says how to add a torrent.
 ## Keyboard commands
 
 Shortcuts follow Windows conventions, so people keep the habits they use in
-other Windows applications. TinyTorrent has no Print, Save, or Refresh command,
-so Ctrl+P, Ctrl+S, and Ctrl+R are free for Stop, Start and Verify. Torrent
+other Windows applications. TinyTorrent has no Print or Save command, and
+Library's Refresh uses F5, so Ctrl+P, Ctrl+S, and Ctrl+R are free for Stop,
+Start and Verify. Torrent
 shortcuts act while the table, selection toolbar or inspector has focus; an
 editor keeps its own keys.
 

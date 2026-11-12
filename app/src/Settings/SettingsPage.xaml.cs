@@ -237,6 +237,10 @@ public sealed partial class SettingsPage : UserControl
         {
             RefreshSubtitleCoverage();
         }
+        if (args.PropertyName is nameof(Editor.HiddenFolders) or "")
+        {
+            ShowHiddenFolders();
+        }
     }
 
     // Built in code, because a template cannot give each item's container its
@@ -322,6 +326,7 @@ public sealed partial class SettingsPage : UserControl
             choice.SelectedItem = item;
         }
         RefreshHome();
+        ShowHiddenFolders();
         (SubtitlesContent?.Content as SubtitleSettings)?.RefreshText();
         _automatic?.Refresh();
         AlignCategory();
@@ -793,6 +798,7 @@ public sealed partial class SettingsPage : UserControl
             "encryption" => EncryptionChoices,
             "language" => Languages,
             "theme" => _themes?.Choices,
+            "media_discovery" => MediaSwitch,
             "video_provider" => ProviderChoice,
             "video_information" => AutomaticDownload,
             "subtitle_automatic"

@@ -418,6 +418,10 @@ public sealed partial class MainViewModel
             Text.Get("settings", "proxy")
         );
         yield return SettingSuggestion(
+            new(SettingsCategory.Plugins, "media_discovery"),
+            Text.Get("discovery", "option")
+        );
+        yield return SettingSuggestion(
             new(SettingsCategory.Plugins, "video_provider"),
             Text.Get("plugins", "video_provider")
         );

@@ -77,6 +77,7 @@ public sealed partial class MainWindow
         "memory" => CaptureMode.Memory,
         "footer" => CaptureMode.Footer,
         "workspace" => CaptureMode.Workspace,
+        "discovery" => CaptureMode.Discovery,
         _ => CaptureMode.None,
     };
 
@@ -2631,6 +2632,11 @@ public sealed partial class MainWindow
             if (ReviewMode == CaptureMode.Library)
             {
                 await CaptureLibrary(outcomes, completed);
+                return;
+            }
+            if (ReviewMode == CaptureMode.Discovery)
+            {
+                await CaptureDiscovery(outcomes, completed);
                 return;
             }
             var target =

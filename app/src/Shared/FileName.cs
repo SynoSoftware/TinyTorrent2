@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -6,52 +7,62 @@ namespace Syno.TinyTorrent.Shared;
 
 internal static partial class FileName
 {
+    // Disk discovery asks gozler for these extensions, so they are the one
+    // definition of a video, a music and a subtitle file.
+    internal static readonly FrozenSet<string> VideoExtensions = FrozenSet.ToFrozenSet(
+        [
+            ".mkv",
+            ".mp4",
+            ".avi",
+            ".mov",
+            ".wmv",
+            ".m4v",
+            ".webm",
+            ".mpg",
+            ".mpeg",
+            ".ts",
+            ".m2ts",
+            ".mts",
+            ".flv",
+            ".f4v",
+            ".ogv",
+            ".vob",
+            ".divx",
+            ".3gp",
+            ".asf",
+            ".rmvb",
+        ]
+    );
+
+    internal static readonly FrozenSet<string> AudioExtensions = FrozenSet.ToFrozenSet(
+        [".mp3", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".wav", ".wma", ".aiff", ".alac"]
+    );
+
     // The subtitle formats, which Subtitles reads and Kind counts as documents.
-    private static readonly HashSet<string> SubtitleExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".srt",
-        ".ass",
-        ".ssa",
-        ".vtt",
-        ".sub",
-    };
+    internal static readonly FrozenSet<string> SubtitleExtensions = FrozenSet.ToFrozenSet(
+        [".srt", ".ass", ".ssa", ".vtt", ".sub"]
+    );
 
     internal static bool IsSubtitle(string path) =>
-        SubtitleExtensions.Contains(Path.GetExtension(path));
+        SubtitleExtensions.Contains(Path.GetExtension(path).ToLowerInvariant());
 
-    internal static FileKind Kind(string path) =>
-        Path.GetExtension(path).ToLowerInvariant() switch
+    internal static FileKind Kind(string path)
+    {
+        var extension = Path.GetExtension(path).ToLowerInvariant();
+        if (VideoExtensions.Contains(extension))
         {
-            ".mkv"
-            or ".mp4"
-            or ".avi"
-            or ".mov"
-            or ".wmv"
-            or ".m4v"
-            or ".webm"
-            or ".mpg"
-            or ".mpeg"
-            or ".ts"
-            or ".m2ts"
-            or ".mts"
-            or ".flv"
-            or ".f4v"
-            or ".ogv"
-            or ".vob"
-            or ".divx"
-            or ".3gp"
-            or ".asf"
-            or ".rmvb" => FileKind.Video,
-            ".mp3"
-            or ".flac"
-            or ".m4a"
-            or ".aac"
-            or ".ogg"
-            or ".opus"
-            or ".wav"
-            or ".wma"
-            or ".aiff"
-            or ".alac" => FileKind.Audio,
+            return FileKind.Video;
+        }
+        if (AudioExtensions.Contains(extension))
+        {
+            return FileKind.Audio;
+        }
+        if (SubtitleExtensions.Contains(extension))
+        {
+            return FileKind.Document;
+        }
+        return extension switch
+        {
             ".jpg"
             or ".jpeg"
             or ".png"
@@ -76,11 +87,11 @@ internal static partial class FileName
             or ".pptx"
             or ".nfo"
             or ".md" => FileKind.Document,
-            var extension when SubtitleExtensions.Contains(extension) => FileKind.Document,
             ".zip" or ".rar" or ".7z" or ".tar" or ".gz" or ".bz2" or ".xz" or ".iso" =>
                 FileKind.Archive,
             _ => FileKind.Other,
         };
+    }
 
     internal static string Glyph(FileKind kind) =>
         kind switch

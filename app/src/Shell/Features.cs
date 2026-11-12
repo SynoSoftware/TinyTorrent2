@@ -39,6 +39,9 @@ internal sealed class Features
     private Task<bool>? _opening;
     private RequestPolicy? _policy;
     private LibrarySource? _source;
+    private DiskSource? _disk;
+    private bool _libraryShown;
+    private bool _active;
     private HttpRoute? _route;
     private Task? _subtitlesStarting;
     private Task? _settled;
@@ -70,7 +73,14 @@ internal sealed class Features
     /// </summary>
     internal event EventHandler? Changed;
 
+    /// <summary>Raised on the UI thread when <see cref="Disk"/> or its state may have changed.</summary>
+    internal event EventHandler? DiskChanged;
+
     internal bool IsClosed { get; private set; }
+
+    // Disk discovery, once the Library database is open and its saved option
+    // is read, so no surface shows a state before it is known.
+    internal DiskSource? Disk => _disk is { IsStarted: true } disk ? disk : null;
 
     internal SubtitleAcquisition? Subtitles { get; private set; }
 
@@ -242,6 +252,49 @@ internal sealed class Features
                 }
             );
         source.Observe(snapshot);
+        var disk = new DiskSource(new FileSources(_database), Work);
+        _disk = disk;
+        disk.SetShown(_libraryShown);
+        disk.SetActive(_active);
+        disk.Changed += (_, _) => Post(disk, () => _disk, () => DiskChanged?.Invoke(this, EventArgs.Empty));
+        disk.Published += (_, _) =>
+            Post(
+                disk,
+                () => _disk,
+                () =>
+                {
+                    Library.StoredChanged();
+                    _ = RefreshSource();
+                }
+            );
+        _ = Start(disk);
+    }
+
+    private async Task Start(DiskSource disk)
+    {
+        try
+        {
+            await disk.Start();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception error) when (ReferenceEquals(disk, _disk))
+        {
+            Report(error);
+        }
+    }
+
+    // Disk discovery asks gozler when Library is shown, and when the window
+    // becomes active while it is.
+    internal void SetLibraryShown(bool shown)
+    {
+        _libraryShown = shown;
+        _disk?.SetShown(shown);
+    }
+
+    internal void SetActive(bool active)
+    {
+        _active = active;
+        _disk?.SetActive(active);
     }
 
     private async Task<bool> Open(Database database)
@@ -346,12 +399,13 @@ internal sealed class Features
                 {
                     return;
                 }
-                observing = Library.Observe(
+                var readiness =
                     !_owner.IsConnected || _source is not { IsCurrent: true }
                         ? LibraryReadiness.Offline
                     : _source.IsReady ? LibraryReadiness.Ready
-                    : LibraryReadiness.Current
-                );
+                    : LibraryReadiness.Current;
+                _disk?.SetReady(readiness != LibraryReadiness.Offline);
+                observing = Library.Observe(readiness);
             }
             await observing;
             Raise();
@@ -631,6 +685,7 @@ internal sealed class Features
         {
             Library.Disconnect();
             Subtitles?.SetConnected(false);
+            _disk?.SetReady(false);
         }
     }
 
@@ -667,6 +722,9 @@ internal sealed class Features
         await using var database = new Database(directory);
         try
         {
+            // Discovery's option is a setting, and switching it off withdraws
+            // the files it found.
+            await new FileSources(database).DisableDiscovery(CancellationToken.None);
             await database.ResetSettings();
         }
         catch (DatabaseVersionException) { }
@@ -679,22 +737,28 @@ internal sealed class Features
     private async Task Detach()
     {
         LibrarySource? source;
+        DiskSource? disk;
         SubtitleAcquisition? subtitles;
         Task? starting;
         lock (_gate)
         {
             source = _source;
+            disk = _disk;
             subtitles = Subtitles;
             starting = _subtitlesStarting;
             _source = null;
+            _disk = null;
             Subtitles = null;
             _subtitlesStarting = null;
         }
         Raise();
+        DiskChanged?.Invoke(this, EventArgs.Empty);
         var libraryClosing = Library.Detach();
         await Geolocation.Detach();
         if (source is not null)
             await source.DisposeAsync();
+        if (disk is not null)
+            await disk.DisposeAsync();
         if (starting is not null)
         {
             try

@@ -2,12 +2,14 @@
 
 Library is a searchable view of the finished files reported by its data
 sources. Video information comes from the selected provider, and music
-information comes from the audio files' own tags. Torrents are the first and
-only data source. SQLite stores facts about those files; it does not establish
-that a file belongs in Library.
+information comes from the audio files' own tags. Its data sources are the
+managed torrents and, when the person switches it on, disk discovery. SQLite
+stores facts about those files; it does not establish that a file belongs in
+Library.
 
 This is the contract for the feature. Library does not retain removed torrents
-as entries, watch directories, or check file existence automatically. The
+as entries or watch directories. Only disk discovery checks a file's existence,
+for a path that gozler stopped reporting. The
 [architecture](architecture.md) owns product scope and process responsibilities;
 the [engine](engine.md), [pipe API](pipe-api.md), [UI](ui.md),
 [localisation](localisation.md), and [testing](../agents/testing.md) contracts govern
@@ -25,6 +27,7 @@ contract with the same authority.
 | Identification, provider requests, saved metadata, credentials or privacy | [Identification and providers](library/providers.md) |
 | Page navigation, table configurations, filters, Inspector or prototype review | [Presentation and interaction](library/presentation.md) |
 | Initialization, synchronization, background work, closing, performance or validation | [Lifecycle and validation](library/lifecycle.md) |
+| Disk discovery, gozler, hidden folders, file presence or absent locations | [Disk discovery](library/disk.md) |
 
 ## Purpose and experience
 
@@ -170,9 +173,10 @@ can never establish membership or appear as current results. No cleanup task
 is left in the engine merely to maintain the window's database.
 
 The pluggable interface is an explicit owner requirement so another discovery
-mechanism can later supply the same Library. It does not require a dynamically
-loaded plugin system, source-discovery framework, separate process or source
-configuration screen. Implement only the torrent adapter now.
+mechanism can supply the same Library. `FileSources` is that interface, and the
+torrent adapter and [disk discovery](library/disk.md) are its two sources. It
+does not require a dynamically loaded plugin system, source-discovery
+framework or separate process.
 
 ## Torrent membership
 
@@ -186,7 +190,8 @@ complete engine summary; background reads then confirm or replace each list.
 Without one, show files as their torrent facts arrive, so a pending torrent does
 not hold back the files already collected. The torrent source reads a torrent's
 files again whenever the engine reports a change and at most a minute after
-its last read, so Library needs no refresh command.
+its last read, so it needs no refresh command; Library's Refresh asks disk
+discovery.
 A finished file stays even when the person later
 marks it unwanted, because changing its priority must not hide a file the
 person already has. No disk probe is added to decide this.
@@ -209,8 +214,9 @@ Membership withdrawal follows confirmed torrent removal, including removal
 whose payload cleanup is still pending. Cached video information never delays
 or prevents removal. Library needs no retention-before-removal transaction.
 
-There is no separate Remove from Library command. With the torrent adapter as
-the only data source, torrent membership explains Library membership.
+There is no separate Remove from Library command. Hide folder from Library
+removes disk files only, so torrent membership still explains the membership of
+every torrent file.
 
 Engine startup restores torrents without initializing Library. During window
 initialization, the C# adapter obtains current membership and file facts;
@@ -253,7 +259,9 @@ source of current membership. Seeding is followed by synchronization, because
 a one-time import would miss later completion, moves and removal.
 
 Search, filters, counts, details and work selection use only SQLite. They do
-not enumerate folders, probe file existence or ask the engine for data. Exact
+not enumerate folders, probe file existence or ask the engine for data. Disk
+discovery's [presence check](library/disk.md#file-presence) is the one probe,
+for a path that gozler stopped reporting. Exact
 file access belongs only to the specified one-time fact reads, explicit Open,
 and subtitle acquisition/file operations; those operations use paths read from
 SQLite and never discover membership by searching a drive. Blocking ingestion,
@@ -266,10 +274,13 @@ confirmed settings without saving a shadow copy in SQLite; SQLite owns their
 file facts, feature settings, decisions and work, not a second application
 settings implementation.
 
-**Owner ruling: torrents establish membership; C# owns SQLite.** Managed torrents
-decide which files belong. SQLite saves reusable facts and user decisions and
-executes local searches over the retained catalogue, whose membership the
-torrent summary decides. It is never an independent file inventory. Library
+**Owner ruling: data sources establish membership; C# owns SQLite.** Managed
+torrents, and with the option on gozler's answers, decide which files belong.
+A file that the person's own check finds gone leaves Library even when a
+torrent still lists it ([absent locations](library/disk.md#absent-locations),
+owner decision of 11 November 2026). SQLite saves reusable facts and user
+decisions and executes local searches over the retained catalogue, whose
+membership the data sources decide. It is never an independent file inventory. Library
 removes a torrent's stored facts when it observes removal or next reconciles,
 including video information no remaining entry uses. This keeps Library useful
 without adding permanent search or database work to the resident engine.
@@ -332,17 +343,13 @@ corrections. Retry uses the same open and source-reconciliation path. Failed
 edits stay unsaved, the database stays intact, and normal torrent work remains
 independent of this failure.
 
-## Future data sources and exclusions
+## Exclusions
 
-**Owner ruling:** a later disk data source finds files the way Everything does,
-from the file system's own index, never by walking folders. It contributes
-through the same data-source interface and owns its discovery method,
-permissions and membership lifecycle. Removing a torrent would remove only its
-contribution; an independently reported location could remain through the disk
-data source.
+**Owner ruling:** the disk data source finds files from gozler's index of the
+file system, never by walking folders. It contributes through the same
+data-source interface and owns its discovery method and membership lifecycle
+([disk discovery](library/disk.md)). Removing a torrent removes only its
+contribution; a location that disk discovery also reports stays.
 
-That adapter, its drivers, elevation flows and configuration screens are future
-work. Do not build them or a framework for managing them in the initial feature.
-Whole-disk deduplication, automatic recovery of externally moved files, embedded
-playback, artwork, recommendations, watch history and online torrent discovery
-are also outside this feature.
+Whole-disk deduplication, embedded playback, artwork, recommendations, watch
+history and online torrent discovery are outside this feature.

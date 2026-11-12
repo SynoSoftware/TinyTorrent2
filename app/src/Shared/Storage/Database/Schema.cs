@@ -15,6 +15,34 @@ internal sealed partial class Database
         UPDATE video_choices SET name=title_key(title);
         UPDATE video_choices SET original_name=title_key(original) WHERE original IS NOT NULL;
         """,
+        // 11: disk discovery's facts.
+        """
+            -- Its contributions come from disk instead of a torrent, and its
+            -- files keep what gozler names them by: their
+            -- volume, their file ID on it, and the time they were last written,
+            -- as a FILETIME, or NULL while gozler has not reported it.
+            ALTER TABLE contributions ADD COLUMN data_source TEXT NOT NULL DEFAULT 'torrent'
+                CHECK(data_source IN ('torrent','disk'));
+            CREATE TABLE disk_files (
+                origin TEXT NOT NULL, file_index INTEGER NOT NULL,
+                volume TEXT NOT NULL, file_id TEXT NOT NULL, modified INTEGER,
+                PRIMARY KEY(origin,file_index),
+                FOREIGN KEY(origin,file_index) REFERENCES source_files(origin,file_index) ON DELETE CASCADE
+            );
+            -- A location the person's own check found gone, though a torrent
+            -- may still list it.
+            ALTER TABLE locations ADD COLUMN absent INTEGER NOT NULL DEFAULT 0 CHECK(absent IN (0,1));
+            ALTER TABLE library_settings ADD COLUMN discovery INTEGER NOT NULL DEFAULT 0
+                CHECK(discovery IN (0,1));
+            CREATE TABLE hidden_folders (path TEXT COLLATE PATH NOT NULL PRIMARY KEY);
+            -- The number the next new disk file takes. Numbers are never
+            -- used again, so facts still kept for a withdrawn file never pass
+            -- to another.
+            CREATE TABLE disk_numbers (
+                singleton INTEGER PRIMARY KEY CHECK(singleton=1), next INTEGER NOT NULL
+            );
+            INSERT INTO disk_numbers VALUES(1,0);
+            """,
     ];
 
     private static int Version => Baseline + Migrations.Length;
@@ -174,17 +202,35 @@ internal sealed partial class Database
             settled INTEGER NOT NULL, collected INTEGER NOT NULL DEFAULT 0,
             save_path TEXT NOT NULL, stamp TEXT NOT NULL, checked INTEGER NOT NULL DEFAULT 0
         );
+        -- The disk contribution once this connection accepted an answer from
+        -- gozler: its File confirmation. The torrents' is in file_reads.
+        CREATE TEMP TABLE disk_reads (origin TEXT NOT NULL PRIMARY KEY);
         CREATE TEMP VIEW collected_files AS
         SELECT f.* FROM source_files f JOIN file_reads c USING (origin)
-        WHERE c.collected=1;
+        WHERE c.collected=1
+        UNION ALL
+        SELECT f.* FROM source_files f JOIN disk_reads USING (origin);
+        -- Every contribution this connection has not confirmed, so cleanup
+        -- keeps its facts: also a torrent the engine has not listed yet.
         CREATE TEMP VIEW pending_origins AS
-        SELECT origin FROM file_reads WHERE collected=0;
+        SELECT origin FROM file_reads WHERE collected=0
+        UNION ALL
+        SELECT origin FROM contributions WHERE origin NOT IN (SELECT origin FROM file_reads)
+            AND origin NOT IN (SELECT origin FROM disk_reads);
+        -- A location that a torrent lists follows the torrent: a disk file
+        -- counts as finished, but a torrent's file may not be. A disk file is
+        -- readable once confirmed, unless it is a cloud placeholder.
         CREATE TEMP VIEW current_files AS
         SELECT l.entry_id, l.path, f.name, f.size, f.kind, f.title, f.type, f.year, f.search,
-            MAX(f.complete) AS complete,
-            MAX(f.complete AND COALESCE(c.complete AND c.settled AND c.collected,0)) AS readable
+            COALESCE(MAX(CASE WHEN s.data_source='torrent' THEN f.complete END),1) AS complete,
+            COALESCE(MAX(CASE WHEN s.data_source='torrent'
+                    THEN f.complete AND COALESCE(c.complete AND c.settled AND c.collected,0) END),
+                MAX(f.complete AND d.origin IS NOT NULL)) AS readable
         FROM locations l JOIN source_files f USING (entry_id)
+        JOIN contributions s USING (origin)
         LEFT JOIN file_reads c USING (origin)
+        LEFT JOIN disk_reads d USING (origin)
+        WHERE l.absent=0
         GROUP BY l.entry_id;
         -- The identification that decides each Library entry: the latest
         -- explicit choice of its files, including Clear, else the latest
@@ -235,12 +281,67 @@ internal sealed partial class Database
             JOIN source_files s ON s.origin=d.origin AND s.file_index=d.file_index
             WHERE s.entry_id=f.entry_id LIMIT 1)
         WHERE f.complete=1;
-        CREATE TEMP TABLE library_state (
-            singleton INTEGER PRIMARY KEY CHECK(singleton=1),
-            valid INTEGER NOT NULL CHECK(valid IN (0,1))
+        -- The search snapshot: a copy of library_entries, so a search does not
+        -- join every entry again. Its columns follow library_entries in order.
+        -- The entry key keeps each row in entry order when it is copied again.
+        CREATE TEMP TABLE library_rows (
+            entry_id INTEGER PRIMARY KEY, path, name, size, kind, title, type, year, genres, cast,
+            artist, album, track, duration, created, modified, file_search, video_id, music_search,
+            catalog_id, ratings, imdb_id, series_catalog, series_id, series_type, series_title,
+            episodes, bitrate, width, height, subtitles
         );
-        INSERT INTO library_state VALUES(1,0);
-        CREATE TEMP TABLE library_rows AS SELECT * FROM library_entries WHERE 0;
         CREATE TEMP TABLE library_matches (row_id INTEGER PRIMARY KEY);
+        -- The entries whose rows the open transaction has made out of date, each
+        -- once for every row written. It has no key: a trigger's statement
+        -- takes the conflict rule of the upsert that fired it, so a key here
+        -- fails the upsert.
+        CREATE TEMP TABLE library_changes (entry_id INTEGER);
+        INSERT INTO library_rows SELECT * FROM library_entries;
         """;
+
+    // The tables whose rows decide what library_entries shows, with the
+    // entries that one of their rows belongs to. A row written to one adds
+    // those entries to library_changes. The view reads others that need no
+    // trigger: subtitle_outputs reaches it only through its cascade to
+    // subtitle_output_sources; file_reads, disk_reads and contributions
+    // decide no selected column, and a contribution is written together with
+    // its source_files.
+    private static readonly (string Table, Func<string, string> Entries)[] Inputs =
+    [
+        ("locations", row => $"SELECT {row}.entry_id"),
+        ("source_files", row => $"SELECT {row}.entry_id"),
+        ("identifications", FileEntry),
+        ("file_facts", FileEntry),
+        ("subtitle_output_sources", FileEntry),
+        (
+            "video_information",
+            row => $"""
+                SELECT s.entry_id FROM identifications i JOIN source_files s USING(origin,file_index)
+                WHERE i.catalog_id={row}.catalog_id AND i.video_id={row}.video_id
+                """
+        ),
+        (
+            "title_facts",
+            row => $"""
+                SELECT s.entry_id FROM video_information v
+                JOIN identifications i USING(catalog_id,video_id)
+                JOIN source_files s USING(origin,file_index) WHERE v.imdb_id={row}.imdb_id
+                """
+        ),
+    ];
+
+    private static string FileEntry(string row) =>
+        $"SELECT entry_id FROM source_files WHERE origin={row}.origin AND file_index={row}.file_index";
+
+    private static readonly string Triggers = string.Concat(
+        Inputs.Select(input => $"""
+            CREATE TEMP TRIGGER {input.Table}_added AFTER INSERT ON {input.Table} BEGIN
+                INSERT INTO library_changes {input.Entries("NEW")}; END;
+            CREATE TEMP TRIGGER {input.Table}_changed AFTER UPDATE ON {input.Table} BEGIN
+                INSERT INTO library_changes {input.Entries("OLD")} UNION {input.Entries("NEW")}; END;
+            CREATE TEMP TRIGGER {input.Table}_removed AFTER DELETE ON {input.Table} BEGIN
+                INSERT INTO library_changes {input.Entries("OLD")}; END;
+
+            """)
+    );
 }

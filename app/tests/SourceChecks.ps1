@@ -197,12 +197,230 @@ try {
     $original = @(Invoke-Value $store 'Choices' @('tmdb', 'Oceans Twelve', $cancel))
     Require ($saved.Count -eq 1 -and $saved[0].VideoId -eq '161' -and $original.Count -eq 1 -and $original[0].VideoId -eq '163') 'A choice saved at revision 9 was not found by its title or original title after the upgrade.'
     Require ((Sql 'SELECT group_concat(origin) FROM new_origins;') -eq 'second') 'Reopening forgot a finished torrent whose completion search was not decided.'
+    # Records each search snapshot row written from here on.
+    Sql 'CREATE TEMP TABLE written (entry_id INTEGER);' | Out-Null
+    Sql 'CREATE TEMP TRIGGER written_rows AFTER INSERT ON library_rows BEGIN INSERT INTO written VALUES(NEW.entry_id); END;' | Out-Null
     $matches = Invoke-Value $store 'Search' @($query, $cancel)
     Require ($matches.Entries.Count -eq 1 -and $matches.Entries[0].EntryId -eq $entry.EntryId) 'Reopening lost the cached list or changed its row identity before engine file replies.'
+    Require ((Sql 'SELECT COUNT(*) FROM written;') -eq 0) 'The first search after opening copied the catalogue into the search snapshot.'
     Require ((Sql 'SELECT COUNT(*) FROM collected_files;') -eq 0 -and (Sql 'SELECT readable FROM current_files;') -eq 0) 'A saved file list authorized work before current confirmation.'
     Require (!(Invoke-Value $sources 'Replace' @($second, $files, $cancel))) 'Confirming an identical saved list reported a content change.'
-    Require ((Sql 'SELECT valid FROM library_state;') -eq 1) 'Unchanged confirmation invalidated the published search snapshot.'
+    Require ((Sql 'SELECT COUNT(*) FROM written;') -eq 0) 'Unchanged confirmation rewrote search snapshot rows.'
     Require ((Sql 'SELECT readable FROM current_files;') -eq 1) 'Current confirmation did not permit file work.'
+
+    $counted = New-Value 'Shared.Contribution' @('counted', 'Counted', $true, $true) @{ SavePath = $directory; Stamp = 'one' }
+    Invoke-Value $sources 'Reconcile' @((New-Values 'Shared.Contribution' @($second, $counted)), $cancel) | Out-Null
+    $countedFiles = foreach ($size in @(100, 200)) {
+        ,(New-Values 'Shared.SourceFile' @(0..7 | ForEach-Object {
+            $part = Join-Path $directory "Counted/Part.$_.mkv"
+            New-Value 'Shared.SourceFile' @($_, $part, $part, [long]$(if ($_ -lt 5) { $size } else { 100 })) @{ Complete = $true; Wanted = $true }
+        }))
+    }
+    Invoke-Value $sources 'Replace' @($counted, $countedFiles[0], $cancel) | Out-Null
+    Sql 'DELETE FROM written;' | Out-Null
+    Require (Invoke-Value $sources 'Replace' @($counted, $countedFiles[1], $cancel)) 'Five resized files were not saved.'
+    Require ((Sql 'SELECT COUNT(*) FROM written;') -eq 5) 'A change to five entries did not write exactly five search snapshot rows.'
+    $parts = (Invoke-Value $store 'Search' @((New-Value 'Library.Query' @('part', $configuration)), $cancel)).Entries
+    Require ($parts.Count -eq 8 -and @($parts | Where-Object Size -eq 200).Count -eq 5) 'The search snapshot did not show the five new sizes.'
+    Invoke-Value $sources 'Reconcile' @((New-Values 'Shared.Contribution' @($second)), $cancel) | Out-Null
+
+    # A database that an earlier TinyTorrent saved at schema revision 9 opens
+    # with the match the person corrected.
+    $saved = Join-Path $directory 'Revision9'
+    [IO.Directory]::CreateDirectory($saved) | Out-Null
+    $savedPath = Join-Path $saved 'Saved.Movie.2020.mkv'
+    $savedConnection = [Microsoft.Data.Sqlite.SqliteConnection]::new("Data Source=$(Join-Path $saved 'library.db');Pooling=False")
+    try {
+        $savedConnection.Open()
+        $savedConnection.CreateCollation('PATH', [Comparison[string]] { param($left, $right) [StringComparer]::OrdinalIgnoreCase.Compare($left, $right) })
+        $command = $savedConnection.CreateCommand()
+        $command.CommandText = $database.GetType().GetField('Schema', $staticFlags).GetValue($null) + @'
+PRAGMA user_version=9;
+INSERT INTO contributions VALUES('saved','Saved','one');
+INSERT INTO locations(entry_id,path) VALUES(1,$path);
+INSERT INTO source_files VALUES('saved',0,1,'Saved.Movie.2020.mkv',$path,100,1,1,0,'Saved Movie','movie',2020,'saved movie');
+INSERT INTO video_information(catalog_id,video_id,language,title,type,year,genres,cast,synopsis,keywords,search)
+VALUES('tmdb','movie/7','en','Corrected title','movie',2020,'','','','','corrected title');
+INSERT INTO identifications VALUES('saved',0,'tmdb','movie/7',1,1700000000,'Saved.Movie.2020.mkv');
+'@
+        $command.Parameters.AddWithValue('$path', $savedPath) | Out-Null
+        $command.ExecuteNonQuery() | Out-Null
+        $command.Dispose()
+    }
+    finally { $savedConnection.Dispose() }
+    $revision9 = New-Value 'Shared.Storage.Database' @($saved)
+    try {
+        $savedMatches = Invoke-Value (New-Value 'Library.Store' @($revision9, $imdb)) 'Search' @($query, $cancel)
+        Require ($savedMatches.Entries.Count -eq 1 -and $savedMatches.Entries[0].Title -eq 'Corrected title') 'A saved revision 9 database lost its corrected match when it opened.'
+    }
+    finally { $revision9.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null }
+
+    # Disk discovery, with gozler's answers written here. The files are real,
+    # on C:, because only the person's own check removes a file, and it checks
+    # the volume that gozler named.
+    $media = Join-Path ([IO.Path]::GetTempPath()) ('TinyTorrent-Disk-' + [Guid]::NewGuid().ToString('N'))
+    $diskData = Join-Path $directory 'Disk'
+    [IO.Directory]::CreateDirectory((Join-Path $media 'Show')) | Out-Null
+    [IO.Directory]::CreateDirectory($diskData) | Out-Null
+    $diskDatabase = New-Value 'Shared.Storage.Database' @($diskData)
+    try {
+        $volume = (& mountvol.exe (Split-Path -Qualifier $media) /L).Trim()
+        $gozler = $assembly.GetType('Syno.TinyTorrent.Shared.Gozler', $true)
+        $volumeField = $gozler.GetField('VolumeField', $staticFlags).GetValue($null)
+        $idField = $gozler.GetField('IdField', $staticFlags).GetValue($null)
+        $readiness = $assembly.GetType('Syno.TinyTorrent.Shared.VolumeReadiness', $true)
+        # gozler's generation rises with every change on a volume, so each
+        # answer carries its own.
+        $script:generation = 0
+        function Answer([object[]] $Files, [bool] $Incomplete = $false) {
+            $items = foreach ($file in $Files) {
+                [ordered]@{ path = $file[0]; is_dir = $false; size = $file[1]; mtime_ft = 1; $volumeField = $file[3]; $idField = $file[2] }
+            }
+            $script:generation++
+            $json = [ordered]@{ total = @($items).Count; items = @($items); more = $false; volumes_incomplete = $Incomplete; generation = $script:generation } | ConvertTo-Json -Depth 4 -Compress
+            return ,[Text.Encoding]::UTF8.GetBytes($json)
+        }
+        function Volumes([object[]] $Volumes) {
+            return New-Values 'Shared.GozlerVolume' @($Volumes | ForEach-Object {
+                New-Value 'Shared.GozlerVolume' @($_[0], [string[]]@($_[1]), [Enum]::Parse($readiness, $_[2]))
+            })
+        }
+        function Accept($Disk, $Json, $Volumes = (Volumes @())) {
+            return Invoke-Value $Disk 'Accept' @($Json, $Volumes, [long[]]@(), $cancel)
+        }
+        function Listed([string] $Path) {
+            return [long](Sql 'SELECT COUNT(*) FROM library_rows WHERE path=$path COLLATE PATH;' @{ '$path' = $Path } $diskConnection)
+        }
+        $diskSources = New-Value 'Shared.FileSources' @($diskDatabase)
+        $disk = New-Value 'Shared.DiskSource' @($diskSources, $work)
+        Invoke-Value $diskSources 'EnableDiscovery' @($cancel) | Out-Null
+        $diskConnection = $diskDatabase.GetType().GetField('_connection', $flags).GetValue($diskDatabase)
+        $movie = Join-Path $media 'Show\Movie.2020.mkv'
+        $subtitle = Join-Path $media 'Show\Movie.2020.srt'
+        $shared = Join-Path $media 'Shared.2021.mkv'
+        foreach ($created in @($movie, $subtitle, $shared)) { [IO.File]::WriteAllBytes($created, [byte[]]::new(100)) }
+        $firstAnswer = Answer @(@($movie, 100, '1', $volume), @($subtitle, 100, '2', $volume), @($shared, 100, '3', $volume))
+        Require (Accept $disk $firstAnswer) 'A first disk answer saved nothing.'
+        Require ((Listed $movie) -eq 1 -and (Listed $subtitle) -eq 1 -and (Listed $shared) -eq 1) 'A first disk answer did not list its files.'
+        Require ((Sql 'SELECT COUNT(*) FROM collected_files;' @{} $diskConnection) -eq 3) 'An accepted disk answer did not confirm its files for file work.'
+
+        Sql 'CREATE TEMP TABLE written (entry_id INTEGER); CREATE TEMP TRIGGER written_rows AFTER INSERT ON library_rows BEGIN INSERT INTO written VALUES(NEW.entry_id); END;' @{} $diskConnection | Out-Null
+        Require (!(Accept $disk (Answer @(@($movie, 100, '1', $volume), @($subtitle, 100, '2', $volume), @($shared, 100, '3', $volume))))) 'The same disk files in a newer answer were saved again.'
+        $reordered = Answer @(@($shared, 100, '3', $volume), @($movie, 100, '1', $volume), @($subtitle, 100, '2', $volume))
+        Require (!(Accept $disk $reordered)) 'An unchanged disk answer in another order reported a change.'
+        Require ((Sql 'SELECT COUNT(*) FROM written;' @{} $diskConnection) -eq 0) 'An unchanged disk answer wrote search snapshot rows.'
+
+        # A folder the person renames keeps its entries and the match they chose.
+        $movieEntry = [long](Sql 'SELECT entry_id FROM locations WHERE path=$path;' @{ '$path' = $movie } $diskConnection)
+        Sql @'
+INSERT INTO video_information(catalog_id,video_id,language,title,type,year,genres,cast,synopsis,keywords,search)
+VALUES('tmdb','movie/9','en','Matched title','movie',2020,'','','','','matched title');
+INSERT INTO identifications SELECT origin,file_index,'tmdb','movie/9',1,1700000000,name FROM source_files WHERE entry_id=$entry;
+'@ @{ '$entry' = $movieEntry } $diskConnection | Out-Null
+        Rename-Item -LiteralPath (Join-Path $media 'Show') 'Renamed'
+        $movie = Join-Path $media 'Renamed\Movie.2020.mkv'
+        $subtitle = Join-Path $media 'Renamed\Movie.2020.srt'
+        Require (Accept $disk (Answer @(@($movie, 100, '1', $volume), @($subtitle, 100, '2', $volume), @($shared, 100, '3', $volume)))) 'A renamed folder was not saved.'
+        Require ([long](Sql 'SELECT entry_id FROM locations WHERE path=$path;' @{ '$path' = $movie } $diskConnection) -eq $movieEntry) 'A renamed folder gave its movie a new entry.'
+        Require ((Sql 'SELECT title FROM library_rows WHERE entry_id=$entry;' @{ '$entry' = $movieEntry } $diskConnection) -eq 'Matched title') 'A renamed folder lost the match the person chose.'
+
+        # A displayed disk movie takes its subtitle files from what gozler
+        # reported and lists no folder, which could wake a sleeping drive.
+        $diskSubtitles = New-Value 'Subtitles.Acquisition' @($diskDatabase, $null, $policy) @{ Work = $work }
+        try {
+            $unreported = Join-Path $media 'Renamed\Movie.2020.en.srt'
+            [IO.File]::WriteAllBytes($unreported, [byte[]]::new(100))
+            $shownMovie = [Collections.Generic.HashSet[long]]::new()
+            $shownMovie.Add($movieEntry) | Out-Null
+            $discoveries = @(Invoke-Value $diskSubtitles 'Movies' @($cancel, $shownMovie))
+            $place = [ValueTuple[string, bool]]::new((Split-Path $movie), $false)
+            $found = @(Invoke-Value $diskSubtitles 'SubtitleFiles' @($place, (New-Values 'Subtitles.Acquisition+Discovery' $discoveries), $cancel))
+            Require ($discoveries.Count -eq 1 -and $found -contains $subtitle -and $found -notcontains $unreported) 'A displayed disk movie listed its folder instead of the files gozler reported.'
+        }
+        finally { $diskSubtitles.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null }
+
+        # The torrent source neither withdraws nor schedules the disk contribution.
+        Invoke-Value $diskSources 'Reconcile' @((New-Values 'Shared.Contribution' @()), $cancel) | Out-Null
+        Require ((Listed $movie) -eq 1) 'The torrent reconcile withdrew the disk contribution.'
+        Require ($null -eq (Invoke-Value $diskSources 'Next' @($cancel))) 'The torrent source scheduled the disk contribution for an engine read.'
+
+        # A location that a torrent lists follows the torrent: its unfinished
+        # file is not shown as finished.
+        $torrent = New-Value 'Shared.Contribution' @('torrent', 'Torrent', $false, $true) @{ SavePath = $media; Stamp = 'one' }
+        Invoke-Value $diskSources 'Reconcile' @((New-Values 'Shared.Contribution' @($torrent)), $cancel) | Out-Null
+        $listed = New-Value 'Shared.SourceFile' @(0, $shared, $shared, [long]100) @{ Complete = $false; Wanted = $true }
+        Invoke-Value $diskSources 'Replace' @($torrent, (New-Values 'Shared.SourceFile' @($listed)), $cancel) | Out-Null
+        Require ((Listed $shared) -eq 0) "A torrent's unfinished file was shown as finished because disk discovery found it."
+        $listed = New-Value 'Shared.SourceFile' @(0, $shared, $shared, [long]100) @{ Complete = $true; Wanted = $true }
+        $listedFiles = New-Values 'Shared.SourceFile' @($listed)
+        Invoke-Value $diskSources 'Replace' @($torrent, $listedFiles, $cancel) | Out-Null
+        Require ((Listed $shared) -eq 1) "A torrent's finished file was not listed."
+
+        # A torrent's file renamed outside TinyTorrent leaves no row at its old
+        # path, which would not open.
+        $before = Join-Path $media 'Before.2022.mkv'
+        $after = Join-Path $media 'After.2022.mkv'
+        [IO.File]::WriteAllBytes($before, [byte[]]::new(100))
+        Require (Accept $disk (Answer @(@($movie, 100, '1', $volume), @($subtitle, 100, '2', $volume), @($shared, 100, '3', $volume), @($before, 100, '6', $volume)))) 'A new disk file was not saved.'
+        $kept = New-Value 'Shared.SourceFile' @(1, $before, $before, [long]100) @{ Complete = $true; Wanted = $true }
+        $listedFiles = New-Values 'Shared.SourceFile' @($listed, $kept)
+        Invoke-Value $diskSources 'Replace' @($torrent, $listedFiles, $cancel) | Out-Null
+        Move-Item -LiteralPath $before $after
+        Accept $disk (Answer @(@($movie, 100, '1', $volume), @($subtitle, 100, '2', $volume), @($shared, 100, '3', $volume), @($after, 100, '6', $volume))) | Out-Null
+        Require ((Listed $after) -eq 1 -and (Listed $before) -eq 0) "A torrent's file renamed outside TinyTorrent stayed listed at its old path."
+
+        # A drive that is not connected, or that gozler is still indexing,
+        # loses nothing, while a file deleted on a connected drive leaves,
+        # also when a torrent lists it.
+        $absentVolume = '\\?\Volume{00000000-0000-0000-0000-000000000000}\'
+        $indexingVolume = '\\?\Volume{00000000-0000-0000-0000-000000000001}\'
+        $offline = 'Q:\Away\Offline.2019.mkv'
+        $indexing = 'R:\Busy\Indexing.2018.mkv'
+        Require (Accept $disk (Answer @(@($movie, 100, '1', $volume), @($subtitle, 100, '2', $volume), @($shared, 100, '3', $volume),
+            @($offline, 100, '4', $absentVolume), @($indexing, 100, '5', $indexingVolume)))) 'Files on two more drives were not saved.'
+        Remove-Item -LiteralPath $shared
+        Accept $disk (Answer @(@($movie, 100, '1', $volume), @($subtitle, 100, '2', $volume)) $true) (Volumes @(,@($indexingVolume, 'R:\', 'Indexing'))) | Out-Null
+        Require ((Listed $offline) -eq 1) 'A drive that is not connected lost its files.'
+        Require ((Listed $indexing) -eq 1) 'A drive that gozler is still indexing lost its files.'
+        Require ((Listed $shared) -eq 0) 'A deleted file that a torrent lists stayed in Library.'
+        $diskDatabase.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null
+        $diskDatabase = New-Value 'Shared.Storage.Database' @($diskData)
+        $diskSources = New-Value 'Shared.FileSources' @($diskDatabase)
+        $disk = New-Value 'Shared.DiskSource' @($diskSources, $work)
+        Invoke-Value $diskSources 'Reconcile' @((New-Values 'Shared.Contribution' @($torrent)), $cancel) | Out-Null
+        Invoke-Value $diskSources 'Replace' @($torrent, $listedFiles, $cancel) | Out-Null
+        $diskConnection = $diskDatabase.GetType().GetField('_connection', $flags).GetValue($diskDatabase)
+        Require ((Listed $shared) -eq 0) 'A deleted file that a torrent lists returned when the window opened again.'
+
+        # gozler has not answered since the window opened, and that holds no
+        # subtitle move or deletion for torrents.
+        Require ([long](Sql "SELECT COUNT(*) FROM pending_origins WHERE origin IN (SELECT origin FROM contributions WHERE data_source='disk');" @{} $diskConnection) -eq 1) 'The disk source was confirmed before gozler answered.'
+        $diskSubtitles = New-Value 'Subtitles.Acquisition' @($diskDatabase, $null, $policy) @{ Work = $work }
+        try {
+            # Set directly, because SetConnected also starts the search worker.
+            $diskSubtitles.GetType().GetField('_connected', $flags).SetValue($diskSubtitles, $true)
+            Require ((Invoke-Value $diskSubtitles 'PathAccess' @($shared, $cancel)).ToString() -ne 'Pending') 'A gozler that has not answered held subtitle work for torrents.'
+        }
+        finally { $diskSubtitles.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null }
+
+        # A hidden folder's files leave at once, and every later query leaves
+        # the folder out.
+        $hidden = Join-Path $media 'Renamed'
+        Require (Invoke-Value $disk 'Hide' @($hidden)) 'A folder could not be hidden.'
+        Require ((Listed $movie) -eq 0 -and (Listed $subtitle) -eq 0) "A hidden folder's files stayed in Library."
+        $terms = $gozler.GetMethod('Terms', $staticFlags).Invoke($null, @(,[string[]]@($hidden))).Item1
+        Require ($terms -contains ('!"' + $hidden + '\*"')) 'The query does not leave a hidden folder out.'
+
+        # Switching the option off withdraws the disk files and the absent
+        # fact; the torrents alone decide again.
+        Invoke-Value $disk 'Disable' @() | Out-Null
+        Require ((Listed $offline) -eq 0) 'Switching discovery off left disk files in Library.'
+        Require ([long](Sql 'SELECT COUNT(*) FROM locations WHERE absent=1;' @{} $diskConnection) -eq 0) 'Switching discovery off kept a location absent.'
+    }
+    finally {
+        $diskDatabase.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null
+        Remove-Item -LiteralPath $media -Recurse -Force -ErrorAction SilentlyContinue
+    }
     $matches = Invoke-Value $store 'Search' @($query, $cancel)
     Require ($matches.Entries[0].Title -eq 'Chosen title' -and $matches.Entries[0].Created -eq 1700000000) 'Saved identification or properties did not survive reopening.'
     Require ($matches.Entries[0].Ratings.Tmdb.Value -eq 8.25 -and $matches.Entries[0].Ratings.Tmdb.Kind -eq $movieKind -and
@@ -527,7 +745,7 @@ try {
             New-Value 'Shared.SourceFile' @($_, $movie, $movie, [long]100) @{ Complete = $true; Wanted = $true }
         }
         Invoke-Value $sources 'Replace' @($first, (New-Values 'Shared.SourceFile' @($releaseFiles)), $cancel) | Out-Null
-        $targets = @(Invoke-Value $batch 'Targets' @($cancel) | Where-Object {
+        $targets = @(Invoke-Value $batch 'Targets' @($cancel, $null) | Where-Object {
             $_.Language -eq 'en' -and $_.GetType().GetProperty('Rank', $flags).GetValue($_) -eq 1
         } | Sort-Object Path)
         $validate = [Linq.Expressions.Expression]::Lambda([Func[Threading.CancellationToken, Threading.Tasks.Task]],
@@ -598,7 +816,7 @@ try {
             New-Value 'Shared.SourceFile' @($_, $movie, $movie, [long]100) @{ Complete = $true; Wanted = $true }
         }
         Invoke-Value $sources 'Replace' @($first, (New-Values 'Shared.SourceFile' @($batchFiles)), $cancel) | Out-Null
-        $targets = Invoke-Value $batch 'Targets' @($cancel)
+        $targets = Invoke-Value $batch 'Targets' @($cancel, $null)
         $primary = @($targets | Where-Object { $_.GetType().GetProperty('Rank', $flags).GetValue($_) -eq 1 -and $_.Language -eq 'en' } | Sort-Object Path)
         Invoke-Value $batch 'Record' @($primary[0], $false, $cancel, $null) | Out-Null
         $matchType = $assembly.GetType('Syno.TinyTorrent.SubtitleMatch')
@@ -888,7 +1106,7 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
         $operation.Wait()
         try {
             Invoke-Value $search 'SetConnected' @($true) | Out-Null
-            $targets = @(Invoke-Value $search 'Targets' @($cancel) | Where-Object { $_.Language -eq 'en' } | Sort-Object Path)
+            $targets = @(Invoke-Value $search 'Targets' @($cancel, $null) | Where-Object { $_.Language -eq 'en' } | Sort-Object Path)
             $target = @($targets | Where-Object { $_.GetType().GetProperty('Rank', $flags).GetValue($_) -eq 1 })[0]
             $connection = $database.GetType().GetField('_connection', $flags).GetValue($database)
             $counter = Invoke-Value $search 'SearchCount' @('Search.Once.2024.mkv', 'en')
@@ -1275,7 +1493,7 @@ public sealed class CityFailure {
             Require ($scan.Unreadable -gt 0 -and (Sql 'SELECT COUNT(*) FROM subtitle_languages;') -eq $beforeUnreadable) 'An unreadable scan discarded existing coverage.'
         }
         finally { $locked.Dispose() }
-        $targets = Invoke-Value $inventory 'Targets' @($cancel)
+        $targets = Invoke-Value $inventory 'Targets' @($cancel, $null)
         $englishTarget = @($targets | Where-Object { $_.Language -eq 'en' -and $_.GetType().GetProperty('Rank', $flags).GetValue($_) -eq 1 })[0]
         $connection = $database.GetType().GetField('_connection', $flags).GetValue($database)
         $recorded = $inventory.GetType().GetMethod('Recorded', [Reflection.BindingFlags]'Static,NonPublic')
@@ -1440,7 +1658,7 @@ INSERT INTO subtitle_output_sources(path,language,origin,file_index,movie_path) 
         '$path' = $caption; '$language' = 'en'; '$origin' = 'first'; '$movie' = $path
     } | Out-Null
 
-    $targets = Invoke-Value $subtitles 'Targets' @($cancel)
+    $targets = Invoke-Value $subtitles 'Targets' @($cancel, $null)
     $target = $targets | Where-Object { $_.Path -eq $caption } | Select-Object -First 1
     Sql 'DELETE FROM subtitle_outputs WHERE path=$path;' @{ '$path' = $caption } | Out-Null
     Sql 'UPDATE file_reads SET collected=0;' | Out-Null

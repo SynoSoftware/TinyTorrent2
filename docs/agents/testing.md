@@ -539,6 +539,13 @@ does not authorize running it. Existing `app/tests/SourceChecks.ps1` and
 `ProviderChecks.ps1` are focused source-membership and provider checks, not a
 standing requirement to rerun them for every edit. Preserve their earlier
 evidence and apply this document's test-selection rules to any future run.
+`TINYTORRENT_CAPTURE_REVIEW=discovery` captures disk discovery across English/Spanish
+and Light/Dark: Library's empty state with Discover, Settings' Media discovery
+off and on with two hidden folders, gozler's install prompt and its Cancel, the
+Library menu with Hide folder on a disk file, and the Stopped and Indexing
+message bars. It saves the option and the file in the disposable database and
+sets the disk states directly, so it never runs gozler, never downloads and
+never presses Install. The capture build must have no `gozler.json`.
 Use `TINYTORRENT_CAPTURE_REVIEW=traffic` only with the
 launcher's `traffic-capture.json` manifest. It captures the active workspace,
 General, populated Peers, mixed Pieces and nonzero Speed history across the
