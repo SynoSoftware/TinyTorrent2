@@ -92,7 +92,9 @@ default to other folders, so pass the printed paths:
 - [Checks.ps1](../../engine/tests/Checks.ps1): `-EnginePath <folder>\TinyTorrent.exe`.
 - The storage control's transition check builds with
   `-Project engine\tests\Transitions.vcxproj` and runs as
-  `Transitions.exe` from its printed output folder, in seconds.
+  `Transitions.exe` from its printed output folder. Its Debug build takes
+  about 6 minutes for 36.7 million decisions (343 s on 12 November 2026), so
+  give the run that long before a time limit stops it.
 - [Capture.ps1](../../app/tests/Capture.ps1): `-ArtifactsPath <artifacts>`, and
   `-Configuration Release` after a `-Release` build.
 

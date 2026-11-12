@@ -87,7 +87,7 @@ std::optional<Problem> Control::Cause() const
     {
         return std::nullopt;
     }
-    return storage_->cause;
+    return storage_->causes.back();
 }
 
 bool Control::NeedsPerson() const
@@ -130,23 +130,24 @@ void Control::On(Failed const& failed, Reality const& reality, Effects& effects)
         {
             return;
         }
-        storage_ = Failure{.cause = failed.cause, .retryable = failed.retryable};
+        storage_ = Failure{.causes = {failed.cause}, .retryable = failed.retryable};
     }
     else if (storage_->ladder.stage != FailureStage::Continued)
     {
         // The status reports the error each second; it is the same failure.
-        storage_->cause = failed.cause;
+        std::erase(storage_->causes, failed.cause);
+        storage_->causes.push_back(failed.cause);
         storage_->retryable = storage_->retryable && failed.retryable;
         return;
     }
     else if (Further(reality.progress, storage_->progress))
     {
-        storage_ = Failure{.cause = failed.cause, .retryable = failed.retryable};
+        storage_ = Failure{.causes = {failed.cause}, .retryable = failed.retryable};
     }
     else
     {
         storage_->ladder.Return();
-        storage_->cause = failed.cause;
+        storage_->causes = {failed.cause};
         storage_->retryable = storage_->retryable && failed.retryable;
     }
     if (!Busy())
@@ -250,7 +251,7 @@ void Control::On(Reloaded const& reloaded, Reality const&, Effects& effects)
         // failure begins a failure of its own, which recovers as any other.
         if (reloaded.failure && !lost_.empty())
         {
-            storage_ = Failure{.cause = *reloaded.failure};
+            storage_ = Failure{.causes = {*reloaded.failure}};
             return;
         }
         effects.clear = true;
@@ -291,17 +292,23 @@ void Control::On(Answered const& answered, Reality const&, Effects& effects)
 
 void Control::On(Cleared const& cleared, Reality const&, Effects&)
 {
-    if (storage_ && storage_->cause == cleared.cause)
+    if (!storage_)
+    {
+        return;
+    }
+    std::erase(storage_->causes, cleared.cause);
+    if (storage_->causes.empty())
     {
         storage_.reset();
     }
 }
 
-void Control::On(Replaced const&, Reality const&, Effects&)
+void Control::On(Replaced const& replaced, Reality const&, Effects&)
 {
     storage_.reset();
     job_.reset();
     checkJob_.reset();
+    Forget(replaced.lost);
 }
 
 void Control::On(Dropped const&, Reality const&, Effects&)
@@ -399,6 +406,14 @@ void Control::Lose(std::vector<lt::file_index_t> lost)
     std::vector<lt::file_index_t> merged;
     std::set_union(lost_.begin(), lost_.end(), lost.begin(), lost.end(), std::back_inserter(merged));
     lost_ = std::move(merged);
+}
+
+void Control::Forget(std::vector<lt::file_index_t> const& settled)
+{
+    std::erase_if(lost_, [&settled](lt::file_index_t file)
+    {
+        return std::find(settled.begin(), settled.end(), file) != settled.end();
+    });
 }
 
 void Control::Judge(Reality const& reality, Effects& effects)

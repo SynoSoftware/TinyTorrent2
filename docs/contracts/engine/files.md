@@ -262,7 +262,8 @@ unless reconciliation has established the full piece map. Reconciliation hashes
 the untouched destination pieces last. For pieces that lie only in files the
 ordinary mover will place, it takes libtorrent's piece map, as every move
 does for the files it places, so it does not read those files before they are
-copied. It reloads the paused libtorrent handle
+copied. That map leaves out the pieces of files that lost their data, which
+count only where the destination proves them. It reloads the paused libtorrent handle
 with that map, retaining the product torrent's identity, settings and history.
 The new resume checkpoint is saved after older checkpoints and before the new
 folder, so an old source map cannot survive deletion of its files. The reload

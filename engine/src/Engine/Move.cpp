@@ -591,6 +591,11 @@ void Engine::State::ContinueMove(Move& moving)
     std::vector<lt::torrent_handle> handles;
     for (auto remaining = moving.ids.begin() + moving.current; remaining != moving.ids.end(); ++remaining)
         handles.push_back(Working(*remaining).handle);
+    // The reconciliation reads the files already at the destination again, so
+    // the move's reload settles the member's lost files: their pieces count
+    // only where the destination proves them.
+    bool reconciles = std::any_of(contents.begin(), contents.end(), [](auto const& file) { return file.existing; });
+    moving.lost = reconciles ? current.control.Lost() : std::vector<lt::file_index_t>{};
     // The rows that wait for the move's drives name the member that copies.
     auto& job = *moving.job;
     std::stable_partition(job.uses.begin(), job.uses.end(),
@@ -600,13 +605,14 @@ void Engine::State::ContinueMove(Move& moving)
     moving.checkSampled = 0;
     moving.phase = MovePhase::Copying;
     job.worker->Run([this, handles, files = std::move(files), contents = std::move(contents), logical,
-        origin = current.facts.savePath, destination = moving.destination, progress = job.progress]
+        origin = current.facts.savePath, destination = moving.destination, progress = job.progress, reconciles,
+        lost = moving.lost]
         () mutable -> std::expected<Payload::Reconciled, Payload::Failure>
     {
         ReleaseFiles(handles);
         progress->placing = true;
         Payload::Reconciled result;
-        if (std::any_of(contents.begin(), contents.end(), [](auto const& file) { return file.existing; }))
+        if (reconciles)
         {
             for (std::size_t index = 0; index < contents.size(); ++index)
             {
@@ -620,10 +626,12 @@ void Engine::State::ContinueMove(Move& moving)
             }
             auto handle = handles.front();
             auto metadata = handle.torrent_file();
+            auto have = handle.status(lt::torrent_handle::query_pieces).pieces;
+            DropPieces(have, *metadata, lost);
             Payload::Pieces pieces{metadata, metadata->v2() ? handle.piece_layers() :
                 std::vector<std::vector<lt::sha256_hash>>{},
                 [this, handle](lt::piece_index_t piece) { return ReadPiece(handle, piece); },
-                handle.status(lt::torrent_handle::query_pieces).pieces};
+                std::move(have)};
             auto merged = Payload::Reconcile(pieces, contents, *progress);
             if (!merged)
                 return std::unexpected(merged.error());
@@ -757,8 +765,14 @@ void Engine::State::ReloadMove(Move& moving)
     auto handle = Working(id).handle;
     auto replacement = std::make_shared<Replacement>();
     moving.phase = MovePhase::Saving;
+    // Download mode claims no piece, so its reload settles every lost file.
+    // A files-mode reload settles those its reconciliation read again.
+    if (moving.mode == MoveMode::Download)
+    {
+        moving.lost = Working(id).control.Lost();
+    }
     moving.job->worker->Run([this, handle, replacement, pieces = moving.pieces, logical = Working(id).Paths(true),
-        mode = moving.mode, destination = moving.destination, lost = Working(id).control.Lost(), stop = exitStop.get_token()]
+        mode = moving.mode, destination = moving.destination, stop = exitStop.get_token()]
     {
         auto& params = replacement->params;
         params = handle.get_resume_data(lt::torrent_handle::save_info_dict);
@@ -771,9 +785,6 @@ void Engine::State::ReloadMove(Move& moving)
             params.have_pieces = *pieces;
         params.verified_pieces.clear();
         params.unfinished_pieces.clear();
-        // The move's resume data, which its continuation saves, must not
-        // claim the data of files that lost it.
-        DropPieces(params, lost);
         std::size_t position = 0;
         for (auto index : params.ti->layout().file_range())
         {
@@ -892,7 +903,7 @@ void Engine::State::SaveMove(Move& moving)
         torrent.renameAt = {};
         // The torrent's storage failure and name problem belonged to its old
         // folder.
-        Steer(torrent, Control::Replaced{});
+        Steer(torrent, Control::Replaced{std::exchange(moving.lost, {})});
         torrent.nameError.reset();
         ++moving.current;
         EndMove(torrent, std::nullopt, false);

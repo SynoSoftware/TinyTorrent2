@@ -739,24 +739,31 @@ void Engine::State::DropPieces(lt::add_torrent_params& params, std::vector<lt::f
 {
     if (files.empty() || !params.ti)
         return;
-    auto const& layout = params.ti->layout();
+    DropPieces(params.have_pieces, *params.ti, files);
+    DropPieces(params.verified_pieces, *params.ti, files);
     for (auto file : files)
     {
-        auto size = layout.file_size(file);
-        if (size == 0)
-            continue;
-        auto last = layout.map_file(file, size - 1, 1).piece;
-        for (auto piece = layout.map_file(file, 0, 1).piece; piece <= last; ++piece)
+        auto range = Pieces(*params.ti, file);
+        for (auto piece = range.first; piece < range.end; ++piece)
         {
-            if (piece < params.have_pieces.end_index())
-                params.have_pieces.clear_bit(piece);
-            if (piece < params.verified_pieces.end_index())
-                params.verified_pieces.clear_bit(piece);
-            params.unfinished_pieces.erase(piece);
+            params.unfinished_pieces.erase(lt::piece_index_t(static_cast<int>(piece)));
         }
     }
     // Seed mode claims every piece.
     params.flags &= ~lt::torrent_flags::seed_mode;
+}
+
+void Engine::State::DropPieces(lt::typed_bitfield<lt::piece_index_t>& pieces, lt::torrent_info const& metadata,
+    std::vector<lt::file_index_t> const& files)
+{
+    for (auto file : files)
+    {
+        auto range = Pieces(metadata, file);
+        for (auto piece = range.first; piece < range.end && piece < pieces.size(); ++piece)
+        {
+            pieces.clear_bit(lt::piece_index_t(static_cast<int>(piece)));
+        }
+    }
 }
 
 void Engine::State::Reload(Torrent& torrent, std::shared_ptr<Control::Job const> job)

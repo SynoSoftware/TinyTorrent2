@@ -805,6 +805,9 @@ public:
         std::set<std::string> checks;
         std::map<std::string, Problem> problems;
         std::optional<lt::typed_bitfield<lt::piece_index_t>> pieces;
+        // The current member's lost files that its reload settles: their
+        // pieces are left out, or verified again at the destination.
+        std::vector<lt::file_index_t> lost;
         // Files that earlier members put at the destination, kept while
         // members share files. On one volume, a member that shares one no
         // longer has it in its old folder.
@@ -1458,6 +1461,8 @@ public:
     // Drops the pieces of `files` from the resume data, so the torrent
     // downloads those files again without checking the others.
     static void DropPieces(lt::add_torrent_params& params, std::vector<lt::file_index_t> const& files);
+    static void DropPieces(lt::typed_bitfield<lt::piece_index_t>& pieces, lt::torrent_info const& metadata,
+        std::vector<lt::file_index_t> const& files);
     // A torrent's new handle with its status, or, when libtorrent did not
     // add it, the parameters to add it from and the add's error.
     struct Replacement

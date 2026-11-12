@@ -471,9 +471,13 @@ only records the files it found without their data, and a removed torrent
 starts no other job. Files that lost
 their data keep the torrent paused until a reload without their pieces
 succeeds, so they download again instead of the torrent writing around zeros.
-Only the torrent's removal forgets them: after any answer, and after other
-work ends the stop, the reload runs first, once no file work uses the
-torrent's files, and a check waits for it. A reload that fails while no stop
+Only the torrent's removal, and a move whose own reload settled them, forget
+them. A move to a new folder reloads the torrent itself when it verifies files
+that it found at the destination, and in download mode: that reload leaves
+the lost files' pieces out, or keeps the pieces that the destination proves,
+so a second reload would only drop verified pieces or repeat the work. After
+any answer, and after other work ends the stop, the reload runs first, once
+no file work uses the torrent's files, and a check waits for it. A reload that fails while no stop
 holds the torrent starts a new failure. A job on a handle
 that a reload or a move replaced, or on a folder that a move replaced, ends
 with it, also for a removed torrent, and its late result changes nothing. Native release callbacks, rather than

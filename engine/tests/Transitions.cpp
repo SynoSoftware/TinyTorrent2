@@ -212,6 +212,16 @@ std::vector<Case> const cases{
             "Recovering at Automatic");
         Expect(torrent.Started(JobKind::Release), "the release starts");
     }},
+    {"work that clears a later error leaves the stop of the error that caused it", []
+    {
+        Subject torrent;
+        Stopped(torrent, disk);
+        torrent.Fail(names, false);
+        Expect(torrent.control.Cause() == names, "the latest error shows");
+        torrent.Send(Control::Cleared{names});
+        Expect(torrent.Stage() == FailureStage::Stopped && torrent.control.Cause() == disk, "the stop keeps its error");
+        Expect(torrent.control.Holds() && !torrent.last.clear, "held, nothing cleared");
+    }},
     {"a stop keeps the cause of a rename whose folder did not answer", []
     {
         Subject torrent;
@@ -384,6 +394,24 @@ std::vector<Case> const cases{
         torrent.Send(Control::Probed{probe, Control::Usable{}});
         Expect(!torrent.last.changed && !torrent.last.clear && torrent.last.jobs.empty(),
             "the late probe changes nothing");
+    }},
+    {"a move whose own reload settled the lost files leaves no reload for them", []
+    {
+        Subject torrent;
+        StoppedLost(torrent);
+        torrent.Send(Control::Replaced{lostFiles});
+        Expect(torrent.control.Lost().empty() && !torrent.control.Holds(), "the lost files are settled");
+        torrent.Due();
+        Expect(torrent.last.jobs.empty(), "no second reload at the new folder");
+    }},
+    {"a move without its own reload leaves the lost files to the reload", []
+    {
+        Subject torrent;
+        StoppedLost(torrent);
+        torrent.Send(Control::Replaced{});
+        Expect(torrent.control.Lost() == lostFiles && torrent.control.Holds(), "the lost files still wait");
+        torrent.Due();
+        Expect(torrent.Started(JobKind::Reload), "the reload drops them at the new folder");
     }},
     {"Verify while a reload runs clears once the reload ends", []
     {
@@ -810,7 +838,8 @@ void Verify(State const& before, State& after, Control::Event const& event, Cont
     }
     Expect(after.continues <= 2, "at most two continues per failure");
     // An owned result records the files it found without their data, and
-    // only a reload that succeeds or the removal forgets them.
+    // only a reload that succeeds, a move's own reload for the files it
+    // settled, or the removal forgets them.
     auto const& lost = after.control.Lost();
     // Only a job of the result's own kind takes it.
     auto found = [&event]() -> std::vector<lt::file_index_t>
@@ -838,11 +867,13 @@ void Verify(State const& before, State& after, Control::Event const& event, Cont
     }
     auto reloaded = std::get_if<Control::Reloaded>(&event);
     auto answered = std::get_if<Control::Answered>(&event);
+    auto replaced = std::get_if<Control::Replaced>(&event);
     bool forgets = (reloaded && !reloaded->failure && before.control.Owns(reloaded->job)) ||
         (answered && answered->answer == FailureAnswer::Remove);
     for (auto file : before.control.Lost())
     {
-        Expect(forgets || std::find(lost.begin(), lost.end(), file) != lost.end(),
+        bool settled = replaced && std::find(replaced->lost.begin(), replaced->lost.end(), file) != replaced->lost.end();
+        Expect(forgets || settled || std::find(lost.begin(), lost.end(), file) != lost.end(),
             "lost files are never forgotten");
     }
     // A failure that waits for the engine has its job, or Due starts one once

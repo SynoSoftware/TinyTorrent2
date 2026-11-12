@@ -299,9 +299,11 @@ public:
     struct Failure
     {
         Ladder ladder;
-        // What failed last. A Continued failure hides it; it shows again if
-        // the failure returns.
-        Problem cause;
+        // The errors of the failure that no work has cleared, each once, the
+        // latest last; the row shows the latest. Work that clears one leaves
+        // the others, so a stop keeps the error that caused it. A Continued
+        // failure hides them, and the error that returns replaces them.
+        std::vector<Problem> causes;
         bool retryable = true;
         // Where the torrent was when the engine continued it. Empty until
         // the first progress after a reload is known. Progress, not time,
@@ -404,6 +406,9 @@ public:
     // result of a job on the old folder changes nothing.
     struct Replaced
     {
+        // The lost files that the move's own reload left out of the new
+        // folder's pieces or verified there, so they wait for no reload.
+        std::vector<lt::file_index_t> lost;
     };
     // libtorrent's handle of the torrent was replaced, by a new handle or by
     // the parameters of an add that failed, so a release, probe or minute
@@ -515,6 +520,8 @@ private:
     static void Start(std::shared_ptr<Job>& slot, Job job, Effects& effects);
     // Adds the files a probe or minute check found without their data.
     void Lose(std::vector<lt::file_index_t> lost);
+    // Removes the files whose pieces a move's reload already settled.
+    void Forget(std::vector<lt::file_index_t> const& settled);
     // The ladder, once the location answers a recovering failure.
     void Judge(Reality const& reality, Effects& effects);
     // Continues the torrent at the next level, through a reload when the
