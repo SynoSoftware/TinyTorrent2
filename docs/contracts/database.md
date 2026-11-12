@@ -41,7 +41,7 @@ revision is 10:
 
 | Revision | Change |
 | --- | --- |
-| 10 | `video_choices.name` and `original_name` hold `FileName.TitleKey` of the title and original title instead of the title in lower case without accents. A choice saved for "Ocean's Eleven" is then found for a file named Oceans.Eleven. The migration rewrites both keys of every saved row. Rows stay keyed by catalogue and video, so two saved videos whose titles now share a key both remain, and a search of that title offers both, as the provider would. |
+| 10 | `video_choices.name` and `original_name` hold `FileName.TitleKey` of the title and original title instead of the title in lower case without accents. A choice saved for "Ocean's Eleven" is then found for a file named Oceans.Eleven. The migration rewrites both keys of every saved row. Rows stay keyed by catalogue and video, so two saved videos whose titles now share a key both remain, and a search of that title offers both, as the provider would. The subtitle search count is keyed by `TitleKey` from the same version. Its saved keys are digests that SQL cannot recompute, so for a title whose punctuation the key drops, the count starts again once and a queued manual job's fresh-search request falls back to the saved answer. That costs at most one more round of searches for such a title. |
 
 A change to `FileName.TitleKey` changes these saved keys, so it needs a
 migration that rewrites them again; otherwise the saved choices are not found.

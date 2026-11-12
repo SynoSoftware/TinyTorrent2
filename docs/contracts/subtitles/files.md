@@ -129,8 +129,9 @@ dropped.
 Subtitle searches follow the owner's
 [shared search limit](../architecture.md#third-party-provider-access), 5 by
 default: a hidden count per supplier, search text and language. The search text
-is the movie's title and year, with the season and episodes for an episode, so
-a second copy or another release of the same movie shares the count. The count
+is the movie's title key (`FileName.TitleKey`) and year, with the season and
+episodes for an episode, so a second copy or another release of the same movie
+shares the count, however its file name writes the title's punctuation. The count
 prevents repeated searches from consuming the supplier's allowance. It survives
 job resets, moves, removal of the torrent and reopening.
 A completed search counts once, including a miss, however many HTTP requests
