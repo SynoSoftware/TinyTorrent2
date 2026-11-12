@@ -559,7 +559,12 @@ issues own actionable work and its status.
   the choice list and the chosen download run through `Ask`: they belong
   to the configuration they started under, so a configuration change ends
   them. Find and a settings write act on the configuration that is current
-  when they run, so a configuration change does not end their wait.
+  when they run, so a configuration change does not end their wait. A
+  configuration change that arrives while Find runs its own work ends Find
+  with `FindInterruptedException`, and the view reports it as a failure, so
+  the person sees that Find stopped and can select it again; finishing on the
+  old configuration could download for languages or a supplier the person
+  just changed.
   `Reconfigure` saves a change that changes jobs; the extras count changes
   none and saves by itself. Closing subtitle work first ends the running
   work, the person's scan or search included, and then waits for the

@@ -1987,6 +1987,7 @@
     "failure_missing": "O vídeo não está em sua pasta, então nenhuma legenda foi salva para ele.",
     "failure_delete": "Não foi possível excluir o arquivo de legenda. Verifique as permissões da pasta de download.",
     "failure_changed": "O vídeo ou as configurações de legendas mudaram. Abra Baixar legenda novamente.",
+    "find_interrupted": "A busca parou porque as configurações de legendas ou a conexão mudaram. Selecione Buscar novamente.",
     "choose": "Baixar legenda",
     "download_title": "Baixar legendas",
     "choose_tip": "Baixar a legenda selecionada ao lado do vídeo",

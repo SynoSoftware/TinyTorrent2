@@ -1984,6 +1984,7 @@
     "failure_missing": "The video isn't in its folder, so no subtitle was saved for it.",
     "failure_delete": "Couldn't delete the subtitle file. Check the download folder's permissions.",
     "failure_changed": "The video or the subtitle settings changed. Open Download subtitle again.",
+    "find_interrupted": "Find stopped because the subtitle settings or the connection changed. Select Find again.",
     "choose": "Download subtitle",
     "download_title": "Download subtitles",
     "choose_tip": "Download the selected subtitle beside the video",

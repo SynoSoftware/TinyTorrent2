@@ -1987,6 +1987,7 @@
     "failure_missing": "视频不在其文件夹中，因此未为其保存字幕。",
     "failure_delete": "无法删除字幕文件，请检查下载文件夹的权限。",
     "failure_changed": "视频或字幕设置已更改，请重新打开“下载字幕”。",
+    "find_interrupted": "由于字幕设置或连接已更改，查找已停止。请再次选择“查找”。",
     "choose": "下载字幕",
     "download_title": "下载字幕",
     "choose_tip": "将所选字幕下载到视频旁",

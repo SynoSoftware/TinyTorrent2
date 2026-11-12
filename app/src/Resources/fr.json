@@ -1987,6 +1987,7 @@
     "failure_missing": "La vidéo n’est pas dans son dossier. Aucun sous-titre n’a donc été enregistré pour elle.",
     "failure_delete": "Impossible de supprimer le fichier de sous-titres. Vérifiez les autorisations du dossier de téléchargement.",
     "failure_changed": "La vidéo ou les paramètres des sous-titres ont changé. Rouvrez Télécharger un sous-titre.",
+    "find_interrupted": "La recherche s’est arrêtée car les paramètres des sous-titres ou la connexion ont changé. Sélectionnez de nouveau Rechercher.",
     "choose": "Télécharger un sous-titre",
     "download_title": "Télécharger des sous-titres",
     "choose_tip": "Télécharger le sous-titre sélectionné à côté de la vidéo",

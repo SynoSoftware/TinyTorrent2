@@ -1984,6 +1984,7 @@
     "failure_missing": "De video staat niet in de map, dus er is geen ondertitel voor opgeslagen.",
     "failure_delete": "Het ondertitelbestand kon niet worden verwijderd. Controleer de machtigingen van de downloadmap.",
     "failure_changed": "De video of de ondertitelinstellingen zijn gewijzigd. Open Ondertitel downloaden opnieuw.",
+    "find_interrupted": "Zoeken is gestopt omdat de ondertitelinstellingen of de verbinding zijn gewijzigd. Selecteer Zoeken opnieuw.",
     "choose": "Ondertitel downloaden",
     "download_title": "Ondertitels downloaden",
     "choose_tip": "De geselecteerde ondertitel naast de video downloaden",

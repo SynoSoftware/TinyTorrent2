@@ -1987,6 +1987,7 @@
     "failure_missing": "El vídeo no está en su carpeta, así que no se guardó ningún subtítulo para él.",
     "failure_delete": "No se pudo eliminar el archivo de subtítulos. Comprueba los permisos de la carpeta de descargas.",
     "failure_changed": "El vídeo o la configuración de subtítulos cambió. Vuelve a abrir Descargar subtítulo.",
+    "find_interrupted": "La búsqueda se detuvo porque cambió la configuración de subtítulos o la conexión. Vuelve a seleccionar Buscar.",
     "choose": "Descargar subtítulo",
     "download_title": "Descargar subtítulos",
     "choose_tip": "Descargar el subtítulo seleccionado junto al vídeo",

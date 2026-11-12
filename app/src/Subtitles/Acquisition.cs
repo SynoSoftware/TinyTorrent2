@@ -827,6 +827,15 @@ internal sealed class SubtitleException(SubtitleFailure reason, DateTimeOffset? 
 }
 
 /// <summary>
+/// A running Find stopped because the subtitle setup changed under it: the
+/// settings, the connection to the engine or the network route.
+/// </summary>
+internal sealed class FindInterruptedException() : Exception("Find was interrupted."), IFailure
+{
+    public string Describe(Strings text) => text.Get("subtitles", "find_interrupted");
+}
+
+/// <summary>
 /// The worker's step stopped before a search request so the person's own
 /// operation runs first. Its job stays due as it was: no attempt counts and
 /// no retry delay starts.

@@ -5,6 +5,9 @@ namespace Syno.TinyTorrent.Subtitles;
 internal sealed partial class Acquisition
 {
     private WorkRun? _manualWork;
+
+    // Cancels the running Find's own work when the person selects Stop.
+    private CancellationTokenSource? _finding;
     private WorkRun? _automaticWork;
 
     private ref WorkRun? Slot(bool manual) =>

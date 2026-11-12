@@ -837,13 +837,20 @@ internal sealed partial class Acquisition
         if (!CanFind)
             return;
         await TakeForPerson(_lifetime.Token).ConfigureAwait(false);
+        var requests = CancellationToken.None;
+        CancellationTokenSource? finding = null;
         try
         {
             if (!CanFind)
                 return;
-            CancellationToken cancellation;
+            // Stop ends Find's own work too, so a batch the person stopped is
+            // never accepted.
             lock (_requestSync)
-                cancellation = _requests.Token;
+            {
+                requests = _requests.Token;
+                finding = _finding = CancellationTokenSource.CreateLinkedTokenSource(requests);
+            }
+            var cancellation = finding.Token;
             var targets = (await Targets(cancellation).ConfigureAwait(false))
                 .Where(Eligible)
                 .ToArray();
@@ -887,8 +894,21 @@ internal sealed partial class Acquisition
             FindTotal = _batch.Values.Distinct().Count();
             await RefreshCounts().ConfigureAwait(false);
         }
+        catch (OperationCanceledException)
+            when (requests.IsCancellationRequested && !_lifetime.IsCancellationRequested)
+        {
+            // A configuration, engine or network change cancelled the request
+            // token. Finishing on the old configuration could download for
+            // languages or a supplier the person just changed, so Find stops
+            // and says so. The person's own Stop stays silent.
+            throw new FindInterruptedException();
+        }
         finally
         {
+            lock (_requestSync)
+                if (_finding == finding)
+                    _finding = null;
+            finding?.Dispose();
             ReleaseForPerson();
         }
     }
@@ -896,7 +916,10 @@ internal sealed partial class Acquisition
     internal Task StopFinding()
     {
         lock (_requestSync)
+        {
+            _finding?.Cancel();
             return _manualWork?.Stop() ?? Task.CompletedTask;
+        }
     }
 
     // The fresh answer the person's command asks for; none without a command.
