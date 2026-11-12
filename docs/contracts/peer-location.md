@@ -694,9 +694,10 @@ It shows the menu from the Peers area, not from the map, because choosing Table
 only removes the map, and the menu stays open.
 
 Zoom ranges from 1× to 128×, with 1.25× per wheel notch and proportional small
-wheel deltas. A drag does not select a location. Show the SizeAll cursor only
-after the drag threshold is crossed, restoring the normal cursor when the drag
-ends or is cancelled. Input moves the view directly, without added easing,
+wheel deltas. The drag threshold is the Windows drag distance, horizontally or
+vertically, as in the tables. A drag does not select a location. Show the
+SizeAll cursor only after the drag threshold is crossed, restoring the normal
+cursor when the drag ends or is cancelled. Input moves the view directly, without added easing,
 inertia or a zoom animation. While a mouse drag is active, the map's game loop
 reads the cursor at each frame and moves the view itself, so the map follows
 the hand while the UI thread is busy; the control takes that view back when the

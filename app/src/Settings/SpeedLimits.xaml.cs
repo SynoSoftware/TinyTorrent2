@@ -12,7 +12,6 @@ namespace Syno.TinyTorrent.Settings;
 
 public sealed partial class SpeedLimits : UserControl
 {
-    private readonly Windows.UI.ViewManagement.UISettings _display = new();
     private readonly SettingsRow[] _rows;
     public MainViewModel Main { get; }
     public Editor Model => Main.Settings;
@@ -23,6 +22,8 @@ public sealed partial class SpeedLimits : UserControl
     {
         Main = main;
         InitializeComponent();
+        Profiles.PrimaryWidth = new GridLength(1, GridUnitType.Star);
+        Profiles.SecondaryWidth = new GridLength(1, GridUnitType.Star);
         Selector = new(main);
         ModeRow.Content = Selector;
         _rows =
@@ -47,16 +48,10 @@ public sealed partial class SpeedLimits : UserControl
         }
         Loaded += (_, _) =>
         {
-            _display.TextScaleFactorChanged += OnTextScale;
-            UpdateProfiles();
             Model.TextChanged += OnText;
             OnText(this, EventArgs.Empty);
         };
-        Unloaded += (_, _) =>
-        {
-            _display.TextScaleFactorChanged -= OnTextScale;
-            Model.TextChanged -= OnText;
-        };
+        Unloaded += (_, _) => Model.TextChanged -= OnText;
     }
 
     private SettingsRow AddRate(StackPanel panel, Setting setting, string automationId)
@@ -115,23 +110,6 @@ public sealed partial class SpeedLimits : UserControl
         };
 
     internal void FocusConnection() => Connection.Focus(FocusState.Programmatic);
-
-    private void OnTextScale(Windows.UI.ViewManagement.UISettings sender, object args) =>
-        DispatcherQueue.TryEnqueue(UpdateProfiles);
-
-    private void OnProfilesSize(object sender, SizeChangedEventArgs args) => UpdateProfiles();
-
-    private void UpdateProfiles()
-    {
-        var stacked = Profiles.ActualWidth < 640 * _display.TextScaleFactor;
-        Profiles.ColumnSpacing = stacked ? 0 : 8;
-        Profiles.RowSpacing = stacked ? 8 : 0;
-        Profiles.ColumnDefinitions[1].Width = stacked
-            ? new GridLength(0)
-            : new GridLength(1, GridUnitType.Star);
-        Grid.SetColumn(AlternativeProfile, stacked ? 0 : 1);
-        Grid.SetRow(AlternativeProfile, stacked ? 1 : 0);
-    }
 
     private void OnConnection(object sender, RoutedEventArgs args) =>
         ConnectionRequested?.Invoke(this, EventArgs.Empty);

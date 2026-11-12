@@ -385,8 +385,8 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
 
     public void Open()
     {
-        _download = Input(_settings.CapacityDownload);
-        _upload = Input(_settings.CapacityUpload);
+        _download = _settings.CapacityDownload.ConfirmedText ?? string.Empty;
+        _upload = _settings.CapacityUpload.ConfirmedText ?? string.Empty;
         _standardShare = SavedShare(SavedStandard, Share(TransferPreset.Balanced));
         _alternativeShare = SavedShare(SavedAlternative, AlternativeDefault);
         _standardMoved = false;
@@ -774,13 +774,6 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         if (string.IsNullOrWhiteSpace(input))
             return 0;
         return Strings.TryNumber(input, out var number) ? number : double.NaN;
-    }
-
-    private static string Input(Setting setting)
-    {
-        return setting.ConfirmedNumber is double number and > 0
-            ? number.ToString("G", CultureInfo.CurrentCulture)
-            : string.Empty;
     }
 
     private static int Share(TransferPreset preset) =>

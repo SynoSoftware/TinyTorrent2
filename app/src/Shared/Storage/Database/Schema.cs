@@ -171,6 +171,16 @@ internal sealed partial class Database
         FROM locations l JOIN source_files f USING (entry_id)
         LEFT JOIN file_reads c USING (origin)
         GROUP BY l.entry_id;
+        -- The identification that decides each Library entry: the latest
+        -- explicit choice of its files, including Clear, else the latest
+        -- provider match whose file still has the name it was matched under.
+        CREATE TEMP VIEW entry_identifications AS
+        SELECT l.entry_id, i.catalog_id, i.video_id, i.explicit
+        FROM locations l JOIN identifications i ON (i.origin,i.file_index) = (
+            SELECT d.origin,d.file_index FROM identifications d
+            JOIN source_files s ON s.origin=d.origin AND s.file_index=d.file_index
+            WHERE s.entry_id=l.entry_id AND (d.explicit=1 OR d.evidence=s.name)
+            ORDER BY d.explicit DESC,d.decided DESC LIMIT 1);
         CREATE TEMP TABLE present (origin TEXT NOT NULL PRIMARY KEY);
         CREATE TEMP TABLE received (file_index INTEGER PRIMARY KEY);
         CREATE TEMP TABLE video_attempts (
@@ -202,12 +212,8 @@ internal sealed partial class Database
             COALESCE((SELECT group_concat(DISTINCT a.language) FROM subtitle_languages a
                 JOIN source_files s USING(origin,file_index) WHERE s.entry_id=f.entry_id),'') AS subtitles
         FROM current_files f
-        LEFT JOIN identifications i ON (i.origin,i.file_index) = (
-            SELECT d.origin,d.file_index FROM identifications d
-            JOIN source_files s ON s.origin=d.origin AND s.file_index=d.file_index
-            WHERE s.entry_id=f.entry_id AND (d.explicit=1 OR d.evidence=s.name)
-            ORDER BY d.explicit DESC,d.decided DESC LIMIT 1)
-        LEFT JOIN video_information v ON v.catalog_id=i.catalog_id AND v.video_id=i.video_id
+        LEFT JOIN video_information v ON (v.catalog_id,v.video_id) = (
+            SELECT i.catalog_id,i.video_id FROM entry_identifications i WHERE i.entry_id=f.entry_id)
         LEFT JOIN title_facts t ON t.imdb_id=v.imdb_id
         LEFT JOIN file_facts p ON (p.origin,p.file_index) = (
             SELECT d.origin,d.file_index FROM file_facts d

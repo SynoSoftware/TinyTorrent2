@@ -354,12 +354,16 @@ public sealed partial class Inspector
     internal IReadOnlyList<Torrent>? PeerSelection { get; private set; }
     internal bool HasPeerScope => ShowsAllPeers || PeerSelection is not null;
 
-    private IEnumerable<Torrent> Scope =>
-        ShowsAllPeers ? _owner.Torrents
+    // The torrents the peer views are narrowed to, or null when they cover
+    // every torrent: the person chose all, or nothing narrower is chosen.
+    private IEnumerable<Torrent>? Narrowed =>
+        ShowsAllPeers ? null
         : PeerSelection is { } selected ? selected.Where(_owner.Contains)
         : _target is not null ? [_target]
-        : _owner.Selected.Count == 0 ? _owner.Torrents
+        : _owner.Selected.Count == 0 ? null
         : _owner.Selected;
+
+    private IEnumerable<Torrent> Scope => Narrowed ?? _owner.Torrents;
 
     public string DownloadText =>
         OpensConnections ? Text.Rate(Scope.Sum(torrent => torrent.DownloadRate)) : Strings.NoValue;
@@ -369,16 +373,8 @@ public sealed partial class Inspector
 
     private bool OpensConnections => IsAvailable && Scope.Any(torrent => torrent.OpensConnections);
 
-    public bool IsGlobal
-    {
-        get
-        {
-            if (_section is not (InspectorSection.Peers or InspectorSection.Speed))
-                return false;
-            return ShowsAllPeers
-                || PeerSelection is null && _target is null && _owner.Selected.Count == 0;
-        }
-    }
+    public bool IsGlobal =>
+        _section is (InspectorSection.Peers or InspectorSection.Speed) && Narrowed is null;
     public bool HasContent =>
         _target is not null || _section is InspectorSection.Peers or InspectorSection.Speed;
 

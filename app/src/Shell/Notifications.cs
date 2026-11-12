@@ -53,7 +53,7 @@ public sealed class Notifications
         var key = Toasts.OfType<Toast.CommandError>().FirstOrDefault(toast =>
             toast.Failure.Recovery is { } earlier && earlier.TorrentIds.Intersect(recovery.TorrentIds).Any())?.Key
             ?? "move:" + recovery.TorrentIds[0];
-        ReportProblem(new CommandFailure(error, "failed_redownload", null, null, null, null, recovery), key);
+        Report(new CommandFailure(error, "failed_redownload", null, null, null, null, recovery), key);
     }
 
     internal void Report(
@@ -63,30 +63,15 @@ public sealed class Notifications
         Func<string>? reason
     ) => Report(new CommandFailure(error, title, subject, reason, null, null));
 
-    private void Report(CommandFailure failure)
+    // A later failure of the same kind replaces the earlier toast, so a burst
+    // of engine problems never stacks. A command's failure has no kind; it
+    // replaces the one error toast without a kind.
+    private void Report(CommandFailure failure, string? kind = null)
     {
         if (_owner.IsClosed)
-            return;
-        var toast = Error;
-        if (toast is null)
         {
-            toast = new Toast.CommandError(failure, _owner);
-            Toasts.Add(toast);
-        }
-        else
-        {
-            toast.Failure = failure;
-        }
-        Describe(toast);
-        Announce(toast.Message);
-    }
-
-    // A later problem of the same kind replaces the earlier toast, so a
-    // burst of engine problems never stacks.
-    private void ReportProblem(CommandFailure failure, string kind)
-    {
-        if (_owner.IsClosed)
             return;
+        }
         var toast = Toasts.OfType<Toast.CommandError>().FirstOrDefault(shown => shown.Key == kind);
         if (toast is null)
         {
@@ -94,7 +79,9 @@ public sealed class Notifications
             Toasts.Add(toast);
         }
         else
+        {
             toast.Failure = failure;
+        }
         Describe(toast);
         Announce(toast.Message);
     }
@@ -222,7 +209,7 @@ public sealed class Notifications
                 kind == "error" && torrentId.Length > 0 ? new FailurePlace.OfTorrent(torrentId, folder)
                 : folder is not null ? new FailurePlace.Folder(folder)
                 : null;
-            ReportProblem(new CommandFailure(error, title, () => name, Reason, place, @switch, recovery),
+            Report(new CommandFailure(error, title, () => name, Reason, place, @switch, recovery),
                 recovery is null ? kind : "move:" + recovery.TorrentIds[0]);
         }
     }

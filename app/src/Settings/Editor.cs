@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Globalization;
 using System.Net.NetworkInformation;
 using System.Text.Json;
 using System.Windows.Input;
@@ -323,10 +322,8 @@ public sealed partial class Editor : INotifyPropertyChanged
         : Text.Get("settings", enabled);
 
     private string DurationText(Setting setting) =>
-        setting.ConfirmedNumber is { } minutes
-            ? (minutes / setting.DurationScale).ToString("G", CultureInfo.CurrentCulture)
-                + " "
-                + Text.Get("settings", setting.DurationUnit + "_unit")
+        setting.ConfirmedText is { } duration
+            ? duration + " " + Text.Get("settings", setting.DurationUnit + "_unit")
             : Strings.NoValue;
 
     public string StandardSummary => LimitSummary(Download, Upload);
@@ -478,20 +475,6 @@ public sealed partial class Editor : INotifyPropertyChanged
     public bool CanSelectLanguage => CanEdit;
     public string OnText => Text.Get("settings", "on");
     public string OffText => Text.Get("settings", "off");
-    public bool CanSelectTheme => CanEdit;
-
-    public async Task SelectTheme(string theme)
-    {
-        if (!CanSelectTheme)
-            return;
-        Theme.Input = theme;
-        if (!Theme.HasDraft && !Theme.IsPending)
-        {
-            Theme.Cancel();
-            return;
-        }
-        await Theme.Commit();
-    }
 
     // The theme a word of the theme setting chooses; any word but "light" and
     // "dark" follows Windows.
@@ -587,9 +570,15 @@ public sealed partial class Editor : INotifyPropertyChanged
         );
         DeleteDownloaded = Add(
             new(Engine, Text, "delete_downloaded", SettingKind.Boolean, SettingsCategory.General)
+            {
+                HasRow = false,
+            }
         );
         DeleteTorrentFile = Add(
             new(Engine, Text, "delete_torrent_file", SettingKind.Boolean, SettingsCategory.General)
+            {
+                HasRow = false,
+            }
         );
         InactiveTime = Add(
             new(
@@ -901,11 +890,18 @@ public sealed partial class Editor : INotifyPropertyChanged
                 Maximum = 300,
             }
         );
+        // Connection setup edits the line's speeds, so they have no row.
         CapacityDownload = Add(
             new(Engine, Text, "capacity_download", SettingKind.Number, SettingsCategory.Limits)
+            {
+                HasRow = false,
+            }
         );
         CapacityUpload = Add(
             new(Engine, Text, "capacity_upload", SettingKind.Number, SettingsCategory.Limits)
+            {
+                HasRow = false,
+            }
         );
         DiskBuffer = Add(
             new(

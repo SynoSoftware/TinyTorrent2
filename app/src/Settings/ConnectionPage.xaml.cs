@@ -2,6 +2,7 @@ using System.ComponentModel;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Syno.TinyTorrent.Controls;
 using Windows.Networking.Connectivity;
 using Windows.System;
 using Windows.UI.Text;
@@ -12,7 +13,6 @@ namespace Syno.TinyTorrent.Settings;
 public sealed partial class ConnectionPage : UserControl
 {
     private readonly UISettings _display = new();
-    private bool _composing;
     private readonly Speedometer _downloadMeter = new(Syno.Segoe.Download);
     private readonly Speedometer _uploadMeter = new(Syno.Segoe.Upload);
     private string? _meterId;
@@ -28,8 +28,7 @@ public sealed partial class ConnectionPage : UserControl
         UploadMeter.Content = _uploadMeter;
         foreach (var editor in new[] { Download, Upload })
         {
-            editor.TextCompositionStarted += (_, _) => _composing = true;
-            editor.TextCompositionEnded += (_, _) => _composing = false;
+            TextEditor.FollowComposition(editor);
             editor.PreviewKeyDown += OnApplyKey;
         }
         Loaded += async (_, _) =>
@@ -98,7 +97,7 @@ public sealed partial class ConnectionPage : UserControl
         var scale = _display.TextScaleFactor;
         TestActions.Width = 120 * scale;
         StatusArea.MinHeight = 112 * scale;
-        var stacked = Body.ActualWidth < 880 * scale;
+        var stacked = !FieldColumns.Fits(Body.ActualWidth, 880);
         MeasurementBody.ColumnSpacing = stacked ? 0 : 24;
         StatusColumn.Width = stacked ? new GridLength(0) : new GridLength(240 * scale);
         Grid.SetColumn(StatusArea, stacked ? 0 : 1);
@@ -117,8 +116,15 @@ public sealed partial class ConnectionPage : UserControl
 
     private async void OnApplyKey(object sender, KeyRoutedEventArgs args)
     {
-        if (args.Handled || args.Key != VirtualKey.Enter || _composing || !Model.CanApply)
+        if (
+            args.Handled
+            || args.Key != VirtualKey.Enter
+            || TextEditor.IsComposing((TextBox)sender)
+            || !Model.CanApply
+        )
+        {
             return;
+        }
         args.Handled = true;
         await Apply();
     }

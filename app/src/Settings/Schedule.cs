@@ -406,6 +406,13 @@ public sealed class Schedule : INotifyPropertyChanged
             yield return previous;
     }
 
+    /// <summary>
+    /// The range that covers the minute of the day. Every minute from 0 up to,
+    /// but not including, 1440 has one, because the ranges cover the whole day.
+    /// </summary>
+    internal ScheduleRange RangeAt(int day, double minute) =>
+        Ranges(day).First(range => minute >= range.Start && minute < range.End);
+
     // When the scheduled mode next changes after the given local time: the
     // time alone when that is today, or null when the mode never changes.
     internal string? NextChange(DateTime now)

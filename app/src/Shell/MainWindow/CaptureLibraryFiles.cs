@@ -40,7 +40,7 @@ public sealed partial class MainWindow
         {
             Model.SelectLanguage(language);
             await CaptureReady(Model, () => Model.Text.Language == language);
-            await Model.Settings.SelectTheme(theme);
+            await Model.Settings.Theme.Select(theme);
             var scale = Root.XamlRoot.RasterizationScale;
             var minimum = ((OverlappedPresenter)AppWindow.Presenter).PreferredMinimumWidth ?? 0;
             AppWindow.Resize(
@@ -96,7 +96,7 @@ public sealed partial class MainWindow
         {
             Model.SelectLanguage(language);
             await CaptureReady(Model, () => Model.Text.Language == language);
-            await Model.Settings.SelectTheme(theme);
+            await Model.Settings.Theme.Select(theme);
             var name = $"plugins-{language}-{theme}";
             await CapturePage(name, SettingsContent);
             completed.Add(name);
@@ -120,7 +120,7 @@ public sealed partial class MainWindow
             {
                 Model.SelectLanguage(language);
                 await CaptureReady(Model, () => Model.Text.Language == language);
-                await Model.Settings.SelectTheme(language == "en" ? "light" : "dark");
+                await Model.Settings.Theme.Select(language == "en" ? "light" : "dark");
                 await CapturePage("subtitle-supplier-" + language);
                 completed.Add("subtitle-supplier-" + language);
             }
@@ -160,7 +160,7 @@ public sealed partial class MainWindow
         {
             Model.SelectLanguage(language);
             await CaptureReady(Model, () => Model.Text.Language == language);
-            await Model.Settings.SelectTheme(theme);
+            await Model.Settings.Theme.Select(theme);
             var name = $"information-details-{language}-{theme}";
             var sections = CaptureElements(InspectorContent)
                 .OfType<SelectorBar>()
@@ -190,7 +190,7 @@ public sealed partial class MainWindow
         await Model.Library.PrepareTiming();
         Model.SelectLanguage("en");
         await CaptureReady(Model, () => Model.Text.Language == "en");
-        await Model.Settings.SelectTheme("light");
+        await Model.Settings.Theme.Select("light");
         AppWindow.Resize(
             new SizeInt32(
                 (int)(1120 * Root.XamlRoot.RasterizationScale),
@@ -217,7 +217,7 @@ public sealed partial class MainWindow
             Model.IsFilterOpen = width == 800;
             Model.SelectLanguage(language);
             await CaptureReady(Model, () => Model.Text.Language == language);
-            await Model.Settings.SelectTheme(theme);
+            await Model.Settings.Theme.Select(theme);
             var scale = Root.XamlRoot.RasterizationScale;
             var minimum = ((OverlappedPresenter)AppWindow.Presenter).PreferredMinimumWidth ?? 0;
             AppWindow.Resize(
@@ -265,7 +265,7 @@ public sealed partial class MainWindow
         await CaptureReady(Model.Inspector, () => !Model.Inspector.IsLoading);
         foreach (var theme in new[] { "light", "dark" })
         {
-            await Model.Settings.SelectTheme(theme);
+            await Model.Settings.Theme.Select(theme);
             var name = $"library-shared-inspector-{theme}";
             await CapturePage(name, InspectorContent.Content as Microsoft.UI.Xaml.FrameworkElement);
             completed.Add(name);
@@ -485,7 +485,7 @@ public sealed partial class MainWindow
         {
             Model.SelectLanguage(language);
             await CaptureReady(Model, () => Model.Text.Language == language);
-            await Model.Settings.SelectTheme(theme);
+            await Model.Settings.Theme.Select(theme);
             table = _libraryTable!.Table!;
             foreach (var count in new[] { 1, 2 })
             {
@@ -560,7 +560,7 @@ public sealed partial class MainWindow
     private async Task CaptureResize(List<object> outcomes, List<string> completed)
     {
         Model.IsFilterOpen = false;
-        await Model.Settings.SelectTheme("dark");
+        await Model.Settings.Theme.Select("dark");
         var scale = Root.XamlRoot.RasterizationScale;
         var original = AppWindow.Size;
         var height = _splitHeight;

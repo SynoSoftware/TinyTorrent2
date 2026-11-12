@@ -423,15 +423,10 @@ public sealed class AddDraft : IDraft
                 throw new CommandException("invalid_source", null, "preview");
             await _pass;
             var source = new AddSource(value, _strings, this);
-            var destination = _destination;
-            var preview = await PreviewSource(source, destination);
-            var files = await ReadFiles(source, preview);
-            if (Magnet != input || !IsOpen && !_owner.IsClosing)
+            if (!await Prepare(source, () => Magnet == input && (IsOpen || _owner.IsClosing)))
             {
-                await Release(preview.GetProperty("preview_id").GetString()!);
                 return false;
             }
-            await ApplyPreview(source, preview, destination, files);
             Magnet = string.Empty;
             return true;
         }
@@ -608,15 +603,10 @@ public sealed class AddDraft : IDraft
             return;
         try
         {
-            var destination = _destination;
-            var preview = await PreviewSource(source, destination);
-            var files = await ReadFiles(source, preview);
-            if (!Sources.Contains(source))
+            if (!await Prepare(source, () => Sources.Contains(source)))
             {
-                await Release(preview.GetProperty("preview_id").GetString()!);
                 return;
             }
-            await ApplyPreview(source, preview, destination, files);
         }
         catch (Exception error)
         {
@@ -711,13 +701,19 @@ public sealed class AddDraft : IDraft
         }
     }
 
-    private async Task ApplyPreview(
-        AddSource source,
-        JsonElement preview,
-        string destination,
-        JsonElement? files
-    )
+    // Previews the source at the current destination and applies the preview
+    // while wanted says the source is still wanted; otherwise releases it, so
+    // the engine holds no preview that no source owns. Returns whether it applied.
+    private async Task<bool> Prepare(AddSource source, Func<bool> wanted)
     {
+        var destination = _destination;
+        var preview = await PreviewSource(source, destination);
+        var files = await ReadFiles(source, preview);
+        if (!wanted())
+        {
+            await Release(preview.GetProperty("preview_id").GetString()!);
+            return false;
+        }
         source.Apply(preview, destination, files);
         var existing = Sources.FirstOrDefault(existing =>
             existing != source && existing.PreviewId == source.PreviewId
@@ -734,6 +730,7 @@ public sealed class AddDraft : IDraft
         }
         else if (!Sources.Contains(source))
             Own(source);
+        return true;
     }
 
     public async Task<bool> Submit()

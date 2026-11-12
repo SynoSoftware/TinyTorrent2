@@ -1,5 +1,4 @@
 using System.Reflection;
-using System.Text.Json;
 
 namespace Syno.TinyTorrent.Shell;
 
@@ -13,7 +12,7 @@ public sealed partial class MainWindow
         var pane = (InspectorPane)InspectorContent.Content;
         var layout = pane.Layout;
         var placement = _placement;
-        var path = _placementPath;
+        var file = _placementFile;
         var restored = _viewRestored;
         var directory = Model.DataDirectory!;
         var expected = new PeerView(PeerLayout.Map, .65, .4)
@@ -33,13 +32,14 @@ public sealed partial class MainWindow
             choose.Invoke(pane, [expected with { Animation = MapAnimation.Fast }]);
             choose.Invoke(pane, [expected]);
             await _placementSave;
-            var saved = JsonSerializer.Deserialize<Placement>(await File.ReadAllTextAsync(_placementPath!));
+            var current = _placementFile!;
+            var saved = await current.Read();
             if (saved is null || saved.Inspector?.View != expected)
                 throw new InvalidOperationException("Peer choices were not saved before closing the window.");
             // The layout reader clamps saved window bounds onto a display.
             // Omit geometry so this diagnostic window stays off-screen.
-            await File.WriteAllTextAsync(_placementPath!,
-                JsonSerializer.Serialize(saved with { Width = 0, Height = 0 }));
+            if (!await current.Save(saved with { Width = 0, Height = 0 }))
+                throw new InvalidOperationException("The layout without window geometry could not be saved.");
             pane.Layout = layout with { View = PeerView.Default };
             await RestorePlacement(directory);
             if (pane.Layout.View != expected)
@@ -50,7 +50,7 @@ public sealed partial class MainWindow
         {
             await _placementSave;
             _placement = placement;
-            _placementPath = path;
+            _placementFile = file;
             _viewRestored = restored;
             pane.Layout = layout;
         }

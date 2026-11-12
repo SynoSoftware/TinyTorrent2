@@ -124,7 +124,7 @@ public sealed partial class MainWindow
         }
         if (removedWhileOpen || closing != 1 || closes != 1 || Model.Contains(target) || Model.Torrents.Count != count - 1)
             throw new InvalidOperationException("Removal changed membership before the modal closed, reopened, or did not remove its target.");
-        if (!IsInside(FocusManager.GetFocusedElement(Root.XamlRoot) as DependencyObject, Torrents))
+        if (!Controls.VisualTree.Contains(Torrents, FocusManager.GetFocusedElement(Root.XamlRoot) as DependencyObject))
             throw new InvalidOperationException("Removal did not leave focus on the torrent table.");
         outcomes.Add(new { journey = "removal lifecycle", initialFocus = focus.Name,
             removedAfterClose = true, closes, focusReturnedToTable = true });

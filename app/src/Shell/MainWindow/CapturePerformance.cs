@@ -495,7 +495,7 @@ public sealed partial class MainWindow
         }
         Task Zoom(string name, int delta) => Measure(name, PerformanceInput.Zoom(window, 2000, delta), (step, _) => {
             foreach (var item in step.Inputs)
-                Call(map!, "ZoomAt", (float)Math.Pow(1.25, unchecked((int)item.Data) / 120d), anchor);
+                Call(map!, "ZoomAt", (float)Math.Pow(MapViewport.ZoomStep, unchecked((int)item.Data) / 120d), anchor);
         });
         async Task ViewDrawn()
         {

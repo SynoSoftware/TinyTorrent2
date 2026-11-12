@@ -45,6 +45,12 @@ public sealed class Setting : INotifyPropertyChanged
 
     // Other state that must hold before the setting can be edited.
     internal Func<bool>? Condition { get; init; }
+
+    /// <summary>
+    /// Whether Settings shows the setting in a row of its own, which search
+    /// lists and reveals.
+    /// </summary>
+    internal bool HasRow { get; init; } = true;
     private SettingStore Store { get; }
     public bool IsRate => Kind == SettingKind.Rate;
     internal RateScale RateScale { get; init; } = RateScale.MbPerSecond;
@@ -154,12 +160,7 @@ public sealed class Setting : INotifyPropertyChanged
             var preserve = HasDraft || IsPending || _save is SaveState.Unconfirmed;
             // Cloning a child of the snapshot's clone retains the whole snapshot.
             _confirmed = JsonSerializer.SerializeToElement(value);
-            _confirmedInput =
-                value.ValueKind == JsonValueKind.String ? value.GetString()!
-                : value.ValueKind != JsonValueKind.Number || HasUnlimited && value.GetDouble() == 0
-                    ? string.Empty
-                : IsRate ? Strings.RateInput(value.GetInt32(), RateScale)
-                : (value.GetDouble() / DurationScale).ToString("G", CultureInfo.CurrentCulture);
+            _confirmedInput = InputOf(value);
             if (!preserve)
             {
                 _input = _confirmedInput;
@@ -223,13 +224,24 @@ public sealed class Setting : INotifyPropertyChanged
         var scale = DurationScale;
         DurationUnit = unit;
         if (Strings.TryNumber(_input, out var number))
-            _input = (number * scale / DurationScale).ToString("G", CultureInfo.CurrentCulture);
-        _confirmedInput =
-            ConfirmedNumber is not { } minutes || minutes == 0
-                ? string.Empty
-                : (minutes / DurationScale).ToString("G", CultureInfo.CurrentCulture);
+        {
+            _input = InputOf(number * scale);
+        }
+        _confirmedInput = _confirmed is { } confirmed ? InputOf(confirmed) : string.Empty;
         Change();
     }
+
+    // A saved value as the field shows it: empty where 0 means unlimited, a
+    // rate in its scale, any other number in the field's unit.
+    private string InputOf(JsonElement value) =>
+        value.ValueKind == JsonValueKind.String ? value.GetString()!
+        : value.ValueKind != JsonValueKind.Number || HasUnlimited && value.GetDouble() == 0
+            ? string.Empty
+        : IsRate ? Strings.RateInput(value.GetInt32(), RateScale)
+        : InputOf(value.GetDouble());
+
+    private string InputOf(double number) =>
+        (number / DurationScale).ToString("G", CultureInfo.CurrentCulture);
 
     /// <summary>Saves valid typed input; invalid input shows its message instead.</summary>
     public async Task Commit()
@@ -288,12 +300,15 @@ public sealed class Setting : INotifyPropertyChanged
     /// <summary>
     /// Saves the value a choice control selected, which is its item's tag:
     /// "true" or "false" for an on/off setting, otherwise the input. The
-    /// current value saves nothing.
+    /// current value saves nothing, and a setting that cannot be edited takes
+    /// no choice, so no choice leaves a draft for departure to save.
     /// </summary>
     public async Task Select(string value)
     {
-        if (value == SelectedValue)
+        if (!CanEdit || value == SelectedValue)
+        {
             return;
+        }
         if (Kind == SettingKind.Boolean)
         {
             await Toggle(value == "true");

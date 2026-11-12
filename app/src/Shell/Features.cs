@@ -105,6 +105,29 @@ internal sealed class Features
     private BackgroundWork Work => _owner.Work;
     private bool IsStopped => _owner.IsClosed || IsClosed;
 
+    // Whether a step that began with `subtitles` attached may go on after a
+    // wait. A step that began with no worker attached passes null.
+    private bool MayContinue(SubtitleAcquisition? subtitles) =>
+        !_owner.IsClosing && !IsStopped && !_resetting && ReferenceEquals(subtitles, Subtitles);
+
+    // Whether subtitle work can run: the engine is connected and the Library
+    // source is ready.
+    private bool IsReady => _source is { IsReady: true } && _owner.IsConnected;
+
+    // Recovery clears the message bar, so its success is not reported.
+    private BackgroundWork.Operation BeginRecovery()
+    {
+        var operation = Work.Begin(
+            new(
+                new WorkDescription.Maintenance(MaintenanceWork.Recovery),
+                new WorkProgress.Unknown(),
+                new WorkExecution.Finishing()
+            )
+        );
+        operation.ReportsSuccess = false;
+        return operation;
+    }
+
     internal void Report(Exception error)
     {
         if (IsStopped)
@@ -309,7 +332,9 @@ internal sealed class Features
     // and the interface language.
     internal async Task Refresh(bool wait = false)
     {
-        var source = _source;
+        // Observe attaches the worker and the Library source together, and
+        // Detach removes both, so the worker identifies the source too.
+        var subtitles = Subtitles;
         Task reconciling = Task.CompletedTask;
         await _access.WaitAsync();
         try
@@ -317,13 +342,10 @@ internal sealed class Features
             Task observing;
             lock (_gate)
             {
-                if (
-                    _owner.IsClosing
-                    || IsStopped
-                    || _resetting
-                    || !ReferenceEquals(source, _source)
-                )
+                if (!MayContinue(subtitles))
+                {
                     return;
+                }
                 observing = Library.Observe(
                     !_owner.IsConnected || _source is not { IsCurrent: true }
                         ? LibraryReadiness.Offline
@@ -333,30 +355,29 @@ internal sealed class Features
             }
             await observing;
             Raise();
+            if (subtitles is null)
+            {
+                return;
+            }
             lock (_gate)
-                if (
-                    _owner.IsClosing
-                    || IsStopped
-                    || _source is not { IsReady: true }
-                    || !_owner.IsConnected
-                    || Subtitles is null
-                )
+            {
+                if (!MayContinue(subtitles) || !IsReady)
+                {
                     return;
+                }
+            }
             if (_subtitlesStarting is { } initializing)
                 await initializing;
             lock (_gate)
             {
-                if (
-                    _owner.IsClosing
-                    || IsStopped
-                    || _source is not { IsReady: true }
-                    || !_owner.IsConnected
-                )
+                if (!MayContinue(subtitles) || !IsReady)
+                {
                     return;
-                Subtitles.SetConnected(true);
+                }
+                subtitles.SetConnected(true);
             }
-            await Subtitles.SetLanguage(_owner.Text.Language);
-            reconciling = Reconcile(Subtitles);
+            await subtitles.SetLanguage(_owner.Text.Language);
+            reconciling = Reconcile(subtitles);
         }
         catch (Exception error)
         {
@@ -380,15 +401,10 @@ internal sealed class Features
             await subtitles.Reconcile();
             lock (_gate)
             {
-                if (
-                    _owner.IsClosing
-                    || IsStopped
-                    || _resetting
-                    || !ReferenceEquals(subtitles, Subtitles)
-                    || _source is not { IsReady: true }
-                    || !_owner.IsConnected
-                )
+                if (!MayContinue(subtitles) || !IsReady)
+                {
                     return;
+                }
                 if (ReferenceEquals(_failure, failure))
                     _failure = null;
             }
@@ -404,13 +420,10 @@ internal sealed class Features
         {
             lock (_gate)
             {
-                if (
-                    _owner.IsClosing
-                    || IsStopped
-                    || _resetting
-                    || !ReferenceEquals(subtitles, Subtitles)
-                )
+                if (!MayContinue(subtitles))
+                {
                     return;
+                }
                 subtitles.SetConnected(false);
             }
             Report(error);
@@ -432,21 +445,13 @@ internal sealed class Features
             }
             if (_opening is { IsCompleted: true, Result: false })
                 _opening = null;
-            using var operation = Work.Begin(
-                new(
-                    new WorkDescription.Maintenance(MaintenanceWork.Recovery),
-                    new WorkProgress.Unknown(),
-                    new WorkExecution.Finishing()
-                )
-            );
+            using var operation = BeginRecovery();
             if (Library.HasFailure)
                 await Library.Recover();
             else
                 _owner.RequestSnapshot();
             await RetrySubtitles();
             operation.Outcome = Library.HasFailure ? WorkOutcome.Failed : WorkOutcome.Completed;
-            // Recovery clears the message bar.
-            operation.ReportsSuccess = false;
         }
         catch (Exception error)
         {
@@ -494,13 +499,7 @@ internal sealed class Features
             )
                 return;
             _resetting = true;
-            using var operation = Work.Begin(
-                new(
-                    new WorkDescription.Maintenance(MaintenanceWork.Recovery),
-                    new WorkProgress.Unknown(),
-                    new WorkExecution.Finishing()
-                )
-            );
+            using var operation = BeginRecovery();
             Disconnect();
             await Detach();
             if (delete)
@@ -512,8 +511,6 @@ internal sealed class Features
             _failure = null;
             Raise();
             operation.Outcome = WorkOutcome.Completed;
-            // Recovery clears the message bar.
-            operation.ReportsSuccess = false;
         }
         catch (Exception error)
         {

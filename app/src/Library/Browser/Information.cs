@@ -38,7 +38,10 @@ public sealed partial class Browser
     }
 
     internal bool CanShowInformation => Selected?.Entry.Kind is FileKind.Video or FileKind.Audio;
-    internal bool SupportsMetadata => Selected?.Entry.Kind == FileKind.Video;
+    // Only videos have provider metadata and subtitles, and the metadata
+    // commands act on every video in the selection.
+    internal bool SupportsMetadata =>
+        Selection.Items.Cast<LibraryRow>().Any(row => row.Entry.Kind == FileKind.Video);
     internal LibrarySection Section
     {
         get => CanShowInformation ? _section : LibrarySection.File;
@@ -107,7 +110,11 @@ public sealed partial class Browser
     private ProviderOption? FindProvider(string providerId) =>
         Providers.FirstOrDefault(option => option.ProviderId == providerId);
 
-    internal bool HasKey(string providerId) => _videos?.HasKey(providerId) == true;
+    private bool HasKey(string providerId) => _videos?.HasKey(providerId) == true;
+
+    /// <summary>The provider's key as the account dialog shows it: the person's own, kept, or the built-in one.</summary>
+    internal AccountInput Key(string providerId) =>
+        HasKey(providerId) ? new AccountInput.OwnKey(new Secret.Kept()) : new AccountInput.BuiltIn();
 
     /// <summary>The provider names in <see cref="Providers"/> order, for the Settings choice.</summary>
     public IReadOnlyList<string> ProviderNames
@@ -241,12 +248,26 @@ public sealed partial class Browser
         Changed(nameof(UsesKey));
     }
 
-    /// <summary>Saves the person's own API key, as <see cref="VideoLookup.SaveKey"/> describes.</summary>
-    internal async Task SaveKey(string providerId, string? key)
+    /// <summary>
+    /// Saves the account dialog's key choice, as <see cref="VideoLookup.SaveKey"/>
+    /// describes: a typed key replaces the saved one, and the built-in key
+    /// clears it. Saving a key restarts the provider's lookups, so an unchanged
+    /// choice saves nothing.
+    /// </summary>
+    internal async Task SaveKey(string providerId, AccountInput input)
     {
         if (_videos is null)
+        {
             return;
-        await _videos.SaveKey(providerId, key);
+        }
+        if (input is AccountInput.OwnKey { Key: Secret.Typed typed })
+        {
+            await _videos.SaveKey(providerId, typed.Value);
+        }
+        else if (input is AccountInput.BuiltIn && HasKey(providerId))
+        {
+            await _videos.SaveKey(providerId, null);
+        }
     }
 
     internal BackgroundWork.Operation? DataWork => _download?.Operation;

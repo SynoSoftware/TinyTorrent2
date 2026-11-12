@@ -54,7 +54,7 @@ public sealed partial class ThemePicker : UserControl
     private async void OnTheme(object sender, SelectionChangedEventArgs args)
     {
         if (!_refreshing && Theme.SelectedItem is RadioButton { Tag: string theme })
-            await Model.SelectTheme(theme);
+            await Model.Theme.Select(theme);
     }
 
     private void OnTilesSize(object sender, SizeChangedEventArgs args) => SizeTiles();

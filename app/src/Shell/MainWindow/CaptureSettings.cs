@@ -94,7 +94,7 @@ public sealed partial class MainWindow
         {
             Model.SelectLanguage(language);
             await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);
-            await Model.Settings.SelectTheme(theme);
+            await Model.Settings.Theme.Select(theme);
             await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
             var scale = Root.XamlRoot.RasterizationScale;
             var minimum =
@@ -931,39 +931,36 @@ public sealed partial class MainWindow
         await CaptureDialog(
             prefix + "-imdb-delete-confirmation",
             () =>
-                Interact(async interaction =>
+            {
+                var dialog = new Dialog
                 {
-                    var dialog = new Dialog
+                    Glyph = Segoe.Database,
+                    PrimaryGlyph = Segoe.Trash2,
+                };
+                return Confirm(
+                    dialog,
+                    () =>
                     {
-                        Glyph = Segoe.Database,
-                        PrimaryGlyph = Segoe.Trash2,
-                    };
-                    await ShowDialog(
-                        interaction,
-                        dialog,
-                        () =>
-                        {
-                            dialog.Title = Model.Text.Get("imdb", "delete_title");
-                            dialog.Content = DataConfirmation(
-                                [
-                                    Model.Text.Format(
-                                        "imdb",
-                                        "delete_body",
-                                        Model.Text.Bytes(496815309)
-                                    ),
-                                    Model.Text.Get("imdb", "delete_kept"),
-                                ],
-                                [
-                                    Model.Text.Get("imdb", "restore_time"),
-                                    Model.Text.Get("imdb", "preparation_time"),
-                                ]
-                            );
-                            dialog.PrimaryButtonText = Model.Text.Get("file_action", "delete");
-                            dialog.PrimaryToolTip = Model.Text.Get("imdb", "delete_tip");
-                        }
-                    );
-                    return false;
-                }),
+                        dialog.Title = Model.Text.Get("imdb", "delete_title");
+                        dialog.Content = DataConfirmation(
+                            [
+                                Model.Text.Format(
+                                    "imdb",
+                                    "delete_body",
+                                    Model.Text.Bytes(496815309)
+                                ),
+                                Model.Text.Get("imdb", "delete_kept"),
+                            ],
+                            [
+                                Model.Text.Get("imdb", "restore_time"),
+                                Model.Text.Get("imdb", "preparation_time"),
+                            ]
+                        );
+                        dialog.PrimaryButtonText = Model.Text.Get("file_action", "delete");
+                        dialog.PrimaryToolTip = Model.Text.Get("imdb", "delete_tip");
+                    }
+                );
+            },
             () => _interaction?.Dialog
         );
         await CaptureInformation(

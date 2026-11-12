@@ -153,7 +153,10 @@ the approved navigation and caption behavior.
 Native Library composes C through `Details`, shared `Section`, `FieldColumns`
 and `WrapPanel`; `Browser` and `Store` own the extended filters. `OriginActions`
 shares the one-source/direct and multiple-source/choice presentation across the
-Inspector and Library menus, and `Browser.ShowTorrent` owns the operation.
+Inspector and Library menus, and its command serves the File page's Show in
+Torrents; `Browser.ShowTorrent` owns the operation. `MetadataActions` shares the
+metadata groups across the Library menu, the row context menu and the card's
+More menu.
 `MainWindow` keeps page navigation and owns the app-icon switch. Filters comes
 first in both menu modes, and Show in Torrents uses the locate glyph.
 
@@ -195,7 +198,7 @@ Library, the menus are:
 | Menu | Items |
 | --- | --- |
 | File | Unchanged. |
-| Library | Open, Open folder, Properties, Show in Torrents; Fetch metadata, Download Subtitle; Erase metadata. The row context menu has the same groups and a selection heading. Download Subtitle is a direct action; multiple selections use Download subtitles. Single and multiple selections use the same command owners and Segoe icons. |
+| Library | Open, Open folder, Properties, Show in Torrents; Fetch metadata, Refresh metadata, Download Subtitle; Erase metadata. The row context menu has the same groups and a selection heading. The metadata groups show only while the selection holds a video, because only videos have provider metadata and subtitles. Download Subtitle is a direct action; multiple selections use Download subtitles. Single and multiple selections use the same command owners and Segoe icons. |
 | View | Filters, Inspector and Toolbar, as on every page; then Videos, Music, Files as choices. |
 | Help | Unchanged. |
 
@@ -321,9 +324,13 @@ and dataset operations retain their existing command lifetimes.
   [prototype implementation review](#prototype-implementation-review).
   The File page and shared Inspector shell retain their existing
   structure.
-- Info's field columns and General's share one geometry, `FieldColumns`: two
-  content slots, fixed 3:2 columns with a 48-pixel gap, stacked below 760
-  pixels. Content, headings and actions stay with their owners.
+- General's field columns and the File page's are `FieldColumns`: two content
+  slots, fixed 3:2 columns with a 48-pixel gap. Info's are `FieldColumns` too,
+  with a 32-DIP gap and a 384-DIP metadata column that has a divider beside
+  it, which moves above it when the columns stack. All of them stack below 760
+  DIPs at 100% Windows text size and below a proportionally wider width at a
+  larger text size; the card's Narrow state starts at the same width. Content,
+  headings and actions stay with their owners.
 - A transient fetch, association or torrent notification updates the card in
   place. Fetch feedback and command availability change without replacing the
   card's controls, and a result whose content has not changed announces nothing

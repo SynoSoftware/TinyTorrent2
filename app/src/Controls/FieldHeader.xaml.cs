@@ -53,8 +53,7 @@ public sealed partial class FieldHeader : UserControl
             var button = (Button)FindName(nameof(CautionButton));
             button.Visibility = Visibility.Visible;
             CautionText.Text = Caution;
-            AutomationProperties.SetName(button, Caution);
-            ToolTipService.SetToolTip(button, Caution);
+            IconButton.Name(button, Caution);
         }
         else if (CautionButton is not null)
         {

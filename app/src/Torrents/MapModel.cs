@@ -24,7 +24,7 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
     internal GeoPoint? OriginPoint { get; private set; }
 
     /// <summary>The longitude at the map's centre: the origin's, or 0° while it is unknown.</summary>
-    internal float Meridian => (float)(OriginPoint?.Longitude ?? 0);
+    private static float Meridian(GeoPoint? origin) => (float)(origin?.Longitude ?? 0);
 
     internal Strings? Text { get; private set; }
     internal bool Cities { get; private set; }
@@ -180,7 +180,7 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
     internal sealed record Presentation(Dictionary<string, Group> Countries, List<Destination> Destinations, GeoPoint? Origin, double Ceiling)
     {
         internal required object Subject { get; init; }
-        internal float Meridian => (float)(Origin?.Longitude ?? 0);
+        internal float Meridian => MapModel.Meridian(Origin);
         internal bool Cities { get; init; }
 
         /// <summary>Each destination by its key, made once for every picture drawn from this presentation.</summary>
@@ -309,7 +309,7 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
         internal List<Destination> Destinations { get; } = [];
         internal Location? Origin { get; private set; }
         internal GeoPoint? OriginPoint { get; private set; }
-        internal float Meridian => (float)(OriginPoint?.Longitude ?? 0);
+        internal float Meridian => MapModel.Meridian(OriginPoint);
         internal Strings? Text { get; private set; }
         internal bool Cities { get; private set; }
         internal double Ceiling { get; private set; }

@@ -3,6 +3,7 @@ using System.ComponentModel;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Shared;
 
 namespace Syno.TinyTorrent.Shell;
@@ -112,7 +113,7 @@ public sealed partial class MainWindow
             views.Inline.Fit(false);
         }
         WorkButton.Text = Model.Text.Format("work", "button", _workViews.Count);
-        NameButton(WorkButton, Model.Text.Format("work", "tip", _workViews.Count));
+        IconButton.Name(WorkButton, Model.Text.Format("work", "tip", _workViews.Count));
         WorkTitle.Text = Model.Text.Get("work", "title");
         AutomationProperties.SetName(WorkList, WorkTitle.Text);
         ShowWork(_workOpen);
@@ -170,8 +171,7 @@ public sealed partial class MainWindow
         _workOpen = true;
         WorkContent.Width = Math.Min(480, Math.Max(0, Root.ActualWidth - 64));
         WorkList.MaxHeight = Math.Max(32, Root.ActualHeight - 160);
-        WorkContent.RequestedTheme = Root.ActualTheme;
-        WorkContent.FlowDirection = Root.FlowDirection;
+        MatchRoot(WorkContent);
     }
 
     private void OnWorkClosed(object sender, object args)

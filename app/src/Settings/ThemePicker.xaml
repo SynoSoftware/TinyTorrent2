@@ -105,7 +105,7 @@
     MaxColumns="3"
     SizeChanged="OnTilesSize"
     SelectionChanged="OnTheme"
-    IsEnabled="{x:Bind Model.CanSelectTheme, Mode=OneWay}"
+    IsEnabled="{x:Bind Model.Theme.CanEdit, Mode=OneWay}"
     AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'theme'), Mode=OneWay}"
     AutomationProperties.AutomationId="Theme"
   >

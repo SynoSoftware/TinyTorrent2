@@ -252,8 +252,9 @@ stays local. The root holds `App`, `Enums.cs`, the project and manifest;
 - `Shared/` owns common dialogs, drafts, settings fields, accounts, file
   membership, dataset and work presentation, text, geography and RelayCommand.
   Its `Engine/`, `Storage/`, `Network/`, `Desktop/` and `Diagnostics/`
-  folders group the engine connection and the engine process, database,
-  network policy, Windows integration mechanics and failure reporting.
+  folders group the engine connection and the engine process, database and
+  small saved state files, network policy, Windows integration mechanics and
+  failure reporting.
 - `Controls/` owns reusable UI controls and framework mechanics, including the
   state a control owns, such as FileSelection beside FileBrowser.
 

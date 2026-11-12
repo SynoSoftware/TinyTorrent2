@@ -1,8 +1,7 @@
-using System.Diagnostics;
-using System.Text.Json;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml.Media;
 using Syno.TinyTorrent.Settings;
+using Syno.TinyTorrent.Shared.Storage;
 using Syno.TinyTorrent.Torrents;
 using Windows.Graphics;
 
@@ -10,7 +9,7 @@ namespace Syno.TinyTorrent.Shell;
 
 public sealed partial class MainWindow
 {
-    private string? _placementPath;
+    private StateFile<Placement>? _placementFile;
     private Task? _placementRead;
     private Task _placementSave = Task.CompletedTask;
     private Placement? _placement;
@@ -107,7 +106,7 @@ public sealed partial class MainWindow
         if (IsCaptureReview)
             return;
 #endif
-        if (_placementPath is null && Model.DataDirectory is { } directory)
+        if (_placementFile is null && Model.DataDirectory is { } directory)
             _placementRead = RestorePlacement(directory);
     }
 
@@ -140,74 +139,59 @@ public sealed partial class MainWindow
 
     private async Task RestorePlacement(string directory)
     {
-        _placementPath = Path.Combine(directory, "window.json");
-        try
+        _placementFile = new(Path.Combine(directory, "window.json"));
+        var placement = await _placementFile.Read();
+        if (placement is null || Model.IsClosing || _allowClose)
+            return;
+        _placement = placement;
+        if (placement.Width > 0 && placement.Height > 0)
         {
-            var input = await File.ReadAllTextAsync(_placementPath);
-            var placement = JsonSerializer.Deserialize<Placement>(input);
-            if (placement is null || Model.IsClosing || _allowClose)
-                return;
-            _placement = placement;
-            if (placement.Width > 0 && placement.Height > 0)
-            {
-                var savedScale =
-                    double.IsFinite(placement.Scale) && placement.Scale > 0 ? placement.Scale : 1;
-                var display = DisplayArea.GetFromRect(
-                    new RectInt32(placement.X, placement.Y, placement.Width, placement.Height),
-                    DisplayAreaFallback.Nearest
+            var savedScale =
+                double.IsFinite(placement.Scale) && placement.Scale > 0 ? placement.Scale : 1;
+            var display = DisplayArea.GetFromRect(
+                new RectInt32(placement.X, placement.Y, placement.Width, placement.Height),
+                DisplayAreaFallback.Nearest
+            );
+            var area = display.WorkArea;
+            AppWindow.Move(
+                new PointInt32(
+                    Math.Clamp(placement.X, area.X, area.X + Math.Max(0, area.Width - MinimumWidth)),
+                    Math.Clamp(placement.Y, area.Y, area.Y + Math.Max(0, area.Height - MinimumHeight))
+                )
+            );
+            var scale = GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(this)) / 96.0;
+            var minimum = MinimumSize(scale);
+            var width = (int)
+                Math.Clamp(
+                    placement.Width / savedScale * scale,
+                    Math.Min(minimum.Width, area.Width),
+                    area.Width
                 );
-                var area = display.WorkArea;
-                AppWindow.Move(
-                    new PointInt32(
-                        Math.Clamp(placement.X, area.X, area.X + Math.Max(0, area.Width - MinimumWidth)),
-                        Math.Clamp(placement.Y, area.Y, area.Y + Math.Max(0, area.Height - MinimumHeight))
-                    )
+            var height = (int)
+                Math.Clamp(
+                    placement.Height / savedScale * scale,
+                    Math.Min(minimum.Height, area.Height),
+                    area.Height
                 );
-                var scale =
-                    GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(this)) / 96.0;
-                var minimum = MinimumSize(scale);
-                var width = (int)
-                    Math.Clamp(
-                        placement.Width / savedScale * scale,
-                        Math.Min(minimum.Width, area.Width),
-                        area.Width
-                    );
-                var height = (int)
-                    Math.Clamp(
-                        placement.Height / savedScale * scale,
-                        Math.Min(minimum.Height, area.Height),
-                        area.Height
-                    );
-                AppWindow.MoveAndResize(
-                    new RectInt32(
-                        Math.Clamp(placement.X, area.X, area.X + area.Width - width),
-                        Math.Clamp(placement.Y, area.Y, area.Y + area.Height - height),
-                        width,
-                        height
-                    )
-                );
-                RememberBounds();
-                if (placement.Maximized && AppWindow.Presenter is OverlappedPresenter presenter)
-                    presenter.Maximize();
-            }
-            if (placement.Torrents is { } torrents)
-                Torrents.Layout = torrents;
-            if (
-                placement.Inspector is { } inspector
-                && InspectorContent.Content is InspectorPane pane
-            )
-                pane.Layout = inspector;
-            if (double.IsFinite(placement.SplitHeight) && placement.SplitHeight > 0)
-                _splitHeight = placement.SplitHeight;
-            UpdateInspectorSize();
+            AppWindow.MoveAndResize(
+                new RectInt32(
+                    Math.Clamp(placement.X, area.X, area.X + area.Width - width),
+                    Math.Clamp(placement.Y, area.Y, area.Y + area.Height - height),
+                    width,
+                    height
+                )
+            );
+            RememberBounds();
+            if (placement.Maximized && AppWindow.Presenter is OverlappedPresenter presenter)
+                presenter.Maximize();
         }
-        catch (FileNotFoundException) { }
-        catch (DirectoryNotFoundException) { }
-        catch (Exception error)
-            when (error is IOException or UnauthorizedAccessException or JsonException)
-        {
-            Debug.WriteLine($"Window layout could not be restored: {error.Message}");
-        }
+        if (placement.Torrents is { } torrents)
+            Torrents.Layout = torrents;
+        if (placement.Inspector is { } inspector && InspectorContent.Content is InspectorPane pane)
+            pane.Layout = inspector;
+        if (double.IsFinite(placement.SplitHeight) && placement.SplitHeight > 0)
+            _splitHeight = placement.SplitHeight;
+        UpdateInspectorSize();
     }
 
     // Returns the map the window showed when it closed, for ShowWhenReady to
@@ -276,7 +260,7 @@ public sealed partial class MainWindow
         await previous;
         if (_placementRead is { } reading)
             await reading;
-        if (_placementPath is null || !_viewRestored)
+        if (_placementFile is not { } file || !_viewRestored)
             return;
         RememberBounds();
         _libraryTable?.SaveLayout();
@@ -317,17 +301,8 @@ public sealed partial class MainWindow
                 : Model.Inspector.ShowsAllPeers ? MapScope.All
                 : MapScope.Selected,
         };
-        var temporary = _placementPath + ".tmp";
-        try
-        {
-            await File.WriteAllTextAsync(temporary, JsonSerializer.Serialize(placement));
-            File.Move(temporary, _placementPath, true);
+        if (await file.Save(placement))
             _placement = placement;
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        {
-            Debug.WriteLine($"Window layout could not be saved: {error.Message}");
-        }
     }
 
     private async Task ForgetPlacement()
@@ -335,16 +310,7 @@ public sealed partial class MainWindow
         await _placementSave;
         if (_placementRead is { } reading)
             await reading;
-        if (_placementPath is null)
-            return;
-        try
-        {
-            File.Delete(_placementPath);
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        {
-            Debug.WriteLine($"Window layout could not be deleted: {error.Message}");
-        }
+        _placementFile?.Delete();
     }
 
     private sealed record Placement

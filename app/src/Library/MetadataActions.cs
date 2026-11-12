@@ -1,3 +1,4 @@
+using System.Windows.Input;
 using Microsoft.UI.Xaml.Controls;
 using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Shared;
@@ -12,6 +13,34 @@ internal static class MetadataActions
         {
             IsEnabled = browser.FetchMetadata.CanExecute(null),
         };
+
+    /// <summary>
+    /// The metadata groups that the Library menu, the row context menu and the
+    /// Inspector's More menu share; none when the selection holds no video.
+    /// <paramref name="subtitles"/> downloads the selection's subtitles, a
+    /// command of the window, which owns the subtitle dialogs.
+    /// </summary>
+    internal static IEnumerable<MenuEntry> Menu(Browser browser, ICommand subtitles)
+    {
+        if (!browser.SupportsMetadata)
+        {
+            return [];
+        }
+        var text = browser.Text;
+        return
+        [
+            new MenuSeparator(),
+            Create(browser),
+            new MenuCommand(text.Get("library", "refresh_metadata"), Segoe.RefreshCw, browser.RefreshMetadata),
+            new MenuCommand(
+                text.Get("subtitles", browser.Selection.Items.Count == 1 ? "choose" : "download_title"),
+                Segoe.Download,
+                subtitles
+            ),
+            new MenuSeparator(),
+            new MenuCommand(text.Get("library", "erase_metadata"), Segoe.Eraser, browser.EraseMetadata),
+        ];
+    }
 
     /// <summary>The Info page's Fetch button: per-movie providers, then provider settings.</summary>
     internal static ActionButton Button(Browser browser)

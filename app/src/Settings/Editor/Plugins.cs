@@ -72,8 +72,8 @@ public sealed partial class Editor
                 or nameof(_owner.Library.IsAutomaticDownloadEnabled)
                 or "")
             {
+                // The overview follows every change of the editor.
                 Changed(nameof(VideoSummary));
-                Overview.Refresh();
             }
         };
     }

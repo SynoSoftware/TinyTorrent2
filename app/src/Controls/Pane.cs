@@ -311,12 +311,7 @@ public sealed partial class Pane : ContentControl
             if (CanMaximize)
                 Name(_maximize, IsMaximized ? "restore" : "maximize");
 
-            void Name(Button button, string key)
-            {
-                var label = text.Get(section, key);
-                AutomationProperties.SetName(button, label);
-                ToolTipService.SetToolTip(button, label);
-            }
+            void Name(Button button, string key) => IconButton.Name(button, text.Get(section, key));
         }
         RefreshSeparator();
     }

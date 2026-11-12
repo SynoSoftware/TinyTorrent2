@@ -64,7 +64,11 @@ cancellation still prevents that obsolete context from applying a match.
 One connection needs no concurrent-reader WAL setup, pooled connections, ORM or
 generic repository. Each short operation commits or rolls back as a whole.
 The managed SQLite command timeout bounds retries for external locks to five
-seconds. No performance claims are implied without measurement.
+seconds. `Database.Connect` opens every SQLite connection of the app,
+`library.db` and the IMDb data alike, with these options, and
+`Database.Execute` lets a cancellation interrupt a running statement and ends
+that statement as a cancellation. No performance claims are implied without
+measurement.
 
 ## Durable state
 
@@ -106,6 +110,7 @@ never recreates an association after its last source leaves.
 | `collected_files`, `pending_origins`, `current_files` | Shared membership and file-read readiness rules, including path settlement. |
 | `video_attempts`, `fact_attempts` | In-flight work and session failures/misses. A blocked video attempt names its required request; batch projection joins the current RequestPolicy hold instead of copying it. Reopening clears attempts; durable remote history belongs to RequestPolicy. Withdrawn locations are pruned. |
 | `subtitle_languages` | Languages actually associated with a movie's current location, derived from ownership and current source facts. |
+| `entry_identifications` | The identification that decides each Library entry: the latest explicit choice of its files, including Clear, else the latest provider match whose file still has the name it was matched under. Rows, details, Fetch metadata and video lookups read it, so they agree. Source reconciliation shares explicit choices among confirmed files only and does not read it. |
 | `library_entries`, `library_rows`, `library_state`, `library_matches` | Joined display/search data, a rebuildable row snapshot, its validity and the current match set. Actual changes invalidate it in the same transaction as their writes; confirming an unchanged list does not. |
 
 The former TEMP-only catalogue structurally excluded rows not supplied by the

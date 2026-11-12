@@ -9,10 +9,12 @@ namespace Syno.TinyTorrent.Settings;
 public sealed partial class SettingsPage
 {
     private readonly List<(SettingsLink Button, string Key, Func<string> Value)> _links = [];
-    private bool _homeQueued;
+    private readonly TurnCallback _home;
 
     private void InitializeHome()
     {
+        HomeGrid.PrimaryWidth = new GridLength(1, GridUnitType.Star);
+        HomeGrid.SecondaryWidth = new GridLength(1, GridUnitType.Star);
         var integration = new WindowsIntegration(Model);
         integration.Section.Style = (Style)Resources["SettingsHomeGroupStyle"];
         HomeIntegrationContent.Content = integration;
@@ -148,13 +150,11 @@ public sealed partial class SettingsPage
 
     private void QueueHome()
     {
-        if (_homeQueued || !IsLoaded || Main.Navigation.Current != WindowPage.Settings)
-            return;
-        _homeQueued = DispatcherQueue.TryEnqueue(() =>
+        if (!IsLoaded || Main.Navigation.Current != WindowPage.Settings)
         {
-            _homeQueued = false;
-            RefreshHome();
-        });
+            return;
+        }
+        _home.Request();
     }
 
     private void RefreshHome()
@@ -172,21 +172,5 @@ public sealed partial class SettingsPage
             button.Header = Model.Text.Get("settings", key);
             button.Description = value();
         }
-    }
-
-    private void OnHomeSize(object sender, SizeChangedEventArgs args) => UpdateHomeLayout();
-
-    private void UpdateHomeLayout()
-    {
-        if (HomeGrid is null)
-            return;
-        var stacked = HomeGrid.ActualWidth < 900 * _display.TextScaleFactor;
-        HomeGrid.ColumnSpacing = stacked ? 0 : 8;
-        HomeGrid.RowSpacing = stacked ? 8 : 0;
-        HomeGrid.ColumnDefinitions[1].Width = stacked
-            ? new GridLength(0)
-            : new GridLength(1, GridUnitType.Star);
-        Grid.SetColumn(HomeRight, stacked ? 0 : 1);
-        Grid.SetRow(HomeRight, stacked ? 1 : 0);
     }
 }

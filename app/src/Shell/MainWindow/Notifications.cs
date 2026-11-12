@@ -116,18 +116,7 @@ public sealed partial class MainWindow
     {
         return FocusManager.GetFocusedElement(Root.XamlRoot)
                 is Control { FocusState: FocusState.Keyboard } control
-            && IsInside(control, ToastStack);
-    }
-
-    private static bool IsInside(DependencyObject? element, DependencyObject container)
-    {
-        while (element is not null)
-        {
-            if (ReferenceEquals(element, container))
-                return true;
-            element = VisualTreeHelper.GetParent(element);
-        }
-        return false;
+            && VisualTree.Contains(ToastStack, control);
     }
 
     private void OnToastPointerEntered(object sender, PointerRoutedEventArgs args)
@@ -161,7 +150,7 @@ public sealed partial class MainWindow
         var shows =
             ReferenceEquals(_pointedToast, toast)
             || ReferenceEquals(_moreButton, more)
-            || IsInside(FocusManager.GetFocusedElement(toast.XamlRoot) as DependencyObject, toast);
+            || VisualTree.Contains(toast, FocusManager.GetFocusedElement(toast.XamlRoot) as DependencyObject);
         more.Opacity = shows ? 1 : 0;
     }
 

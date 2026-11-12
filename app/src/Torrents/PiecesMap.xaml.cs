@@ -3,11 +3,9 @@ using System.Runtime.InteropServices.WindowsRuntime;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
-using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Shared;
@@ -44,7 +42,7 @@ public sealed partial class PiecesMap : UserControl
     private int _selectedPiece = -1;
     private int _pointed = -1;
     private int _revision;
-    private bool _queued;
+    private readonly TurnCallback _draw;
     private bool _drawing;
     private CancellationToken _cancellation;
     private XamlRoot? _root;
@@ -55,6 +53,11 @@ public sealed partial class PiecesMap : UserControl
 
     public PiecesMap()
     {
+        _draw = new TurnCallback(
+            DispatcherQueue,
+            Microsoft.UI.Dispatching.DispatcherQueuePriority.Normal,
+            StartDraw
+        );
         InitializeComponent();
         foreach (var entry in Legend.Children.OfType<Grid>())
         {
@@ -217,15 +220,15 @@ public sealed partial class PiecesMap : UserControl
     private void QueueDraw()
     {
         _revision++;
-        if (_queued)
-            return;
-        _queued = true;
-        DispatcherQueue.TryEnqueue(() =>
+        _draw.Request();
+    }
+
+    private void StartDraw()
+    {
+        if (!_drawing)
         {
-            _queued = false;
-            if (!_drawing)
-                _ = Draw();
-        });
+            _ = Draw();
+        }
     }
 
     private async Task Draw()
@@ -249,14 +252,14 @@ public sealed partial class PiecesMap : UserControl
         {
             var palette = new Palette
             {
-                Fills = [.. Swatches().Select(swatch => Read(swatch.Background))],
-                Received = Read(Received.Background),
-                Hatch = Read(Hatch.Stroke),
-                Cross = Read(Cross.Stroke),
-                Ink = Read(Ink.Foreground),
+                Fills = [.. Swatches().Select(swatch => Colour.Read(swatch.Background))],
+                Received = Colour.Read(Received.Background),
+                Hatch = Colour.Read(Hatch.Stroke),
+                Cross = Colour.Read(Cross.Stroke),
+                Ink = Colour.Read(Ink.Foreground),
                 Outline =
                     VerifiedSwatch.BorderThickness.Left > 0
-                        ? Read(VerifiedSwatch.BorderBrush)
+                        ? Colour.Read(VerifiedSwatch.BorderBrush)
                         : default,
             };
             var radius = VerifiedSwatch.CornerRadius.TopLeft;
@@ -427,12 +430,12 @@ public sealed partial class PiecesMap : UserControl
                     PieceKind.Downloading
                         when (rtl ? dx >= side * (1 - share) : dx < side * share) =>
                         palette.Received,
-                    PieceKind.Rare => Mix(
+                    PieceKind.Rare => Colour.Mix(
                         palette.Fills[dominant],
                         palette.Hatch,
                         Cover(HatchDistance(dx, dy), Stroke / 2, scale)
                     ),
-                    PieceKind.Unavailable => Mix(
+                    PieceKind.Unavailable => Colour.Mix(
                         palette.Fills[dominant],
                         palette.Cross,
                         Cover(CrossDistance(dx, dy, side), Stroke / 2, scale)
@@ -442,9 +445,13 @@ public sealed partial class PiecesMap : UserControl
                 if (edge < 1 && palette.Outline.A > 0)
                     color = palette.Outline;
                 if (mixed)
-                    color = Mix(color, palette.Ink, Dot(dx - (side - 4), dy - 4, scale));
+                {
+                    color = Colour.Mix(color, palette.Ink, Dot(dx - (side - 4), dy - 4, scale));
+                }
                 if (hidesUnavailable)
-                    color = Mix(color, palette.Cross, Dot(dx - 4, dy - (side - 4), scale));
+                {
+                    color = Colour.Mix(color, palette.Cross, Dot(dx - 4, dy - (side - 4), scale));
+                }
                 var alpha = color.A * coverage;
                 var offset = ((top + py) * pixelWidth + left + px) * 4;
                 pixels[offset] = (byte)(color.B * alpha / 255);
@@ -502,24 +509,6 @@ public sealed partial class PiecesMap : UserControl
         double Segment(double offset, double position) =>
             Math.Sqrt(offset * offset + Math.Pow(Math.Max(0, Math.Abs(position) - half), 2));
         return Math.Min(Segment(falling, rising), Segment(rising, falling));
-    }
-
-    private static Color Mix(Color under, Color over, double amount) =>
-        amount <= 0
-            ? under
-            : Color.FromArgb(
-                (byte)(under.A + (over.A - under.A) * amount),
-                (byte)(under.R + (over.R - under.R) * amount),
-                (byte)(under.G + (over.G - under.G) * amount),
-                (byte)(under.B + (over.B - under.B) * amount)
-            );
-
-    private static Color Read(Brush brush)
-    {
-        var solid = (SolidColorBrush)brush;
-        var color = solid.Color;
-        color.A = (byte)Math.Round(color.A * solid.Opacity);
-        return color;
     }
 
     private int Find(PointerRoutedEventArgs args)
@@ -700,9 +689,7 @@ public sealed partial class PiecesMap : UserControl
             return;
         var previous = _value;
         _value = value;
-        FrameworkElementAutomationPeer
-            .FromElement(this)
-            ?.RaisePropertyChangedEvent(ValuePatternIdentifiers.ValueProperty, previous, value);
+        ValuePeer.Announce(this, previous, value);
     }
 
     private void ShowDetail()
@@ -727,25 +714,7 @@ public sealed partial class PiecesMap : UserControl
         DetailFiles.Text = detail?.Files ?? string.Empty;
     }
 
-    protected override AutomationPeer OnCreateAutomationPeer() => new MapPeer(this);
-
-    private sealed class MapPeer(PiecesMap map)
-        : FrameworkElementAutomationPeer(map),
-            IValueProvider
-    {
-        protected override string GetClassNameCore() => nameof(PiecesMap);
-
-        protected override AutomationControlType GetAutomationControlTypeCore() =>
-            AutomationControlType.Custom;
-
-        protected override object? GetPatternCore(PatternInterface pattern) =>
-            pattern == PatternInterface.Value ? this : base.GetPatternCore(pattern);
-
-        public bool IsReadOnly => true;
-        public string Value => map._value;
-
-        public void SetValue(string value) => throw new InvalidOperationException();
-    }
+    protected override AutomationPeer OnCreateAutomationPeer() => new ValuePeer(this, () => _value);
 
     private sealed record Block(int First, int End, int X, int Y);
 

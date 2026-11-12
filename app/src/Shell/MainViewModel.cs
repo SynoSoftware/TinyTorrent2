@@ -29,13 +29,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     private readonly HashSet<string> _listed = [];
     private readonly object _snapshotGate = new();
     private JsonElement? _latest;
-    private bool _applyQueued;
+    private readonly TurnCallback _apply;
     // The newest unapplied observation of each subscription's torrent, keyed
     // as the engine keys them, so an earlier subscription's late message never
     // replaces a newer one; and the list one drain applies them from.
     private readonly Dictionary<(long Context, string TorrentId), PipeClient.Observation> _observations = [];
     private readonly List<PipeClient.Observation> _draining = [];
-    private bool _detailQueued;
+    private readonly TurnCallback _detail;
     private bool _refreshDetail;
     private Torrent[] _selected = [];
     private Torrent? _current;
@@ -371,6 +371,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Text = strings;
         Notifications = new Notifications(this, strings);
         _dispatcher = dispatcher;
+        _apply = new TurnCallback(dispatcher, DispatcherQueuePriority.Normal, ApplyLatest);
+        _detail = new TurnCallback(dispatcher, DispatcherQueuePriority.Low, DrainDetail);
         Work = new(dispatcher);
         _client = new PipeClient(strings);
         Library = new LibraryBrowser(strings, dispatcher, Work);
@@ -486,7 +488,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             () => true
         );
         SwitchTheme = new RelayCommand(
-            () => Settings.SelectTheme(_dark ? "light" : "dark"),
+            () => Settings.Theme.Select(_dark ? "light" : "dark"),
             () => CanEdit
         );
         AddMagnet = new RelayCommand(
@@ -575,14 +577,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             () => OpenTorrent(true),
             () => CanEdit && _selected.Length == 1
         );
-        CopyMagnet = new RelayCommand(
-            () => CopyTorrent(false),
-            () => CanEdit && _selected.Length == 1
-        );
-        CopyHash = new RelayCommand(
-            () => CopyTorrent(true),
-            () => CanEdit && _selected.Length == 1
-        );
+        CopyMagnet = new RelayCommand(CopyLink, () => CanEdit && _selected.Length == 1);
+        CopyHash = new RelayCommand(CopyHashes, () => CanEdit && _selected.Length == 1);
         Properties = new RelayCommand(
             () => Inspect(Inspector.Section),
             () => CanEdit && _selected.Length == 1
@@ -1100,22 +1096,22 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 return;
 #endif
             _latest = snapshot;
-            if (_applyQueued)
-                return;
-            _applyQueued = true;
         }
-        _dispatcher.TryEnqueue(() =>
+        _apply.Request();
+    }
+
+    private void ApplyLatest()
+    {
+        JsonElement? latest;
+        lock (_snapshotGate)
         {
-            JsonElement? latest;
-            lock (_snapshotGate)
-            {
-                latest = _latest;
-                _latest = null;
-                _applyQueued = false;
-            }
-            if (!_closed && latest is not null)
-                Apply(latest.Value);
-        });
+            latest = _latest;
+            _latest = null;
+        }
+        if (!_closed && latest is not null)
+        {
+            Apply(latest.Value);
+        }
     }
 
     private void QueueDetail(PipeClient.Observation? observation)
@@ -1145,36 +1141,42 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 }
                 _observations[key] = observation;
             }
-            if (_detailQueued)
-                return;
-            _detailQueued = true;
         }
-        _dispatcher.TryEnqueue(DispatcherQueuePriority.Low, () =>
+        _detail.Request();
+    }
+
+    private void DrainDetail()
+    {
+        bool refresh;
+        lock (_snapshotGate)
         {
-            bool refresh;
-            lock (_snapshotGate)
+            _draining.AddRange(_observations.Values);
+            _observations.Clear();
+            refresh = _refreshDetail;
+            _refreshDetail = false;
+        }
+        try
+        {
+            if (_closed)
             {
-                _draining.AddRange(_observations.Values);
-                _observations.Clear();
-                refresh = _refreshDetail;
-                _refreshDetail = false;
-                _detailQueued = false;
+                return;
             }
-            try
+            if (refresh)
             {
-                if (_closed)
-                    return;
-                if (refresh)
-                    Inspector.RefreshDetail();
-                else
-                    foreach (var message in _draining)
-                        Inspector.Receive(message);
+                Inspector.RefreshDetail();
             }
-            finally
+            else
             {
-                _draining.Clear();
+                foreach (var message in _draining)
+                {
+                    Inspector.Receive(message);
+                }
             }
-        });
+        }
+        finally
+        {
+            _draining.Clear();
+        }
     }
 
     // Runs again the torrents among these that the engine could not recover

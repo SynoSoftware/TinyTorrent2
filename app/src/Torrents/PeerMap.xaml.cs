@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Shared;
 using Windows.Foundation;
 using Windows.UI;
@@ -490,11 +491,11 @@ public sealed partial class PeerMap : UserControl
             Model = presentation,
             Palette = new()
             {
-                Ink = Colour(Ink.Foreground),
-                Land = Colour(Land.Background),
-                Edge = Colour(Edge.Background),
-                Download = Colour(Download.Background),
-                Upload = Colour(Upload.Background),
+                Ink = Colour.Read(Ink.Foreground),
+                Land = Colour.Read(Land.Background),
+                Edge = Colour.Read(Edge.Background),
+                Download = Colour.Read(Download.Background),
+                Upload = Colour.Read(Upload.Background),
             },
             Selection = !_selection.HasPeers || presentation.Cities == _selection.Cities
                 ? _selection : MapModel.Selection.Empty,
@@ -587,8 +588,6 @@ public sealed partial class PeerMap : UserControl
     }
 
 
-    private static Color Colour(Brush brush) => ((SolidColorBrush)brush).Color;
-
     // The map's layer hides everything under it, so each frame starts with
     // the backgrounds between the window's backdrop and the map, composed as
     // XAML draws them, and the map matches the peers table beside it. Only
@@ -606,7 +605,9 @@ public sealed partial class PeerMap : UserControl
                 _ => null,
             };
             if (brush is SolidColorBrush solid)
-                layers.Add(MapRenderer.Alpha(solid.Color, solid.Opacity));
+            {
+                layers.Add(Colour.Read(solid));
+            }
         }
         // Premultiplied, from the window's root down.
         double alpha = 0, red = 0, green = 0, blue = 0;

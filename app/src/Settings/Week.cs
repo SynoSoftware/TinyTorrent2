@@ -130,7 +130,7 @@ public sealed partial class Week : UserControl
     private double Y(int day) => Ruler + day * RowHeight;
 
     private int Minute(double x) =>
-        Math.Clamp(PeriodSpan.Snap((x - Gutter) / TrackWidth * 1440), 0, 1425);
+        Math.Clamp(PeriodSpan.Snap((x - Gutter) / TrackWidth * 1440), 0, PeriodSpan.LastStep);
 
     private int Day(double y) => Math.Clamp((int)((y - Ruler) / RowHeight), 0, 6);
 
@@ -473,10 +473,7 @@ public sealed partial class Week : UserControl
             }
         }
         var minute = Math.Clamp((point.X - Gutter) / TrackWidth * 1440, 0, 1439);
-        var period = _model
-            .Ranges(day)
-            .First(range => minute >= range.Start && minute < range.End)
-            .Period;
+        var period = _model.RangeAt(day, minute).Period;
         return (period is null ? PeriodAction.Create : PeriodAction.Move, period);
     }
 
@@ -503,7 +500,7 @@ public sealed partial class Week : UserControl
             return;
         HoverTip.IsOpen = false;
         ToolTipService.SetToolTip(this, null);
-        var period = hit.Period ?? _model.NewPeriod([_day], new(_minute, 15));
+        var period = hit.Period ?? _model.NewPeriod([_day], new(_minute, PeriodSpan.Step));
         _drag = new(hit.Action, period, point, args.Pointer.PointerId);
         args.Handled = true;
         Invalidate();
@@ -599,7 +596,7 @@ public sealed partial class Week : UserControl
         drag.HasMoved =
             drag.Action == PeriodAction.Create
                 ? span.Duration >= 60
-                : moved || Math.Abs(point.X - drag.Origin.X) >= 4;
+                : moved || Math.Abs(point.X - drag.Origin.X) >= DragDistance.Horizontal;
         if (!drag.HasMoved)
             return moved;
         var days = drag.Days;
@@ -679,10 +676,7 @@ public sealed partial class Week : UserControl
         }
         else
         {
-            period = _model
-                .Ranges(_day)
-                .First(range => _minute >= range.Start && _minute < range.End)
-                .Period;
+            period = _model.RangeAt(_day, _minute).Period;
             position = new Point(X(_minute), Y(_day) + RowHeight - 4);
         }
         if (period is null)
@@ -720,10 +714,7 @@ public sealed partial class Week : UserControl
         }
         if (_drag is not null || !_model.CanSchedule)
             return;
-        var period = _model
-            .Ranges(_day)
-            .First(range => _minute >= range.Start && _minute < range.End)
-            .Period;
+        var period = _model.RangeAt(_day, _minute).Period;
         switch (args.Key)
         {
             case VirtualKey.Up:
@@ -733,16 +724,16 @@ public sealed partial class Week : UserControl
                 _day = Math.Min(6, _day + 1);
                 break;
             case VirtualKey.Left:
-                _minute = Math.Max(0, _minute - 15);
+                _minute = Math.Max(0, _minute - PeriodSpan.Step);
                 break;
             case VirtualKey.Right:
-                _minute = Math.Min(1425, _minute + 15);
+                _minute = Math.Min(PeriodSpan.LastStep, _minute + PeriodSpan.Step);
                 break;
             case VirtualKey.Home:
                 _minute = 0;
                 break;
             case VirtualKey.End:
-                _minute = 1425;
+                _minute = PeriodSpan.LastStep;
                 break;
             case VirtualKey.Space or VirtualKey.Enter when period is not null:
                 await _model.Open(period);

@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Syno.TinyTorrent.Controls;
 using Windows.System;
 using Windows.UI.Core;
 using static Syno.TinyTorrent.Torrents.MapModel;
@@ -93,7 +94,7 @@ public sealed partial class PeerMap
         CaptureInput?.Invoke("wheel", point.Properties.MouseWheelDelta);
 #endif
         ZoomAt(
-            (float)Math.Pow(1.25, point.Properties.MouseWheelDelta / 120.0),
+            (float)Math.Pow(MapViewport.ZoomStep, point.Properties.MouseWheelDelta / 120.0),
             new Vector2((float)point.Position.X, (float)point.Position.Y)
         );
         OnPointer(sender, args);
@@ -103,7 +104,7 @@ public sealed partial class PeerMap
     private void OnDoubleTapped(object sender, DoubleTappedRoutedEventArgs args)
     {
         var point = args.GetPosition(Drawing);
-        ZoomAt(1.25f, new Vector2((float)point.X, (float)point.Y));
+        ZoomAt(MapViewport.ZoomStep, new Vector2((float)point.X, (float)point.Y));
         args.Handled = true;
     }
 
@@ -132,7 +133,13 @@ public sealed partial class PeerMap
             return true;
         }
         var delta = new Vector2((float)point.Position.X, (float)point.Position.Y) - drag.Start;
-        if (!drag.IsActive && delta.LengthSquared() >= 16)
+        if (
+            !drag.IsActive
+            && (
+                Math.Abs(delta.X) >= DragDistance.Horizontal
+                || Math.Abs(delta.Y) >= DragDistance.Vertical
+            )
+        )
         {
             if (!Drawing.CapturePointer(args.Pointer))
             {
@@ -262,7 +269,9 @@ public sealed partial class PeerMap
                 or (VirtualKey)OemKey.Minus
         )
             ZoomInspection(
-                args.Key is VirtualKey.Add or (VirtualKey)OemKey.Plus ? 1.25f : .8f,
+                args.Key is VirtualKey.Add or (VirtualKey)OemKey.Plus
+                    ? MapViewport.ZoomStep
+                    : 1 / MapViewport.ZoomStep,
                 displayed
             );
         else if (control && args.Key is VirtualKey.Number0 or VirtualKey.NumberPad0)

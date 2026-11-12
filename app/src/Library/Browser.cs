@@ -381,9 +381,7 @@ public sealed partial class Browser
                     Fetch(option);
                 return Task.CompletedTask;
             },
-            () =>
-                CanLookup
-                && Selection.Items.Cast<LibraryRow>().Any(row => row.Entry.Kind == FileKind.Video)
+            () => CanLookup && SupportsMetadata
         );
         ShowSettings = new RelayCommand(
             () =>
@@ -830,9 +828,9 @@ public sealed partial class Browser
                 ?? Text.Get("library", "series"),
             "season" => Text.Format("library", "season_number", value),
             "kind" when int.TryParse(value, out var kind) && Enum.IsDefined((FileKind)kind) =>
-                Text.Get("library", ((FileKind)kind).ToString().ToLowerInvariant()),
-            "type" => Text.Get("library", value.Length == 0 ? "unidentified" : value),
-            "modified" or "size" or "resolution" or "subtitles" or "metadata" => Text.Get(
+                Text.Get((FileKind)kind),
+            "type" => TypeText(value),
+            _ when Store.Buckets.ContainsKey(section) => Text.Get(
                 "library",
                 value switch
                 {
@@ -843,6 +841,9 @@ public sealed partial class Browser
             ),
             _ => value,
         };
+
+    internal string TypeText(string type) =>
+        Text.Get("library", type.Length == 0 ? "unidentified" : type);
 
     internal void Refresh()
     {
@@ -1103,11 +1104,11 @@ public sealed partial class Browser
             Changed(nameof(Selected));
             Changed(nameof(Section));
             Changed(nameof(CanShowInformation));
-            Changed(nameof(SupportsMetadata));
             Changed(nameof(Message));
         }
         SelectionChanged?.Invoke(this, EventArgs.Empty);
         Changed(nameof(Selection));
+        Changed(nameof(SupportsMetadata));
         Changed(nameof(Status));
         RefreshCommands();
     }
@@ -1386,7 +1387,7 @@ public sealed class LibraryRow(Entry entry, Browser library) : INotifyPropertyCh
         : FileName.Glyph(Entry.Kind);
     public string Folder => Entry.Folder;
     public string Title => Entry.Title;
-    public string Type => Text.Get("library", Entry.Type.Length > 0 ? Entry.Type : "unidentified");
+    public string Type => library.TypeText(Entry.Type);
     public string Year => Entry.Year?.ToString() ?? string.Empty;
     public string ImdbRating => RatingCell(RatingSource.Imdb);
     public string TmdbRating => RatingCell(RatingSource.Tmdb);
@@ -1437,7 +1438,7 @@ public sealed class LibraryRow(Entry entry, Browser library) : INotifyPropertyCh
         Entry.Created is { } time
             ? Text.Time(DateTimeOffset.FromUnixTimeSeconds(time))
             : string.Empty;
-    public string Kind => Text.Get("library", Entry.Kind.ToString().ToLowerInvariant());
+    public string Kind => Text.Get(Entry.Kind);
 
     /// <summary>
     /// The score on the site's own scale, as IMDb's 6.7, Rotten Tomatoes' 59%

@@ -718,8 +718,9 @@ a rate or the speed limit opens the torrent's Speed limit dialog, which also
 shows the global limit; the folder opens Move files; ratio opens the seeding
 ratio in Settings > Transfers; and seeds or peers open the connection limit in
 Settings > Network. The other values are facts of the torrent or its history,
-so they open nothing. Below 760 effective pixels of content width, Properties
-becomes one column, so values retain readable space.
+so they open nothing. Below 760 effective pixels of content width at 100%
+Windows text size, and below a proportionally wider width at a larger text
+size, Properties becomes one column, so values retain readable space.
 
 Inspector chrome follows the shared [Pane presentation](workspace.md#panes-and-filters).
 Tables inside it follow the

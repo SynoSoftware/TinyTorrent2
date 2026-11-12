@@ -1272,7 +1272,7 @@ public sealed partial class MainWindow
             }
             foreach (var theme in new[] { "dark", "light" })
             {
-                await Model.Settings.SelectTheme(theme);
+                await Model.Settings.Theme.Select(theme);
                 await CaptureReady(Model, () => Model.Theme == theme && Model.CanClose);
                 pane.Layout = pane.Layout with { View = pane.Layout.View with { Layout = PeerLayout.Table } };
                 AppWindow.Resize(new SizeInt32(1040, 680));

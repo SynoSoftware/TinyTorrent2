@@ -65,12 +65,7 @@ public sealed partial class MainWindow
             var path = row.Entry.Path;
             Model.Library.Opened(row, path, await OpenPath(path));
         };
-        Model.Library.FolderRequested += async (_, path) =>
-        {
-            var failure = await OpenPath(path);
-            if (failure is not null)
-                Model.Notifications.Report(failure);
-        };
+        Model.Library.FolderRequested += (_, path) => Open(new(path));
         Model.Library.TorrentRequested += async (_, origin) =>
         {
             if (
@@ -223,34 +218,14 @@ public sealed partial class MainWindow
             () => Model.Text
         );
 
-    private IEnumerable<MenuEntry> LibraryMenu()
-    {
-        yield return Command("open", Model.Library.Open, Syno.Segoe.Play);
-        yield return Command("open_folder", Model.Library.OpenFolder, Syno.Segoe.FolderOpen);
-        yield return Command("properties", Model.Library.Properties, Syno.Segoe.Info);
-        yield return OriginActions.Create(Model.Library);
-        yield return new MenuSeparator();
-        yield return MetadataActions.Create(Model.Library);
-        yield return new MenuCommand(
-            Model.Text.Get("library", "refresh_metadata"),
-            Segoe.RefreshCw,
-            Model.Library.RefreshMetadata
-        );
-        yield return new MenuCommand(
-            Model.Text.Get(
-                "subtitles",
-                Model.Library.Selection.Items.Count == 1 ? "choose" : "download_title"
-            ),
-            Segoe.Download,
-            Model.DownloadSubtitles
-        );
-        yield return new MenuSeparator();
-        yield return new MenuCommand(
-            Model.Text.Get("library", "erase_metadata"),
-            Segoe.Eraser,
-            Model.Library.EraseMetadata
-        );
-    }
+    private IEnumerable<MenuEntry> LibraryMenu() =>
+        [
+            Command("open", Model.Library.Open, Syno.Segoe.Play),
+            Command("open_folder", Model.Library.OpenFolder, Syno.Segoe.FolderOpen),
+            Command("properties", Model.Library.Properties, Syno.Segoe.Info),
+            OriginActions.Create(Model.Library),
+            .. MetadataActions.Menu(Model.Library, Model.DownloadSubtitles),
+        ];
 
     private IEnumerable<MenuEntry> LibraryViewMenu()
     {
@@ -278,20 +253,14 @@ public sealed partial class MainWindow
                 option.Name,
                 option.Access,
                 option.HasBuiltInKey,
-                library.HasKey(option.ProviderId)
-                    ? new AccountInput.OwnKey(new Secret.Kept())
-                    : new AccountInput.BuiltIn(),
+                library.Key(option.ProviderId),
                 async input =>
                 {
-                    // Saving a key restarts the provider's lookups, so an
-                    // unchanged choice saves nothing. A null key means the
-                    // built-in key.
-                    if (input is AccountInput.OwnKey { Key: Secret.Typed typed })
-                        await library.SaveKey(option.ProviderId, typed.Value);
-                    else if (input is AccountInput.BuiltIn && library.HasKey(option.ProviderId))
-                        await library.SaveKey(option.ProviderId, null);
+                    await library.SaveKey(option.ProviderId, input);
                     if (enableAutomaticDownload)
+                    {
                         await library.EnableAutomaticDownload(option.ProviderId);
+                    }
                 }
             )
         );

@@ -177,11 +177,7 @@ internal sealed partial class Acquisition(
     // Called while acquisition is suspended; admission rechecks remote waits.
     internal void ChangeRoute(SqliteConnection connection)
     {
-        Execute(
-            connection,
-            "UPDATE subtitle_jobs SET retry_at=0 WHERE outcome=$pending;",
-            ("$pending", (int)SubtitleOutcome.Pending)
-        );
+        RetryNow(connection);
         // A new route needs a new check, but a refusal belongs to the account.
         if (_check == AccountCheck.Verified)
             _check = AccountCheck.Unchecked;
@@ -225,13 +221,7 @@ internal sealed partial class Acquisition(
         if (providerId is not null && providerId != Supplier?.ProviderId)
             return;
         Unblock(connection);
-        Execute(
-            connection,
-            """
-            UPDATE subtitle_jobs SET retry_at=0 WHERE outcome=$pending;
-            """,
-            ("$pending", (int)SubtitleOutcome.Pending)
-        );
+        RetryNow(connection);
     }
 
     // Completes when every settings write queued so far has been applied or

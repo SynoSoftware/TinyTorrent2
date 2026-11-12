@@ -48,7 +48,8 @@ any unresolved questions accurately.
 ## Dialogs
 
 Every dialog is a `Shared.Dialog` that `MainWindow` opens through `Interact`
-and then `ShowDialog`, or `ShowEditor` when the primary button saves an editor's draft.
+and then `ShowDialog`, or `ShowEditor` when the primary button saves an editor's draft,
+or through `Confirm` when it asks to confirm an act.
 These owners hold what every dialog shares, so a dialog states only its title,
 content, buttons and outcome:
 
@@ -59,9 +60,12 @@ content, buttons and outcome:
   except the question about an unfinished draft. WinUI throws when a second
   dialog opens, for example when Exit arrives from the tray.
 - `ShowDialog` sets the window root, the theme and the Cancel text, and
-  refreshes the dialog's text when the language changes.
-- `ShowEditor` takes the dialog's `IDraft`. It enables the primary button from
-  `CanSubmit` except while the window closes, submits the draft, and keeps the
+  refreshes the dialog's text when the language changes. Given the `IDraft`
+  that the primary button submits, it enables the button from `CanSubmit`
+  except while the window closes.
+- `Confirm` opens a confirmation in its own interaction and runs the confirmed
+  act inside it, so no other dialog opens before the act ends.
+- `ShowEditor` takes the dialog's `IDraft`. It submits the draft and keeps the
   dialog open while the draft is pending or after a refused submit. When the
   dialog closes, it stops the draft's running work and discards the draft.
   When the window closes, it applies the draft's `ClosePolicy`: save, discard,

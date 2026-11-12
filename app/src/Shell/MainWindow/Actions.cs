@@ -4,7 +4,6 @@ using DispatcherQueuePriority = Microsoft.UI.Dispatching.DispatcherQueuePriority
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Syno.TinyTorrent.Controls;
@@ -23,7 +22,7 @@ public sealed partial class MainWindow
     private FileDialog? _fileDialog;
     private MenuFlyout? _selectionMenu;
     private RelayCommand? _switchInspector;
-    private bool _menusPending;
+    private readonly TurnCallback _menus;
     private int _menuVersion;
     // Whether the queued fill also fills the View menu, which a selection
     // change leaves as it is.
@@ -234,70 +233,79 @@ public sealed partial class MainWindow
         QueueTorrentMenu();
     }
 
-    // One update raises several changes in the same turn, so the menus refill once
-    // after it.
     private void QueueTorrentMenu()
     {
         _menuVersion++;
-        if (_menusPending || _allowClose)
-            return;
-        _menusPending = DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, async () =>
+        if (_allowClose)
         {
-            _menusPending = false;
-            if (_allowClose)
-                return;
-            var version = _menuVersion;
-            var rows = (Rows: Model.Selected.ToArray(), CanEdit: Model.CanEdit);
-            var commands = _torrentCommands;
-            var text = Model.Text;
-            var entry =
-                Model.Page == WindowPage.Library
-                && Model.Library.Selected is { } selected
-                && !Model.Library.HasOrigins(selected.Entry.EntryId)
-                    ? selected.Entry
-                    : null;
-            try
+            return;
+        }
+        _menus.Request();
+    }
+
+    private async void PrepareMenus()
+    {
+        if (_allowClose)
+        {
+            return;
+        }
+        var version = _menuVersion;
+        var rows = (Rows: Model.Selected.ToArray(), CanEdit: Model.CanEdit);
+        var commands = _torrentCommands;
+        var text = Model.Text;
+        var entry =
+            Model.Page == WindowPage.Library
+            && Model.Library.Selected is { } selected
+            && !Model.Library.HasOrigins(selected.Entry.EntryId)
+                ? selected.Entry
+                : null;
+        try
+        {
+            var preparation = Torrents.PrepareSelection(async (_, cancellation) =>
             {
-                var preparation = Torrents.PrepareSelection(async (_, cancellation) =>
+                var origins = entry is null
+                    ? null
+                    : await Model.Library.ReadOrigins(entry.EntryId, cancellation);
+                var entries = PrepareTorrentMenu(rows, commands, text, cancellation);
+                var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                if (!DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () =>
                 {
-                    var origins = entry is null
-                        ? null
-                        : await Model.Library.ReadOrigins(entry.EntryId, cancellation);
-                    var entries = PrepareTorrentMenu(rows, commands, text, cancellation);
-                    var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                    if (!DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () =>
+                    try
                     {
-                        try
+                        if (!cancellation.IsCancellationRequested && version == _menuVersion && !_allowClose)
                         {
-                            if (!cancellation.IsCancellationRequested && version == _menuVersion && !_allowClose)
+                            if (entry is not null && origins is not null)
                             {
-                                if (entry is not null && origins is not null)
-                                    Model.Library.ApplyOrigins(entry.EntryId, origins);
-                                FillMenus(entries);
+                                Model.Library.ApplyOrigins(entry.EntryId, origins);
                             }
-                            completion.TrySetResult();
+                            FillMenus(entries);
                         }
-                        catch (Exception error)
-                        {
-                            completion.TrySetException(error);
-                        }
-                    }))
-                        completion.TrySetCanceled();
-                    await completion.Task.WaitAsync(cancellation);
-                });
-                await preparation.ConfigureAwait(
-                    ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
-                if (!preparation.IsCanceled)
-                    await preparation;
-            }
-            catch (OperationCanceledException)
+                        completion.TrySetResult();
+                    }
+                    catch (Exception error)
+                    {
+                        completion.TrySetException(error);
+                    }
+                }))
+                {
+                    completion.TrySetCanceled();
+                }
+                await completion.Task.WaitAsync(cancellation);
+            });
+            await preparation.ConfigureAwait(
+                ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
+            if (!preparation.IsCanceled)
             {
+                await preparation;
             }
-            catch (Exception error)
-            {
-                Model.Library.ReportCommand(error);
-            }
-        });
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception error)
+        {
+            Model.Library.ReportCommand(error);
+        }
     }
 
     private IReadOnlyList<MenuEntry> PrepareTorrentMenu(
@@ -658,21 +666,12 @@ public sealed partial class MainWindow
         {
             if (draft is RemovalDraft)
             {
-                dialog.SetBinding(
-                    ContentDialog.IsPrimaryButtonEnabledProperty,
-                    new Binding
-                    {
-                        Source = draft,
-                        Path = new PropertyPath(nameof(FileDraft.CanSubmit)),
-                        Mode = BindingMode.OneWay,
-                    }
-                );
                 try
                 {
                     // Membership changes only after WinUI finishes closing its
                     // modal popup and restores focus to the existing table.
                     if (
-                        await ShowDialog(interaction, dialog, RefreshText) == ContentDialogResult.Primary
+                        await ShowDialog(interaction, dialog, RefreshText, draft) == ContentDialogResult.Primary
                         && !Model.IsClosing
                     )
                     {

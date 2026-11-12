@@ -44,7 +44,7 @@ internal static class OriginActions
             button.Flyout = MenuItems.Flyout(() => choices.Entries, () => browser.Text);
     }
 
-    private static RelayCommand Command(Browser browser, Origin? origin)
+    internal static RelayCommand Command(Browser browser, Origin? origin)
     {
         var row = browser.Selected;
         return new(

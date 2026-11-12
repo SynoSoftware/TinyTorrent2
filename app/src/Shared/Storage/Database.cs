@@ -96,15 +96,7 @@ internal sealed partial class Database : IAsyncDisposable
                         {
                             return Transact(Open(), action, cancellation);
                         }
-                        catch (SqliteException error)
-                            when (error.SqliteErrorCode == raw.SQLITE_INTERRUPT
-                                && cancellation.IsCancellationRequested
-                            )
-                        {
-                            throw new OperationCanceledException(null, error, cancellation);
-                        }
-                        catch (SqliteException error)
-                            when (error.SqliteErrorCode is raw.SQLITE_CORRUPT or raw.SQLITE_NOTADB)
+                        catch (SqliteException error) when (IsDamaged(error))
                         {
                             _incompatible = true;
                             throw new DatabaseVersionException();
@@ -178,18 +170,9 @@ internal sealed partial class Database : IAsyncDisposable
     {
         if (_connection is not null)
             return _connection;
-        var connection = new SqliteConnection(
-            new SqliteConnectionStringBuilder
-            {
-                DataSource = _path,
-                Mode = SqliteOpenMode.ReadWriteCreate,
-                Pooling = false,
-                DefaultTimeout = 5,
-            }.ToString()
-        );
+        var connection = Connect(_path, SqliteOpenMode.ReadWriteCreate);
         try
         {
-            connection.Open();
             connection.CreateCollation(
                 "PATH",
                 (left, right) => StringComparer.OrdinalIgnoreCase.Compare(left, right)
@@ -250,23 +233,7 @@ internal sealed partial class Database : IAsyncDisposable
         command.ExecuteNonQuery();
         try
         {
-            T result;
-            try
-            {
-                if (cancellation.CanBeCanceled)
-                    raw.sqlite3_progress_handler(
-                        connection.Handle!,
-                        1000,
-                        _ => cancellation.IsCancellationRequested ? 1 : 0,
-                        null
-                    );
-                result = action(connection);
-            }
-            finally
-            {
-                if (cancellation.CanBeCanceled)
-                    raw.sqlite3_progress_handler(connection.Handle!, 0, null, null);
-            }
+            var result = Execute(connection, action, cancellation);
             cancellation.ThrowIfCancellationRequested();
             command.CommandText = "COMMIT;";
             command.ExecuteNonQuery();
@@ -292,6 +259,75 @@ internal sealed partial class Database : IAsyncDisposable
             throw;
         }
     }
+
+    /// <summary>
+    /// Opens the SQLite file at <paramref name="path"/> as every connection of
+    /// the app is opened. Without pooling, closing the connection closes the
+    /// file, so the file can be replaced or deleted afterwards. A lock that
+    /// another connection holds is waited for at most five seconds.
+    /// </summary>
+    internal static SqliteConnection Connect(string path, SqliteOpenMode mode)
+    {
+        var connection = new SqliteConnection(
+            new SqliteConnectionStringBuilder
+            {
+                DataSource = path,
+                Mode = mode,
+                Pooling = false,
+                DefaultTimeout = 5,
+            }.ToString()
+        );
+        try
+        {
+            connection.Open();
+            return connection;
+        }
+        catch
+        {
+            connection.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Runs <paramref name="action"/> on <paramref name="connection"/> so that
+    /// <paramref name="cancellation"/> interrupts a long statement, such as an
+    /// index rebuild. An interrupted statement ends as an
+    /// <see cref="OperationCanceledException"/>.
+    /// </summary>
+    internal static T Execute<T>(
+        SqliteConnection connection,
+        Func<SqliteConnection, T> action,
+        CancellationToken cancellation
+    )
+    {
+        if (!cancellation.CanBeCanceled)
+            return action(connection);
+        raw.sqlite3_progress_handler(
+            connection.Handle!,
+            1000,
+            _ => cancellation.IsCancellationRequested ? 1 : 0,
+            null
+        );
+        try
+        {
+            return action(connection);
+        }
+        catch (SqliteException error)
+            when (error.SqliteErrorCode == raw.SQLITE_INTERRUPT
+                && cancellation.IsCancellationRequested
+            )
+        {
+            throw new OperationCanceledException(null, error, cancellation);
+        }
+        finally
+        {
+            raw.sqlite3_progress_handler(connection.Handle!, 0, null, null);
+        }
+    }
+
+    internal static bool IsDamaged(SqliteException error) =>
+        error.SqliteErrorCode is raw.SQLITE_CORRUPT or raw.SQLITE_NOTADB;
 
     public async ValueTask DisposeAsync()
     {

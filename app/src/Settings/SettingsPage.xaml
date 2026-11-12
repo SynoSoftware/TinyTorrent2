@@ -417,70 +417,71 @@
             <Grid Margin="24,8,24,32">
               <Grid x:Name="BodyContent" MaxWidth="{StaticResource TinyTorrentSettingsWidth}">
                 <StackPanel x:Name="IndexContent" x:Load="False" Spacing="24">
-                  <Grid x:Name="HomeGrid" ColumnSpacing="8" RowSpacing="8" SizeChanged="OnHomeSize">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="*" />
-                      <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                      <RowDefinition Height="Auto" />
-                      <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-                    <StackPanel Spacing="8">
-                      <controls:SettingsSection
-                        Header="{x:Bind Model.Text.Get('settings', 'home_downloads'), Mode=OneWay}"
-                        Style="{StaticResource SettingsHomeGroupStyle}"
-                      >
-                        <StackPanel x:Name="HomeDownloads" />
-                      </controls:SettingsSection>
-                      <controls:SettingsSection
-                        Header="{x:Bind Model.Text.Get('settings', 'appearance'), Mode=OneWay}"
-                        Style="{StaticResource SettingsHomeGroupStyle}"
-                      >
-                        <StackPanel>
-                          <StackPanel Spacing="8" Margin="16">
-                            <TextBlock Text="{x:Bind Model.Text.Get('settings', 'theme'), Mode=OneWay}" />
-                            <ContentControl
-                              x:Name="HomeThemeContent"
-                              HorizontalContentAlignment="Stretch"
-                              IsTabStop="False"
-                            />
+                  <controls:FieldColumns
+                    x:Name="HomeGrid"
+                    MinimumWidth="900"
+                    Spacing="8"
+                    StackSpacing="8"
+                  >
+                    <controls:FieldColumns.Primary>
+                      <StackPanel Spacing="8">
+                        <controls:SettingsSection
+                          Header="{x:Bind Model.Text.Get('settings', 'home_downloads'), Mode=OneWay}"
+                          Style="{StaticResource SettingsHomeGroupStyle}"
+                        >
+                          <StackPanel x:Name="HomeDownloads" />
+                        </controls:SettingsSection>
+                        <controls:SettingsSection
+                          Header="{x:Bind Model.Text.Get('settings', 'appearance'), Mode=OneWay}"
+                          Style="{StaticResource SettingsHomeGroupStyle}"
+                        >
+                          <StackPanel>
+                            <StackPanel Spacing="8" Margin="16">
+                              <TextBlock Text="{x:Bind Model.Text.Get('settings', 'theme'), Mode=OneWay}" />
+                              <ContentControl
+                                x:Name="HomeThemeContent"
+                                HorizontalContentAlignment="Stretch"
+                                IsTabStop="False"
+                              />
+                            </StackPanel>
+                            <Border
+                              BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                              BorderThickness="0,1,0,0"
+                            >
+                              <StackPanel x:Name="HomeAppearance" />
+                            </Border>
                           </StackPanel>
-                          <Border
-                            BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
-                            BorderThickness="0,1,0,0"
-                          >
-                            <StackPanel x:Name="HomeAppearance" />
-                          </Border>
-                        </StackPanel>
-                      </controls:SettingsSection>
-                      <ContentControl
-                        x:Name="HomeIntegrationContent"
-                        HorizontalContentAlignment="Stretch"
-                        IsTabStop="False"
-                      />
-                    </StackPanel>
-                    <StackPanel x:Name="HomeRight" Grid.Column="1" Spacing="8">
-                      <controls:SettingsSection
-                        Header="{x:Bind Model.Text.Get('settings', 'plugins'), Mode=OneWay}"
-                        Style="{StaticResource SettingsHomeGroupStyle}"
-                      >
-                        <StackPanel x:Name="HomeLibrary" />
-                      </controls:SettingsSection>
-                      <controls:SettingsSection
-                        Header="{x:Bind Model.Text.Get('settings', 'network'), Mode=OneWay}"
-                        Style="{StaticResource SettingsHomeGroupStyle}"
-                      >
-                        <StackPanel x:Name="HomeNetwork" />
-                      </controls:SettingsSection>
-                      <controls:SettingsSection
-                        Header="{x:Bind Model.Text.Get('settings', 'schedule'), Mode=OneWay}"
-                        Style="{StaticResource SettingsHomeGroupStyle}"
-                      >
-                        <StackPanel x:Name="HomeSchedule" />
-                      </controls:SettingsSection>
-                    </StackPanel>
-                  </Grid>
+                        </controls:SettingsSection>
+                        <ContentControl
+                          x:Name="HomeIntegrationContent"
+                          HorizontalContentAlignment="Stretch"
+                          IsTabStop="False"
+                        />
+                      </StackPanel>
+                    </controls:FieldColumns.Primary>
+                    <controls:FieldColumns.Secondary>
+                      <StackPanel Spacing="8">
+                        <controls:SettingsSection
+                          Header="{x:Bind Model.Text.Get('settings', 'plugins'), Mode=OneWay}"
+                          Style="{StaticResource SettingsHomeGroupStyle}"
+                        >
+                          <StackPanel x:Name="HomeLibrary" />
+                        </controls:SettingsSection>
+                        <controls:SettingsSection
+                          Header="{x:Bind Model.Text.Get('settings', 'network'), Mode=OneWay}"
+                          Style="{StaticResource SettingsHomeGroupStyle}"
+                        >
+                          <StackPanel x:Name="HomeNetwork" />
+                        </controls:SettingsSection>
+                        <controls:SettingsSection
+                          Header="{x:Bind Model.Text.Get('settings', 'schedule'), Mode=OneWay}"
+                          Style="{StaticResource SettingsHomeGroupStyle}"
+                        >
+                          <StackPanel x:Name="HomeSchedule" />
+                        </controls:SettingsSection>
+                      </StackPanel>
+                    </controls:FieldColumns.Secondary>
+                  </controls:FieldColumns>
                 </StackPanel>
                 <Grid x:Name="CategoryContent">
                   <StackPanel x:Name="Plugins" x:Load="False" Spacing="8" Visibility="Collapsed">

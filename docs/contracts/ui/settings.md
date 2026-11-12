@@ -97,7 +97,8 @@ XAML; their code-behind measures available space and selects the layout state.
 Category states in page XAML own artwork, icons and the heading level. Titles,
 captions and values bind to Editor's `Overview`, so controls do not have a
 second copy of the model's display calculations, and a language change reaches
-them while the tab stays shown.
+them while the tab stays shown. Home's links refresh when `Overview` reports a
+change, so the page keeps no second list of the model values its summaries read.
 Settings and Connection setup use this measured layout, so only available width
 moves facts below the subject and then into separate rows by the same rules.
 Facts describe the selected tab using its existing owners, so they
@@ -314,7 +315,11 @@ Its content and footer share the Settings width resource, so the proposal
 does not spread across an arbitrarily wide workspace.
 The approved constrained layout places inputs and proposed changes side by side
 when they fit and stacks them otherwise; Apply and Cancel follow the content,
-beside a status that says whether changes are ready to apply. Title-bar Back returns to the initiating setting. Ordinary settings
+beside a status that says whether changes are ready to apply. The inputs, the
+measurement and the test options stack at one width, which `FieldColumns`
+decides with the text size. The page keeps its own layout, because the test
+options move under the heading while Test stays beside it, which two columns
+cannot hold. Title-bar Back returns to the initiating setting. Ordinary settings
 keep their individual commit behavior. The proposal shows current and proposed
 values, emphasizes changes, and enables Apply only for a valid change.
 One slider for each pair sets the standard and the alternative limits as a
@@ -342,7 +347,8 @@ speeds fill equal arcs. It starts from the larger entered capacity, or the
 first measured value when capacity is unknown, and expands without shrinking
 during the test, keeping the reading within range without continuous scale
 changes. When the test completes, it fits the larger result, so a stale
-capacity does not keep the scale too large. Motion follows Windows animation preferences.
+capacity does not keep the scale too large. Motion follows Windows animation preferences
+and stops in High Contrast.
 Quick, the default, measures five seconds each way; Longer measures fifteen
 seconds each way. Test and Cancel use the same fixed-width
 slot beside those choices. Phase, percentage, determinate progress and payload
@@ -489,9 +495,10 @@ and the pointer's row. A click on a period opens it; a click on empty time close
 period. Right-click, the menu key or Shift+F10 on a period offers Delete.
 Dragging a
 period horizontally preserves its duration; the open period's start/end edges
-resize it. Thin inset grips appear on the hovered or dragged occurrence, while
-every occurrence keeps its outline, so recurring periods do not fill the week
-with handles. Gestures snap to 15 minutes and show a live time/duration preview.
+resize it. A move or resize starts once the pointer has moved the Windows drag
+distance sideways; a shorter movement is a click. Thin inset grips appear on
+the hovered or dragged occurrence, while every occurrence keeps its outline, so
+recurring periods do not fill the week with handles. Gestures snap to 15 minutes and show a live time/duration preview.
 Release saves the move or resize. Escape or lost pointer capture restores the
 times before the gesture. The native time fields retain exact minute precision.
 Blocks show their effective time ranges as well as their modes; hover and the

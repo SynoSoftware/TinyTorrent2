@@ -196,8 +196,9 @@ indexing or optimization.
 A stop during an uninterruptible flush remains a cancellation request that
 awaits that call's return, not a promise of instant completion.
 
-One connection-scoped SQLite progress handler covers the interruptible SQL
-phases and is unregistered before the connection is disposed. It only inspects
+One SQLite progress handler, which `Database.Execute` registers for the
+import's statements, covers the interruptible SQL phases and is unregistered
+before the connection is disposed. It only inspects
 cancellation and returns the interruption decision, with no SQL, UI calls or
 formatting, so a cancel during the key indexes or the full-text `optimize`
 statement does not wait for it to finish. Interrupting the build discards the
@@ -358,8 +359,9 @@ The folder is `app/src/Library/Imdb/`.
   closes it at the end. `VideoLookup` creates provider objects and never
   disposes the old ones, so a connection held by a replaced object would keep
   the file open, and Windows would refuse to replace or delete it. This
-  connection and the import's connection use `Pooling=false` for the same
-  reason: a pooled connection keeps the file open after it is closed.
+  connection and the import's open through `Database.Connect`, which sets
+  `Pooling=false` for every connection of the app, for the same reason: a
+  pooled connection keeps the file open after it is closed.
 - Library counts IMDb as available while `Dataset.IsInstalled` is true, a flag
   that `Dataset` keeps: whether `imdb.db` exists. `Dataset` sets it with one
   `File.Exists` check when it is created, before Library starts, and again

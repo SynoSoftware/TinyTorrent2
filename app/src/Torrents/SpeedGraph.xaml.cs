@@ -3,10 +3,10 @@ using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
-using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Shared;
 using Windows.Foundation;
 using Windows.System;
@@ -576,9 +576,7 @@ public sealed partial class SpeedGraph : UserControl
         {
             return;
         }
-        FrameworkElementAutomationPeer
-            .FromElement(this)
-            ?.RaisePropertyChangedEvent(ValuePatternIdentifiers.ValueProperty, _announced, _value);
+        ValuePeer.Announce(this, _announced, _value);
         _announced = _value;
     }
 
@@ -774,25 +772,7 @@ public sealed partial class SpeedGraph : UserControl
         Mark(averages[Math.Clamp(next, 0, averages.Length - 1)].Time);
     }
 
-    protected override AutomationPeer OnCreateAutomationPeer() => new GraphPeer(this);
-
-    private sealed class GraphPeer(SpeedGraph graph)
-        : FrameworkElementAutomationPeer(graph),
-            IValueProvider
-    {
-        protected override string GetClassNameCore() => nameof(SpeedGraph);
-
-        protected override AutomationControlType GetAutomationControlTypeCore() =>
-            AutomationControlType.Custom;
-
-        protected override object? GetPatternCore(PatternInterface pattern) =>
-            pattern == PatternInterface.Value ? this : base.GetPatternCore(pattern);
-
-        public bool IsReadOnly => true;
-        public string Value => graph._value;
-
-        public void SetValue(string value) => throw new InvalidOperationException();
-    }
+    protected override AutomationPeer OnCreateAutomationPeer() => new ValuePeer(this, () => _value);
 
     // The figures and segments that draw one run: the filled area under the
     // download line, the download line and the upload line.

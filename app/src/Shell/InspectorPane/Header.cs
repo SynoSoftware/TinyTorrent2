@@ -2,12 +2,18 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Syno.TinyTorrent.Controls;
+using Windows.UI.ViewManagement;
 
 namespace Syno.TinyTorrent.Shell;
 
 public sealed partial class InspectorPane
 {
-    private bool ActionsOverflow => Surface.ActualWidth < FieldColumns.WideMinimum;
+    // The overflow width grows with the text size, and a text-size change
+    // leaves the pane's size as it is, so the change arranges the actions too.
+    private readonly UISettings _display = new();
+
+    private bool ActionsOverflow =>
+        !FieldColumns.Fits(Surface.ActualWidth, FieldColumns.WideMinimum);
 
     private Button CreateAction(string glyph, string name)
     {
@@ -38,6 +44,9 @@ public sealed partial class InspectorPane
     }
 
     private void OnHeaderSize(object sender, SizeChangedEventArgs args) => ArrangeActions();
+
+    private void OnTextScale(UISettings sender, object args) =>
+        DispatcherQueue.TryEnqueue(ArrangeActions);
 
     private void ArrangeActions()
     {

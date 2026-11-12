@@ -1,9 +1,10 @@
 using Microsoft.UI;
-using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Syno.TinyTorrent.Controls;
+using Syno.TinyTorrent.Shared;
 using Windows.Foundation;
 using Windows.Graphics;
 using Windows.UI.ViewManagement;
@@ -13,7 +14,7 @@ namespace Syno.TinyTorrent.Shell;
 public sealed partial class MainWindow
 {
     private readonly UISettings _uiSettings = new();
-    private bool _dragPending;
+    private readonly TurnCallback _dragUpdate;
     private RectInt32[]? _dragRegions;
     private readonly TextBlock _measureProbe = new();
 
@@ -29,7 +30,7 @@ public sealed partial class MainWindow
             UpdateChrome();
         });
 
-    private bool _statusPending;
+    private readonly TurnCallback _status;
 
     // The content and width the status bar was last laid out for; null when
     // something the content does not hold has changed since.
@@ -140,14 +141,11 @@ public sealed partial class MainWindow
     // Lays the status bar out after this turn when its content changed.
     private void ObserveStatus()
     {
-        if (_statusPending || _allowClose)
-            return;
-        _statusPending = DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () =>
+        if (_allowClose)
         {
-            _statusPending = false;
-            if (!_allowClose)
-                UpdateStatus();
-        });
+            return;
+        }
+        _status.Request();
     }
 
     private void UpdateStatus()
@@ -517,21 +515,10 @@ public sealed partial class MainWindow
         );
         if (Search.Margin.Left != offset)
             Search.Margin = new Thickness(offset, 0, 0, 0);
-        QueueDragRegions();
-    }
-
-    private void QueueDragRegions()
-    {
-        if (_dragPending || _allowClose)
-            return;
-        _dragPending = DispatcherQueue.TryEnqueue(
-            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
-            () =>
-            {
-                _dragPending = false;
-                UpdateDragRegions();
-            }
-        );
+        if (!_allowClose)
+        {
+            _dragUpdate.Request();
+        }
     }
 
     private void UpdateDragRegions()
@@ -657,19 +644,7 @@ public sealed partial class MainWindow
     {
         Model.IsDark = Root.ActualTheme == ElementTheme.Dark;
         ThemeIcon.Glyph = Model.IsDark ? Syno.Segoe.Lightbulb : Syno.Segoe.LightbulbOff;
-        NameButton(ThemeButton, Model.Text.Get("chrome", Model.IsDark ? "light" : "dark"));
-    }
-
-    private static void NameButton(Button button, string text)
-    {
-        if (AutomationProperties.GetName(button) != text)
-        {
-            AutomationProperties.SetName(button, text);
-        }
-        if (!Equals(ToolTipService.GetToolTip(button), text))
-        {
-            ToolTipService.SetToolTip(button, text);
-        }
+        IconButton.Name(ThemeButton, Model.Text.Get("chrome", Model.IsDark ? "light" : "dark"));
     }
 
     private void RefreshText()
@@ -680,9 +655,9 @@ public sealed partial class MainWindow
             Model.Text.Language == "zh"
                 ? "中文"
                 : Model.Text.Language.Split('-')[0].ToUpperInvariant();
-        NameButton(LanguageButton, Model.Text.Get("settings", "language"));
-        NameButton(StatusMore, Model.Text.Get("notifications", "silence_location"));
-        NameButton(
+        IconButton.Name(LanguageButton, Model.Text.Get("settings", "language"));
+        IconButton.Name(StatusMore, Model.Text.Get("notifications", "silence_location"));
+        IconButton.Name(
             BackButton,
             Model.Text.ShortcutTip(Model.Text.Get("menus", "back"), ShortcutText(Back))
         );
@@ -725,17 +700,20 @@ public sealed partial class MainWindow
         UpdateChrome();
     }
 
-    // A popup takes the app theme and reading direction, not the window's.
     private void RefreshPopups()
     {
         if (_interaction?.Dialog is { } dialog)
         {
-            dialog.RequestedTheme = Root.ActualTheme;
-            dialog.FlowDirection = Root.FlowDirection;
+            MatchRoot(dialog);
         }
-        ToastStack.RequestedTheme = Root.ActualTheme;
-        ToastStack.FlowDirection = Root.FlowDirection;
-        WorkContent.RequestedTheme = Root.ActualTheme;
-        WorkContent.FlowDirection = Root.FlowDirection;
+        MatchRoot(ToastStack);
+        MatchRoot(WorkContent);
+    }
+
+    // A popup takes the app theme and reading direction, not the window's.
+    private void MatchRoot(FrameworkElement popup)
+    {
+        popup.RequestedTheme = Root.ActualTheme;
+        popup.FlowDirection = Root.FlowDirection;
     }
 }

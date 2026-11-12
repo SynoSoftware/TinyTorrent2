@@ -6,6 +6,7 @@ using Microsoft.Graphics.Canvas.Brushes;
 using Microsoft.Graphics.Canvas.Geometry;
 using Microsoft.Graphics.Canvas.UI.Xaml;
 using Microsoft.UI.Dispatching;
+using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Shared;
 using Windows.Foundation;
 using Windows.UI;
@@ -26,7 +27,11 @@ namespace Syno.TinyTorrent.Torrents;
 /// </remarks>
 internal sealed class MapMotion : IDisposable
 {
-    private static readonly TimeSpan Frame = TimeSpan.FromMilliseconds(33);
+    /// <summary>
+    /// The step of the map's motion: the render worker waits at least one frame
+    /// between pictures, and the game loop stays awake through a wait of up to two.
+    /// </summary>
+    internal static readonly TimeSpan Frame = TimeSpan.FromMilliseconds(33);
 
     /// <summary>The smallest dot size, which the legend shows before the first traffic.</summary>
     internal const long SmallestDot = 1024;
@@ -1094,9 +1099,7 @@ internal sealed class MapMotion : IDisposable
         draw.Clear(picture.Background);
         var source = picture.RasterView;
         Matrix3x2.Invert(source.Transform, out var inverse);
-        var left = Math.Max(0, Vector2.Transform(new Vector2(source.Center.X - 180, 0), source.Transform).X);
-        var right = Math.Min(source.Size.Width, Vector2.Transform(new Vector2(source.Center.X + 180, 0), source.Transform).X);
-        var rectangle = new Rect(left, 0, Math.Max(0, right - left), source.Size.Height);
+        var rectangle = source.Bounds;
         using (draw.CreateLayer(1, view.Bounds))
         {
             DrawLayer(picture.Bitmap);
@@ -1136,7 +1139,7 @@ internal sealed class MapMotion : IDisposable
             for (var turn = -1; turn <= 1; turn++)
             {
                 draw.Transform = inverse * Matrix3x2.CreateTranslation(360 * turn, 0) * view.Transform;
-                draw.DrawImage(bitmap, new Vector2((float)left, 0), rectangle);
+                draw.DrawImage(bitmap, new Vector2((float)rectangle.X, 0), rectangle);
             }
             draw.Transform = Matrix3x2.Identity;
         }
@@ -1264,9 +1267,9 @@ internal sealed class MapMotion : IDisposable
         session.Clear(Microsoft.UI.Colors.Transparent);
         using var brush = new CanvasRadialGradientBrush(device,
             [
-                new CanvasGradientStop { Position = 0, Color = MapRenderer.Alpha(white, .3) },
-                new CanvasGradientStop { Position = .4f, Color = MapRenderer.Alpha(white, .12) },
-                new CanvasGradientStop { Position = 1, Color = MapRenderer.Alpha(white, 0) },
+                new CanvasGradientStop { Position = 0, Color = Colour.Alpha(white, .3) },
+                new CanvasGradientStop { Position = .4f, Color = Colour.Alpha(white, .12) },
+                new CanvasGradientStop { Position = 1, Color = Colour.Alpha(white, 0) },
             ])
         {
             Center = centre,
@@ -1344,7 +1347,7 @@ internal sealed class MapMotion : IDisposable
         var white = Microsoft.UI.Colors.White;
         using var session = mark.CreateDrawingSession();
         session.Clear(Microsoft.UI.Colors.Transparent);
-        using var tail = new CanvasLinearGradientBrush(device, MapRenderer.Alpha(white, .6), MapRenderer.Alpha(white, 0))
+        using var tail = new CanvasLinearGradientBrush(device, Colour.Alpha(white, .6), Colour.Alpha(white, 0))
         {
             StartPoint = Head,
             EndPoint = Head with { X = Head.X - 8 },
@@ -1363,8 +1366,8 @@ internal sealed class MapMotion : IDisposable
             [
                 new CanvasGradientStop { Position = 0, Color = white },
                 new CanvasGradientStop { Position = 1.75f / 3.5f, Color = white },
-                new CanvasGradientStop { Position = 2.25f / 3.5f, Color = MapRenderer.Alpha(white, .45) },
-                new CanvasGradientStop { Position = 1, Color = MapRenderer.Alpha(white, 0) },
+                new CanvasGradientStop { Position = 2.25f / 3.5f, Color = Colour.Alpha(white, .45) },
+                new CanvasGradientStop { Position = 1, Color = Colour.Alpha(white, 0) },
             ]
         )
         {

@@ -18,7 +18,7 @@ public sealed partial class MainWindow
     {
         Model.SelectLanguage("en");
         await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == "en");
-        await Model.Settings.SelectTheme("light");
+        await Model.Settings.Theme.Select("light");
         await CaptureReady(Model, () => Model.CanClose && Model.Theme == "light");
         var scale = Root.XamlRoot.RasterizationScale;
         var minimum =

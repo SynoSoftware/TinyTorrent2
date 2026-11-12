@@ -366,10 +366,7 @@ public sealed partial class MainWindow
             || focused is not (TextBox or PasswordBox or RichEditBox)
         )
             return null;
-        DependencyObject? ancestor = focused;
-        while (ancestor is not null && !ReferenceEquals(ancestor, element))
-            ancestor = VisualTreeHelper.GetParent(ancestor);
-        if (ancestor is null)
+        if (!Controls.VisualTree.Contains(element, focused))
             return null;
         var bounds = focused
             .TransformToVisual(element)
@@ -462,9 +459,8 @@ public sealed partial class MainWindow
             "Torrents did not show the inspector as it was left on Library.");
         await Press("InspectorClose");
         var focus = FocusManager.GetFocusedElement(Root.XamlRoot) as DependencyObject;
-        while (focus is not null && !ReferenceEquals(focus, Torrents))
-            focus = VisualTreeHelper.GetParent(focus);
-        Require(!Model.HasInspector && InspectorSurface.Visibility == Visibility.Collapsed && focus is not null,
+        Require(!Model.HasInspector && InspectorSurface.Visibility == Visibility.Collapsed
+            && Controls.VisualTree.Contains(Torrents, focus),
             "Close on Torrents did not hide the inspector and return focus to the torrents.");
         Model.OpenInspector();
         await CaptureLayout();
@@ -827,7 +823,7 @@ public sealed partial class MainWindow
             await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);
             foreach (var theme in new[] { "light", "dark" })
             {
-                await Model.Settings.SelectTheme(theme);
+                await Model.Settings.Theme.Select(theme);
                 await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
                 await CaptureSizes(size =>
                     capture(language + "-" + theme + "-" + size.Width + "x" + size.Height, size)
@@ -975,7 +971,7 @@ public sealed partial class MainWindow
     {
         foreach (var theme in new[] { "light", "dark" })
         {
-            await Model.Settings.SelectTheme(theme);
+            await Model.Settings.Theme.Select(theme);
             await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
             foreach (var width in new[] { 1280, 1040, 720 })
             {
@@ -1419,8 +1415,7 @@ public sealed partial class MainWindow
                 created.Span.Duration != 206
                 || created.Occurrences(0).Single().End != 1543
                 || created.Occurrences(1).Single().End != 103
-                || schedule.Ranges(1).First(range => range.Start <= 60 && range.End > 60).Mode
-                    != ScheduleMode.Paused
+                || schedule.RangeAt(1, 60).Mode != ScheduleMode.Paused
             )
                 throw new InvalidOperationException(
                     "The overnight period lost exact minutes or pause precedence."
@@ -1675,7 +1670,7 @@ public sealed partial class MainWindow
 
         Model.SelectLanguage("es");
         await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == "es");
-        await Model.Settings.SelectTheme("light");
+        await Model.Settings.Theme.Select("light");
         await CaptureReady(Model, () => Model.CanClose && Model.Theme == "light");
         var raster = Root.XamlRoot.RasterizationScale;
         var minimumWidth =
@@ -2000,7 +1995,7 @@ public sealed partial class MainWindow
         {
             Model.Filter = filter;
             Bindings.Update();
-            await Model.Settings.SelectTheme(theme);
+            await Model.Settings.Theme.Select(theme);
             await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
             Model.SelectLanguage(language);
             await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);
@@ -3233,7 +3228,7 @@ public sealed partial class MainWindow
                 return;
             if (filesOnly)
             {
-                await Model.Settings.SelectTheme("light");
+                await Model.Settings.Theme.Select("light");
                 await CaptureReady(Model, () => Model.CanClose && Model.Theme == "light");
                 Model.SelectLanguage("en");
                 await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == "en");
@@ -3267,7 +3262,7 @@ public sealed partial class MainWindow
                 var originalLanguage = settingValues
                     .Single(setting => setting.Name == Model.Settings.Language.Name)
                     .Input;
-                await Model.Settings.SelectTheme(originalTheme);
+                await Model.Settings.Theme.Select(originalTheme);
                 await CaptureReady(Model, () => Model.CanClose && Model.Theme == originalTheme);
                 Model.SelectLanguage(originalLanguage);
                 await CaptureReady(

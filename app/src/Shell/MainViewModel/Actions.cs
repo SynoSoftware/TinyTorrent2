@@ -1,6 +1,5 @@
 using System.Text.Json;
 using System.Windows.Input;
-using Syno.TinyTorrent.Library;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Engine;
 using Syno.TinyTorrent.Torrents;
@@ -216,18 +215,19 @@ public sealed partial class MainViewModel
                 MoveRequested?.Invoke(this, targets().ToArray());
                 return Task.CompletedTask;
             },
-            () =>
-                CanEdit
-                && targets() is { Length: > 0 } torrents
-                && torrents.All(torrent => Contains(torrent) && !torrent.IsMoving)
+            () => CanChangeFolder(targets())
         );
 
     internal RelayCommand DownloadCommand(Func<Torrent[]> targets) =>
         new RelayCommand(
             () => DownloadRequested?.Invoke(this, targets().ToArray()),
-            () => CanEdit && targets() is { Length: > 0 } torrents &&
-                torrents.All(torrent => Contains(torrent) && !torrent.IsMoving)
+            () => CanChangeFolder(targets())
         );
+
+    private bool CanChangeFolder(Torrent[] torrents) =>
+        CanEdit
+        && torrents.Length > 0
+        && torrents.All(torrent => Contains(torrent) && !torrent.IsMoving);
 
     internal Torrent? Find(IEnumerable<string> hashes) =>
         Torrents.FirstOrDefault(torrent =>
@@ -486,7 +486,8 @@ public sealed partial class MainViewModel
         return single;
     }
 
-    private async Task CopyTorrent(bool hashes)
+    // The engine's General view holds the magnet link; a torrent row has none.
+    private async Task CopyLink()
     {
         if (_selected.Length != 1)
             return;
@@ -497,23 +498,19 @@ public sealed partial class MainViewModel
                 new { torrent_id = _selected[0].TorrentId, view = "general" },
                 Requester.Window
             );
-            await Copy(
-                hashes
-                    ? string.Join(
-                        Environment.NewLine,
-                        detail
-                            .GetProperty("hashes")
-                            .EnumerateArray()
-                            .Select(hash => hash.GetString())
-                    )
-                    : detail.GetProperty("magnet").GetString()!
-            );
+            await Copy(detail.GetProperty("magnet").GetString()!);
         }
         catch (Exception error)
         {
             Notifications.Report(error);
         }
     }
+
+    // The row holds every hash the engine knows for the torrent.
+    private Task CopyHashes() =>
+        _selected.Length == 1
+            ? Copy(string.Join(Environment.NewLine, _selected[0].Hashes))
+            : Task.CompletedTask;
 
     internal Task Copy(string text)
     {
@@ -564,9 +561,7 @@ public sealed partial class MainViewModel
     internal ICommand DownloadSubtitles { get; }
     internal event EventHandler<IReadOnlySet<long>>? SubtitlesRequested;
     private bool CanDownloadSubtitles =>
-        Subtitles is { Ready: true }
-        && Library.IsAvailable
-        && Library.Selection.Items.Cast<LibraryRow>().Any(row => row.Entry.Kind == FileKind.Video);
+        Subtitles is { Ready: true } && Library.IsAvailable && Library.SupportsMetadata;
 
     internal Task DownloadData(IDataset dataset) => AnnounceData(dataset, dataset.Download());
 

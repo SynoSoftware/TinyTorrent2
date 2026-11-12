@@ -496,6 +496,9 @@ issues own actionable work and its status.
   `Torrents`, because it reads torrent rows and no feature names it.
   `FileSources`, which accepts every data source's contributions, stays in
   `Shared`.
+- `Controls.DragDistance` and the table library's `DragDistance` each read
+  the Windows drag distance, because the table uses no app code and
+  publishes no Windows metric.
 
 Each `Setting` saves through a `SettingStore`. A store says whether its value
 can be edited and saved, saves it, and says whether a failed save proves the

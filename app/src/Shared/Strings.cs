@@ -180,6 +180,8 @@ public sealed class Strings
     internal string Get(LibraryConfiguration configuration) =>
         Get("library", configuration.ToString().ToLowerInvariant());
 
+    internal string Get(FileKind kind) => Get("library", kind.ToString().ToLowerInvariant());
+
     internal string Get(InspectorSection section) =>
         Get("inspector", section.ToString().ToLowerInvariant());
 

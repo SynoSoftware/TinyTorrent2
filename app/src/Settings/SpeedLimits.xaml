@@ -28,44 +28,40 @@
         />
       </Grid>
     </Border>
-    <Grid
+    <controls:FieldColumns
       x:Name="Profiles"
-      ColumnSpacing="8"
-      RowSpacing="8"
       Margin="0,16,0,0"
-      SizeChanged="OnProfilesSize"
+      MinimumWidth="640"
+      Spacing="8"
+      StackSpacing="8"
     >
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="*" />
-      </Grid.ColumnDefinitions>
-      <Grid.RowDefinitions>
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-      </Grid.RowDefinitions>
-      <StackPanel Spacing="8">
-        <TextBlock
-          Text="{x:Bind Model.Text.Get('settings', 'standard_caps'), Mode=OneWay}"
-          Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
-          TextTrimming="CharacterEllipsis"
-          controls:Trimming.ShowsToolTip="True"
-        />
-        <Border x:Name="StandardCard" Style="{StaticResource TinyTorrentSettingsCardStyle}">
-          <StackPanel x:Name="StandardRows" />
-        </Border>
-      </StackPanel>
-      <StackPanel x:Name="AlternativeProfile" Grid.Column="1" Spacing="8">
-        <TextBlock
-          Text="{x:Bind Model.Text.Get('settings', 'alternative_caps'), Mode=OneWay}"
-          Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
-          TextTrimming="CharacterEllipsis"
-          controls:Trimming.ShowsToolTip="True"
-        />
-        <Border x:Name="AlternativeCard" Style="{StaticResource TinyTorrentSettingsCardStyle}">
-          <StackPanel x:Name="AlternativeRows" />
-        </Border>
-      </StackPanel>
-    </Grid>
+      <controls:FieldColumns.Primary>
+        <StackPanel Spacing="8">
+          <TextBlock
+            Text="{x:Bind Model.Text.Get('settings', 'standard_caps'), Mode=OneWay}"
+            Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
+            TextTrimming="CharacterEllipsis"
+            controls:Trimming.ShowsToolTip="True"
+          />
+          <Border x:Name="StandardCard" Style="{StaticResource TinyTorrentSettingsCardStyle}">
+            <StackPanel x:Name="StandardRows" />
+          </Border>
+        </StackPanel>
+      </controls:FieldColumns.Primary>
+      <controls:FieldColumns.Secondary>
+        <StackPanel Spacing="8">
+          <TextBlock
+            Text="{x:Bind Model.Text.Get('settings', 'alternative_caps'), Mode=OneWay}"
+            Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
+            TextTrimming="CharacterEllipsis"
+            controls:Trimming.ShowsToolTip="True"
+          />
+          <Border x:Name="AlternativeCard" Style="{StaticResource TinyTorrentSettingsCardStyle}">
+            <StackPanel x:Name="AlternativeRows" />
+          </Border>
+        </StackPanel>
+      </controls:FieldColumns.Secondary>
+    </controls:FieldColumns>
     <Button
       x:Name="Connection"
       Click="OnConnection"

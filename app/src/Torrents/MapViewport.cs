@@ -7,6 +7,9 @@ namespace Syno.TinyTorrent.Torrents;
 internal sealed class MapViewport
 {
     internal const float MaxZoom = 128;
+
+    /// <summary>The zoom of one wheel notch, double-click or Plus; Minus zooms by its inverse.</summary>
+    internal const float ZoomStep = 1.25f;
     private const float OverviewRatio = 1;
 
     /// <summary>

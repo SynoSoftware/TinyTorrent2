@@ -156,33 +156,12 @@ internal sealed partial class Acquisition
                             SubtitleFile.Rank(reader.GetString(0), reader.GetString(1))
                         );
                     }
-                command.CommandText = $"""
-                    SELECT f.origin,f.file_index,f.path,l.path,f.size,f.complete,current_files.readable,f.entry_id,f.wanted,
-                        f.origin IN ({Finished})
-                    FROM collected_files f JOIN locations l USING(entry_id)
-                    JOIN current_files USING(entry_id)
-                    WHERE f.kind=$kind;
-                    """;
+                command.CommandText =
+                    $"SELECT {Video.Columns} FROM {Video.Tables} WHERE f.kind=$kind;";
                 command.Parameters.AddWithValue("$kind", (int)FileKind.Video);
                 using (var reader = command.ExecuteReader())
                     while (reader.Read())
-                    {
-                        var video = new Video(
-                            reader.GetString(0),
-                            reader.GetInt32(1),
-                            reader.GetString(3)
-                        )
-                        {
-                            Path = reader.GetString(2),
-                            Size = reader.GetInt64(4),
-                            Complete = reader.GetBoolean(5),
-                            Readable = reader.GetBoolean(6),
-                            EntryId = reader.GetInt64(7),
-                            Wanted = reader.GetBoolean(8),
-                            JustFinished = reader.GetBoolean(9),
-                        };
-                        files.Add(video);
-                    }
+                        files.Add(Video.Read(reader));
                 var targets = new List<Target>();
                 foreach (var language in languages)
                     for (var rank = 1; rank <= ranks; rank++)
@@ -401,6 +380,28 @@ internal sealed partial class Acquisition
             );
     }
 
+    // Unlike AssociateOutput, records the association without checking that the
+    // video is still at that location.
+    private static void Associate(
+        SqliteConnection connection,
+        string path,
+        string language,
+        Video video
+    ) =>
+        Execute(
+            connection,
+            """
+            INSERT INTO subtitle_output_sources(path,language,origin,file_index,movie_path)
+            VALUES($path,$language,$origin,$index,$movie)
+            ON CONFLICT(path,language,origin,file_index) DO UPDATE SET movie_path=excluded.movie_path;
+            """,
+            ("$path", path),
+            ("$language", language),
+            ("$origin", video.Origin),
+            ("$index", video.Index),
+            ("$movie", video.FinalPath)
+        );
+
     // Makes each finished torrent in the snapshot known, eligible or not, so
     // its completion search is decided once: switching on, adding a language
     // or reopening later searches nothing for it. A finished torrent without
@@ -456,6 +457,13 @@ internal sealed partial class Acquisition
             "UPDATE subtitle_jobs SET outcome=$pending,retry_at=0 WHERE outcome=$unavailable;",
             ("$pending", (int)SubtitleOutcome.Pending),
             ("$unavailable", (int)SubtitleOutcome.Unavailable)
+        );
+
+    private static void RetryNow(SqliteConnection connection) =>
+        Execute(
+            connection,
+            "UPDATE subtitle_jobs SET retry_at=0 WHERE outcome=$pending;",
+            ("$pending", (int)SubtitleOutcome.Pending)
         );
 
     // Cancellation retains search history and the decision not to revive automatic
@@ -575,19 +583,7 @@ internal sealed partial class Acquisition
                     );
                     if (created)
                         foreach (var video in target.Videos)
-                            Execute(
-                                connection,
-                                """
-                                INSERT INTO subtitle_output_sources(path,language,origin,file_index,movie_path)
-                                VALUES($path,$language,$origin,$index,$movie)
-                                ON CONFLICT(path,language,origin,file_index) DO UPDATE SET movie_path=excluded.movie_path;
-                                """,
-                                ("$path", target.Path),
-                                ("$language", target.Language),
-                                ("$origin", video.Origin),
-                                ("$index", video.Index),
-                                ("$movie", video.FinalPath)
-                            );
+                            Associate(connection, target.Path, target.Language, video);
                     else
                         AssociateOutput(connection, target);
                     Execute(connection, Database.Cleanup + Database.Invalidate);
@@ -907,6 +903,24 @@ internal sealed partial class Acquisition
 
     private sealed record Video(string Origin, int Index, string FinalPath)
     {
+        // The columns Read takes, in its order, from Tables.
+        internal const string Columns =
+            $"f.origin,f.file_index,f.path,l.path,f.size,f.complete,c.readable,f.entry_id,f.wanted,f.origin IN ({Finished})";
+        internal const string Tables =
+            "collected_files f JOIN locations l USING(entry_id) JOIN current_files c USING(entry_id)";
+
+        internal static Video Read(SqliteDataReader reader) =>
+            new(reader.GetString(0), reader.GetInt32(1), reader.GetString(3))
+            {
+                Path = reader.GetString(2),
+                Size = reader.GetInt64(4),
+                Complete = reader.GetBoolean(5),
+                Readable = reader.GetBoolean(6),
+                EntryId = reader.GetInt64(7),
+                Wanted = reader.GetBoolean(8),
+                JustFinished = reader.GetBoolean(9),
+            };
+
         private bool IsExtra { get; } = FileName.Interpret(FinalPath).IsExtra;
         internal required string Path { get; init; }
         internal long EntryId { get; init; }

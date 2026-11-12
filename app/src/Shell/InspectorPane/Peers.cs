@@ -13,8 +13,8 @@ namespace Syno.TinyTorrent.Shell;
 public sealed partial class InspectorPane
 {
     private PeerMap? _peerMap;
-    private bool _mapQueued;
-    private bool _peerRowsQueued;
+    private readonly TurnCallback _mapRefresh;
+    private readonly TurnCallback _peerRows;
     private bool _arrangingPeers;
     private bool _peersStacked;
 
@@ -77,7 +77,7 @@ public sealed partial class InspectorPane
         PeerSplit.ValueCommitted += (_, _) => ViewChanged?.Invoke(this, EventArgs.Empty);
         RefreshPeerActions();
         ArrangePeers(fit: true);
-        RefreshMap();
+        _mapRefresh.Request();
     }
 
     // Right-click anywhere in Peers that does not open a menu of its own, such as the
@@ -253,23 +253,20 @@ public sealed partial class InspectorPane
         LayoutChanged?.Invoke(this, EventArgs.Empty);
         _layout = _layout with { View = view };
         ArrangePeers(fit: true);
-        RefreshMap();
+        _mapRefresh.Request();
         ViewChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void RefreshPeerActions()
     {
         var text = Model.Text;
-        AutomationProperties.SetName(_peerMore, text.Get("peer_map", "options"));
-        ToolTipService.SetToolTip(_peerMore, text.Get("peer_map", "options"));
+        IconButton.Name(_peerMore, text.Get("peer_map", "options"));
         if (PeerSplit is not null)
             AutomationProperties.SetName(PeerSplit, text.Get("peer_map", "resize"));
         if (MapClose is not null)
         {
-            AutomationProperties.SetName(MapClose, text.Get("peer_map", "close_map"));
-            ToolTipService.SetToolTip(MapClose, text.Get("peer_map", "close_map"));
-            AutomationProperties.SetName(TableClose, text.Get("peer_map", "close_table"));
-            ToolTipService.SetToolTip(TableClose, text.Get("peer_map", "close_table"));
+            IconButton.Name(MapClose, text.Get("peer_map", "close_map"));
+            IconButton.Name(TableClose, text.Get("peer_map", "close_table"));
         }
     }
 
@@ -430,23 +427,19 @@ public sealed partial class InspectorPane
 
     private void RefreshMap()
     {
-        if (_mapQueued)
-            return;
-        _mapQueued = DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        if (!ShowsMap)
         {
-            _mapQueued = false;
-            if (!ShowsMap)
-            {
-                return;
-            }
-            ShowTransfer();
-            ShowSpeedLine();
-            var cities = _layout.View.Cities && Model.HasCities;
-            // Chosen places belong to one map detail.
-            if (Model.Map.Cities != cities)
-                ChoosePlaces(null);
-            Model.UpdateMap(cities);
-        });
+            return;
+        }
+        ShowTransfer();
+        ShowSpeedLine();
+        var cities = _layout.View.Cities && Model.HasCities;
+        // Chosen places belong to one map detail.
+        if (Model.Map.Cities != cities)
+        {
+            ChoosePlaces(null);
+        }
+        Model.UpdateMap(cities);
     }
 
     private bool ShowsMap =>
@@ -480,44 +473,40 @@ public sealed partial class InspectorPane
     // comes after the input that changed them, without refreshing the rest of
     // the pane. A skipped delivery leaves the changed peers for the next one; a
     // map-only or unsorted table reads every sort key when it shows or sorts.
-    private void QueuePeerRows()
+    private void DeliverPeerRows()
     {
-        if (_peerRowsQueued)
-            return;
-        _peerRowsQueued = DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        if (
+            !IsLoaded
+            || Peers is null
+            || _library is not null
+            || Model.Section != InspectorSection.Peers
+            || !Model.IsVisible
+            || Model.IsReplacing
+            || Model.FindsShownPeers
+        )
         {
-            _peerRowsQueued = false;
-            if (
-                !IsLoaded
-                || Peers is null
-                || _library is not null
-                || Model.Section != InspectorSection.Peers
-                || !Model.IsVisible
-                || Model.IsReplacing
-                || Model.FindsShownPeers
-            )
-                return;
-            Peers.ItemsSource = Model.ShownPeers;
-            var sorted = _layout.View.Layout != PeerLayout.Map && Peers.Sort is { } sort
-                ? _peerSortFacts[sort.Column]
-                : Peer.Properties.None;
-            var changed = Model.TakeChangedRows(sorted);
-            // The table keeps the sort keys of rows that stay in its source, and
-            // a new subject drops the changes the table had not taken, so the
-            // rows of a new subject have every key read again.
-            if (!ReferenceEquals(_peerRowsSubject, Model.PeerSubject))
+            return;
+        }
+        Peers.ItemsSource = Model.ShownPeers;
+        var sorted = _layout.View.Layout != PeerLayout.Map && Peers.Sort is { } sort
+            ? _peerSortFacts[sort.Column]
+            : Peer.Properties.None;
+        var changed = Model.TakeChangedRows(sorted);
+        // The table keeps the sort keys of rows that stay in its source, and
+        // a new subject drops the changes the table had not taken, so the
+        // rows of a new subject have every key read again.
+        if (!ReferenceEquals(_peerRowsSubject, Model.PeerSubject))
+        {
+            _peerRowsSubject = Model.PeerSubject;
+            if (sorted != Peer.Properties.None)
             {
-                _peerRowsSubject = Model.PeerSubject;
-                if (sorted != Peer.Properties.None)
-                {
-                    Peers.RefreshView();
-                }
+                Peers.RefreshView();
             }
-            else if (changed.Count > 0)
-            {
-                Peers.RefreshView(changed);
-            }
-        });
+        }
+        else if (changed.Count > 0)
+        {
+            Peers.RefreshView(changed);
+        }
     }
 
     // The line under the speed totals shows the place the map describes, and

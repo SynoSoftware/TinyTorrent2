@@ -364,6 +364,11 @@ minimum usable window size. Essential actions remain reachable when content
 overflows. Do not introduce a second layout framework or a phone breakpoint into
 a desktop task.
 
+Two columns of content stack into one below a minimum width that grows with
+the Windows text size, so larger text never squeezes a column. `FieldColumns`
+owns that rule for Settings Home, Speed limits, About and the Inspector;
+Connection setup asks it whether its width fits.
+
 Use documented title-bar and backdrop APIs. The product window uses Mica as its
 base material by default, as Microsoft recommends for a window's base, with the
 platform's fallback where Mica is unavailable. The person can choose Acrylic,
@@ -381,6 +386,11 @@ Use theme resources for values that change with Light, Dark, or contrast themes.
 Respect system accent, contrast, animation, and text settings. Preserve the
 expected rest, hover, pressed, selected, focused, disabled, loading, and error
 states of standard controls. Meaning must survive without color or motion.
+A custom-drawn control, such as the peer map, the Pieces map or the
+speedometer, paints each theme brush as XAML paints it, opacity included, and
+animates only while Windows animations are on. Where a press can also be a
+click, such as on the peer map or on a schedule period, it becomes a drag when
+the pointer moves the Windows drag distance, as the tables do.
 
 Standard controls retain their built-in animations.
 [Settings](ui/settings.md#category-motion) owns its drawer and category motion;

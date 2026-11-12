@@ -8,17 +8,11 @@ namespace Syno.TinyTorrent.Library;
 
 internal sealed partial class Store
 {
-    private const string Undecided = """
-        NOT EXISTS(SELECT 1 FROM source_files m JOIN identifications i USING(origin,file_index)
-            WHERE m.entry_id=f.entry_id AND (i.explicit=1 OR
-                (i.video_id IS NOT NULL AND i.evidence=m.name)))
-        """;
-
     // The sweep skips a file that will never be downloaded, because it never
     // shows in Library.
     private static string Eligible =>
-        Undecided
-        + $"""
+        $"""
+            NOT EXISTS(SELECT 1 FROM entry_identifications i WHERE i.entry_id=f.entry_id)
             AND (f.wanted=1 OR f.complete=1)
             AND NOT EXISTS(SELECT 1 FROM source_files m JOIN video_attempts a USING(origin,file_index)
                 WHERE m.entry_id=f.entry_id AND a.catalog_id=$catalog AND a.evidence=m.name
@@ -160,10 +154,9 @@ internal sealed partial class Store
                 // what the provider last answered for the file.
                 command.CommandText = $"""
                     SELECT i.catalog_id, i.video_id IS NULL, v.imdb_id IS NOT NULL
-                    FROM source_files f JOIN identifications i USING(origin,file_index)
+                    FROM entry_identifications i
                     LEFT JOIN video_information v ON v.catalog_id=i.catalog_id AND v.video_id=i.video_id
-                    WHERE f.entry_id=$entry AND (i.explicit=1 OR i.evidence=f.name)
-                    ORDER BY i.explicit DESC, i.decided DESC LIMIT 1;
+                    WHERE i.entry_id=$entry;
                     SELECT a.outcome IS {(int)AttemptOutcome.Matched}, {NotFound}
                     FROM video_attempts a JOIN collected_files f USING(origin,file_index)
                     WHERE f.entry_id=$entry AND a.catalog_id=$catalog AND a.evidence=f.name LIMIT 1;
@@ -282,9 +275,8 @@ internal sealed partial class Store
                         {
                             LookupKind.Automatic => " AND " + Eligible,
                             LookupKind.Batch or LookupKind.Refresh =>
-                                " AND NOT EXISTS(SELECT 1 FROM source_files m"
-                                    + " JOIN identifications i USING(origin,file_index)"
-                                    + " WHERE m.entry_id=f.entry_id AND i.explicit=1 AND i.video_id IS NULL)",
+                                " AND NOT EXISTS(SELECT 1 FROM entry_identifications i"
+                                    + " WHERE i.entry_id=f.entry_id AND i.explicit=1 AND i.video_id IS NULL)",
                             _ => string.Empty,
                         }
                     )
@@ -297,10 +289,9 @@ internal sealed partial class Store
                 if (target.Kind is LookupKind.Batch or LookupKind.Refresh)
                 {
                     command.CommandText = """
-                        SELECT i.catalog_id,v.imdb_id FROM source_files f JOIN identifications i USING(origin,file_index)
+                        SELECT i.catalog_id,v.imdb_id FROM entry_identifications i
                         JOIN video_information v ON v.catalog_id=i.catalog_id AND v.video_id=i.video_id
-                        WHERE f.entry_id=$entry AND (i.explicit=1 OR i.evidence=f.name)
-                        ORDER BY i.explicit DESC,i.decided DESC LIMIT 1;
+                        WHERE i.entry_id=$entry;
                         """;
                     using var reader = command.ExecuteReader();
                     if (reader.Read() && reader.GetString(0) != target.CatalogId)
@@ -318,11 +309,10 @@ internal sealed partial class Store
                 command.CommandText = """
                     SELECT COALESCE(v.series_id,v.video_id),COALESCE(v.series_type,v.type),
                         COALESCE(v.series_title,v.title),
-                        CASE WHEN v.series_id IS NULL THEN v.year ELSE v.series_year END,i.explicit FROM source_files f
-                    JOIN identifications i USING(origin,file_index)
+                        CASE WHEN v.series_id IS NULL THEN v.year ELSE v.series_year END,i.explicit
+                    FROM entry_identifications i
                     JOIN video_information v ON v.catalog_id=i.catalog_id AND v.video_id=i.video_id
-                    WHERE f.entry_id=$entry AND i.catalog_id=$catalog AND (i.explicit=1 OR i.evidence=f.name)
-                    ORDER BY i.explicit DESC,i.decided DESC LIMIT 1;
+                    WHERE i.entry_id=$entry AND i.catalog_id=$catalog;
                     """;
                 VideoChoice? choice = null;
                 var explicitChoice = false;
@@ -466,10 +456,10 @@ internal sealed partial class Store
                     SELECT f.name,f.path,current.path,v.series_id,v.series_type,v.series_title,v.series_year
                     FROM collected_files current
                     JOIN source_files f ON f.origin=current.origin
-                    JOIN identifications i ON i.origin=f.origin AND i.file_index=f.file_index
+                    JOIN entry_identifications i ON i.entry_id=f.entry_id
                     JOIN video_information v ON v.catalog_id=i.catalog_id AND v.video_id=i.video_id
                     WHERE current.entry_id=$entry AND current.name=$name AND current.path=$path COLLATE PATH
-                        AND i.explicit=0 AND i.evidence=f.name
+                        AND i.explicit=0
                         AND v.catalog_id=$catalog AND v.series_catalog=$catalog AND v.series_id IS NOT NULL;
                     """;
                 using var reader = command.ExecuteReader();

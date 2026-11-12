@@ -9,13 +9,16 @@ namespace Syno.TinyTorrent.Controls;
 internal sealed class Motion
 {
     private static readonly Duration Duration = new(TimeSpan.FromMilliseconds(250));
-    private readonly UISettings _settings = new();
+    private static readonly UISettings SystemSettings = new();
     private readonly Storyboard _storyboard = new();
     private readonly List<TranslateTransform> _translations = [];
     private FrameworkElement? _outgoing;
     private bool _hitTest;
     internal FrameworkElement? Current { get; private set; }
     internal bool IsActive => _storyboard.GetCurrentState() == ClockState.Active;
+
+    /// <summary>Whether Windows animations are on, which every animated control follows.</summary>
+    internal static bool IsEnabled => SystemSettings.AnimationsEnabled;
 
     internal Motion() => _storyboard.Completed += (_, _) => Stop();
 
@@ -53,7 +56,7 @@ internal sealed class Motion
 
         _outgoing = previous;
         _hitTest = previous.IsHitTestVisible;
-        if (!previous.IsLoaded || !_settings.AnimationsEnabled)
+        if (!previous.IsLoaded || !IsEnabled)
         {
             Stop();
             return;
@@ -79,7 +82,7 @@ internal sealed class Motion
         var offset = GetOffset(content, forward);
         var start = active ? (content.RenderTransform as TranslateTransform)?.X ?? offset : offset;
         Stop();
-        if (content.Visibility != Visibility.Visible || !_settings.AnimationsEnabled)
+        if (content.Visibility != Visibility.Visible || !IsEnabled)
         {
             update?.Invoke();
             return;
@@ -112,8 +115,10 @@ internal sealed class Motion
         Stop();
         Current = content;
         content.Opacity = to;
-        if (!content.IsLoaded || !_settings.AnimationsEnabled || from == to)
+        if (!content.IsLoaded || !IsEnabled || from == to)
+        {
             return;
+        }
         Blend(content, from, to);
         _storyboard.Begin();
     }

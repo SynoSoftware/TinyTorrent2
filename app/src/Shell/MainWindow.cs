@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Windows.Input;
+using DispatcherQueuePriority = Microsoft.UI.Dispatching.DispatcherQueuePriority;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -38,6 +39,10 @@ public sealed partial class MainWindow : Window
 
     public MainWindow(Strings strings)
     {
+        // Assigned first, because the rest of the constructor can request these.
+        _menus = new TurnCallback(DispatcherQueue, DispatcherQueuePriority.Low, PrepareMenus);
+        _status = new TurnCallback(DispatcherQueue, DispatcherQueuePriority.Low, UpdateStatus);
+        _dragUpdate = new TurnCallback(DispatcherQueue, DispatcherQueuePriority.Low, UpdateDragRegions);
         Model = new MainViewModel(strings, DispatcherQueue, new Navigation(PrepareNavigation));
 #if CAPTURE
         Model.Features.CanStart = !IsCaptureReview;
@@ -796,32 +801,27 @@ public sealed partial class MainWindow : Window
 
     private async Task ConfirmReset()
     {
-        var confirmed = await Interact(async interaction =>
+        var dialog = new Dialog
         {
-            var dialog = new Dialog
+            Glyph = Syno.Segoe.RotateCcw,
+            PrimaryGlyph = Syno.Segoe.RotateCcw,
+        };
+        var confirmed = await Confirm(
+            dialog,
+            () =>
             {
-                Glyph = Syno.Segoe.RotateCcw,
-                PrimaryGlyph = Syno.Segoe.RotateCcw,
-            };
-            var choice = await ShowDialog(
-                interaction,
-                dialog,
-                () =>
-                {
-                    dialog.Title = Model.Text.Get("settings", "reset_all_title");
-                    dialog.Content = DataConfirmation(
-                        [
-                            Model.Text.Get("settings", "reset_all_body"),
-                            Model.Text.Get("settings", "reset_all_kept"),
-                        ],
-                        [Model.Text.Get("settings", "reset_all_caution")]
-                    );
-                    dialog.PrimaryButtonText = Model.Text.Get("settings", "reset_all_confirm");
-                    dialog.PrimaryToolTip = Model.Text.Get("settings", "reset_all_tip");
-                }
-            );
-            return choice == ContentDialogResult.Primary;
-        });
+                dialog.Title = Model.Text.Get("settings", "reset_all_title");
+                dialog.Content = DataConfirmation(
+                    [
+                        Model.Text.Get("settings", "reset_all_body"),
+                        Model.Text.Get("settings", "reset_all_kept"),
+                    ],
+                    [Model.Text.Get("settings", "reset_all_caution")]
+                );
+                dialog.PrimaryButtonText = Model.Text.Get("settings", "reset_all_confirm");
+                dialog.PrimaryToolTip = Model.Text.Get("settings", "reset_all_tip");
+            }
+        );
         // A close that began while the dialog was open owns the window.
         if (!confirmed || Model.IsClosing)
             return;

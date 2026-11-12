@@ -9,6 +9,7 @@ using Microsoft.Data.Sqlite;
 using SQLitePCL;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Network;
+using Syno.TinyTorrent.Shared.Storage;
 
 namespace Syno.TinyTorrent.Library.Imdb;
 
@@ -397,20 +398,12 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
                 _file.EnterReadLock();
                 try
                 {
-                    using var connection = Connect(_path, SqliteOpenMode.ReadOnly, cancellation);
-                    return read(connection);
-                }
-                catch (SqliteException error)
-                    when (error.SqliteErrorCode == raw.SQLITE_INTERRUPT
-                        && cancellation.IsCancellationRequested
-                    )
-                {
-                    throw new OperationCanceledException(null, error, cancellation);
+                    using var connection = Database.Connect(_path, SqliteOpenMode.ReadOnly);
+                    return Database.Execute(connection, read, cancellation);
                 }
                 // A damaged file fails every lookup until the person downloads
                 // the data again.
-                catch (SqliteException error)
-                    when (error.SqliteErrorCode is raw.SQLITE_CORRUPT or raw.SQLITE_NOTADB)
+                catch (SqliteException error) when (Database.IsDamaged(error))
                 {
                     throw new ProviderException(VideoFailure.Damaged, inner: error);
                 }
@@ -502,117 +495,94 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
         }
     }
 
-    // Without pooling, closing the connection closes the file, so the file can
-    // be replaced or deleted afterwards. A cancel interrupts a long statement,
-    // such as the index rebuild.
-    private static SqliteConnection Connect(
-        string path,
-        SqliteOpenMode mode,
-        CancellationToken cancellation
-    )
-    {
-        var connection = new SqliteConnection(
-            new SqliteConnectionStringBuilder
-            {
-                DataSource = path,
-                Mode = mode,
-                Pooling = false,
-            }.ToString()
-        );
-        connection.Open();
-        raw.sqlite3_progress_handler(
-            connection.Handle!,
-            1000,
-            _ => cancellation.IsCancellationRequested ? 1 : 0,
-            null
-        );
-        return connection;
-    }
-
     // Writes the file that Install moves into place.
     private void Import(Action<ImdbPhase, WorkProgress> report, CancellationToken cancellation)
     {
         // A crash during an earlier build can leave the file behind.
         File.Delete(Building);
-        using (var connection = Connect(Building, SqliteOpenMode.ReadWriteCreate, cancellation))
+        using (var connection = Database.Connect(Building, SqliteOpenMode.ReadWriteCreate))
         {
-            try
-            {
-                Execute(
-                    connection,
-                    // The file is temporary until Install, so a crash only
-                    // loses a file that the next build deletes. The title
-                    // keys hold the titles as Key gives them, so a search can
-                    // rank exact titles first and RatingsByName can find a
-                    // title from a file name. An episode's numbers and its
-                    // title come from different files, so they are two
-                    // tables, each written in its own key order.
-                    """
-                    PRAGMA journal_mode=OFF;
-                    PRAGMA synchronous=OFF;
-                    CREATE TABLE titles (
-                        title_id INTEGER PRIMARY KEY,
-                        kind TEXT NOT NULL CHECK(kind IN ('movie','series')),
-                        title TEXT NOT NULL,
-                        original TEXT,
-                        title_key TEXT NOT NULL,
-                        original_key TEXT,
-                        year INTEGER NOT NULL,
-                        genres TEXT,
-                        rating REAL,
-                        votes INTEGER
+            Database.Execute(
+                connection,
+                connection =>
+                {
+                    Execute(
+                        connection,
+                        // The file is temporary until Install, so a crash only
+                        // loses a file that the next build deletes. The title
+                        // keys hold the titles as Key gives them, so a search
+                        // can rank exact titles first and RatingsByName can
+                        // find a title from a file name. An episode's numbers
+                        // and its title come from different files, so they are
+                        // two tables, each written in its own key order.
+                        """
+                        PRAGMA journal_mode=OFF;
+                        PRAGMA synchronous=OFF;
+                        CREATE TABLE titles (
+                            title_id INTEGER PRIMARY KEY,
+                            kind TEXT NOT NULL CHECK(kind IN ('movie','series')),
+                            title TEXT NOT NULL,
+                            original TEXT,
+                            title_key TEXT NOT NULL,
+                            original_key TEXT,
+                            year INTEGER NOT NULL,
+                            genres TEXT,
+                            rating REAL,
+                            votes INTEGER
+                        );
+                        CREATE TABLE episodes (
+                            series_id INTEGER NOT NULL,
+                            season INTEGER NOT NULL,
+                            number INTEGER NOT NULL,
+                            episode_id INTEGER NOT NULL,
+                            PRIMARY KEY(series_id,season,number)
+                        ) WITHOUT ROWID;
+                        CREATE TABLE episode_titles (
+                            episode_id INTEGER PRIMARY KEY,
+                            title TEXT NOT NULL,
+                            year INTEGER
+                        );
+                        CREATE VIRTUAL TABLE title_search USING fts5(
+                            title, original, content='titles', content_rowid='title_id',
+                            tokenize='unicode61 remove_diacritics 2', columnsize=0
+                        );
+                        BEGIN;
+                        """
                     );
-                    CREATE TABLE episodes (
-                        series_id INTEGER NOT NULL,
-                        season INTEGER NOT NULL,
-                        number INTEGER NOT NULL,
-                        episode_id INTEGER NOT NULL,
-                        PRIMARY KEY(series_id,season,number)
-                    ) WITHOUT ROWID;
-                    CREATE TABLE episode_titles (
-                        episode_id INTEGER PRIMARY KEY,
-                        title TEXT NOT NULL,
-                        year INTEGER
+                    // Data that IMDb changed so that nothing reads would
+                    // replace the installed copy with an empty one.
+                    var numbered = LinkEpisodes(
+                        connection,
+                        ReadEpisodes(Archive(Episodes), Reading(ImdbPhase.Episodes), cancellation),
+                        Counting(ImdbPhase.Linking),
+                        cancellation
                     );
-                    CREATE VIRTUAL TABLE title_search USING fts5(
-                        title, original, content='titles', content_rowid='title_id',
-                        tokenize='unicode61 remove_diacritics 2', columnsize=0
+                    var ratings = ReadRatings(
+                        Archive(RatingsSource),
+                        Reading(ImdbPhase.Ratings),
+                        cancellation
                     );
-                    BEGIN;
-                    """
-                );
-                // Data that IMDb changed so that nothing reads would replace
-                // the installed copy with an empty one.
-                var numbered = LinkEpisodes(
-                    connection,
-                    ReadEpisodes(Archive(Episodes), Reading(ImdbPhase.Episodes), cancellation),
-                    Counting(ImdbPhase.Linking),
-                    cancellation
-                );
-                var ratings = ReadRatings(
-                    Archive(RatingsSource),
-                    Reading(ImdbPhase.Ratings),
-                    cancellation
-                );
-                var (titles, rated) = ImportTitles(
-                    connection,
-                    Archive(Basics),
-                    numbered,
-                    CollectionsMarshal.AsSpan(ratings),
-                    Reading(ImdbPhase.Titles),
-                    cancellation
-                );
-                if (titles == 0 || rated == 0)
-                    throw new DownloadException(DownloadFailure.UnknownFormat);
-                IndexTitles(connection, titles, Counting(ImdbPhase.Indexing), cancellation);
-                Execute(connection, "COMMIT;");
-                report(ImdbPhase.Optimizing, new WorkProgress.Unknown());
-                Execute(connection, "INSERT INTO title_search(title_search) VALUES('optimize');");
-            }
-            finally
-            {
-                raw.sqlite3_progress_handler(connection.Handle!, 0, null, null);
-            }
+                    var (titles, rated) = ImportTitles(
+                        connection,
+                        Archive(Basics),
+                        numbered,
+                        CollectionsMarshal.AsSpan(ratings),
+                        Reading(ImdbPhase.Titles),
+                        cancellation
+                    );
+                    if (titles == 0 || rated == 0)
+                        throw new DownloadException(DownloadFailure.UnknownFormat);
+                    IndexTitles(connection, titles, Counting(ImdbPhase.Indexing), cancellation);
+                    Execute(connection, "COMMIT;");
+                    report(ImdbPhase.Optimizing, new WorkProgress.Unknown());
+                    Execute(
+                        connection,
+                        "INSERT INTO title_search(title_search) VALUES('optimize');"
+                    );
+                    return true;
+                },
+                cancellation
+            );
         }
         cancellation.ThrowIfCancellationRequested();
         report(ImdbPhase.Flushing, new WorkProgress.Unknown());

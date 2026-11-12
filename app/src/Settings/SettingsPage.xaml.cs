@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using DispatcherQueuePriority = Microsoft.UI.Dispatching.DispatcherQueuePriority;
 using Microsoft.UI.System;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -19,8 +20,6 @@ namespace Syno.TinyTorrent.Settings;
 
 public sealed partial class SettingsPage : UserControl
 {
-    private readonly HashSet<TextBox> _composing = [];
-    private readonly HashSet<TextBox> _editors = [];
     private bool _refreshing;
     private IReadOnlyList<ComboBoxItem>? _languageItems;
     // The text that names each language item. The box moves the selected
@@ -58,6 +57,7 @@ public sealed partial class SettingsPage : UserControl
 
     public SettingsPage(MainViewModel main)
     {
+        _home = new TurnCallback(DispatcherQueue, DispatcherQueuePriority.Normal, RefreshHome);
         Main = main;
         Model = main.Settings;
         InitializeComponent();
@@ -83,6 +83,7 @@ public sealed partial class SettingsPage : UserControl
     {
         Model.TextChanged += OnText;
         Model.PropertyChanged += OnModel;
+        Model.Overview.PropertyChanged += OnOverview;
         Main.PropertyChanged += OnMain;
         Main.Library.PropertyChanged += OnProviders;
         RefreshSubtitles();
@@ -113,6 +114,7 @@ public sealed partial class SettingsPage : UserControl
         _pages.Stop();
         Model.TextChanged -= OnText;
         Model.PropertyChanged -= OnModel;
+        Model.Overview.PropertyChanged -= OnOverview;
         Main.PropertyChanged -= OnMain;
         Main.Library.PropertyChanged -= OnProviders;
         _display.TextScaleFactorChanged -= OnTextScale;
@@ -212,38 +214,19 @@ public sealed partial class SettingsPage : UserControl
         if (
             args.PropertyName is nameof(MainViewModel.Page) or nameof(MainViewModel.Subtitles) or ""
         )
+        {
             RefreshSubtitles();
-        if (
-            args.PropertyName
-            is nameof(MainViewModel.CurrentStatus)
-                or nameof(MainViewModel.Page)
-                or nameof(MainViewModel.Subtitles)
-                or nameof(MainViewModel.FreeSpaceStatus)
-                or nameof(MainViewModel.ShowsFreeSpace)
-                or nameof(MainViewModel.SessionTotals)
-                or nameof(MainViewModel.LifetimeTotals)
-                or nameof(MainViewModel.Torrents)
-                or nameof(MainViewModel.LimitsSummary)
-                or nameof(MainViewModel.ScheduleSummary)
-                or nameof(MainViewModel.LimitsNow)
-                or nameof(MainViewModel.IncomingStatus)
-                or ""
-        )
-            QueueHome();
+        }
     }
+
+    private void OnOverview(object? sender, PropertyChangedEventArgs args) => QueueHome();
 
     private void OnProviders(object? sender, PropertyChangedEventArgs args)
     {
-        if (
-            args.PropertyName
-            is nameof(Main.Library.Status)
-                or nameof(Main.Library.IsAutomaticDownloadEnabled)
-                or nameof(Main.Library.Providers)
-                or ""
-        )
-            QueueHome();
         if (args.PropertyName is nameof(Main.Library.Providers) or "")
+        {
             ShowImdb();
+        }
     }
 
     // The row has nothing to manage until Library attaches.
@@ -251,17 +234,14 @@ public sealed partial class SettingsPage : UserControl
         ImdbRow?.Show(Main.Library.DataProvider is null ? null : Main.Library, Model.Text);
 
     private void OnTextScale(UISettings sender, object args) =>
-        DispatcherQueue.TryEnqueue(() =>
-        {
-            AlignCategory();
-            UpdateHomeLayout();
-        });
+        DispatcherQueue.TryEnqueue(AlignCategory);
 
     private void OnModel(object? sender, PropertyChangedEventArgs args)
     {
         if (args.PropertyName is nameof(Editor.SubtitleCoverage) or "")
+        {
             RefreshSubtitleCoverage();
-        QueueHome();
+        }
     }
 
     // Built in code, because a template cannot give each item's container its
@@ -419,14 +399,7 @@ public sealed partial class SettingsPage : UserControl
         var next = ReferenceEquals(Categories.SelectedItem, HomeCategory)
             ? null
             : Categories.SelectedItem as NavigationViewItem;
-        if (
-            _category == next
-            && (
-                _category is null
-                    ? IndexContent is not null
-                    : CategoryPanels.Any(panel => panel.Name == (string)_category.Tag)
-            )
-        )
+        if (_category == next && CurrentPanel is not null)
         {
             RefreshSubtitles();
             RefreshHome();
@@ -488,15 +461,22 @@ public sealed partial class SettingsPage : UserControl
             Plugins,
         }.OfType<FrameworkElement>();
 
+    // The shown category's panel, or Home's, while it is loaded. A category
+    // item's Tag is its panel's name.
+    private FrameworkElement? CurrentPanel =>
+        _category is null
+            ? IndexContent
+            : CategoryPanels.FirstOrDefault(panel => panel.Name == (string)_category.Tag);
+
     private FrameworkElement LoadCategory(out bool loaded)
     {
-        var name = _category is null ? nameof(IndexContent) : (string)_category.Tag;
-        var existing = _category is null
-            ? IndexContent
-            : CategoryPanels.FirstOrDefault(panel => panel.Name == name);
+        var existing = CurrentPanel;
         loaded = existing is null;
         if (existing is not null)
+        {
             return existing;
+        }
+        var name = _category is null ? nameof(IndexContent) : (string)_category.Tag;
         var content = (FrameworkElement)FindName(name);
         if (_category is null)
             InitializeHome();
@@ -602,9 +582,10 @@ public sealed partial class SettingsPage : UserControl
     private void AlignCategory()
     {
         LayoutChanged?.Invoke(this, EventArgs.Empty);
-        if (_category is null)
+        if (_category is null || CurrentPanel is not { } panel)
+        {
             return;
-        var panel = CategoryPanels.First(panel => panel.Name == (string)_category.Tag);
+        }
         foreach (var section in Elements(panel, visible: true).OfType<SettingsSection>())
         {
             var rows = Elements(section, visible: true).OfType<SettingsRow>().ToArray();
@@ -638,6 +619,13 @@ public sealed partial class SettingsPage : UserControl
         yield return element;
         var children = element switch
         {
+            // A panel whose children are presenters, so the walk reads the
+            // columns they present.
+            FieldColumns columns => new[]
+            {
+                columns.Primary,
+                columns.Secondary,
+            }.OfType<FrameworkElement>(),
             Panel panel => panel.Children.OfType<FrameworkElement>(),
             Border border => new[] { border.Child }.OfType<FrameworkElement>(),
             SettingsRow row => new[]
@@ -874,14 +862,9 @@ public sealed partial class SettingsPage : UserControl
     // so a field is watched from its first focus.
     private void OnFieldFocus(object sender, RoutedEventArgs args)
     {
-        if (
-            args.OriginalSource is TextBox editor
-            && RowOf(editor)?.Setting is not null
-            && _editors.Add(editor)
-        )
+        if (args.OriginalSource is TextBox editor && RowOf(editor)?.Setting is not null)
         {
-            editor.TextCompositionStarted += (_, _) => _composing.Add(editor);
-            editor.TextCompositionEnded += (_, _) => _composing.Remove(editor);
+            TextEditor.FollowComposition(editor);
         }
     }
 
@@ -889,7 +872,7 @@ public sealed partial class SettingsPage : UserControl
     {
         if (
             args.OriginalSource is not TextBox editor
-            || _composing.Contains(editor)
+            || TextEditor.IsComposing(editor)
             || RowOf(editor)?.Setting is not { } setting
         )
             return;
@@ -913,25 +896,17 @@ public sealed partial class SettingsPage : UserControl
     {
         if (
             args.OriginalSource is not TextBox editor
-            || _composing.Contains(editor)
+            || TextEditor.IsComposing(editor)
             || RowOf(editor) is not { Setting: { } setting } row
         )
             return;
-        for (
-            var current = FocusManager.GetFocusedElement(XamlRoot) as DependencyObject;
-            current is not null;
-            current = VisualTreeHelper.GetParent(current)
-        )
+        var focused = FocusManager.GetFocusedElement(XamlRoot) as DependencyObject;
+        if (VisualTree.Contains(row, focused) || !VisualTree.Contains(this, focused))
         {
-            if (current == row)
-                return;
-            if (current == this)
-            {
-                setting.Input = editor.Text;
-                _ = setting.Depart();
-                return;
-            }
+            return;
         }
+        setting.Input = editor.Text;
+        _ = setting.Depart();
     }
 }
 

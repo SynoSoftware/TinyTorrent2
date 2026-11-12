@@ -5,6 +5,7 @@ using Microsoft.Graphics.Canvas;
 using Microsoft.Graphics.Canvas.Brushes;
 using Microsoft.Graphics.Canvas.Effects;
 using Microsoft.Graphics.Canvas.Geometry;
+using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Shared;
 using Windows.Foundation;
 using Windows.UI;
@@ -36,7 +37,6 @@ internal sealed class MapRenderer : IDisposable
     private MapModel.Presentation _model;
     private MapViewport _viewport;
     private Dictionary<string, Geography.Country> _world;
-    private static readonly UISettings SystemSettings = new();
     private static readonly AccessibilitySettings SystemAccessibility = new();
     private readonly Dictionary<string, Outline> _land = [];
     private readonly Dictionary<string, IEnumerator<Outline?>> _traces = [];
@@ -126,10 +126,8 @@ internal sealed class MapRenderer : IDisposable
         _world = world;
     }
 
-    private static readonly TimeSpan Frame = TimeSpan.FromMilliseconds(33);
-
     /// <summary>Whether Windows lets the map animate: animations on and High Contrast off.</summary>
-    internal static bool SystemAnimates => SystemSettings.AnimationsEnabled && !SystemAccessibility.HighContrast;
+    internal static bool SystemAnimates => Motion.IsEnabled && !SystemAccessibility.HighContrast;
 
     internal bool Animates { get; set; }
     internal bool HighContrast { get; set; }
@@ -145,7 +143,7 @@ internal sealed class MapRenderer : IDisposable
                     Math.Max(0, _viewMoved + Rest - Stopwatch.GetTimestamp()) / (double)Stopwatch.Frequency);
                 wait = wait is { } step && step < rest ? step : rest;
             }
-            return wait is { } value ? value < Frame ? Frame : value : null;
+            return wait is { } value ? value < MapMotion.Frame ? MapMotion.Frame : value : null;
         }
     }
 
@@ -842,10 +840,7 @@ internal sealed class MapRenderer : IDisposable
             float Error(Vector2 sample)
             {
                 sample.X = MapViewport.Wrap(sample.X, (from.X + last.X) / 2);
-                var fraction = chord.LengthSquared() > 0
-                    ? Math.Clamp(Vector2.Dot(sample - from, chord) / chord.LengthSquared(), 0, 1)
-                    : 0;
-                return Vector2.DistanceSquared(sample, from + fraction * chord);
+                return DistanceSquared(sample, from, chord);
             }
         }
 
@@ -968,16 +963,17 @@ internal sealed class MapRenderer : IDisposable
         return (float)Math.Clamp(Math.Log(1 + rate / 1024) / Math.Log(1 + ceiling / 1024), 0, 1);
     }
 
-    internal static Color Alpha(Color colour, double opacity) =>
-        Color.FromArgb((byte)Math.Clamp(colour.A * opacity, 0, 255), colour.R, colour.G, colour.B);
-
-    private static Color Blend(Color from, Color to, double amount) =>
-        Color.FromArgb(
-            (byte)(from.A + (to.A - from.A) * amount),
-            (byte)(from.R + (to.R - from.R) * amount),
-            (byte)(from.G + (to.G - from.G) * amount),
-            (byte)(from.B + (to.B - from.B) * amount)
-        );
+    /// <summary>
+    /// The squared distance from <paramref name="point"/> to the segment that runs from
+    /// <paramref name="start"/> by <paramref name="line"/>, its end minus its start.
+    /// </summary>
+    private static float DistanceSquared(Vector2 point, Vector2 start, Vector2 line)
+    {
+        var fraction = line.LengthSquared() > 0
+            ? Math.Clamp(Vector2.Dot(point - start, line) / line.LengthSquared(), 0, 1)
+            : 0;
+        return Vector2.DistanceSquared(point, start + fraction * line);
+    }
 
     private CanvasRadialGradientBrush Halo(Color colour)
     {
@@ -986,7 +982,7 @@ internal sealed class MapRenderer : IDisposable
             halo = new CanvasRadialGradientBrush(
                 _device,
                 [
-                    new CanvasGradientStop { Position = 0, Color = Alpha(colour, .3) },
+                    new CanvasGradientStop { Position = 0, Color = Colour.Alpha(colour, .3) },
                     new CanvasGradientStop { Position = 1, Color = colour },
                 ]
             );
@@ -1189,7 +1185,7 @@ internal sealed class MapRenderer : IDisposable
                         if (_model.Countries.TryGetValue(code, out var group) && group.Estimated)
                         {
                             var strength = _displayedCountries[code];
-                            fill = Blend(land, down, group.Active > 0 ? .1 + .35 * strength : .08);
+                            fill = Colour.Mix(land, down, group.Active > 0 ? .1 + .35 * strength : .08);
                         }
                         if (Filled(code, outline, turn, visible) is { } cached)
                             draw.DrawCachedGeometry(cached, fill);
@@ -1200,7 +1196,7 @@ internal sealed class MapRenderer : IDisposable
                 Measure("fills", ref measured);
 #endif
                 var borderWidth = BorderWidth;
-                var border = contrast ? ink : Alpha(edge, .5 / borderWidth);
+                var border = contrast ? ink : Colour.Alpha(edge, .5 / borderWidth);
                 for (var turn = -1; turn <= 1; turn++)
                 {
                     var transform = Turned(turn);
@@ -1221,7 +1217,7 @@ internal sealed class MapRenderer : IDisposable
                             ApplyStroke(draw, stroke, transform, ref applied);
                             var widened = _viewport.AxisScale / stroke.Scale;
                             draw.DrawCachedGeometry(stroke.Geometry,
-                                contrast ? ink : Alpha(border, 2 / (widened.X + widened.Y)));
+                                contrast ? ink : Colour.Alpha(border, 2 / (widened.X + widened.Y)));
                         }
                     }
                 }
@@ -1256,7 +1252,7 @@ internal sealed class MapRenderer : IDisposable
                                 .. new[] { 0, .25f, .5f, .75f, 1 }.Select(position => new CanvasGradientStop
                                 {
                                     Position = position,
-                                    Color = Alpha(opaque, OriginFade(position, opacity)),
+                                    Color = Colour.Alpha(opaque, OriginFade(position, opacity)),
                                 }),
                             ]
                         )
@@ -1875,10 +1871,10 @@ internal sealed class MapRenderer : IDisposable
                     {
                         var from = target.Segments[index] * scale;
                         var line = target.Segments[index + 1] * scale - from;
-                        var fraction = line.LengthSquared() > 0
-                            ? Math.Clamp(Vector2.Dot(scaled - from, line) / line.LengthSquared(), 0, 1) : 0;
-                        if (Vector2.DistanceSquared(scaled, from + fraction * line) > 16)
+                        if (DistanceSquared(scaled, from, line) > 16)
+                        {
                             continue;
+                        }
                         return target.Destination;
                     }
                 }
@@ -2323,7 +2319,7 @@ internal sealed class MapRenderer : IDisposable
                 stops[index] = new CanvasGradientStop
                 {
                     Position = position,
-                    Color = Alpha(colour, Route(1 - position) * Landing(position * length)),
+                    Color = Colour.Alpha(colour, Route(1 - position) * Landing(position * length)),
                 };
             }
             return stops;

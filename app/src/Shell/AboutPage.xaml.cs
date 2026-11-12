@@ -2,13 +2,11 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Syno.TinyTorrent.Controls;
-using Windows.UI.ViewManagement;
 
 namespace Syno.TinyTorrent.Shell;
 
 public sealed partial class AboutPage : UserControl
 {
-    private readonly UISettings _display = new();
     private readonly SettingsLink _company = new()
     {
         Glyph = Segoe.Building2,
@@ -28,6 +26,8 @@ public sealed partial class AboutPage : UserControl
     {
         Main = main;
         InitializeComponent();
+        Layout.PrimaryWidth = new GridLength(1, GridUnitType.Star);
+        Layout.SecondaryWidth = new GridLength(1, GridUnitType.Star);
         Svg.Fit(Logo);
         AutomationProperties.SetAutomationId(_company, "AboutCompany");
         AutomationProperties.SetAutomationId(_source, "AboutSource");
@@ -43,14 +43,9 @@ public sealed partial class AboutPage : UserControl
         Loaded += (_, _) =>
         {
             Main.TextChanged += OnText;
-            _display.TextScaleFactorChanged += OnTextScale;
             RefreshText();
         };
-        Unloaded += (_, _) =>
-        {
-            Main.TextChanged -= OnText;
-            _display.TextScaleFactorChanged -= OnTextScale;
-        };
+        Unloaded += (_, _) => Main.TextChanged -= OnText;
         RefreshText();
     }
 
@@ -67,29 +62,5 @@ public sealed partial class AboutPage : UserControl
         _source.Header = Main.Text.Get("about", "source");
         _source.Description = Main.Text.Get("about", "source_detail");
         _credits.Header = Main.Text.Get("about", "credits");
-        UpdateColumns();
-    }
-
-    private void OnLayoutSize(object sender, SizeChangedEventArgs args) => UpdateColumns();
-
-    private void OnTextScale(UISettings sender, object args) =>
-        DispatcherQueue.TryEnqueue(UpdateColumns);
-
-    private void UpdateColumns()
-    {
-        var stacked = Layout.ActualWidth < 720 * _display.TextScaleFactor;
-        Layout.ColumnDefinitions[1].Width = stacked ? new(0) : new(1, GridUnitType.Star);
-        Layout.ColumnSpacing = stacked ? 0 : 24;
-        Layout.RowSpacing = stacked ? 24 : 0;
-        Identity.Padding =
-            stacked ? new(0, 0, 0, 24)
-            : Main.Text.IsRightToLeft ? new(32, 0, 0, 0)
-            : new(0, 0, 32, 0);
-        Identity.BorderThickness =
-            stacked ? new(0, 0, 0, 1)
-            : Main.Text.IsRightToLeft ? new(1, 0, 0, 0)
-            : new(0, 0, 1, 0);
-        Grid.SetColumn(Links, stacked ? 0 : 1);
-        Grid.SetRow(Links, stacked ? 1 : 0);
     }
 }

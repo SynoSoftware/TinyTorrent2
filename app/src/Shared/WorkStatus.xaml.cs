@@ -195,9 +195,7 @@ public sealed partial class WorkStatus : UserControl
         Cancel.IsEnabled = operation.Cancel.CanExecute(null);
         AutomationProperties.SetName(Label, description);
         AutomationProperties.SetName(Progress, description);
-        var cancel = text.Format("work", "cancel", identity);
-        AutomationProperties.SetName(Cancel, cancel);
-        ToolTipService.SetToolTip(Cancel, cancel);
+        IconButton.Name(Cancel, text.Format("work", "cancel", identity));
         ToolTipService.SetToolTip(this, description);
     }
 }

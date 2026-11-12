@@ -9,6 +9,7 @@ using System.Windows.Input;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Engine;
 using Syno.TinyTorrent.Shared.Network;
+using Syno.TinyTorrent.Shared.Storage;
 
 namespace Syno.TinyTorrent.Shell;
 
@@ -26,7 +27,7 @@ internal sealed class Updates
     private bool _allowed;
     private bool _closed;
     private ReleaseCheck? _releaseCheck;
-    private string? _cachePath;
+    private StateFile<ReleaseCheck>? _cache;
     private Task? _check;
     private UpdateTrigger? _checking;
     private Task? _installation;
@@ -111,21 +112,10 @@ internal sealed class Updates
 
     private async Task CheckRelease(bool automatic)
     {
-        if (_cachePath is null && _client.DataDirectory is { } directory)
+        if (_cache is null && _client.DataDirectory is { } directory)
         {
-            _cachePath = Path.Combine(directory, "updates.json");
-            try
-            {
-                var input = await File.ReadAllTextAsync(_cachePath);
-                _releaseCheck = JsonSerializer.Deserialize<ReleaseCheck>(input);
-            }
-            catch (FileNotFoundException) { }
-            catch (DirectoryNotFoundException) { }
-            catch (Exception error)
-                when (error is IOException or UnauthorizedAccessException or JsonException)
-            {
-                Debug.WriteLine($"Update check cache could not be read: {error.Message}");
-            }
+            _cache = new(Path.Combine(directory, "updates.json"));
+            _releaseCheck = await _cache.Read() ?? _releaseCheck;
             Raise();
         }
         // A check saved in the future, after the clock was wrong, counts as old.
@@ -141,7 +131,7 @@ internal sealed class Updates
         )
             return;
         _releaseCheck = new(DateTimeOffset.UtcNow, _releaseCheck?.Version);
-        await SaveCheck();
+        await SaveCheck(_releaseCheck);
         var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(8));
         _request = cancellation;
         var work = new CancellableWork(
@@ -179,7 +169,7 @@ internal sealed class Updates
             );
             _releaseCheck = new(_releaseCheck.CheckedAt, version);
             Raise();
-            await SaveCheck();
+            await SaveCheck(_releaseCheck);
             operation.Summarize(HasUpdate ? "update_available" : "up_to_date", version);
             operation.ReportsSuccess = !automatic || HasUpdate;
             operation.Outcome = WorkOutcome.Completed;
@@ -416,20 +406,10 @@ internal sealed class Updates
         throw new HttpRequestException("The release download did not redirect.", null, reply.Status);
     }
 
-    private async Task SaveCheck()
+    private async Task SaveCheck(ReleaseCheck check)
     {
-        if (_cachePath is null)
-            return;
-        try
-        {
-            var temporary = _cachePath + ".tmp";
-            await File.WriteAllTextAsync(temporary, JsonSerializer.Serialize(_releaseCheck));
-            File.Move(temporary, _cachePath, true);
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        {
-            Debug.WriteLine($"Update check cache could not be saved: {error.Message}");
-        }
+        if (_cache is not null)
+            await _cache.Save(check);
     }
 
     private sealed record ReleaseCheck(DateTimeOffset CheckedAt, Version? Version);

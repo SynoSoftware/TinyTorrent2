@@ -2,13 +2,11 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Animation;
 using Windows.Foundation;
-using Windows.UI.ViewManagement;
 
 namespace Syno.TinyTorrent.Controls;
 
 public sealed partial class SettingsExpander : Expander
 {
-    private readonly UISettings _settings = new();
     private Border? _drawer;
     private Border? _body;
     private Storyboard? _animation;
@@ -72,7 +70,7 @@ public sealed partial class SettingsExpander : Expander
             return;
         var from = _drawer.Visibility == Visibility.Collapsed ? 0 : _drawer.ActualHeight;
         Stop();
-        if (!IsLoaded || !_settings.AnimationsEnabled || ActualWidth <= 0)
+        if (!IsLoaded || !Motion.IsEnabled || ActualWidth <= 0)
         {
             Settle();
             return;

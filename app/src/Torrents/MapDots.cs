@@ -23,6 +23,9 @@ internal sealed class MapDots<TRoute>(long smallest)
     private const double AreaPerDot = 10_000;
     private const double Spacing = 15;
 
+    // The seconds traffic stays lower before Bytes falls to a smaller size.
+    private const long Hold = 10;
+
     // Even departures add up to one dot to each route, so the size aims below
     // the target and the maximum rarely drops a dot.
     private const double Margin = .8;
@@ -125,7 +128,7 @@ internal sealed class MapDots<TRoute>(long smallest)
     {
         if (_lowerSince is { } since)
         {
-            var deadline = since + 10 * Stopwatch.Frequency;
+            var deadline = since + Hold * Stopwatch.Frequency;
             if (_counted < deadline && deadline < now)
                 Advance(deadline);
         }
@@ -170,7 +173,7 @@ internal sealed class MapDots<TRoute>(long smallest)
         if (Bytes is not { } size)
             return null;
         var seconds = _lowerSince is { } since
-            ? Math.Max(0, (since + 10 * Stopwatch.Frequency - _counted) / (double)Stopwatch.Frequency)
+            ? Math.Max(0, (since + Hold * Stopwatch.Frequency - _counted) / (double)Stopwatch.Frequency)
             : double.PositiveInfinity;
         if (departures)
         {
@@ -212,7 +215,7 @@ internal sealed class MapDots<TRoute>(long smallest)
         }
         else if (_lowerSince is not { } since)
             _lowerSince = now;
-        else if (now - since >= 10 * Stopwatch.Frequency)
+        else if (now - since >= Hold * Stopwatch.Frequency)
         {
             Bytes = target;
             _lowerSince = null;

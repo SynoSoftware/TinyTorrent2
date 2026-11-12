@@ -97,10 +97,13 @@ public sealed partial class MainWindow
         }
     }
 
+    // A dialog whose primary button submits `draft` enables it while the
+    // draft can submit, and never while the window closes.
     private async Task<ContentDialogResult> ShowDialog(
         DialogInteraction interaction,
         Dialog dialog,
-        Action refreshText
+        Action refreshText,
+        IDraft? draft = null
     )
     {
         void ShowText()
@@ -109,10 +112,18 @@ public sealed partial class MainWindow
             dialog.OptOutText = Model.Text.Get("dialog", "never_show");
             refreshText();
         }
+        void EnableSubmit(object? sender = null, PropertyChangedEventArgs? args = null) =>
+            dialog.IsPrimaryButtonEnabled = draft!.CanSubmit && !Model.IsClosing;
         dialog.XamlRoot = Root.XamlRoot;
         dialog.Opened += (_, _) => RaiseToasts();
         interaction.Dialog = dialog;
         interaction.RefreshText = ShowText;
+        if (draft is not null)
+        {
+            EnableSubmit();
+            draft.PropertyChanged += EnableSubmit;
+            Model.PropertyChanged += EnableSubmit;
+        }
         try
         {
             RefreshPopups();
@@ -121,10 +132,33 @@ public sealed partial class MainWindow
         }
         finally
         {
+            if (draft is not null)
+            {
+                draft.PropertyChanged -= EnableSubmit;
+                Model.PropertyChanged -= EnableSubmit;
+            }
             interaction.Dialog = null;
             interaction.RefreshText = null;
         }
     }
+
+    // A confirmation asks about an act the person chose. The act runs only
+    // after the person confirms it, inside the interaction, so no other
+    // dialog opens before it ends. True when the person confirmed and the act
+    // ran.
+    private Task<bool> Confirm(Dialog dialog, Action refreshText, Func<Task>? act = null) =>
+        Interact(async interaction =>
+        {
+            if (await ShowDialog(interaction, dialog, refreshText) != ContentDialogResult.Primary)
+            {
+                return false;
+            }
+            if (act is not null)
+            {
+                await act();
+            }
+            return true;
+        });
 
     // An editor's primary button submits its draft, and nothing submits while
     // the window closes. The dialog stays open while the draft or a picker is
@@ -140,11 +174,6 @@ public sealed partial class MainWindow
         Func<Task<bool>>? submit = null
     )
     {
-        void EnableSubmit(object? sender = null, PropertyChangedEventArgs? args = null) =>
-            dialog.IsPrimaryButtonEnabled = draft.CanSubmit && !Model.IsClosing;
-        EnableSubmit();
-        draft.PropertyChanged += EnableSubmit;
-        Model.PropertyChanged += EnableSubmit;
         dialog.PrimaryButtonClick += async (_, args) =>
             await Submit(interaction, args, submit ?? draft.Submit);
         dialog.Closing += (_, args) =>
@@ -154,7 +183,7 @@ public sealed partial class MainWindow
         };
         try
         {
-            await ShowDialog(interaction, dialog, refreshText);
+            await ShowDialog(interaction, dialog, refreshText, draft);
             if (interaction.IsSuspended && !interaction.IsResolved)
             {
                 // CloseWindow resolves the draft after the dialog has closed.
@@ -174,8 +203,6 @@ public sealed partial class MainWindow
         }
         finally
         {
-            draft.PropertyChanged -= EnableSubmit;
-            Model.PropertyChanged -= EnableSubmit;
             draft.Stop();
             dialog.Content = null;
         }
@@ -235,25 +262,18 @@ public sealed partial class MainWindow
 
     private async Task ConfirmDatabaseDeletion()
     {
-        await Interact(async interaction =>
-        {
-            var dialog = new Dialog { Glyph = Segoe.Database, PrimaryGlyph = Segoe.Trash2 };
-            var choice = await ShowDialog(
-                interaction,
-                dialog,
-                () =>
-                {
-                    dialog.Title = Model.Text.Get("window", "delete_database_title");
-                    dialog.Content = Model.Text.Get("window", "delete_database_body");
-                    dialog.PrimaryButtonText = Model.Text.Get("file_action", "delete");
-                    dialog.PrimaryToolTip = Model.Text.Get("window", "delete_database_tip");
-                }
-            );
-            if (choice != ContentDialogResult.Primary)
-                return false;
-            await Model.Features.Delete();
-            return true;
-        });
+        var dialog = new Dialog { Glyph = Segoe.Database, PrimaryGlyph = Segoe.Trash2 };
+        await Confirm(
+            dialog,
+            () =>
+            {
+                dialog.Title = Model.Text.Get("window", "delete_database_title");
+                dialog.Content = Model.Text.Get("window", "delete_database_body");
+                dialog.PrimaryButtonText = Model.Text.Get("file_action", "delete");
+                dialog.PrimaryToolTip = Model.Text.Get("window", "delete_database_tip");
+            },
+            Model.Features.Delete
+        );
     }
 
     // One question for all the disk work that Exit or a crash left unfinished.

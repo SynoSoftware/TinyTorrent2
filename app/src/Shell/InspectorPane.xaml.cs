@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Windows.Input;
+using DispatcherQueuePriority = Microsoft.UI.Dispatching.DispatcherQueuePriority;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
@@ -18,10 +19,9 @@ public sealed partial class InspectorPane : UserControl
     private readonly Motion _arrival = new();
     private InspectorSection _section;
     private bool _refreshing;
-    private bool _rowsQueued;
-    private bool _factsQueued;
+    private readonly TurnCallback _trackerRows;
+    private readonly TurnCallback _facts;
     private bool _tracking;
-    private bool _composing;
     private (Torrent Target, int Index)? _fileReveal;
     public Inspector Model { get; }
     internal event EventHandler? LayoutChanged;
@@ -74,7 +74,7 @@ public sealed partial class InspectorPane : UserControl
             if (TrackerTable is not null && value.Trackers is { } trackers)
                 TrackerTable.Layout = trackers;
             ArrangePeers(fit: true);
-            RefreshMap();
+            _mapRefresh.Request();
             RefreshPeerActions();
 
             static double Fraction(double value, double fallback) =>
@@ -84,6 +84,11 @@ public sealed partial class InspectorPane : UserControl
 
     public InspectorPane(Inspector model, ICommand downloadSubtitles)
     {
+        // Assigned first, because the rest of the constructor can request these.
+        _trackerRows = new TurnCallback(DispatcherQueue, DispatcherQueuePriority.Low, RefreshTrackerRows);
+        _facts = new TurnCallback(DispatcherQueue, DispatcherQueuePriority.Low, ShowFacts);
+        _mapRefresh = new TurnCallback(DispatcherQueue, DispatcherQueuePriority.Low, RefreshMap);
+        _peerRows = new TurnCallback(DispatcherQueue, DispatcherQueuePriority.Low, DeliverPeerRows);
         Model = model;
         _downloadSubtitles = downloadSubtitles;
         InitializeComponent();
@@ -112,12 +117,14 @@ public sealed partial class InspectorPane : UserControl
             Model.PeersWithdrawn += OnPeersWithdrawn;
             Model.RecoveryRequested += OnRecovery;
             Model.LibraryChanged += OnLibrary;
+            _display.TextScaleFactorChanged += OnTextScale;
             ShowLibrary(Model.Library);
             RefreshText();
             Refresh();
         };
         Unloaded += (_, _) =>
         {
+            _display.TextScaleFactorChanged -= OnTextScale;
             ShowActions(null);
             _motion.Stop();
             _arrival.Stop();
@@ -210,13 +217,12 @@ public sealed partial class InspectorPane : UserControl
                 SetupPeers();
                 break;
             case InspectorSection.Trackers:
-                TrackerInput.TextCompositionStarted += (_, _) => _composing = true;
-                TrackerInput.TextCompositionEnded += (_, _) => _composing = false;
+                TextEditor.FollowComposition(TrackerInput);
                 TrackerInput.KeyDown += (_, args) =>
                 {
                     if (
                         args.Key != Windows.System.VirtualKey.Escape
-                        || _composing
+                        || TextEditor.IsComposing(TrackerInput)
                         || !Model.CancelTrackers.CanExecute(null)
                     )
                         return;
@@ -231,7 +237,7 @@ public sealed partial class InspectorPane : UserControl
                     DispatcherQueue.TryEnqueue(() => EditTrackers.Focus(FocusState.Programmatic));
                 SaveTrackers.Click += async (_, _) =>
                 {
-                    if (_composing || !Model.CanSaveTrackers)
+                    if (TextEditor.IsComposing(TrackerInput) || !Model.CanSaveTrackers)
                         return;
                     await Model.CommitTrackers();
                     // Someone who moved on during the request keeps their place.
@@ -274,15 +280,7 @@ public sealed partial class InspectorPane : UserControl
     {
         var element =
             Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(XamlRoot) as DependencyObject;
-        if (element is null)
-            return true;
-        while (element is not null)
-        {
-            if (ReferenceEquals(element, TrackerEditor))
-                return true;
-            element = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(element);
-        }
-        return false;
+        return element is null || VisualTree.Contains(TrackerEditor, element);
     }
 
     private void OnRecovery(object? sender, EventArgs args) =>
@@ -302,33 +300,36 @@ public sealed partial class InspectorPane : UserControl
         // The map takes the peers' changes from the inspector once per round.
         if (section == InspectorSection.Peers)
         {
-            QueuePeerRows();
+            _peerRows.Request();
             return;
         }
-        if (_rowsQueued)
-            return;
-        _rowsQueued = DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        _trackerRows.Request();
+    }
+
+    private void RefreshTrackerRows()
+    {
+        if (!IsLoaded || _library is not null || !Model.IsVisible || Model.IsReplacing)
         {
-            _rowsQueued = false;
-            if (!IsLoaded || _library is not null || !Model.IsVisible || Model.IsReplacing)
-                return;
-            if (Model.Section == InspectorSection.Trackers && TrackerTable?.Sort is not null)
-                TrackerTable.RefreshView();
-        });
+            return;
+        }
+        if (Model.Section == InspectorSection.Trackers && TrackerTable?.Sort is not null)
+        {
+            TrackerTable.RefreshView();
+        }
     }
 
     private void OnModel(object? sender, PropertyChangedEventArgs args)
     {
         if (args.PropertyName == nameof(Inspector.ShownPeers))
         {
-            QueuePeerRows();
+            _peerRows.Request();
             return;
         }
         if (args.PropertyName == nameof(Inspector.PeerSummary))
             return;
         if (Inspector.IsFact(args.PropertyName))
         {
-            QueueFacts();
+            _facts.Request();
             return;
         }
         if (args.PropertyName == nameof(Inspector.IsActive) && Model.IsActive)
@@ -443,18 +444,14 @@ public sealed partial class InspectorPane : UserControl
         if (Model.Section == InspectorSection.Peers || sectionChanged)
         {
             ArrangePeers();
-            RefreshMap();
+            _mapRefresh.Request();
         }
         var loading = Model.IsAvailable && Model.IsLoading;
         if (Peers is not null && Model.Section == InspectorSection.Peers)
         {
             if (!Model.FindsShownPeers)
                 Peers.ItemsSource = Model.ShownPeers;
-            Peers.Placeholder =
-                Model.Peers is null && loading
-                    ? Syno.TableView.Placeholder.Loading
-                    : Syno.TableView.Placeholder.Empty;
-            NoPeers.Visibility = Model.Peers is null ? Visibility.Collapsed : Visibility.Visible;
+            ShowArrival(Peers, NoPeers, Model.Peers is not null);
         }
         if (TrackerTable is not null && Model.Section == InspectorSection.Trackers)
         {
@@ -463,13 +460,7 @@ public sealed partial class InspectorPane : UserControl
             if (TrackerTable.ItemsSource is IReadOnlyList<Tracker> shown && Model.Trackers is { } next)
                 TrackerTable.Release([.. shown.Except(next), .. next.Except(shown)]);
             TrackerTable.ItemsSource = Model.Trackers;
-            TrackerTable.Placeholder =
-                Model.Trackers is null && loading
-                    ? Syno.TableView.Placeholder.Loading
-                    : Syno.TableView.Placeholder.Empty;
-            NoTrackers.Visibility = Model.Trackers is null
-                ? Visibility.Collapsed
-                : Visibility.Visible;
+            ShowArrival(TrackerTable, NoTrackers, Model.Trackers is not null);
         }
         if (_files is not null && Model.Section == InspectorSection.Files)
             _files.Model = Model.Files;
@@ -479,31 +470,34 @@ public sealed partial class InspectorPane : UserControl
             Map?.Show(Model.Pieces, Model.Text, Model.Cancellation);
         ShowGeneral();
         RevealFile();
+
+        // A table without rows shows Loading while its read runs; its empty
+        // text shows only once its rows have arrived.
+        void ShowArrival(Syno.TableView.Table table, UIElement empty, bool arrived)
+        {
+            table.Placeholder =
+                !arrived && loading
+                    ? Syno.TableView.Placeholder.Loading
+                    : Syno.TableView.Placeholder.Empty;
+            empty.Visibility = arrived ? Visibility.Visible : Visibility.Collapsed;
+        }
     }
 
     // A poll that changed only the target's facts updates what the bindings do
     // not reach, without rebuilding the pane. The facts arrive as one notice
     // each, so they are shown once, after the input already queued.
-    private void QueueFacts()
+    private void ShowFacts()
     {
-        if (_factsQueued)
+        if (!IsLoaded || _library is not null || !Model.IsActive || Model.IsReplacing)
         {
             return;
         }
-        _factsQueued = DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        EmptyText.Text = Model.EmptyText;
+        ShowGeneral();
+        if (ShowsMap)
         {
-            _factsQueued = false;
-            if (!IsLoaded || _library is not null || !Model.IsActive || Model.IsReplacing)
-            {
-                return;
-            }
-            EmptyText.Text = Model.EmptyText;
-            ShowGeneral();
-            if (ShowsMap)
-            {
-                ShowTransfer();
-            }
-        });
+            ShowTransfer();
+        }
     }
 
     private void ShowGeneral()
@@ -586,7 +580,7 @@ public sealed partial class InspectorPane : UserControl
         }
         Speed?.RefreshText(text);
         RefreshPeerActions();
-        RefreshMap();
+        _mapRefresh.Request();
         _files?.RefreshText();
         Peers?.RefreshView();
         TrackerTable?.RefreshView();

@@ -66,14 +66,7 @@ internal sealed partial class Details : UserControl, IDisposable
                     var show = Action(
                         Segoe.LocateFixed,
                         text.Get("library", "show_torrents"),
-                        new RelayCommand(
-                            () =>
-                            {
-                                library.ShowTorrent(origin.OriginId);
-                                return Task.CompletedTask;
-                            },
-                            () => library.CanShowTorrent
-                        )
+                        OriginActions.Command(library, origin)
                     );
                     origins.Children.Add(
                         new Field
@@ -520,8 +513,7 @@ internal sealed partial class Details : UserControl, IDisposable
                     FontSize = (double)Application.Current.Resources["TinyTorrentButtonIconSize"],
                 },
             };
-            AutomationProperties.SetName(button, label);
-            ToolTipService.SetToolTip(button, label);
+            IconButton.Name(button, label);
             _actions.Add(button);
             return button;
         }
@@ -568,7 +560,7 @@ internal sealed partial class Details : UserControl, IDisposable
         if (_sections is null || _cast is null)
             return base.MeasureOverride(availableSize);
 
-        var hasWidth = availableSize.Width >= SectionMinimum;
+        var hasWidth = FieldColumns.Fits(availableSize.Width, SectionMinimum);
         var scale = _uiSettings.TextScaleFactor;
         Size size;
         if (hasWidth && (_columnWidth != availableSize.Width || _columnScale != scale))

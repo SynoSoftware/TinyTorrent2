@@ -9,7 +9,6 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Media;
 using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Shared;
 using Windows.Foundation;
@@ -52,8 +51,10 @@ public sealed partial class Speedometer : UserControl
         _animation.Interval = TimeSpan.FromMilliseconds(33);
         _animation.Tick += (_, _) =>
         {
-            if (!_settings.AnimationsEnabled || _accessibility.HighContrast)
+            if (!Animates)
+            {
                 _from = _target;
+            }
             _canvas?.Invalidate();
             if (Progress >= 1 || _from == _target)
                 _animation.Stop();
@@ -118,10 +119,14 @@ public sealed partial class Speedometer : UserControl
             _from = Displayed;
             _target = target;
             _started = Stopwatch.GetTimestamp();
-            if (_settings.AnimationsEnabled && !_accessibility.HighContrast && IsLoaded)
+            if (Animates && IsLoaded)
+            {
                 _animation.Start();
+            }
             else
+            {
                 _from = _target;
+            }
         }
         var description = text.Format("connection_setup", "speed_reading", label,
             _speed is { } rate ? rate.ToString("0.##", CultureInfo.CurrentCulture) : Strings.NoValue);
@@ -129,6 +134,8 @@ public sealed partial class Speedometer : UserControl
         ToolTipService.SetToolTip(this, description);
         _canvas?.Invalidate();
     }
+
+    private bool Animates => Motion.IsEnabled && !_accessibility.HighContrast;
 
     private double Progress => Math.Clamp(Stopwatch.GetElapsedTime(_started).TotalMilliseconds / 550, 0, 1);
     private double Displayed => _from + (_target - _from) * (1 - Math.Pow(1 - Progress, 3));
@@ -147,8 +154,8 @@ public sealed partial class Speedometer : UserControl
         var scale = new Vector2((float)sender.ActualWidth / 280, (float)sender.ActualHeight / 160);
         drawing.Transform = Matrix3x2.CreateScale(scale);
         var length = _rail.ComputePathLength();
-        var accent = ((SolidColorBrush)Accent.Background).Color;
-        var track = ((SolidColorBrush)Track.Background).Color;
+        var accent = Colour.Read(Accent.Background);
+        var track = Colour.Read(Track.Background);
         for (var index = 0; index < 30; index++)
         {
             var start = _rail.ComputePointOnPath(length * index / 30);
@@ -157,9 +164,7 @@ public sealed partial class Speedometer : UserControl
             var lit = Math.Clamp(Displayed * 30 - index, 0, 1);
             if (lit > 0)
             {
-                var color = accent;
-                color.A = (byte)(color.A * lit);
-                drawing.DrawLine(start, end, color, 4);
+                drawing.DrawLine(start, end, Colour.Alpha(accent, lit), 4);
             }
         }
         using var format = new CanvasTextFormat
@@ -168,7 +173,7 @@ public sealed partial class Speedometer : UserControl
             FontSize = 14,
             HorizontalAlignment = CanvasHorizontalAlignment.Center,
         };
-        var muted = ((SolidColorBrush)Muted.Foreground).Color;
+        var muted = Colour.Read(Muted.Foreground);
         drawing.DrawText("0", new Rect(-10, 145, 60, 20), muted, format);
         if (_maximum is { } maximum)
         {
@@ -189,14 +194,16 @@ public sealed partial class Speedometer : UserControl
         drawing.Transform = Matrix3x2.CreateScale((float)digitScale)
             * Matrix3x2.CreateTranslation((float)left, (float)top);
         using var stroke = new CanvasStrokeStyle { StartCap = CanvasCapStyle.Square, EndCap = CanvasCapStyle.Square };
-        var ink = ((SolidColorBrush)Ink.Foreground).Color;
+        var ink = Colour.Read(Ink.Foreground);
         float offset = 0;
         for (var index = 0; index < number.Length; index++)
         {
             var character = number[index];
             var color = ink;
             if (index == number.Length - 1 && _speed is not null)
-                color.A = (byte)(color.A * 0.7);
+            {
+                color = Colour.Alpha(ink, 0.7);
+            }
             if (char.IsDigit(character) || character == '-')
             {
                 var segments = character == '-' ? "6" : Digits[(int)char.GetNumericValue(character)];

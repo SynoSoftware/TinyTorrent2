@@ -395,14 +395,10 @@ public sealed partial class MainViewModel
             yield return SettingSuggestion(new(category), Text.Get(category));
         foreach (var setting in Settings.All)
         {
-            if (
-                setting == Settings.CapacityDownload
-                || setting == Settings.CapacityUpload
-                || setting == Settings.DeleteDownloaded
-                || setting == Settings.DeleteTorrentFile
-            )
-                continue;
-            yield return SettingSuggestion(new(setting.Category, setting.Name), setting.Label);
+            if (setting.HasRow)
+            {
+                yield return SettingSuggestion(new(setting.Category, setting.Name), setting.Label);
+            }
         }
         yield return SettingSuggestion(
             new(SettingsCategory.Limits, "connection_setup"),

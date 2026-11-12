@@ -17,114 +17,106 @@ public sealed partial class MainWindow
     {
         var installed = dataset.Installed;
         var current = dataset.IsCurrent;
-        await Interact(async interaction =>
+        var dialog = new Dialog
         {
-            var dialog = new Dialog
+            Glyph = Segoe.Database,
+            PrimaryGlyph = Segoe.Download,
+            IsPrimaryButtonEnabled = dataset.CanDownload,
+        };
+        void Follow(object? sender, PropertyChangedEventArgs args)
+        {
+            if (args.PropertyName is nameof(IDataset.CanDownload) or "")
             {
-                Glyph = Segoe.Database,
-                PrimaryGlyph = Segoe.Download,
-                IsPrimaryButtonEnabled = dataset.CanDownload,
-            };
-            void Follow(object? sender, PropertyChangedEventArgs args)
-            {
-                if (args.PropertyName is nameof(IDataset.CanDownload) or "")
-                    dialog.IsPrimaryButtonEnabled = dataset.CanDownload;
+                dialog.IsPrimaryButtonEnabled = dataset.CanDownload;
             }
-            dataset.PropertyChanged += Follow;
-            dialog.PrimaryButtonClick += (sender, args) =>
+        }
+        dataset.PropertyChanged += Follow;
+        dialog.PrimaryButtonClick += (sender, args) =>
+        {
+            args.Cancel = !dataset.CanDownload;
+            if (!args.Cancel)
             {
-                args.Cancel = !dataset.CanDownload;
-                if (!args.Cancel)
-                    _ = start();
-            };
-            try
-            {
-                var choice = await ShowDialog(
-                    interaction,
-                    dialog,
-                    () =>
+                _ = start();
+            }
+        };
+        try
+        {
+            await Confirm(
+                dialog,
+                () =>
+                {
+                    var section = dataset.Section;
+                    if (installed is null)
                     {
-                        var section = dataset.Section;
-                        if (installed is null)
-                        {
-                            dialog.Title = Model.Text.Get(section, "download_title");
-                            dialog.Content = DataConfirmation(
-                                [
-                                    Model.Text.Get(section, "download_body"),
-                                    Model.Text.Get(section, "download_local"),
-                                ],
-                                [Model.Text.Get(section, "preparation_time")]
-                            );
-                            dialog.PrimaryButtonText = Model.Text.Get(section, "download");
-                            dialog.PrimaryToolTip = Model.Text.Get(section, "download_tip");
-                            return;
-                        }
-                        // Current data warns, as the dataset's IsCurrent explains;
-                        // data less than a week old notes that little has changed.
-                        var days = DatasetRow.Age(installed);
-                        dialog.Title = Model.Text.Get(section, "update_title");
-                        var body =
-                            current ? Model.Text.Get(section, "update_current")
-                            : days < 7 ? Model.Text.FormatCount(section, "update_recent", days)
-                            : Model.Text.Format(section, "update_age", days);
+                        dialog.Title = Model.Text.Get(section, "download_title");
                         dialog.Content = DataConfirmation(
-                            [body, Model.Text.Get(section, "update_frequency")],
+                            [
+                                Model.Text.Get(section, "download_body"),
+                                Model.Text.Get(section, "download_local"),
+                            ],
                             [Model.Text.Get(section, "preparation_time")]
                         );
-                        dialog.PrimaryButtonText = Model.Text.Get(section, "update");
-                        dialog.PrimaryToolTip = Model.Text.Get(section, "update_tip");
+                        dialog.PrimaryButtonText = Model.Text.Get(section, "download");
+                        dialog.PrimaryToolTip = Model.Text.Get(section, "download_tip");
+                        return;
                     }
-                );
-                return choice == ContentDialogResult.Primary;
-            }
-            finally
-            {
-                dataset.PropertyChanged -= Follow;
-            }
-        });
+                    // Current data warns, as the dataset's IsCurrent explains;
+                    // data less than a week old notes that little has changed.
+                    var days = DatasetRow.Age(installed);
+                    dialog.Title = Model.Text.Get(section, "update_title");
+                    var body =
+                        current ? Model.Text.Get(section, "update_current")
+                        : days < 7 ? Model.Text.FormatCount(section, "update_recent", days)
+                        : Model.Text.Format(section, "update_age", days);
+                    dialog.Content = DataConfirmation(
+                        [body, Model.Text.Get(section, "update_frequency")],
+                        [Model.Text.Get(section, "preparation_time")]
+                    );
+                    dialog.PrimaryButtonText = Model.Text.Get(section, "update");
+                    dialog.PrimaryToolTip = Model.Text.Get(section, "update_tip");
+                }
+            );
+        }
+        finally
+        {
+            dataset.PropertyChanged -= Follow;
+        }
     }
 
     private async Task ConfirmDataDeletion(IDataset dataset)
     {
         if (dataset.Installed is not { } data)
             return;
-        await Interact(async interaction =>
+        var dialog = new Dialog
         {
-            var dialog = new Dialog
+            Glyph = Segoe.Database,
+            PrimaryGlyph = Segoe.Trash2,
+        };
+        await Confirm(
+            dialog,
+            () =>
             {
-                Glyph = Segoe.Database,
-                PrimaryGlyph = Segoe.Trash2,
-            };
-            var choice = await ShowDialog(
-                interaction,
-                dialog,
-                () =>
-                {
-                    var section = dataset.Section;
-                    dialog.Title = Model.Text.Get(section, "delete_title");
-                    dialog.Content = DataConfirmation(
-                        [
-                            Model.Text.Format(
-                                section,
-                                "delete_body",
-                                Model.Text.Bytes(data.Length)
-                            ),
-                            Model.Text.Get(section, "delete_kept"),
-                        ],
-                        [
-                            Model.Text.Get(section, "restore_time"),
-                            Model.Text.Get(section, "preparation_time"),
-                        ]
-                    );
-                    dialog.PrimaryButtonText = Model.Text.Get("file_action", "delete");
-                    dialog.PrimaryToolTip = Model.Text.Get(section, "delete_tip");
-                }
-            );
-            if (choice != ContentDialogResult.Primary)
-                return false;
-            await dataset.Delete();
-            return true;
-        });
+                var section = dataset.Section;
+                dialog.Title = Model.Text.Get(section, "delete_title");
+                dialog.Content = DataConfirmation(
+                    [
+                        Model.Text.Format(
+                            section,
+                            "delete_body",
+                            Model.Text.Bytes(data.Length)
+                        ),
+                        Model.Text.Get(section, "delete_kept"),
+                    ],
+                    [
+                        Model.Text.Get(section, "restore_time"),
+                        Model.Text.Get(section, "preparation_time"),
+                    ]
+                );
+                dialog.PrimaryButtonText = Model.Text.Get("file_action", "delete");
+                dialog.PrimaryToolTip = Model.Text.Get(section, "delete_tip");
+            },
+            dataset.Delete
+        );
     }
 
     private StackPanel DataConfirmation(IEnumerable<string> facts, IEnumerable<string> caution)

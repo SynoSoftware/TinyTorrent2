@@ -18,7 +18,7 @@ public sealed partial class MainWindow
             Environment.GetEnvironmentVariable("TINYTORRENT_CAPTURE_SEARCH_BASELINE") == "1";
         Model.SelectLanguage("en");
         await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == "en");
-        await Model.Settings.SelectTheme("light");
+        await Model.Settings.Theme.Select("light");
         await CaptureReady(Model, () => Model.CanClose && Model.Theme == "light");
         var scale = Root.XamlRoot.RasterizationScale;
         var minimum =
@@ -181,9 +181,7 @@ public sealed partial class MainWindow
                 .OfType<ComboBox>()
                 .SingleOrDefault(control => control.Name == "LimitsChoice");
             var focus = FocusManager.GetFocusedElement(Root.XamlRoot) as DependencyObject;
-            while (focus is not null && !ReferenceEquals(focus, editor))
-                focus = VisualTreeHelper.GetParent(focus);
-            return (shown, editor is not null && focus is not null);
+            return (shown, editor is not null && Controls.VisualTree.Contains(editor, focus));
         }
         var limits = Model.Text.Get("commands", "limits");
         list = await Open(limits, "search-limits-before");
@@ -267,9 +265,9 @@ public sealed partial class MainWindow
                 .SingleOrDefault(row => ReferenceEquals(row.Setting, port))
                 ?.Content as TextBox;
         var focus = FocusManager.GetFocusedElement(Root.XamlRoot) as DependencyObject;
-        while (focus is not null && !ReferenceEquals(focus, editor))
-            focus = VisualTreeHelper.GetParent(focus);
-        var focused = editor is not null && focus is not null && Model.Page == WindowPage.Settings;
+        var focused = editor is not null
+            && Controls.VisualTree.Contains(editor, focus)
+            && Model.Page == WindowPage.Settings;
         var retained = port.Input == input && !port.HasDraft && !port.IsPending;
         outcomes.Add(
             new
@@ -293,9 +291,7 @@ public sealed partial class MainWindow
             Search.IsSuggestionListOpen = false;
             await CaptureLayout();
             focus = FocusManager.GetFocusedElement(Root.XamlRoot) as DependencyObject;
-            while (focus is not null && !ReferenceEquals(focus, Search))
-                focus = VisualTreeHelper.GetParent(focus);
-            if (focus is null || Search.IsSuggestionListOpen)
+            if (!Controls.VisualTree.Contains(Search, focus) || Search.IsSuggestionListOpen)
                 throw new InvalidOperationException(
                     "The reopen check requires focused Search with its results closed."
                 );

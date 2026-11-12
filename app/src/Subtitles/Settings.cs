@@ -395,8 +395,7 @@ internal sealed class Settings : UserControl
         AutomationProperties.SetHelpText(_extras, T("extras_hint"));
         AutomationProperties.SetName(_supplier, T("supplier"));
         ToolTipService.SetToolTip(_supplier, T("supplier_hint"));
-        AutomationProperties.SetName(_information, T("supplier_information"));
-        ToolTipService.SetToolTip(_information, T("supplier_information"));
+        IconButton.Name(_information, T("supplier_information"));
         _language.Header = T("language_hint");
         _language.PlaceholderText = T("language_search");
         Refresh();

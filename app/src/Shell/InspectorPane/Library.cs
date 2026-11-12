@@ -203,11 +203,9 @@ public sealed partial class InspectorPane
         AutomationProperties.SetName(_libraryOpen, text.Get("commands", "open"));
         _libraryOpen.Command = LibraryCommand(library.Open, row);
         RefreshLibraryOpenTip();
-        AutomationProperties.SetName(_libraryTorrents, text.Get("library", "show_torrents"));
-        ToolTipService.SetToolTip(_libraryTorrents, text.Get("library", "show_torrents"));
+        IconButton.Name(_libraryTorrents, text.Get("library", "show_torrents"));
         RefreshLibraryOrigins();
-        AutomationProperties.SetName(_libraryMore, text.Get("library", "more"));
-        ToolTipService.SetToolTip(_libraryMore, text.Get("library", "more"));
+        IconButton.Name(_libraryMore, text.Get("library", "more"));
         _libraryMore.Flyout = MenuItems.Flyout(() => LibraryMenu(row), () => Model.Text);
         _libraryMore.IsEnabled = library.IsAvailable;
     }
@@ -230,23 +228,7 @@ public sealed partial class InspectorPane
         );
         if (ActionsOverflow)
             menu.Add(OriginActions.Create(library));
-        if (library.SupportsMetadata)
-            menu.AddRange([
-                new MenuSeparator(),
-                MetadataActions.Create(library),
-                new MenuCommand(
-                    text.Get("library", "refresh_metadata"),
-                    Segoe.RefreshCw,
-                    library.RefreshMetadata
-                ),
-                new MenuCommand(text.Get("subtitles", "choose"), Segoe.Download, _downloadSubtitles),
-                new MenuSeparator(),
-                new MenuCommand(
-                    text.Get("library", "erase_metadata"),
-                    Segoe.Eraser,
-                    library.EraseMetadata
-                ),
-            ]);
+        menu.AddRange(MetadataActions.Menu(library, _downloadSubtitles));
         return menu.Select(Guard).ToList();
 
         MenuEntry Guard(MenuEntry entry) => entry switch

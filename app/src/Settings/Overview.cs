@@ -6,6 +6,12 @@ using ElementTheme = Microsoft.UI.Xaml.ElementTheme;
 
 namespace Syno.TinyTorrent.Settings;
 
+/// <summary>
+/// The Settings header's facts. While Settings shows, it raises
+/// <see cref="PropertyChanged"/> whenever a value that the header facts or
+/// Home's links read changes, so the page refreshes its links from this one
+/// list of changes.
+/// </summary>
 public sealed class Overview : INotifyPropertyChanged
 {
     private readonly Editor _settings;
@@ -21,6 +27,8 @@ public sealed class Overview : INotifyPropertyChanged
             if (args.PropertyName is nameof(MainViewModel.CurrentStatus)
                 or nameof(MainViewModel.Page)
                 or nameof(MainViewModel.Subtitles)
+                or nameof(MainViewModel.FreeSpaceStatus)
+                or nameof(MainViewModel.ShowsFreeSpace)
                 or nameof(MainViewModel.SessionTotals)
                 or nameof(MainViewModel.LifetimeTotals)
                 or nameof(MainViewModel.Torrents)
@@ -153,7 +161,7 @@ public sealed class Overview : INotifyPropertyChanged
 
     // A change rereads every value, so it waits until Settings shows; showing
     // Settings changes the page and so refreshes.
-    internal void Refresh()
+    private void Refresh()
     {
         if (_main.Page == WindowPage.Settings)
             PropertyChanged?.Invoke(this, new(string.Empty));

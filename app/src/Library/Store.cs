@@ -235,26 +235,8 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
                     cancellation.ThrowIfCancellationRequested();
                     using var command = connection.CreateCommand();
                     var predicate = Match(command, query, section);
-                    if (
-                        section is "modified" or "size" or "resolution" or "subtitles" or "metadata"
-                    )
+                    if (Buckets.TryGetValue(section, out var values))
                     {
-                        var values = section switch
-                        {
-                            "modified" => Dates,
-                            "size" => Sizes,
-                            "resolution" => new[]
-                            {
-                                "uhd",
-                                "qhd",
-                                "fhd",
-                                "hd",
-                                "sd",
-                                "unknown_resolution",
-                            },
-                            "metadata" => new[] { "identified", "unidentified" },
-                            _ => new[] { "with_subtitles", "without_subtitles" },
-                        };
                         command.CommandText =
                             "SELECT "
                             + string.Join(
@@ -699,7 +681,7 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
                 );
                 command.Parameters.AddWithValue(parameter, value);
             }
-            else if (section is "size" or "modified" or "resolution" or "subtitles" or "metadata")
+            else if (Buckets.ContainsKey(section))
                 sql.Append(" AND " + Filter(section, value));
             else if (section is "type" or "kind" or "year" or "genres" or "artist" or "album")
             {
@@ -739,27 +721,27 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
         return string.Join(" AND ", predicates);
     }
 
-    private static readonly string[] Dates =
-    [
-        "today",
-        "yesterday",
-        "week",
-        "last_week",
-        "month",
-        "last_month",
-        "year",
-        "older",
-    ];
-    private static readonly string[] Sizes =
-    [
-        "empty",
-        "tiny",
-        "small",
-        "medium",
-        "large",
-        "huge",
-        "gigantic",
-    ];
+    // The filter sections whose values are fixed groups of files, each with its
+    // values in the order the filter lists them. Filter gives each value's condition.
+    internal static readonly IReadOnlyDictionary<string, string[]> Buckets =
+        new Dictionary<string, string[]>
+        {
+            ["modified"] =
+            [
+                "today",
+                "yesterday",
+                "week",
+                "last_week",
+                "month",
+                "last_month",
+                "year",
+                "older",
+            ],
+            ["size"] = ["empty", "tiny", "small", "medium", "large", "huge", "gigantic"],
+            ["resolution"] = ["uhd", "qhd", "fhd", "hd", "sd", "unknown_resolution"],
+            ["subtitles"] = ["with_subtitles", "without_subtitles"],
+            ["metadata"] = ["identified", "unidentified"],
+        };
 
     private static string Filter(string section, string value)
     {
@@ -777,19 +759,18 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
                 "without_subtitles" => "r.subtitles=''",
                 _ => "0=1",
             };
+        // The value is written into the SQL, so only a listed one may reach it.
         if (section == "resolution")
-            return value switch
-            {
-                "uhd" or "qhd" or "fhd" or "hd" or "sd" or "unknown_resolution" => $"""
+            return Buckets[section].Contains(value)
+                ? $"""
                     (CASE WHEN r.width IS NULL OR r.height IS NULL OR r.width<=0 OR r.height<=0 THEN 'unknown_resolution'
                         WHEN MAX(r.width,r.height)>=3840 THEN 'uhd'
                         WHEN MAX(r.width,r.height)>=2560 THEN 'qhd'
                         WHEN MAX(r.width,r.height)>=1920 THEN 'fhd'
                         WHEN MAX(r.width,r.height)>=1280 THEN 'hd'
                         ELSE 'sd' END)='{value}'
-                    """,
-                _ => "0=1",
-            };
+                    """
+                : "0=1";
         if (section == "size")
             return value switch
             {

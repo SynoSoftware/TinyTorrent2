@@ -314,13 +314,11 @@ internal sealed partial class Acquisition
                             folders[origin] = parent;
                         }
                     command.CommandText = $"""
-                        SELECT s.origin,s.file_index,s.path,l.path,s.size,s.complete,f.readable,s.entry_id,s.wanted,
-                            c.save_path,c.stamp,EXISTS(SELECT 1 FROM subtitle_scans a WHERE a.origin=s.origin
-                                AND a.file_index=s.file_index AND a.path=l.path COLLATE PATH AND a.stamp=c.stamp),
-                            s.origin IN ({Finished})
-                        FROM collected_files s JOIN locations l USING(entry_id)
-                        JOIN current_files f USING(entry_id) JOIN file_reads c USING(origin)
-                        WHERE s.kind=$kind AND ($entries IS NULL
+                        SELECT {Video.Columns},
+                            r.save_path,r.stamp,EXISTS(SELECT 1 FROM subtitle_scans a WHERE a.origin=f.origin
+                                AND a.file_index=f.file_index AND a.path=l.path COLLATE PATH AND a.stamp=r.stamp)
+                        FROM {Video.Tables} JOIN file_reads r USING(origin)
+                        WHERE f.kind=$kind AND ($entries IS NULL
                             OR f.entry_id IN (SELECT value FROM json_each($entries)));
                         """;
                     command.Parameters.AddWithValue("$kind", (int)FileKind.Video);
@@ -328,22 +326,9 @@ internal sealed partial class Acquisition
                     using (var reader = command.ExecuteReader())
                         while (reader.Read())
                         {
-                            var video = new Video(
-                                reader.GetString(0),
-                                reader.GetInt32(1),
-                                reader.GetString(3)
-                            )
-                            {
-                                Path = reader.GetString(2),
-                                Size = reader.GetInt64(4),
-                                Complete = reader.GetBoolean(5),
-                                Readable = reader.GetBoolean(6),
-                                EntryId = reader.GetInt64(7),
-                                Wanted = reader.GetBoolean(8),
-                                JustFinished = reader.GetBoolean(12),
-                            };
+                            var video = Video.Read(reader);
                             var folder = folders[video.Origin];
-                            var savePath = reader.GetString(9);
+                            var savePath = reader.GetString(10);
                             var recursive =
                                 folder is not null
                                 && savePath.Length > 0
@@ -353,8 +338,8 @@ internal sealed partial class Acquisition
                                     video,
                                     recursive ? folder! : Path.GetDirectoryName(video.FinalPath)!,
                                     recursive,
-                                    reader.GetString(10),
-                                    reader.GetBoolean(11)
+                                    reader.GetString(11),
+                                    reader.GetBoolean(12)
                                 )
                             );
                         }
@@ -537,15 +522,7 @@ internal sealed partial class Acquisition
                                         ("$path", record.Path),
                                         ("$language", record.Language)
                                     );
-                                    Execute(
-                                        connection,
-                                        "INSERT INTO subtitle_output_sources(path,language,origin,file_index,movie_path) VALUES($path,$language,$origin,$index,$movie) ON CONFLICT(path,language,origin,file_index) DO UPDATE SET movie_path=excluded.movie_path;",
-                                        ("$path", record.Path),
-                                        ("$language", record.Language),
-                                        ("$origin", video.Origin),
-                                        ("$index", video.Index),
-                                        ("$movie", video.FinalPath)
-                                    );
+                                    Associate(connection, record.Path, record.Language, video);
                                     found.Add(record.Path);
                                 }
                                 Execute(
