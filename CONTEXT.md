@@ -266,6 +266,9 @@ _Avoid_: source alone, which means a torrent file or magnet supplied for additio
 files on the fixed drives that gozler indexes, including changes to their
 locations.
 
+**Hidden folder**: a folder the person removed from disk discovery, so the
+files under it leave Library. A file that a torrent lists stays.
+
 **gozler**: the person's separate file-search program, with its Windows service
 `gozlerd` and its command `gozler.exe`. TinyTorrent runs `gozler.exe --json` for
 disk discovery and to locate moved torrent files. It never replaces an installed

@@ -94,7 +94,7 @@ internal sealed partial class Acquisition
                                 removed = true;
                             }
                             if (removed)
-                                Execute(connection, Database.Cleanup + Database.Invalidate);
+                                Execute(connection, Database.Cleanup);
                             return removed;
                         },
                         cancellation
@@ -133,8 +133,6 @@ internal sealed partial class Acquisition
                                     AssociateOutput(connection, target);
                                     updated = true;
                                 }
-                            if (updated)
-                                Execute(connection, Database.Invalidate);
                             return updated;
                         },
                         cancellation
@@ -173,7 +171,6 @@ internal sealed partial class Acquisition
                                     "DELETE FROM subtitle_outputs WHERE path=$path;",
                                     ("$path", group.Key)
                                 );
-                                Execute(connection, Database.Invalidate);
                                 return true;
                             },
                             cancellation
@@ -220,7 +217,7 @@ internal sealed partial class Acquisition
                             "DELETE FROM subtitle_outputs WHERE path=$path;",
                             ("$path", group.Key)
                         );
-                        Execute(connection, Database.Cleanup + Database.Invalidate);
+                        Execute(connection, Database.Cleanup);
                         return true;
                     },
                     CancellationToken.None

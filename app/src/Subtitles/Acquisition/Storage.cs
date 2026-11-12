@@ -565,7 +565,7 @@ internal sealed partial class Acquisition
                             Associate(connection, target.Path, target.Language, video);
                     else
                         AssociateOutput(connection, target);
-                    Execute(connection, Database.Cleanup + Database.Invalidate);
+                    Execute(connection, Database.Cleanup);
                     return true;
                 },
                 cancellation

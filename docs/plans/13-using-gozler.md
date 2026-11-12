@@ -1,7 +1,8 @@
 # Using gozler to find files for Library
 
-**Reviewed on 11 November 2026. Nothing is implemented yet.** The work can
-start in the order at the end. No decision is open. The
+**Reviewed on 11 November 2026. Steps 2 and 3 are built (12 November 2026);
+the [database contract](../contracts/database.md) now owns their rules.** The
+other steps can start in the order at the end. No decision is open. The
 [Library](../contracts/library.md),
 [database](../contracts/database.md) and [UI](../contracts/ui.md) contracts own
 current behavior; update them alongside implementation.
@@ -172,8 +173,7 @@ SQLite database on the same PC:
 | gozler | Indexes the drives, answers queries, names each file. It is not TinyTorrent code. |
 | Disk source (new, C#, beside `TorrentSource`) | Library's second data source. It runs `gozler.exe`, builds the query, compares the answer with the saved disk files, checks File presence, and hands the changes to `FileSources`. It runs in the window process, because all Library work lives there and the answer goes straight to SQLite. |
 | `FileSources` (existing) | Accepts each contribution's files into SQLite and owns File confirmation and reconciliation. It learns which source a contribution belongs to, so each source withdraws only its own contributions. |
-| `Database` (existing) | Runs the schema migration. The first one is built here. |
-| `Store` (existing) | Owns the search snapshot. A disk refresh updates the rows of the entries it changed. |
+| `Database` (existing) | Runs the schema migration, built as revision 10. Keeps the search snapshot current: each transaction copies only the entries it changed, so a disk refresh needs no snapshot code of its own. |
 | `library_settings` (existing) | Holds the option, beside Library's other options. |
 | Install action (new, C#) | The one download, check and run of gozler's setup, for the in-app prompt. TinyTorrent's own `Setup.iss` has no part in it. |
 | Existing Library, video lookup, file facts and subtitle owners | Unchanged. Each keeps its rule and sees a disk file through the same projection as a torrent file. |
@@ -625,7 +625,7 @@ option can be switched on.
 
 | Stage today | Its size | Change |
 | --- | --- | --- |
-| The first search after the window opens, and the first after any change to the catalogue, copies every file into the search snapshot (`app/src/Library/Store.cs:149-158`). | 7 ms for each 1,000 saved files: 134 ms at 20,000. | Build the snapshot in the background when the source becomes current, not inside the person's first search. A disk refresh updates the rows of the entries it changed and leaves the snapshot valid: 4 ms for 5 changed files at 20,000. |
+| Built in step 3. The first search after the window opens, and the first after any change to the catalogue, copied every file into the search snapshot. | 7 ms for each 1,000 saved files: 134 ms at 20,000. | The connection builds the snapshot when it opens, in the background, and every transaction copies only the entries it changed: about 0.05 ms for each changed entry at 20,000 files. |
 | One row object is built for every match of the shown configuration, on the thread that started the search (`app/src/Library/Browser.cs:921-948`). | Not measured. Videos, the default, holds a fraction of the files; Music and Files can hold all of them. | Measure at 1,000 and 2,000 disk files (step 7), and change what makes opening or typing wait. |
 | A displayed movie that is not checked yet makes the subtitle owner read every file of that movie's origin, and then every collected file (`app/src/Subtitles/Acquisition/Discovery.cs:97`, `:289-293`). | Not measured. For the disk contribution, the origin is every disk file. | Compute the common folder for torrents only, and read the displayed entries only. |
 | Every job waits for the one database lock (`app/src/Shared/Storage/Database.cs:83`). | A job sized by the catalogue makes a typed search wait that long. | No job of a refresh is sized by the catalogue: the compare and the presence checks run outside the database, and the first import is split. |
@@ -646,16 +646,15 @@ depend on each other. Step 4 needs only the option name that step 1 chooses.
    rules and build. Evidence: a file renamed on a volume keeps its ID in the
    answer, and an older `gozlerd` is refused by the new `gozler.exe` as the
    protocol rule says.
-2. **Database: the first migration.** The contract makes every schema change
-   after revision 9 a migration that keeps saved data, and the code has no
-   migration yet: `Database.Open` accepts only version 0 or 9
-   (`app/src/Shared/Storage/Database.cs:209-223`). Build it with this plan's
-   change: a contribution's source, a disk file's volume, file ID and modified
-   time, a location's absence, and the list of hidden folders. Evidence: a
-   revision 9 database opens with its saved matches.
-3. **Opening Library stays fast.** The snapshot changes in the table above.
-   Evidence: a count of work, not a time: the person's first search runs no
-   statement over every file, and a change to 5 entries writes 5 snapshot rows.
+2. **Built: the first migration.** Revision 10 adds a contribution's data
+   source, a disk file's volume, file ID and modified time, a location's
+   absence, the list of hidden folders and the option, as the
+   [database contract](../contracts/database.md) records. Evidence:
+   `app/tests/SourceChecks.ps1` opens a revision 9 database with its saved
+   match.
+3. **Built: opening Library stays fast.** The first row of the table above.
+   Evidence: `SourceChecks.ps1` counts the snapshot rows written: none by the
+   first search after opening, five for a change to five entries.
 4. **The runner.** Finding `gozler.exe`, the exit-code states, the 30-second
    deadline, exit 7's three tries, the query builder, and how many hidden
    folders one query holds. Evidence: a folder

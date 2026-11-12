@@ -163,7 +163,6 @@ internal sealed partial class Acquisition
                                             "DELETE FROM subtitle_outputs WHERE path=$path AND created=1;",
                                             ("$path", path)
                                         );
-                                    Execute(connection, Database.Invalidate);
                                     return true;
                                 },
                                 cancellation
@@ -501,7 +500,6 @@ internal sealed partial class Acquisition
                             if (recorded)
                             {
                                 Execute(connection, Database.Cleanup);
-                                Execute(connection, Database.Invalidate);
                             }
                             return recorded;
                         },

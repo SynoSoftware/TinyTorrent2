@@ -306,8 +306,9 @@ absent.
 
 Protection uses the existing Database, schema authority and transaction path,
 as the [database contract](database.md) records. `Database/Schema.cs` defines
-storage, `Database.Run` executes transactions, and `Database/Files.cs` owns
-shared membership reconciliation, cleanup and snapshot invalidation. Protection
+storage, `Database.Run` executes transactions and keeps the search snapshot
+current, and `Database/Files.cs` owns shared membership reconciliation and
+cleanup. Protection
 keeps only:
 
 - Current request suppression and its checked time; no append-only attempt log.

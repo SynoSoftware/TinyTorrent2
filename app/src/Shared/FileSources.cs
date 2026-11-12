@@ -163,11 +163,6 @@ internal sealed class FileSources(Database database)
                 current.ExecuteNonQuery();
                 current.CommandText = Database.Cleanup;
                 current.ExecuteNonQuery();
-                if (changed)
-                {
-                    current.CommandText = Database.Invalidate;
-                    current.ExecuteNonQuery();
-                }
                 return changed;
             },
             cancellation
@@ -197,13 +192,7 @@ internal sealed class FileSources(Database database)
                     && Unchanged(connection, contribution.Origin, files, cancellation)
                 )
                 {
-                    var updated = Confirm(connection, contribution);
-                    if (updated)
-                    {
-                        command.CommandText = Database.Invalidate;
-                        command.ExecuteNonQuery();
-                    }
-                    return updated;
+                    return Confirm(connection, contribution);
                 }
 
                 // Share saved choices and subtitle ownership before changed
@@ -287,8 +276,7 @@ internal sealed class FileSources(Database database)
                 changed |= Confirm(connection, contribution);
                 if (changed)
                 {
-                    command.CommandText =
-                        Database.Reconcile + Database.Cleanup + Database.Invalidate;
+                    command.CommandText = Database.Reconcile + Database.Cleanup;
                     command.ExecuteNonQuery();
                 }
                 return changed;

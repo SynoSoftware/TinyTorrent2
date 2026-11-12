@@ -30,14 +30,16 @@ internal sealed partial class Database : IAsyncDisposable
             return Convert.ToInt64(command.ExecuteScalar());
         });
 
-    // Returns each settings row to the defaults Schema gives a new database and
-    // forgets the person's own API keys; Library information stays.
+    // Returns each settings row to the defaults a new database gets and
+    // forgets the person's own API keys and hidden folders; Library
+    // information stays.
     internal Task ResetSettings() =>
         Run(connection =>
         {
             using var command = connection.CreateCommand();
             command.CommandText = """
                 DELETE FROM provider_keys;
+                DELETE FROM hidden_folders;
                 DELETE FROM request_settings;
                 INSERT INTO request_settings(singleton) VALUES(1);
                 DELETE FROM library_settings;
@@ -191,9 +193,6 @@ internal sealed partial class Database : IAsyncDisposable
                 {
                     command.CommandText = "PRAGMA user_version;";
                     var version = Convert.ToInt32(command.ExecuteScalar());
-                    _incompatible = version is not (0 or Version);
-                    if (_incompatible)
-                        throw new DatabaseVersionException();
                     if (version == 0)
                     {
                         command.CommandText =
@@ -201,10 +200,23 @@ internal sealed partial class Database : IAsyncDisposable
                         _incompatible = Convert.ToInt64(command.ExecuteScalar()) != 0;
                         if (_incompatible)
                             throw new DatabaseVersionException();
-                        command.CommandText = Schema + $"PRAGMA user_version={Version};";
+                        command.CommandText = Schema;
+                        command.ExecuteNonQuery();
+                        version = Baseline;
+                    }
+                    _incompatible = version < Baseline || version > Version;
+                    if (_incompatible)
+                        throw new DatabaseVersionException();
+                    // A current database stays unwritten, so a read-only file
+                    // still opens.
+                    if (version < Version)
+                    {
+                        command.CommandText =
+                            string.Concat(Migrations[(version - Baseline)..])
+                            + $"PRAGMA user_version={Version};";
                         command.ExecuteNonQuery();
                     }
-                    command.CommandText = Projection;
+                    command.CommandText = Projection + Triggers;
                     command.ExecuteNonQuery();
                     return true;
                 },
@@ -235,6 +247,7 @@ internal sealed partial class Database : IAsyncDisposable
         {
             var result = Execute(connection, action, cancellation);
             cancellation.ThrowIfCancellationRequested();
+            UpdateSnapshot(connection);
             command.CommandText = "COMMIT;";
             command.ExecuteNonQuery();
             return result;
@@ -328,6 +341,27 @@ internal sealed partial class Database : IAsyncDisposable
 
     internal static bool IsDamaged(SqliteException error) =>
         error.SqliteErrorCode is raw.SQLITE_CORRUPT or raw.SQLITE_NOTADB;
+
+    // Copies the entries that the transaction changed into the search
+    // snapshot, so the snapshot matches what the transaction commits. The
+    // entries go into the statement as a list of numbers: SQLite finds a
+    // listed entry by its key, but for IN (SELECT ... FROM library_changes)
+    // it reads every location.
+    private static void UpdateSnapshot(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT group_concat(DISTINCT entry_id) FROM library_changes;";
+        if (command.ExecuteScalar() is not string entries)
+        {
+            return;
+        }
+        command.CommandText = $"""
+            DELETE FROM library_changes;
+            DELETE FROM library_rows WHERE entry_id IN ({entries});
+            INSERT INTO library_rows SELECT * FROM library_entries WHERE entry_id IN ({entries});
+            """;
+        command.ExecuteNonQuery();
+    }
 
     public async ValueTask DisposeAsync()
     {

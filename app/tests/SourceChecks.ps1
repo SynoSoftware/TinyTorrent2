@@ -190,12 +190,63 @@ try {
     $store = New-Value 'Library.Store' @($database, $imdb)
     Invoke-Value $sources 'Reconcile' @((New-Values 'Shared.Contribution' @($second)), $cancel) | Out-Null
     Require ((Sql 'SELECT group_concat(origin) FROM new_origins;') -eq 'second') 'Reopening forgot a finished torrent whose completion search was not decided.'
+    # Records each search snapshot row written from here on.
+    Sql 'CREATE TEMP TABLE written (entry_id INTEGER);' | Out-Null
+    Sql 'CREATE TEMP TRIGGER written_rows AFTER INSERT ON library_rows BEGIN INSERT INTO written VALUES(NEW.entry_id); END;' | Out-Null
     $matches = Invoke-Value $store 'Search' @($query, $cancel)
     Require ($matches.Entries.Count -eq 1 -and $matches.Entries[0].EntryId -eq $entry.EntryId) 'Reopening lost the cached list or changed its row identity before engine file replies.'
+    Require ((Sql 'SELECT COUNT(*) FROM written;') -eq 0) 'The first search after opening copied the catalogue into the search snapshot.'
     Require ((Sql 'SELECT COUNT(*) FROM collected_files;') -eq 0 -and (Sql 'SELECT readable FROM current_files;') -eq 0) 'A saved file list authorized work before current confirmation.'
     Require (!(Invoke-Value $sources 'Replace' @($second, $files, $cancel))) 'Confirming an identical saved list reported a content change.'
-    Require ((Sql 'SELECT valid FROM library_state;') -eq 1) 'Unchanged confirmation invalidated the published search snapshot.'
+    Require ((Sql 'SELECT COUNT(*) FROM written;') -eq 0) 'Unchanged confirmation rewrote search snapshot rows.'
     Require ((Sql 'SELECT readable FROM current_files;') -eq 1) 'Current confirmation did not permit file work.'
+
+    $counted = New-Value 'Shared.Contribution' @('counted', 'Counted', $true, $true) @{ SavePath = $directory; Stamp = 'one' }
+    Invoke-Value $sources 'Reconcile' @((New-Values 'Shared.Contribution' @($second, $counted)), $cancel) | Out-Null
+    $countedFiles = foreach ($size in @(100, 200)) {
+        ,(New-Values 'Shared.SourceFile' @(0..7 | ForEach-Object {
+            $part = Join-Path $directory "Counted/Part.$_.mkv"
+            New-Value 'Shared.SourceFile' @($_, $part, $part, [long]$(if ($_ -lt 5) { $size } else { 100 })) @{ Complete = $true; Wanted = $true }
+        }))
+    }
+    Invoke-Value $sources 'Replace' @($counted, $countedFiles[0], $cancel) | Out-Null
+    Sql 'DELETE FROM written;' | Out-Null
+    Require (Invoke-Value $sources 'Replace' @($counted, $countedFiles[1], $cancel)) 'Five resized files were not saved.'
+    Require ((Sql 'SELECT COUNT(*) FROM written;') -eq 5) 'A change to five entries did not write exactly five search snapshot rows.'
+    $parts = (Invoke-Value $store 'Search' @((New-Value 'Library.Query' @('part', $configuration)), $cancel)).Entries
+    Require ($parts.Count -eq 8 -and @($parts | Where-Object Size -eq 200).Count -eq 5) 'The search snapshot did not show the five new sizes.'
+    Invoke-Value $sources 'Reconcile' @((New-Values 'Shared.Contribution' @($second)), $cancel) | Out-Null
+
+    # A database that an earlier TinyTorrent saved at schema revision 9 opens
+    # with the match the person corrected.
+    $saved = Join-Path $directory 'Revision9'
+    [IO.Directory]::CreateDirectory($saved) | Out-Null
+    $savedPath = Join-Path $saved 'Saved.Movie.2020.mkv'
+    $savedConnection = [Microsoft.Data.Sqlite.SqliteConnection]::new("Data Source=$(Join-Path $saved 'library.db');Pooling=False")
+    try {
+        $savedConnection.Open()
+        $savedConnection.CreateCollation('PATH', [Comparison[string]] { param($left, $right) [StringComparer]::OrdinalIgnoreCase.Compare($left, $right) })
+        $command = $savedConnection.CreateCommand()
+        $command.CommandText = $database.GetType().GetField('Schema', $staticFlags).GetValue($null) + @'
+PRAGMA user_version=9;
+INSERT INTO contributions VALUES('saved','Saved','one');
+INSERT INTO locations(entry_id,path) VALUES(1,$path);
+INSERT INTO source_files VALUES('saved',0,1,'Saved.Movie.2020.mkv',$path,100,1,1,0,'Saved Movie','movie',2020,'saved movie');
+INSERT INTO video_information(catalog_id,video_id,language,title,type,year,genres,cast,synopsis,keywords,search)
+VALUES('tmdb','movie/7','en','Corrected title','movie',2020,'','','','','corrected title');
+INSERT INTO identifications VALUES('saved',0,'tmdb','movie/7',1,1700000000,'Saved.Movie.2020.mkv');
+'@
+        $command.Parameters.AddWithValue('$path', $savedPath) | Out-Null
+        $command.ExecuteNonQuery() | Out-Null
+        $command.Dispose()
+    }
+    finally { $savedConnection.Dispose() }
+    $revision9 = New-Value 'Shared.Storage.Database' @($saved)
+    try {
+        $savedMatches = Invoke-Value (New-Value 'Library.Store' @($revision9, $imdb)) 'Search' @($query, $cancel)
+        Require ($savedMatches.Entries.Count -eq 1 -and $savedMatches.Entries[0].Title -eq 'Corrected title') 'A saved revision 9 database lost its corrected match when it opened.'
+    }
+    finally { $revision9.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null }
     $matches = Invoke-Value $store 'Search' @($query, $cancel)
     Require ($matches.Entries[0].Title -eq 'Chosen title' -and $matches.Entries[0].Created -eq 1700000000) 'Saved identification or properties did not survive reopening.'
     Require ($matches.Entries[0].Ratings.Tmdb.Value -eq 8.25 -and $matches.Entries[0].Ratings.Tmdb.Kind -eq $movieKind -and

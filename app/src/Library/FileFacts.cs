@@ -307,8 +307,6 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
             )
         );
         command.ExecuteNonQuery();
-        command.CommandText = Database.Invalidate;
-        command.ExecuteNonQuery();
         return true;
     }
 

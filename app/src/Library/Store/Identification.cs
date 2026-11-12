@@ -199,7 +199,7 @@ internal sealed partial class Store
                 DELETE FROM video_searches WHERE ($provider IS NULL OR catalog_id=$provider)
                     AND (rejected=1 OR json_array_length(choices)=0);
                 DELETE FROM video_attempts WHERE $provider IS NULL OR catalog_id=$provider;
-                """ + Database.Invalidate;
+                """;
         command.Parameters.AddWithValue("$provider", (object?)providerId ?? DBNull.Value);
         command.ExecuteNonQuery();
     }
@@ -209,8 +209,7 @@ internal sealed partial class Store
             connection =>
             {
                 using var command = connection.CreateCommand();
-                command.CommandText =
-                    "DELETE FROM video_attempts WHERE catalog_id=$catalog;" + Database.Invalidate;
+                command.CommandText = "DELETE FROM video_attempts WHERE catalog_id=$catalog;";
                 command.Parameters.AddWithValue("$catalog", catalogId);
                 return command.ExecuteNonQuery();
             },
@@ -435,7 +434,7 @@ internal sealed partial class Store
                             video,
                             attempt.Target.Kind == LookupKind.Explicit || attempt.Explicit
                         );
-                    command.CommandText = Database.PruneVideos + Database.Invalidate;
+                    command.CommandText = Database.PruneVideos;
                     command.ExecuteNonQuery();
                 }
                 return accepted;

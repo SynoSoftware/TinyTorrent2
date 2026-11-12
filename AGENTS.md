@@ -56,7 +56,7 @@ permanent design, code, and review cost that the user never sees.
   unrelated engine policies.
 - Before changing communication, read the [pipe API contract](docs/contracts/pipe-api.md).
 - Before changing the Library database schema, read the
-  [database contract](docs/contracts/database.md). Every change from the current
+  [database contract](docs/contracts/database.md). Every change from
   revision 9 on is a migration that keeps saved data, because editing the
   schema and raising its version makes saved Library databases unusable.
 - Before changing text or translations, language selection, or display

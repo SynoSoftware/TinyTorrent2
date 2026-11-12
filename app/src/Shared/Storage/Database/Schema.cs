@@ -2,7 +2,36 @@ namespace Syno.TinyTorrent.Shared.Storage;
 
 internal sealed partial class Database
 {
-    private const int Version = 9;
+    // Saved databases hold Schema at this revision, so Schema never changes.
+    private const int Baseline = 9;
+
+    // Each migration upgrades a saved database by one revision and keeps its
+    // data: the first makes revision 10. A new database runs them after Schema.
+    private static readonly string[] Migrations =
+    [
+        """
+            -- Disk discovery's facts. Its contributions come from disk instead
+            -- of a torrent, and its files keep what gozler names them by: their
+            -- volume, their file ID on it, and the time they were last written,
+            -- as a FILETIME, or NULL while gozler has not reported it.
+            ALTER TABLE contributions ADD COLUMN data_source TEXT NOT NULL DEFAULT 'torrent'
+                CHECK(data_source IN ('torrent','disk'));
+            CREATE TABLE disk_files (
+                origin TEXT NOT NULL, file_index INTEGER NOT NULL,
+                volume TEXT NOT NULL, file_id TEXT NOT NULL, modified INTEGER,
+                PRIMARY KEY(origin,file_index),
+                FOREIGN KEY(origin,file_index) REFERENCES source_files(origin,file_index) ON DELETE CASCADE
+            );
+            -- A location the person's own check found gone, though a torrent
+            -- may still list it.
+            ALTER TABLE locations ADD COLUMN absent INTEGER NOT NULL DEFAULT 0 CHECK(absent IN (0,1));
+            ALTER TABLE library_settings ADD COLUMN discovery INTEGER NOT NULL DEFAULT 0
+                CHECK(discovery IN (0,1));
+            CREATE TABLE hidden_folders (path TEXT COLLATE PATH NOT NULL PRIMARY KEY);
+            """,
+    ];
+
+    private static int Version => Baseline + Migrations.Length;
 
     private const string Schema = """
             -- The person's own API key, protected by Credentials, replaces
@@ -220,12 +249,63 @@ internal sealed partial class Database
             JOIN source_files s ON s.origin=d.origin AND s.file_index=d.file_index
             WHERE s.entry_id=f.entry_id LIMIT 1)
         WHERE f.complete=1;
-        CREATE TEMP TABLE library_state (
-            singleton INTEGER PRIMARY KEY CHECK(singleton=1),
-            valid INTEGER NOT NULL CHECK(valid IN (0,1))
+        -- The search snapshot: a copy of library_entries, so a search does not
+        -- join every entry again. Its columns follow library_entries in order.
+        -- The entry key keeps each row in entry order when it is copied again.
+        CREATE TEMP TABLE library_rows (
+            entry_id INTEGER PRIMARY KEY, path, name, size, kind, title, type, year, genres, cast,
+            artist, album, track, duration, created, modified, file_search, video_id, music_search,
+            catalog_id, ratings, imdb_id, series_catalog, series_id, series_type, series_title,
+            episodes, bitrate, width, height, subtitles
         );
-        INSERT INTO library_state VALUES(1,0);
-        CREATE TEMP TABLE library_rows AS SELECT * FROM library_entries WHERE 0;
         CREATE TEMP TABLE library_matches (row_id INTEGER PRIMARY KEY);
+        -- The entries whose rows the open transaction has made out of date, each
+        -- once for every row written. It has no key: a trigger's statement
+        -- takes the conflict rule of the upsert that fired it, so a key here
+        -- fails the upsert.
+        CREATE TEMP TABLE library_changes (entry_id INTEGER);
+        INSERT INTO library_rows SELECT * FROM library_entries;
         """;
+
+    // Each table that library_entries reads, with the entries that one of
+    // its rows belongs to. A row written to it adds those entries to
+    // library_changes.
+    private static readonly (string Table, Func<string, string> Entries)[] Inputs =
+    [
+        ("locations", row => $"SELECT {row}.entry_id"),
+        ("source_files", row => $"SELECT {row}.entry_id"),
+        ("identifications", FileEntry),
+        ("file_facts", FileEntry),
+        ("subtitle_output_sources", FileEntry),
+        (
+            "video_information",
+            row => $"""
+                SELECT s.entry_id FROM identifications i JOIN source_files s USING(origin,file_index)
+                WHERE i.catalog_id={row}.catalog_id AND i.video_id={row}.video_id
+                """
+        ),
+        (
+            "title_facts",
+            row => $"""
+                SELECT s.entry_id FROM video_information v
+                JOIN identifications i USING(catalog_id,video_id)
+                JOIN source_files s USING(origin,file_index) WHERE v.imdb_id={row}.imdb_id
+                """
+        ),
+    ];
+
+    private static string FileEntry(string row) =>
+        $"SELECT entry_id FROM source_files WHERE origin={row}.origin AND file_index={row}.file_index";
+
+    private static readonly string Triggers = string.Concat(
+        Inputs.Select(input => $"""
+            CREATE TEMP TRIGGER {input.Table}_added AFTER INSERT ON {input.Table} BEGIN
+                INSERT INTO library_changes {input.Entries("NEW")}; END;
+            CREATE TEMP TRIGGER {input.Table}_changed AFTER UPDATE ON {input.Table} BEGIN
+                INSERT INTO library_changes {input.Entries("OLD")} UNION {input.Entries("NEW")}; END;
+            CREATE TEMP TRIGGER {input.Table}_removed AFTER DELETE ON {input.Table} BEGIN
+                INSERT INTO library_changes {input.Entries("OLD")}; END;
+
+            """)
+    );
 }
