@@ -48,6 +48,12 @@ Your torrent list shows what's happening at a glance. Want more? Open the
 inspector to see every file, peer, tracker, and piece, with the speed history.
 Put every peer on a world map. Close the panels when you're done.
 
+https://github.com/user-attachments/assets/5e5019c7-7d84-4074-9c22-84b94ddc8b5a
+
+<sub>A stress test: 50 torrents, and the selected one has 3,000 connections.
+Speeds change every second, so the lists re-sort all the time while the map
+zooms and pans.</sub>
+
 <table>
   <tr>
     <td width="50%">
