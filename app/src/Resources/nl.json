@@ -1667,6 +1667,8 @@
     "built_hint": "Downloads, de Windows-interface en lokale opslag",
     "artwork": "Interface-illustraties",
     "artwork_hint": "Fluent UI System Icons en Twemoji",
+    "location": "Locaties en kaarten",
+    "location_hint": "DB-IP en Natural Earth",
     "video": "Film- en tv-informatie",
     "video_hint": "TMDB, IMDb, Wikidata, OMDb en MDBList",
     "subtitles": "Ondertitels",

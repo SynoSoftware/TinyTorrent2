@@ -1670,6 +1670,8 @@
     "built_hint": "Téléchargements, interface Windows et stockage local",
     "artwork": "Éléments graphiques",
     "artwork_hint": "Fluent UI System Icons et Twemoji",
+    "location": "Emplacements et cartes",
+    "location_hint": "DB-IP et Natural Earth",
     "video": "Informations sur les films et séries",
     "video_hint": "TMDB, IMDb, Wikidata, OMDb et MDBList",
     "subtitles": "Sous-titres",

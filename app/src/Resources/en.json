@@ -1667,6 +1667,8 @@
     "built_hint": "Downloads, the Windows interface and local storage",
     "artwork": "Interface artwork",
     "artwork_hint": "Fluent UI System Icons and Twemoji",
+    "location": "Locations and maps",
+    "location_hint": "DB-IP and Natural Earth",
     "video": "Movie and TV information",
     "video_hint": "TMDB, IMDb, Wikidata, OMDb and MDBList",
     "subtitles": "Subtitles",

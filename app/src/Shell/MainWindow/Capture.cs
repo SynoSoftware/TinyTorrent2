@@ -3202,6 +3202,8 @@ public sealed partial class MainWindow
                     }
                     await ShowAbout();
                     await CapturePage(prefix + "about");
+                    await ShowCredits();
+                    await CapturePage(prefix + "credits");
                     await ShowTorrents();
                     await CaptureDialog(
                         prefix + "remove",

@@ -1670,6 +1670,8 @@
     "built_hint": "下载、系统界面和本地存储",
     "artwork": "界面图形",
     "artwork_hint": "流畅界面系统图标和推特表情",
+    "location": "位置和地图",
+    "location_hint": "DB-IP 和 Natural Earth",
     "video": "影视信息",
     "video_hint": "电影数据库、互联网电影资料库、维基数据、开放电影数据库和影视资料列表",
     "subtitles": "字幕",
