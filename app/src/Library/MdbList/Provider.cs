@@ -1,7 +1,8 @@
 using System.Globalization;
 using System.Net.Http;
-using System.Reflection;
 using System.Text.Json;
+using Syno.TinyTorrent.Shared.Network;
+using static Syno.TinyTorrent.Shared.Network.ProviderJson;
 
 namespace Syno.TinyTorrent.Library.MdbList;
 
@@ -24,10 +25,7 @@ internal sealed class Provider(string key) : IProvider
         )
         {
             Access = Access.Key,
-            BuiltInKey = typeof(Provider)
-                .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
-                .FirstOrDefault(value => value.Key == "MdbListKey")
-                ?.Value,
+            BuiltInKey = ApiKey.BuiltIn("MdbListKey"),
         };
 
     // A movie is named by its TMDB identity, because some results lack an IMDb one.
@@ -45,28 +43,20 @@ internal sealed class Provider(string key) : IProvider
                 cancellation
             )
             .ConfigureAwait(false);
-        try
-        {
-            var results = data.GetProperty("search");
-            var choices = results
-                .EnumerateArray()
-                .Select(item =>
-                    TmdbId(item) is { } id
-                    && Text(item, "title") is { Length: > 0 and <= 300 } title
-                        ? new VideoChoice(CatalogId, id, VideoKind.Movie, title)
-                        {
-                            Year = ReadYear(item),
-                        }
-                        : null
-                )
-                .OfType<VideoChoice>()
-                .ToArray();
-            return new(choices, results.GetArrayLength() == 0);
-        }
-        catch (Exception error) when (error is InvalidOperationException or KeyNotFoundException)
-        {
-            throw new VideoException(VideoFailure.InvalidResult, error);
-        }
+        var results = data.GetProperty("search");
+        var choices = results
+            .EnumerateArray()
+            .Select(item =>
+                TmdbId(item) is { } id && Text(item, "title") is { } title
+                    ? new VideoChoice(CatalogId, id, VideoKind.Movie, title)
+                    {
+                        Year = ReadYear(item),
+                    }
+                    : null
+            )
+            .OfType<VideoChoice>()
+            .ToArray();
+        return new(choices, results.GetArrayLength() == 0);
     }
 
     public async Task<VideoInformation> Describe(
@@ -77,8 +67,7 @@ internal sealed class Provider(string key) : IProvider
     {
         // The identity is written into the request, so it must be a TMDB number.
         if (
-            choice.Kind != VideoKind.Movie
-            || !int.TryParse(
+            !int.TryParse(
                 choice.VideoId,
                 NumberStyles.None,
                 CultureInfo.InvariantCulture,
@@ -94,8 +83,6 @@ internal sealed class Provider(string key) : IProvider
                 async token =>
                 {
                     var content = await Get(request.Get, path, token).ConfigureAwait(false);
-                    if (Text(content, "title").Length is 0 or > 300)
-                        throw new VideoException(VideoFailure.InvalidResult);
                     return new VideoRecord(
                         path,
                         content,
@@ -106,22 +93,24 @@ internal sealed class Provider(string key) : IProvider
             )
             .ConfigureAwait(false);
         var movie = record.Content;
-        var title = Text(movie, "title");
-        if (title.Length is 0 or > 300)
-            throw new VideoException(VideoFailure.InvalidResult);
         var ratings = Child(movie, "ratings");
-        return new VideoInformation(CatalogId, choice.VideoId, title, VideoKind.Movie)
+        return new VideoInformation(
+            CatalogId,
+            choice.VideoId,
+            Text(movie, "title") ?? string.Empty,
+            VideoKind.Movie
+        )
         {
             Year = ReadYear(movie),
             Genres = Child(movie, "genres") is { ValueKind: JsonValueKind.Array } genres
                 ? genres
                     .EnumerateArray()
                     .Select(genre => Text(genre, "title"))
-                    .Where(name => name.Length > 0)
+                    .OfType<string>()
                     .Distinct()
                     .ToArray()
                 : [],
-            Synopsis = Text(movie, "description"),
+            Synopsis = Text(movie, "description") ?? string.Empty,
             Records = [record],
             Ratings = new()
             {
@@ -131,20 +120,14 @@ internal sealed class Provider(string key) : IProvider
                 Popcornmeter = ReadRating(ratings, "popcorn"),
                 Metacritic = ReadRating(ratings, "metacritic"),
             },
-            Certification = Text(movie, "certification"),
+            Certification = Text(movie, "certification") ?? string.Empty,
             // MDBList writes 0 for takings it does not know.
-            BoxOffice =
-                Child(movie, "revenue") is { ValueKind: JsonValueKind.Number } revenue
-                && revenue.TryGetInt64(out var takings)
-                && takings > 0
-                    ? takings
-                    : null,
+            BoxOffice = Number(movie, "revenue") is > 0 and var takings ? takings : null,
             ImdbId = VideoInformation.ParseImdbId(Text(Child(movie, "ids"), "imdb")),
         };
     }
 
-    // Each rating's score is its source's rating on a 0 to 100 scale, and its
-    // votes the count behind it; a source without votes has no score.
+    // A score of 0 gives no rating, as the providers contract rules for MDBList.
     private static Rating? ReadRating(JsonElement ratings, string source) =>
         ratings.ValueKind != JsonValueKind.Array
             ? null
@@ -154,16 +137,8 @@ internal sealed class Provider(string key) : IProvider
                 .Select(rating =>
                     Child(rating, "score") is { ValueKind: JsonValueKind.Number } score
                     && score.TryGetDouble(out var value)
-                    && value is > 0 and <= 100
-                        ? new Rating(value / 10, VideoKind.Movie)
-                        {
-                            Votes =
-                                Child(rating, "votes") is { ValueKind: JsonValueKind.Number } count
-                                && count.TryGetInt64(out var votes)
-                                && votes > 0
-                                    ? votes
-                                    : null,
-                        }
+                    && value > 0
+                        ? Rating.From(value, 100, VideoKind.Movie, Number(rating, "votes"))
                         : null
                 )
                 .FirstOrDefault(rating => rating is not null);
@@ -197,15 +172,4 @@ internal sealed class Provider(string key) : IProvider
         && value > 0
             ? value.ToString(CultureInfo.InvariantCulture)
             : null;
-
-    private static string Text(JsonElement element, string property) =>
-        Child(element, property) is { ValueKind: JsonValueKind.String } text
-            ? text.GetString()!.Trim()
-            : string.Empty;
-
-    // A missing property reads as an undefined element, so nested reads need no checks.
-    private static JsonElement Child(JsonElement element, string property) =>
-        element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var child)
-            ? child
-            : default;
 }

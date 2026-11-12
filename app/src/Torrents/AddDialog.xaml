@@ -160,8 +160,7 @@
                       <Grid>
                         <TextBlock
                           Text="{x:Bind Model.AddDraft.Space, Mode=OneWay}"
-                          Style="{StaticResource TinyTorrentStatusTextStyle}"
-                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                          Style="{StaticResource TinyTorrentSecondaryStatusStyle}"
                           controls:Trimming.ShowsToolTip="True"
                           Visibility="{x:Bind controls:Visibilities.Unless(Model.AddDraft.LacksSpace), Mode=OneWay}"
                         />
@@ -183,7 +182,7 @@
                     <FontIcon
                       Style="{StaticResource TinyTorrentStatusIconStyle}"
                       FontFamily="{x:Bind icons:Segoe.Font}"
-                      Glyph="{x:Bind icons:Segoe.CircleAlert}"
+                      Glyph="{x:Bind icons:Segoe.CircleX}"
                       Foreground="{ThemeResource SystemFillColorCriticalBrush}"
                       AutomationProperties.AccessibilityView="Raw"
                     />

@@ -68,32 +68,33 @@ public sealed class ImdbProgress
     public readonly CancellationTokenSource Cancellation = new();
     public bool CancelIndex;
     public long Indexed;
-    public void Report<TPhase, TProgress>(TPhase phase, TProgress progress)
+    public void Report<TDescription, TProgress>(TDescription description, TProgress progress)
     {
-        if (phase.ToString() != "Indexing") return;
+        if (description.GetType().GetProperty("Phase").GetValue(description).ToString() != "Indexing") return;
         var completed = progress.GetType().GetProperty("Completed", BindingFlags.Instance | BindingFlags.NonPublic);
         Indexed = Convert.ToInt64(completed.GetValue(progress));
         if (CancelIndex && Indexed > 0) Cancellation.Cancel();
     }
 }
 '@
-$phase = $assembly.GetType('Syno.TinyTorrent.ImdbPhase', $true)
+$description = $assembly.GetType('Syno.TinyTorrent.Shared.WorkDescription', $true)
 $progress = $assembly.GetType('Syno.TinyTorrent.Shared.WorkProgress', $true)
 $observer = [ImdbProgress]::new()
-$report = [Delegate]::CreateDelegate([Action`2].MakeGenericType($phase, $progress), $observer,
-    [ImdbProgress].GetMethod('Report').MakeGenericMethod($phase, $progress))
+$report = [Delegate]::CreateDelegate([Action`2].MakeGenericType($description, $progress), $observer,
+    [ImdbProgress].GetMethod('Report').MakeGenericMethod($description, $progress))
+$building = [IO.Path]::Combine($directory, 'imdb-2.db.tmp')
+$installed = Join-Path $directory 'imdb-2.db'
 
 function Build {
-    $task = $type.GetMethod('Build', $flags).Invoke($dataset, @($report, $observer.Cancellation.Token))
+    $task = $type.GetMethod('Build', $flags).Invoke($dataset, @($building, $report, $observer.Cancellation.Token))
     $null = $task.GetAwaiter().GetResult()
 }
 
 Write-Archives
 Build
 Require ($observer.Indexed -eq 10004) 'The final partial search-index batch was not reported.'
-$type.GetMethod('Install', $flags).Invoke($dataset, @())
+[IO.File]::Move($building, $installed)
 [Reflection.Assembly]::LoadFrom((Join-Path $binary 'Microsoft.Data.Sqlite.dll')) | Out-Null
-$installed = Join-Path $directory 'imdb-2.db'
 $connection = [Microsoft.Data.Sqlite.SqliteConnection]::new("Data Source=$installed;Pooling=False")
 $connection.Open()
 function Sql([string] $Text) {
@@ -130,8 +131,6 @@ $observer.CancelIndex = $true
 $failed = $false
 try { Build } catch { $failed = $true }
 Require ($failed -and $observer.Cancellation.IsCancellationRequested) 'Cancellation did not interrupt indexing.'
-$type.GetMethod('Discard', $flags).Invoke($dataset, @())
-Require (-not (Test-Path -LiteralPath (Join-Path $directory 'imdb-2.db.tmp'))) 'The cancelled build could not be discarded.'
 Require ((Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash -eq $before) 'Cancellation changed the installed database.'
 $observer.Cancellation.Dispose()
 "IMDb bindings, insert and index batches, integrity and cancellation passed: $directory"

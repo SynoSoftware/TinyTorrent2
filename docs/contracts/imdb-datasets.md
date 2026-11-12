@@ -119,7 +119,8 @@ Phase 1 downloads `title.basics`, `title.ratings` and `title.episode`: about
    download, because IMDb updates the files once a day and must not see the
    same download twice. A damaged archive, or one whose format changed, is
    deleted, because it would fail again. **Delete data** deletes kept archives
-   too. A failed download starts again from zero.
+   too, and data files that an earlier version of the app built. A failed
+   download starts again from zero.
 4. The import checks that each file's header names the columns it reads, and
    reads one line at a time. It keeps only the rows Library can use:
    - `titleType` is `movie`, `tvMovie` or `tvSpecial`, kept as movies, or
@@ -304,8 +305,8 @@ CREATE TABLE titles (
     kind TEXT NOT NULL,             -- 'movie' or 'series'
     title TEXT NOT NULL,
     original TEXT,                  -- NULL when it equals title
-    title_key TEXT NOT NULL,        -- title as Dataset.Key writes it
-    original_key TEXT,              -- original as Dataset.Key writes it
+    title_key TEXT NOT NULL,        -- title as FileName.TitleKey writes it
+    original_key TEXT,              -- original as FileName.TitleKey writes it
     year INTEGER NOT NULL,
     genres TEXT,                    -- IMDb's genre names, comma-separated
     rating REAL,
@@ -331,8 +332,8 @@ CREATE INDEX titles_by_key ON titles(title_key);
 CREATE INDEX titles_by_original ON titles(original_key) WHERE original_key IS NOT NULL;
 ```
 
-`Dataset.Key` writes a title in lower case without accents, apostrophes or
-other punctuation, because a file name lacks them: `Ocean's Eleven` and
+`FileName.TitleKey` writes a title in lower case without accents, apostrophes
+or other punctuation, because a file name lacks them: `Ocean's Eleven` and
 `Oceans.Eleven` both give `oceans eleven`. The two indexes serve
 [rating by file name](#rating-by-file-name); the import builds them after the
 rows, which is faster than updating them for each row.
@@ -388,9 +389,11 @@ The folder is `app/src/Library/Imdb/`.
   episodes with their names, as TMDB does, and the series' rating. An episode
   that the data lacks makes the description missing. The synopsis and cast
   are empty. Genres stay in English, as OMDb and MDBList already store them.
-- `Dataset` owns the download, the import, the file replacement and the
-  deletion. It replaces or deletes the file inside `VideoLookup`'s change, so
-  no lookup has the file open at that moment.
+- `Dataset` owns the sources, the import and the reads. `DataDownload`
+  owns the download's lifetime, the replacement and the deletion, for the
+  IMDb data and the city data alike. `Dataset.Replace` runs the file change
+  under its write lock, and Library runs it inside `VideoLookup`'s change,
+  so no lookup has the file open at that moment.
 - Installing new data goes through `VideoLookup.Reload`, which replaces the
   file off the window thread and, when IMDb is the selected provider,
   recreates it, as saving an API key does, and forgets its failures. Another
@@ -570,7 +573,7 @@ score would look as trustworthy as a right one:
   series has the exact title and lists that season and episode; a season pack
   needs only the season. When several series still fit, the year in the name
   decides, and otherwise no rating shows.
-- The title is compared by `Dataset.Key`, not by the word similarity of
+- The title is compared by `FileName.TitleKey`, not by the word similarity of
   automatic matching, because the lookup runs on every read: an exact key is
   one index lookup, and a similarity search for each file would slow every
   refresh.

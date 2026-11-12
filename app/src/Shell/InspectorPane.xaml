@@ -415,7 +415,7 @@
                 </controls:Strip>
               </StackPanel>
             </controls:Section>
-            <Border Style="{StaticResource InspectorDividerStyle}" />
+            <Border Style="{StaticResource TinyTorrentDividerStyle}" />
             <controls:Section
               Header="{x:Bind Model.Text.Get('inspector', 'properties')}"
               Glyph="{x:Bind icons:Segoe.Info}"

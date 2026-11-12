@@ -11,8 +11,7 @@ internal sealed partial class Acquisition
     // session until their path or stamp changes.
     private readonly HashSet<(string Origin, int Index, string Path, string Stamp)> _skippedScans = [];
     private IReadOnlySet<long> _displayed = new HashSet<long>();
-    private Task? _inspecting;
-    private bool _inspectPending;
+    private Rerun? _inspection;
 
     /// <summary>
     /// Sets the Library entries on screen. Their folders are checked for
@@ -36,34 +35,7 @@ internal sealed partial class Acquisition
     {
         if (_disposed || !_connected || _displayed.Count == 0)
             return;
-        _inspectPending = true;
-        _inspecting ??= Task.Run(InspectChanges);
-    }
-
-    private async Task InspectChanges()
-    {
-        try
-        {
-            while (true)
-            {
-                lock (_requestSync)
-                {
-                    if (!_inspectPending || _disposed || !_connected)
-                    {
-                        _inspecting = null;
-                        return;
-                    }
-                    _inspectPending = false;
-                }
-                await Inspect().ConfigureAwait(false);
-            }
-        }
-        catch
-        {
-            lock (_requestSync)
-                _inspecting = null;
-            throw;
-        }
+        (_inspection ??= new(Inspect)).Request();
     }
 
     // Checks the folders of the displayed movies that are not scanned at their
@@ -126,115 +98,94 @@ internal sealed partial class Acquisition
         && !movie.Scanned
         && !_skippedScans.Contains(movie.Key);
 
-    internal async Task<ScanResult> Rescan()
+    internal Task<ScanResult> Rescan()
     {
-        var run = new WorkRun(this, SubtitleWork.Discovery);
-        CancellationToken cancellation;
+        CancellationToken requests;
         lock (_requestSync)
-            cancellation = _requests.Token;
-        using var request = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellation,
-            run.Token
+        {
+            requests = _requests.Token;
+        }
+        return ShowScan(
+            requests,
+            async (run, cancellation) =>
+            {
+                await TakeForPerson(cancellation).ConfigureAwait(false);
+                try
+                {
+                    run.Report(new WorkProgress.Unknown(), new WorkExecution.Running());
+                    var paths = await Run(
+                            connection =>
+                            {
+                                using var command = connection.CreateCommand();
+                                command.CommandText =
+                                    "SELECT DISTINCT path FROM subtitle_outputs WHERE created=1;";
+                                using var reader = command.ExecuteReader();
+                                var paths = new List<string>();
+                                while (reader.Read())
+                                    paths.Add(reader.GetString(0));
+                                return paths;
+                            },
+                            cancellation
+                        )
+                        .ConfigureAwait(false);
+                    var missing = new List<string>();
+                    var unreadable = await Task.Run(
+                            () =>
+                            {
+                                var failures = 0;
+                                foreach (var path in paths)
+                                {
+                                    cancellation.ThrowIfCancellationRequested();
+                                    try
+                                    {
+                                        if (!SubtitleFile.Exists(path))
+                                            missing.Add(path);
+                                    }
+                                    catch (Exception error)
+                                        when (error is IOException or UnauthorizedAccessException)
+                                    {
+                                        failures++;
+                                    }
+                                }
+                                return failures;
+                            },
+                            cancellation
+                        )
+                        .ConfigureAwait(false);
+                    if (missing.Count > 0)
+                    {
+                        await Run(
+                                connection =>
+                                {
+                                    foreach (var path in missing)
+                                        Execute(
+                                            connection,
+                                            "DELETE FROM subtitle_outputs WHERE path=$path AND created=1;",
+                                            ("$path", path)
+                                        );
+                                    Execute(connection, Database.Invalidate);
+                                    return true;
+                                },
+                                cancellation
+                            )
+                            .ConfigureAwait(false);
+                        LanguagesChanged?.Invoke(this, EventArgs.Empty);
+                    }
+                    var movies = await Movies(cancellation).ConfigureAwait(false);
+                    var accepted = movies
+                        .Where(movie => movie.Video.Eligible && movie.Video.Readable)
+                        .ToHashSet();
+                    var result = await Scan(run, movies, accepted, cancellation)
+                        .ConfigureAwait(false);
+                    await RefreshCounts().ConfigureAwait(false);
+                    return result with { Unreadable = result.Unreadable + unreadable };
+                }
+                finally
+                {
+                    ReleaseForPerson();
+                }
+            }
         );
-        cancellation = request.Token;
-        var entered = false;
-        try
-        {
-            await TakeForPerson(cancellation).ConfigureAwait(false);
-            entered = true;
-            run.Report(new WorkProgress.Unknown(), new WorkExecution.Running());
-            var paths = await Run(
-                    connection =>
-                    {
-                        using var command = connection.CreateCommand();
-                        command.CommandText =
-                            "SELECT DISTINCT path FROM subtitle_outputs WHERE created=1;";
-                        using var reader = command.ExecuteReader();
-                        var paths = new List<string>();
-                        while (reader.Read())
-                            paths.Add(reader.GetString(0));
-                        return paths;
-                    },
-                    cancellation
-                )
-                .ConfigureAwait(false);
-            var missing = new List<string>();
-            var unreadable = await Task.Run(
-                    () =>
-                    {
-                        var failures = 0;
-                        foreach (var path in paths)
-                        {
-                            cancellation.ThrowIfCancellationRequested();
-                            try
-                            {
-                                if (!SubtitleFile.Exists(path))
-                                    missing.Add(path);
-                            }
-                            catch (Exception error)
-                                when (error is IOException or UnauthorizedAccessException)
-                            {
-                                failures++;
-                            }
-                        }
-                        return failures;
-                    },
-                    cancellation
-                )
-                .ConfigureAwait(false);
-            if (missing.Count > 0)
-            {
-                await Run(
-                        connection =>
-                        {
-                            foreach (var path in missing)
-                                Execute(
-                                    connection,
-                                    "DELETE FROM subtitle_outputs WHERE path=$path AND created=1;",
-                                    ("$path", path)
-                                );
-                            Execute(connection, Database.Invalidate);
-                            return true;
-                        },
-                        cancellation
-                    )
-                    .ConfigureAwait(false);
-                LanguagesChanged?.Invoke(this, EventArgs.Empty);
-            }
-            var movies = await Movies(cancellation).ConfigureAwait(false);
-            var accepted = movies
-                .Where(movie => movie.Video.Eligible && movie.Video.Readable)
-                .ToHashSet();
-            var result = await Scan(run, movies, accepted, cancellation).ConfigureAwait(false);
-            await RefreshCounts().ConfigureAwait(false);
-            run.Operation.Summarize("scan_result", result.Found, result.Unreadable + unreadable);
-            run.Operation.Outcome = result.Unreadable + unreadable > 0
-                ? WorkOutcome.Failed : WorkOutcome.Completed;
-            return result with { Unreadable = result.Unreadable + unreadable };
-        }
-        catch (OperationCanceledException)
-        {
-            run.Operation.Outcome = WorkOutcome.Cancelled;
-            throw;
-        }
-        catch (Exception error)
-        {
-            run.Operation.Error = error;
-            throw;
-        }
-        finally
-        {
-            try
-            {
-                await run.Finish().ConfigureAwait(false);
-            }
-            finally
-            {
-                if (entered)
-                    _operation.Release();
-            }
-            Notify();
-        }
     }
 
     // Scans the folders of torrents that just finished, before their
@@ -248,6 +199,16 @@ internal sealed partial class Acquisition
             accepted = movies.Where(movie => movie.Video.JustFinished && Unscanned(movie)).ToHashSet();
         if (accepted.Count == 0)
             return;
+        await ShowScan(cancellation, (run, token) => Scan(run, movies, accepted, token))
+            .ConfigureAwait(false);
+    }
+
+    // Runs a scan as an item of the work list, which the person can stop.
+    private async Task<ScanResult> ShowScan(
+        CancellationToken cancellation,
+        Func<WorkRun, CancellationToken, Task<ScanResult>> scan
+    )
+    {
         var run = new WorkRun(this, SubtitleWork.Discovery);
         try
         {
@@ -255,10 +216,12 @@ internal sealed partial class Acquisition
                 cancellation,
                 run.Token
             );
-            var result = await Scan(run, movies, accepted, request.Token).ConfigureAwait(false);
+            var result = await scan(run, request.Token).ConfigureAwait(false);
             run.Operation.Summarize("scan_result", result.Found, result.Unreadable);
             run.Operation.Outcome = result.Unreadable > 0
-                ? WorkOutcome.Failed : WorkOutcome.Completed;
+                ? WorkOutcome.Failed
+                : WorkOutcome.Completed;
+            return result;
         }
         catch (OperationCanceledException)
         {

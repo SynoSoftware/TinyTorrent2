@@ -18,7 +18,7 @@ namespace Syno.TinyTorrent.Library.Imdb;
 /// imported into a SQLite file beside <c>library.db</c>. The file is a
 /// replaceable copy: each download rebuilds it completely.
 /// </summary>
-internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy policy)
+internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy policy) : IDataset
 {
     // The schema version is part of the name, so a file that an earlier
     // version of the app built counts as missing.
@@ -51,37 +51,47 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
     );
     private readonly string _path = Path.Combine(directory, FileName);
 
-    // Reads share the file; Install and Delete replace it alone, because
-    // Windows refuses to replace an open file.
+    // Reads share the file; Replace changes it alone, because Windows refuses
+    // to replace an open file.
     private readonly ReaderWriterLockSlim _file = new();
     private volatile bool _installed = File.Exists(Path.Combine(directory, FileName));
 
     // Counting reads the whole titles table, so the count is kept until
-    // Install or Delete replaces the file.
+    // Replace changes the file.
     private volatile Task<long>? _titles;
-
-    private string Building => _path + ".tmp";
 
     /// <summary>Whether the data is downloaded; reading it opens no file.</summary>
     internal bool IsInstalled => _installed;
 
-    /// <summary>
-    /// Whether the installed data is less than a day old. IMDb updates its
-    /// files once a day, so downloading again would most likely transfer the
-    /// same files.
-    /// </summary>
-    internal bool IsCurrent => IsRecent(_path);
+    public string Section => Provider.CatalogId;
 
-    /// <summary>The installed data's file, or null when it is missing.</summary>
-    internal FileInfo? Inspect()
-    {
-        var file = new FileInfo(_path);
-        return file.Exists ? file : null;
-    }
+    public string Name => "IMDb";
+
+    public string FilePath => _path;
+
+    public WorkDescription Downloading { get; } = new WorkDescription.Imdb(ImdbPhase.Downloading);
+
+    public WorkDescription Installing { get; } = new WorkDescription.Imdb(ImdbPhase.Installing);
+
+    // The archives are kept for a new import until the data is installed.
+    // Data that an earlier version of the app built is never read again.
+    public IReadOnlyList<string> Leftovers =>
+        [
+            .. Archives,
+            .. Directory
+                .GetFiles(directory, "imdb*.db")
+                .Where(path => !string.Equals(path, _path, StringComparison.OrdinalIgnoreCase)),
+        ];
+
+    /// <summary>
+    /// IMDb updates its files once a day, so data less than a day old is
+    /// most likely what a new download would transfer.
+    /// </summary>
+    public bool IsCurrent(DateTime written) => written > DateTime.UtcNow.AddDays(-1);
 
     /// <summary>The number of movies and series in the installed data.</summary>
     /// <exception cref="ProviderException">The data is damaged or cannot be read.</exception>
-    internal Task<long> CountTitles() =>
+    public Task<long>? Count =>
         _titles ??= Read(
             connection =>
             {
@@ -93,18 +103,22 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
         );
 
     /// <summary>
-    /// Downloads the datasets and builds the data beside the installed file,
-    /// which stays in use until <see cref="Install"/>; <see cref="Discard"/>
-    /// deletes a build that is not installed. Archives that a failed import
-    /// left complete less than a day ago are imported again without a
-    /// download, because IMDb updates the files once a day. A cancel can end
-    /// it with the error that the interruption caused instead of a
-    /// cancellation. Each phase reports its own progress: a download its
-    /// bytes, a source read its approximate position, and the episode and
-    /// search-index phases their rows; optimizing and flushing are unknown.
+    /// Downloads the datasets and builds the data at <paramref name="path"/>,
+    /// beside the installed file, which stays in use until the replacement.
+    /// Archives that a failed import left complete less than a day ago are
+    /// imported again without a download, because IMDb updates the files
+    /// once a day. A cancel can end it with the error that the interruption
+    /// caused instead of a cancellation. Each phase reports its own progress:
+    /// a download its bytes, a source read its approximate position, and the
+    /// episode and search-index phases their rows; optimizing and flushing
+    /// are unknown.
     /// </summary>
-    /// <exception cref="DownloadException">The download or the import failed.</exception>
-    internal async Task Build(Action<ImdbPhase, WorkProgress> report, CancellationToken cancellation)
+    /// <exception cref="DownloadException">The import failed.</exception>
+    public async Task Build(
+        string path,
+        Action<WorkDescription, WorkProgress> report,
+        CancellationToken cancellation
+    )
     {
         var fresh = FreshRequest.Once(Access);
         try
@@ -117,7 +131,7 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
                             source,
                             archive,
                             fresh,
-                            progress => report(ImdbPhase.Downloading, progress),
+                            progress => ReportPhase(ImdbPhase.Downloading, progress),
                             cancellation
                         )
                         .ConfigureAwait(false);
@@ -134,7 +148,7 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
                         // thread ends with the task, so nothing restores it.
                         Thread.CurrentThread.Priority = ThreadPriority.Lowest;
                         cancellation.ThrowIfCancellationRequested();
-                        Import(report, cancellation);
+                        Import(path, ReportPhase, cancellation);
                     },
                     cancellation,
                     TaskCreationOptions.LongRunning,
@@ -142,98 +156,41 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
                 )
                 .ConfigureAwait(false);
         }
-        catch (ReplyException error)
-        {
-            throw DataDownload.Failure(error);
-        }
         // A damaged or changed archive would fail again, so it is not kept.
-        catch (InvalidDataException error)
+        catch (InvalidDataException)
         {
             Remove(Archives);
-            throw new DownloadException(DownloadFailure.Damaged, error);
+            throw;
         }
         catch (DownloadException error) when (error.Failure == DownloadFailure.UnknownFormat)
         {
             Remove(Archives);
             throw;
         }
-        catch (Exception error)
-            when (error is SqliteException { SqliteErrorCode: raw.SQLITE_FULL }
-                || error is IOException io && DataDownload.IsDiskFull(io)
-            )
+        catch (SqliteException error) when (error.SqliteErrorCode == raw.SQLITE_FULL)
         {
             throw new DownloadException(DownloadFailure.DiskFull, error);
         }
-        catch (Exception error)
-            when (error is IOException or UnauthorizedAccessException or SqliteException)
+        catch (SqliteException error)
         {
             throw new DownloadException(DownloadFailure.Failed, error);
         }
+
+        void ReportPhase(ImdbPhase phase, WorkProgress progress) =>
+            report(new WorkDescription.Imdb(phase), progress);
     }
 
-    /// <summary>Replaces the installed data with the data <see cref="Build"/> made.</summary>
-    /// <exception cref="DownloadException">Another program holds the data.</exception>
-    internal void Install()
+    public void Replace(Action change)
     {
         _file.EnterWriteLock();
         try
         {
-            File.Move(Building, _path, overwrite: true);
-            _installed = true;
-            _titles = null;
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        {
-            throw new DownloadException(DownloadFailure.InUse, error);
+            change();
         }
         finally
         {
-            _file.ExitWriteLock();
-        }
-        // The data is installed, so an archive that another program holds is
-        // only replaced by the next download. Data that an earlier version of
-        // the app built is never read again.
-        try
-        {
-            Remove(Archives);
-            Remove([
-                .. Directory
-                    .GetFiles(directory, "imdb*.db")
-                    .Where(path => !string.Equals(path, _path, StringComparison.OrdinalIgnoreCase)),
-            ]);
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
-    }
-
-    /// <summary>Deletes a build that was not installed.</summary>
-    internal void Discard()
-    {
-        // A file that another program holds is deleted by the next build.
-        try
-        {
-            File.Delete(Building);
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
-    }
-
-    /// <summary>Deletes the installed data and the archives kept for a new import.</summary>
-    /// <exception cref="DownloadException">Another program holds the data.</exception>
-    internal void Delete()
-    {
-        _file.EnterWriteLock();
-        try
-        {
-            Remove(Archives);
-            File.Delete(_path);
-            _installed = false;
+            _installed = File.Exists(_path);
             _titles = null;
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        {
-            throw new DownloadException(DownloadFailure.InUse, error);
-        }
-        finally
-        {
             _file.ExitWriteLock();
         }
     }
@@ -302,7 +259,7 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
                     new
                     {
                         Position = position,
-                        Name = Key(release.Title),
+                        Name = Shared.FileName.TitleKey(release.Title),
                         release.Year,
                         release.Season,
                         Episode = release.Episodes.Count > 0 ? release.Episodes[0] : (int?)null,
@@ -393,8 +350,8 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
         Task.Run(
             () =>
             {
-                // Each read opens and closes the file, so Install and Delete
-                // can replace it between reads.
+                // Each read opens and closes the file, so Replace can change
+                // it between reads.
                 _file.EnterReadLock();
                 try
                 {
@@ -434,32 +391,12 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
         var votes = reader.GetOrdinal("votes");
         return reader.IsDBNull(votes) || reader.GetInt64(votes) == 0
             ? null
-            : new Rating(reader.GetDouble(reader.GetOrdinal("rating")), ReadKind(reader))
-            {
-                Votes = reader.GetInt64(votes),
-            };
-    }
-
-    /// <summary>
-    /// A title in lower case without accents, apostrophes or other
-    /// punctuation, because a file name lacks them: "Ocean's Eleven" and
-    /// Oceans.Eleven both give "oceans eleven".
-    /// </summary>
-    internal static string Key(string title)
-    {
-        var key = new StringBuilder(title.Length);
-        foreach (var character in Syno.TinyTorrent.Shared.FileName.Normalize(title))
-        {
-            if (char.IsLetterOrDigit(character))
-            {
-                key.Append(character);
-            }
-            else if (character is not ('\'' or '’') && key.Length > 0 && key[^1] != ' ')
-            {
-                key.Append(' ');
-            }
-        }
-        return key.ToString().TrimEnd();
+            : Rating.From(
+                reader.GetDouble(reader.GetOrdinal("rating")),
+                10,
+                ReadKind(reader),
+                reader.GetInt64(votes)
+            );
     }
 
     private string[] Archives => [.. Sources.Select(Archive)];
@@ -467,12 +404,9 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
     private string Archive(Uri source) =>
         Path.Combine(directory, Path.GetFileName(source.LocalPath));
 
-    private static bool IsRecent(string path) =>
-        new FileInfo(path) is { Exists: true } file
-        && file.LastWriteTimeUtc > DateTime.UtcNow.AddDays(-1);
+    private bool IsRecent(string path) =>
+        new FileInfo(path) is { Exists: true } file && IsCurrent(file.LastWriteTimeUtc);
 
-    // Downloads beside the archive and renames the file when it is complete,
-    // so an archive that exists holds a whole file.
     private async Task Fetch(
         Uri source,
         string archive,
@@ -481,26 +415,21 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
         CancellationToken cancellation
     )
     {
-        var part = archive + ".part";
         using var request = new HttpRequestMessage(HttpMethod.Get, source);
         var call = new ProviderCall(request, policy, new(Access)) { Fresh = fresh };
-        try
-        {
-            await http.Download(call, part, progress, cancellation).ConfigureAwait(false);
-            File.Move(part, archive, overwrite: true);
-        }
-        finally
-        {
-            File.Delete(part);
-        }
+        await DataDownload.Fetch(http, call, archive, progress, cancellation).ConfigureAwait(false);
     }
 
-    // Writes the file that Install moves into place.
-    private void Import(Action<ImdbPhase, WorkProgress> report, CancellationToken cancellation)
+    // Writes the build at path, which the replacement moves into place.
+    private void Import(
+        string path,
+        Action<ImdbPhase, WorkProgress> report,
+        CancellationToken cancellation
+    )
     {
         // A crash during an earlier build can leave the file behind.
-        File.Delete(Building);
-        using (var connection = Database.Connect(Building, SqliteOpenMode.ReadWriteCreate))
+        File.Delete(path);
+        using (var connection = Database.Connect(path, SqliteOpenMode.ReadWriteCreate))
         {
             Database.Execute(
                 connection,
@@ -508,7 +437,7 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
                 {
                     Execute(
                         connection,
-                        // The file is temporary until Install, so a crash only
+                        // The file is temporary until the replacement, so a crash only
                         // loses a file that the next build deletes. The title
                         // keys hold the titles as Key gives them, so a search
                         // can rank exact titles first and RatingsByName can
@@ -588,7 +517,7 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
         report(ImdbPhase.Flushing, new WorkProgress.Unknown());
         // A power cut after the move must not leave a file whose data
         // never reached the disk.
-        using var file = new FileStream(Building, FileMode.Open, FileAccess.ReadWrite);
+        using var file = new FileStream(path, FileMode.Open, FileAccess.ReadWrite);
         file.Flush(flushToDisk: true);
 
         // A source's position in its compressed file is approximate progress
@@ -771,8 +700,8 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
             insert.Bind(2, titleKind);
             insert.Bind(3, name);
             insert.Bind(4, originalName);
-            insert.Bind(5, Key(name));
-            insert.Bind(6, originalName is null ? null : Key(originalName));
+            insert.Bind(5, Shared.FileName.TitleKey(name));
+            insert.Bind(6, originalName is null ? null : Shared.FileName.TitleKey(originalName));
             insert.Bind(7, released);
             insert.Bind(8, row[fields[8]] is Empty ? null : line[fields[8]]);
             var position = ratings.BinarySearch(new TitleRating(identity, 0, 0));

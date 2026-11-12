@@ -272,15 +272,7 @@ internal sealed partial class Acquisition
                 {
                     Exact = target.Match == SubtitleMatch.Exact,
                 };
-                var cachedLookup = new SubtitleLookup(
-                    Path.GetFileName(target.Videos[0].FinalPath),
-                    target.Language,
-                    token => Validate(target, token)
-                )
-                {
-                    Guesses = target.Guesses,
-                    Fresh = Fresh(target),
-                };
+                var cachedLookup = LookupFor(target) with { Fresh = Fresh(target) };
                 await SaveMatch(target, cached, cachedLookup, cancellation).ConfigureAwait(false);
                 return;
             }
@@ -367,15 +359,11 @@ internal sealed partial class Acquisition
                     return;
                 }
             }
-            var lookup = new SubtitleLookup(
-                Path.GetFileName(video.FinalPath),
-                target.Language,
-                ValidateLookup
-            )
+            var lookup = LookupFor(target) with
             {
+                Validate = ValidateLookup,
                 Hash = hash,
                 Size = video.Size,
-                Guesses = target.Guesses,
                 Stage = stage,
                 Fresh = Fresh(target),
                 GivesWay = () => PersonWaits,
@@ -500,6 +488,19 @@ internal sealed partial class Acquisition
         }
     }
 
+    // What the supplier is asked for a target: its file's name and language at
+    // its stage. The lookup is valid while the target's videos are current.
+    private SubtitleLookup LookupFor(Target target) =>
+        new SubtitleLookup(
+            Path.GetFileName(target.Videos[0].FinalPath),
+            target.Language,
+            token => Validate(target, token)
+        )
+        {
+            Stage = Stage(target),
+            Guesses = target.Guesses,
+        };
+
     private async Task<IReadOnlyList<SubtitleCandidate>> Lookup(
         SubtitleLookup lookup,
         CancellationToken cancellation,
@@ -566,7 +567,7 @@ internal sealed partial class Acquisition
             return answer.Candidates;
         }
         var release = FileName.Interpret(lookup.FileName);
-        if (release.IsExtra || release.Title.Length == 0)
+        if (!release.IsSearchable)
             return [];
         var candidates = await Read(lookup).ConfigureAwait(false);
         var exact = Exact(release, candidates);
@@ -888,9 +889,8 @@ internal sealed partial class Acquisition
         }
         finally
         {
-            _operation.Release();
+            ReleaseForPerson();
         }
-        Wake();
     }
 
     internal Task StopFinding()
@@ -898,6 +898,12 @@ internal sealed partial class Acquisition
         lock (_requestSync)
             return _manualWork?.Stop() ?? Task.CompletedTask;
     }
+
+    // The fresh answer the person's command asks for; none without a command.
+    private FreshRequest? Fresh(Target target, RetryCommand? command) =>
+        command is null
+            ? null
+            : new(command, SearchCount(target.Videos[0].FinalPath, target.Language));
 
     private FreshRequest? Fresh(Target target)
     {

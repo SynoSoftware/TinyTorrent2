@@ -47,7 +47,10 @@ its words and the API refuses to page past 1,000 results, so searching
 subtitles by title text fails for common words. A file name can shorten the
 title, as `Brandywine` for *Death on the Brandywine*, so when no title matches
 exactly, the one title of the same year that holds the file's title words is
-the file's.
+the file's. Titles compare by their words in either form an apostrophe gives,
+joining its word or separating it, as
+[Library identification](../library/providers.md#identification-and-early-enrichment)
+describes.
 
 ### Best guess
 
@@ -80,7 +83,8 @@ only first-subtitle jobs, while recorded extra files still follow their movie
 when it moves.
 
 The person's own subtitle work goes first: the Download Subtitle dialog's
-search and download, Find, Scan torrent folders and the account Check. When
+search and download, Find, Scan torrent folders, the account Check and a
+change of the subtitle settings. When
 one waits for a worker's job, that job stops before its next search request,
 and its job stays due with no attempt counted and no retry delay, so it runs
 again right after. A request already sent finishes, and a download always

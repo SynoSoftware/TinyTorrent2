@@ -309,7 +309,7 @@ internal enum Access
     Password,
 }
 
-/// <summary>What the person must supply before a Library provider downloads automatically.</summary>
+/// <summary>What the person must supply before a Library provider can answer.</summary>
 internal enum ProviderRequirement
 {
     None,

@@ -24,7 +24,8 @@ public sealed partial class SettingsPage
             _ = Model.ShowPlugins(database: DatabaseSummary?.Visibility == Visibility.Visible);
         else
             Model.HidePlugins();
-        _automatic?.Attach(visible && _category is null ? Main.Subtitles : null);
+        _automatic?.Attach(Main.Subtitles);
+        _automatic?.SetVisible(visible && _category is null);
         if (SubtitlesContent?.Content is SubtitleSettings content)
         {
             content.SetVisible(visible && _category == PluginsCategory);

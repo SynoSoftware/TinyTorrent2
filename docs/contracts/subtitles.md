@@ -112,12 +112,14 @@ sign-in request apart from the operation it serves, follows the redirects the
 supplier allows and decodes subtitle files. It also decides what fits the
 file. For a supplier that lists subtitles by title, the host asks for the
 catalogue's titles, chooses the one the file names and asks for that title's
-subtitles. For a supplier that lists subtitles for the file itself, each
-subtitle carries the title the supplier reports, and the host drops it unless
-that title is the file's. The supplier yields its answer page by page, and the
-host requests no page after one whose subtitles all name another title, so a
-wrong title costs one request. A hash search needs no title, because the hash
-names the file. The host also drops subtitles that are forced or report another
+subtitles. For a supplier that lists subtitles for the file itself, each page
+carries the title the supplier reports, and the host drops its subtitles
+unless that title is the file's. The host asks the supplier for each page, up
+to the count the supplier reports, and requests no page after one that is
+listed under another title, so a wrong title costs one request. Every page of
+one answer is listed under one title; a page under another is an answer the
+supplier cannot read. A hash search needs no title, because the hash names the
+file. The host also drops subtitles that are forced or report another
 season, episode or year. The host records each operation's outcome: success,
 and a backoff when the supplier cannot read an answer, for a search as for
 Check and Download. A search also backs off once when its pages together take
@@ -127,10 +129,14 @@ differs: request shapes, language mappings, how it signs in, and reading its
 answers into facts, such as a listing's title, whether a subtitle is forced,
 or that its downloads are used up, with their return time when it says.
 Three real alternatives sit behind the supplier interface,
-so it earns its place. The release name is interpreted, and empty titles and
-extras are rejected, once before a request reaches a supplier. The shared HTTP
-owner holds platform HTTP, proxy and TLS configuration, request limits, route
-enforcement and cancellation, and makes no title or subtitle decisions.
+so it earns its place. The release name is interpreted, and a name that cannot
+be searched for, an empty title or an extra, is rejected once, in Acquisition,
+before a saved answer is read or a request reaches a supplier
+(`Release.IsSearchable`). A password supplier is available only in a release
+with its built-in key; the host decides that from the supplier's `Access`. The
+shared HTTP owner holds platform HTTP, proxy and TLS configuration, request
+limits, route enforcement and cancellation, and makes no title or subtitle
+decisions.
 
 | Responsibility | Existing owner to reuse or extend |
 | --- | --- |

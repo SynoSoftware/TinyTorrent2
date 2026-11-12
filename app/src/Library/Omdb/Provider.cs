@@ -1,8 +1,8 @@
 using System.Globalization;
 using System.Net.Http;
-using System.Reflection;
 using System.Text.Json;
-using System.Text.RegularExpressions;
+using Syno.TinyTorrent.Shared;
+using Syno.TinyTorrent.Shared.Network;
 
 namespace Syno.TinyTorrent.Library.Omdb;
 
@@ -22,14 +22,11 @@ internal sealed class Provider(string key) : IProvider
         )
         {
             Access = Access.Key,
-            BuiltInKey = typeof(Provider)
-                .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
-                .FirstOrDefault(value => value.Key == "OmdbKey")
-                ?.Value,
+            BuiltInKey = ApiKey.BuiltIn("OmdbKey"),
         };
 
     // OMDb misses Rogue Nation when the search query includes its dash.
-    public string Prepare(string query) => Regex.Replace(query, @"[^\p{L}\p{N}]+", " ").Trim();
+    public string Prepare(string query) => string.Join(' ', FileName.TitleWords(query));
 
     public async Task<VideoSearch> Search(VideoQuery query, CancellationToken cancellation)
     {
@@ -45,38 +42,32 @@ internal sealed class Provider(string key) : IProvider
                 cancellation
             )
             .ConfigureAwait(false);
-        try
+        // OMDb reports a missing movie as an error rather than an empty list.
+        if (Text(data, "Response") == "False")
         {
-            // OMDb reports a missing movie as an error rather than an empty list.
-            if (Text(data, "Response") == "False")
-            {
-                if (Text(data, "Error") == "Movie not found!")
-                    return new([], true);
-                throw new VideoException(VideoFailure.InvalidResult);
-            }
-            var results = data.GetProperty("Search");
-            var choices = results
-                .EnumerateArray()
-                .Where(item =>
-                    VideoInformation.ParseImdbId(Text(item, "imdbID")) is not null
-                    && Text(item, "Title").Length is > 0 and <= 300
-                )
-                .Select(item => new VideoChoice(
-                    CatalogId,
-                    Text(item, "imdbID"),
-                    VideoKind.Movie,
-                    Text(item, "Title")
-                )
-                {
-                    Year = VideoInformation.ParseYear(Text(item, "Year")),
-                })
-                .ToArray();
-            return new(choices, results.GetArrayLength() == 0);
+            if (Text(data, "Error") == "Movie not found!")
+                return new([], true);
+            throw new VideoException(VideoFailure.InvalidResult);
         }
-        catch (Exception error) when (error is InvalidOperationException or KeyNotFoundException)
-        {
-            throw new VideoException(VideoFailure.InvalidResult, error);
-        }
+        var results = data.GetProperty("Search");
+        var choices = results
+            .EnumerateArray()
+            .Select(item =>
+                Text(item, "imdbID") is { } id && VideoInformation.ParseImdbId(id) is not null
+                    ? new VideoChoice(
+                        CatalogId,
+                        id,
+                        VideoKind.Movie,
+                        Text(item, "Title") ?? string.Empty
+                    )
+                    {
+                        Year = VideoInformation.ParseYear(Text(item, "Year") ?? string.Empty),
+                    }
+                    : null
+            )
+            .OfType<VideoChoice>()
+            .ToArray();
+        return new(choices, results.GetArrayLength() == 0);
     }
 
     public async Task<VideoInformation> Describe(
@@ -86,7 +77,7 @@ internal sealed class Provider(string key) : IProvider
     )
     {
         // The identity is written into the request, so it must be an IMDb title.
-        if (choice.Kind != VideoKind.Movie || VideoInformation.ParseImdbId(choice.VideoId) is null)
+        if (VideoInformation.ParseImdbId(choice.VideoId) is null)
             throw new VideoException(VideoFailure.InvalidResult);
         var record = await request
             .Read(
@@ -100,10 +91,7 @@ internal sealed class Provider(string key) : IProvider
                         && Text(content, "Error") == "Movie not found!"
                     )
                         throw new MissingVideoException();
-                    if (
-                        Text(content, "Response") != "True"
-                        || Text(content, "Title").Length is 0 or > 300
-                    )
+                    if (Text(content, "Response") != "True")
                         throw new VideoException(VideoFailure.InvalidResult);
                     return new VideoRecord(
                         choice.VideoId,
@@ -115,15 +103,19 @@ internal sealed class Provider(string key) : IProvider
             )
             .ConfigureAwait(false);
         var movie = record.Content;
-        var title = Text(movie, "Title");
-        if (Text(movie, "Response") != "True" || title.Length is 0 or > 300)
+        if (Text(movie, "Response") != "True")
             throw new VideoException(VideoFailure.InvalidResult);
-        return new VideoInformation(CatalogId, choice.VideoId, title, VideoKind.Movie)
+        return new VideoInformation(
+            CatalogId,
+            choice.VideoId,
+            Text(movie, "Title") ?? string.Empty,
+            VideoKind.Movie
+        )
         {
-            Year = VideoInformation.ParseYear(Text(movie, "Year")),
+            Year = VideoInformation.ParseYear(Text(movie, "Year") ?? string.Empty),
             Genres = Names(movie, "Genre"),
             Cast = Names(movie, "Actors"),
-            Synopsis = Text(movie, "Plot"),
+            Synopsis = Text(movie, "Plot") ?? string.Empty,
             Records = [record],
             ImdbId = VideoInformation.ParseImdbId(choice.VideoId),
             Ratings = new()
@@ -134,9 +126,9 @@ internal sealed class Provider(string key) : IProvider
             },
             Directors = Names(movie, "Director"),
             // OMDb writes "Not Rated" or "Unrated" when it knows no age rating.
-            Certification = Text(movie, "Rated") is "Not Rated" or "Unrated"
-                ? string.Empty
-                : Text(movie, "Rated"),
+            Certification = Text(movie, "Rated") is { } rated and not ("Not Rated" or "Unrated")
+                ? rated
+                : string.Empty,
             // OMDb writes the takings as "$75,982,834".
             BoxOffice =
                 long.TryParse(
@@ -162,20 +154,17 @@ internal sealed class Provider(string key) : IProvider
         movie.TryGetProperty("Ratings", out var ratings) && ratings.ValueKind == JsonValueKind.Array
             ? ratings
                 .EnumerateArray()
-                .Where(rating =>
-                    Text(rating, "Source") == source
-                    && Text(rating, "Value").EndsWith(suffix, StringComparison.Ordinal)
-                )
+                .Where(rating => Text(rating, "Source") == source)
                 .Select(rating =>
-                    double.TryParse(
-                        Text(rating, "Value")[..^suffix.Length],
+                    Text(rating, "Value") is { } text
+                    && text.EndsWith(suffix, StringComparison.Ordinal)
+                    && double.TryParse(
+                        text[..^suffix.Length],
                         NumberStyles.Float,
                         CultureInfo.InvariantCulture,
                         out var value
                     )
-                    && value >= 0
-                    && value <= maximum
-                        ? new Rating(value / maximum * 10, VideoKind.Movie)
+                        ? Rating.From(value, maximum, VideoKind.Movie)
                         : null
                 )
                 .FirstOrDefault(rating => rating is not null)
@@ -188,20 +177,20 @@ internal sealed class Provider(string key) : IProvider
             NumberStyles.Float,
             CultureInfo.InvariantCulture,
             out var value
-        ) && value is >= 0 and <= 10
-            ? new Rating(value, VideoKind.Movie)
-            {
-                Votes =
-                    long.TryParse(
-                        Text(movie, "imdbVotes"),
-                        NumberStyles.AllowThousands,
-                        CultureInfo.InvariantCulture,
-                        out var votes
-                    )
-                    && votes > 0
-                        ? votes
-                        : null,
-            }
+        )
+            ? Rating.From(
+                value,
+                10,
+                VideoKind.Movie,
+                long.TryParse(
+                    Text(movie, "imdbVotes"),
+                    NumberStyles.AllowThousands,
+                    CultureInfo.InvariantCulture,
+                    out var votes
+                )
+                    ? votes
+                    : null
+            )
             : null;
 
     private async Task<JsonElement> Get(
@@ -232,19 +221,15 @@ internal sealed class Provider(string key) : IProvider
             };
 
     // OMDb writes "N/A" for a fact it lacks.
-    private static string Text(JsonElement element, string property) =>
-        element.ValueKind == JsonValueKind.Object
-        && element.TryGetProperty(property, out var value)
-        && value.ValueKind == JsonValueKind.String
-        && value.GetString() is { } text
-        && text != "N/A"
-            ? text.Trim()
-            : string.Empty;
+    private static string? Text(JsonElement element, string property) =>
+        ProviderJson.Text(element, property) is { } text && text != "N/A" ? text : null;
 
     // OMDb lists names in one comma-separated text.
     private static IReadOnlyList<string> Names(JsonElement element, string property) =>
-        Text(element, property)
-            .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
-            .Distinct()
-            .ToArray();
+        Text(element, property) is { } names
+            ? names
+                .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                .Distinct()
+                .ToArray()
+            : [];
 }

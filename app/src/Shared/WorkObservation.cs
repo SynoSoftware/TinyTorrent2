@@ -39,6 +39,13 @@ internal abstract record WorkProgress
 {
     private WorkProgress() { }
 
+    /// <summary>
+    /// The progress of counted work: a fraction of the total, or unknown
+    /// while nothing is counted, because a fraction needs a positive total.
+    /// </summary>
+    internal static WorkProgress Counted(int completed, int total, WorkUnit unit) =>
+        total > 0 ? new Fraction(completed, total, unit) : new Unknown();
+
     internal sealed record Unknown : WorkProgress;
 
     internal sealed record Amount : WorkProgress

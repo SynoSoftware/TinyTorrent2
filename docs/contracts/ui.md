@@ -105,6 +105,10 @@ the internal metrics of native controls. Choose local composition values from
 multiples of four effective pixels and established project relationships, not a
 screen-specific set of near-identical resources.
 
+A divider is App.xaml's 1-DIP line in the divider stroke brush, across its
+container or 16 DIPs tall between items on one line; the container sets the
+gap around it.
+
 Light dialogs use the native tertiary solid fill for the body, base fill for
 sections, and secondary fill for the footer. This softens large white editors
 and distinguishes the groups and final actions without stronger borders.
@@ -173,6 +177,12 @@ out of automation; icon-only actions have explicit accessible names.
 Actionable controls carry a stable `AutomationProperties.AutomationId`, so UI
 checks find them; decorative content has none.
 
+Every failure shows one glyph, the circled cross (`Segoe.CircleX`): an
+errored torrent or tracker, a failed check, a folder that Add cannot use, an
+error notification, the Pieces map's error and a Library file that did not
+open. Its shape differs from information, caution and an unknown state, so it
+reads without colour. The InfoBar keeps WinUI's own severity glyphs.
+
 **Owner ruling: an application-authored icon is larger than the text beside it,
 and it never enlarges its container.** The icon may extend into the container's
 padding but never into its margin, so it does not touch neighbouring controls.
@@ -226,7 +236,8 @@ Choose text by its role, not by the screen: page titles use the Title role;
 dialog and pane titles use Subtitle; group headings use Body
 Strong; field labels, values, commands and status text use Body. Secondary facts
 such as free space keep that body size and use the secondary text brush instead
-of smaller type. App.xaml owns the shared title and body styles.
+of smaller type. App.xaml owns the shared title and body styles, including one
+secondary style for each of the Body and Status roles.
 Torrent and file names and Library titles use the shared semibold identity
 style, so the subject leads each row. Paths, types, years and timestamps use
 the secondary text brush; rates and operational state retain ordinary body text.
@@ -345,6 +356,10 @@ Label wording and icon use follow
   no fill or border until pointed at, as the window's caption buttons are. A
   pane's Close then looks like the window's Close, and one act does not look
   like two different controls.
+  A native button that must look subtle in its own template, such as the
+  workspace switch and the InfoBar's Close, takes
+  `Controls/SubtleButtonResources.xaml`, which points its brushes at WinUI's
+  app-bar button brushes in each theme.
 
 ## Windows, layout, and themes
 

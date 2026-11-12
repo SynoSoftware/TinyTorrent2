@@ -62,45 +62,6 @@
         </StackPanel>
       </controls:FieldColumns.Secondary>
     </controls:FieldColumns>
-    <Button
-      x:Name="Connection"
-      Click="OnConnection"
-      Style="{StaticResource TinyTorrentSettingsLinkStyle}"
-      AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'connection_setup'), Mode=OneWay}"
-    >
-      <Grid ColumnSpacing="24" MinHeight="36">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="20" />
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
-        <FontIcon
-          FontFamily="{x:Bind icons:Segoe.Font}"
-          Glyph="{x:Bind icons:Segoe.Gauge}"
-          FontSize="{StaticResource TinyTorrentHeaderIconSize}"
-          VerticalAlignment="Center"
-        />
-        <StackPanel Grid.Column="1" Spacing="4">
-          <TextBlock
-            Text="{x:Bind Model.Text.Get('settings', 'connection_setup'), Mode=OneWay}"
-            Style="{StaticResource TinyTorrentBodyTextStyle}"
-            TextTrimming="CharacterEllipsis"
-            controls:Trimming.ShowsToolTip="True"
-          />
-          <TextBlock
-            Text="{x:Bind Model.Text.Get('settings', 'setup_hint'), Mode=OneWay}"
-            Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
-            TextTrimming="CharacterEllipsis"
-            controls:Trimming.ShowsToolTip="True"
-          />
-        </StackPanel>
-        <FontIcon
-          Grid.Column="2"
-          FontFamily="{x:Bind icons:Segoe.Font}"
-          Glyph="{x:Bind icons:Segoe.ChevronRight}"
-          FontSize="{StaticResource TinyTorrentChevronIconSize}"
-        />
-      </Grid>
-    </Button>
+    <controls:SettingsLink x:Name="Connection" Click="OnConnection" />
   </StackPanel>
 </UserControl>

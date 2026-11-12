@@ -273,8 +273,8 @@ internal sealed class Features
         _route = route;
         // The new route ends a running data download, which the person did
         // not ask for, so it is stopped as an interruption first.
-        _ = Library.InterruptDownload();
-        _ = Geolocation.InterruptDownload();
+        _ = Library.Download?.Interrupt();
+        _ = Geolocation.Download.Interrupt();
         _http.Configure(route);
         await _access.WaitAsync();
         try
@@ -591,7 +591,7 @@ internal sealed class Features
             // The reset clears what a running download writes, so the download
             // ends first, as the IMDb download does inside SuspendProtection.
             if (providerId is null)
-                await Geolocation.InterruptDownload();
+                await Geolocation.Download.Interrupt();
             await Library.SuspendProtection(
                 () =>
                     subtitles.Suspend(() =>

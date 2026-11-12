@@ -49,10 +49,6 @@ public sealed partial class MainWindow
             {
                 Style = (Style)Root.Resources["TinyTorrentWorkDividerStyle"],
             };
-            AutomationProperties.SetAccessibilityView(
-                divider,
-                Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw
-            );
             inline.FocusInvalidated += OnWorkFocus;
             expanded.FocusInvalidated += OnWorkFocus;
             inline.Show(operation, Model.Text, Model.Page == WindowPage.Library);

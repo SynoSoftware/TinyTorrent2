@@ -128,7 +128,7 @@ internal sealed partial class VideoLookup(
         IProvider provider;
         lock (_gate)
         {
-            if (enableAutomaticDownload && !Available(option))
+            if (enableAutomaticDownload && Requirement(option) != ProviderRequirement.None)
                 throw new VideoException(VideoFailure.ProviderUnavailable) { Provider = option };
             provider =
                 option == Option && Provider is { } current ? current : option.Create(Key(option));
@@ -230,11 +230,20 @@ internal sealed partial class VideoLookup(
     private string Key(ProviderOption option) =>
         _keys.GetValueOrDefault(option.ProviderId) ?? option.BuiltInKey ?? string.Empty;
 
-    // Callers hold _gate. A provider that needs an API key works only with
-    // one, and one that answers from downloaded data only once it is installed.
-    private bool Available(ProviderOption option) =>
-        option.Dataset?.IsInstalled
-        ?? (option.Access != Access.Key || !string.IsNullOrWhiteSpace(Key(option)));
+    /// <summary>
+    /// What the person must supply before the provider can answer: its data, an
+    /// API key, or nothing. A provider that needs a key works only with one, and
+    /// one that answers from downloaded data only once it is installed.
+    /// </summary>
+    internal ProviderRequirement Requirement(ProviderOption option)
+    {
+        lock (_gate)
+            return option.Dataset is { } dataset
+                ? dataset.IsInstalled ? ProviderRequirement.None : ProviderRequirement.Data
+                : option.Access == Access.Key && string.IsNullOrWhiteSpace(Key(option))
+                    ? ProviderRequirement.Key
+                    : ProviderRequirement.None;
+    }
 
     // Callers hold _gate. The saved provider serves its own option, so the
     // failure a lookup records belongs to the provider the person sees.
@@ -366,7 +375,7 @@ internal sealed partial class VideoLookup(
                 !connected
                 || !IsAutomaticDownloadEnabled
                 || Option is not { } option
-                || !Available(option)
+                || Requirement(option) != ProviderRequirement.None
                 || _changes.CurrentCount == 0
             )
             {
@@ -435,7 +444,7 @@ internal sealed partial class VideoLookup(
 
     private void Resume()
     {
-        if (Failure?.RetryAt > DateTimeOffset.UtcNow)
+        if (Failure is { IsWaiting: true })
             return;
         _failure = null;
     }
@@ -752,14 +761,11 @@ internal sealed partial class VideoLookup(
         run.Work.Report(
             run.Work.Observation with
             {
-                Progress =
-                    run.Done + run.Queue.Count > 0
-                        ? new WorkProgress.Fraction(
-                            run.Done,
-                            run.Done + run.Queue.Count,
-                            WorkUnit.Files
-                        )
-                        : new WorkProgress.Unknown(),
+                Progress = WorkProgress.Counted(
+                    run.Done,
+                    run.Done + run.Queue.Count,
+                    WorkUnit.Files
+                ),
                 Execution = execution,
             }
         );
@@ -826,6 +832,15 @@ internal sealed partial class VideoLookup(
                 await ServeBatch(run).ConfigureAwait(false);
         }
     }
+
+    // When the hold behind a failure ends, if it has a time.
+    private static DateTimeOffset? RetryAt(Exception error) =>
+        error switch
+        {
+            ProviderException provider => provider.RetryAt,
+            RequestBlockedException blocked => blocked.Block.RetryAt,
+            _ => null,
+        };
 
     // Identifies the batch's next file whose hold has ended, or waits for the
     // earliest hold when every file waits.
@@ -925,15 +940,8 @@ internal sealed partial class VideoLookup(
             ends = true;
             System.Diagnostics.Debug.WriteLine("Metadata batch cancelled.");
         }
-        catch (Exception error)
-            when (error
-                    is ProviderException { RetryAt: not null }
-                        or RequestBlockedException { Block.RetryAt: not null }
-            )
+        catch (Exception error) when (RetryAt(error) is { } retry)
         {
-            var retry = error is ProviderException provider
-                ? provider.RetryAt
-                : ((RequestBlockedException)error).Block.RetryAt;
             lock (_gate)
                 if (!run.Work.Token.IsCancellationRequested)
                 {
@@ -1138,10 +1146,7 @@ internal sealed partial class VideoLookup(
         {
             context.Token.ThrowIfCancellationRequested();
             report?.Invoke(new WorkExecution.Running());
-            bool available;
-            lock (_gate)
-                available = Available(context.Option);
-            if (!available)
+            if (Requirement(context.Option) != ProviderRequirement.None)
                 throw new ProviderException(VideoFailure.ProviderUnavailable);
             var result = await action(context).ConfigureAwait(false);
             return result;
@@ -1213,8 +1218,8 @@ internal sealed partial class VideoLookup(
         {
             // A sweep stopped before this point never shows an operation.
             context.Token.ThrowIfCancellationRequested();
-            sweep.Targets = pending.Where(target => !_cancelled.Contains(target)).ToList();
-            if (sweep.Targets.Count == 0)
+            sweep.Pass = new(pending, _cancelled, target => target.Entry.EntryId);
+            if (sweep.Pass.Count == 0)
                 return null;
             sweep.Work = new(
                 Work,
@@ -1254,18 +1259,14 @@ internal sealed partial class VideoLookup(
                 return;
             }
             sweep.RetryAt = null;
+            var pass = sweep.Pass!;
             VideoTarget? target;
             lock (_gate)
             {
-                target = sweep.Targets[sweep.Done];
-                // A row that scrolled away before its turn is identified when
-                // it shows again.
-                if (!_displayed.Contains(target.Entry.EntryId))
-                {
-                    sweep.Targets.RemoveAt(sweep.Done);
+                var count = pass.Count;
+                target = pass.Next(_displayed);
+                if (pass.Count != count)
                     ReportSweep(sweep, new WorkExecution.Waiting());
-                    target = null;
-                }
             }
             if (target is not null)
             {
@@ -1283,7 +1284,7 @@ internal sealed partial class VideoLookup(
                         .ConfigureAwait(false);
                     lock (_gate)
                     {
-                        sweep.Done++;
+                        pass.Advance();
                         if (outcome == IdentificationOutcome.Matched)
                             sweep.Found++;
                         if (block is { Kind: RequestBlockKind.Limit })
@@ -1291,16 +1292,12 @@ internal sealed partial class VideoLookup(
                         ReportSweep(sweep, new WorkExecution.Waiting());
                     }
                 }
-                catch (ProviderException error) when (error.RetryAt is not null)
+                catch (Exception error) when (RetryAt(error) is { } retry)
                 {
-                    sweep.RetryAt = error.RetryAt;
-                }
-                catch (RequestBlockedException error) when (error.Block.RetryAt is not null)
-                {
-                    sweep.RetryAt = error.Block.RetryAt;
+                    sweep.RetryAt = retry;
                 }
             }
-            if (sweep.Done == sweep.Targets.Count)
+            if (pass.IsFinished)
             {
                 operation.Outcome = operation.Error is null
                     ? WorkOutcome.Completed
@@ -1339,24 +1336,10 @@ internal sealed partial class VideoLookup(
         }
     }
 
-    // Nothing is left when every target scrolled away before its turn.
     private static void ReportSweep(Sweep sweep, WorkExecution execution)
     {
-        if (sweep.Work is { } work)
-            work.Report(
-                work.Observation with
-                {
-                    Progress =
-                        sweep.Targets.Count > 0
-                            ? new WorkProgress.Fraction(
-                                sweep.Done,
-                                sweep.Targets.Count,
-                                WorkUnit.Files
-                            )
-                            : new WorkProgress.Unknown(),
-                    Execution = execution,
-                }
-            );
+        if (sweep is { Work: { } work, Pass: { } pass })
+            work.Report(work.Observation with { Progress = pass.Progress, Execution = execution });
     }
 
     private Task StopSweep(Sweep sweep, CancellableWork work)
@@ -1365,8 +1348,7 @@ internal sealed partial class VideoLookup(
         {
             if (work.TryCancel(out var signalling))
             {
-                foreach (var target in sweep.Targets.Skip(sweep.Done))
-                    _cancelled.Add(target);
+                sweep.Pass?.Cancel();
                 Wake();
             }
             return signalling;
@@ -1380,14 +1362,9 @@ internal sealed partial class VideoLookup(
         {
             if (ReferenceEquals(_sweep, sweep))
                 _sweep = null;
-            if (sweep.Work is { } work)
+            if (sweep is { Work: { } work, Pass: { } pass })
             {
-                work.Operation.Summarize(
-                    "metadata_result",
-                    sweep.Found,
-                    sweep.Done,
-                    sweep.Targets.Count
-                );
+                work.Operation.Summarize("metadata_result", sweep.Found, pass.Done, pass.Count);
                 ending = work.DisposeAsync().AsTask();
             }
             else
@@ -1421,7 +1398,9 @@ internal sealed partial class VideoLookup(
         /// <see cref="Work"/> takes it over once the sweep shows.
         /// </summary>
         internal CancellationTokenSource Cancellation { get; } = cancellation;
-        internal List<VideoTarget> Targets { get; set; } = [];
+
+        /// <summary>The files the sweep accepted. A sweep that has <see cref="Work"/> has them.</summary>
+        internal Pass<VideoTarget>? Pass { get; set; }
 
         /// <summary>The sweep's work, which shows only once it has files to identify.</summary>
         internal CancellableWork? Work { get; set; }
@@ -1434,7 +1413,6 @@ internal sealed partial class VideoLookup(
 
         /// <summary>When the hold that stopped the next file ends.</summary>
         internal DateTimeOffset? RetryAt { get; set; }
-        internal int Done;
         internal int Found;
     }
 

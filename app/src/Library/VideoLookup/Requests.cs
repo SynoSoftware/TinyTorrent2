@@ -3,13 +3,36 @@ using Syno.TinyTorrent.Shared.Network;
 
 namespace Syno.TinyTorrent.Library;
 
-/// <summary>
-/// Reads a provider's JSON answer, and turns a failed reply into Library's
-/// failure.
-/// </summary>
-internal static class ProviderJson
+internal sealed partial class VideoLookup
 {
-    internal static async Task<JsonElement> Get(
+    // Sends an online provider's request with the protection of its key and
+    // the operation Library runs; a 404 for a detail means the video is gone.
+    // A refusal holds every request that uses the key.
+    private ProviderGet Get(Context context, string operation, FreshRequest? fresh) =>
+        context.Access is not { } access
+            ? Offline
+            : (message, cancellation, refusal) =>
+                Send(
+                    http,
+                    new ProviderCall(
+                        message,
+                        policy,
+                        new(access with { Operation = operation }) { Authentication = access }
+                    )
+                    {
+                        Fresh = fresh,
+                        NamesResource = operation == "detail",
+                    },
+                    cancellation,
+                    refusal
+                );
+
+    // A provider that answers from downloaded data sends no request.
+    private static readonly ProviderGet Offline = (_, _, _) => throw new NotSupportedException();
+
+    // Sends a request, reads its JSON answer, and turns a failed reply into
+    // Library's failure.
+    private static async Task<JsonElement> Send(
         ProviderHttp http,
         ProviderCall call,
         CancellationToken cancellation,
@@ -24,7 +47,7 @@ internal static class ProviderJson
         }
         catch (ReplyException error)
         {
-            throw Failure(error);
+            throw Translate(error);
         }
         JsonElement data;
         try
@@ -34,7 +57,7 @@ internal static class ProviderJson
         }
         catch (JsonException error)
         {
-            throw Failure(
+            throw Translate(
                 await ProviderHttp
                     .Fail(call, ReplyFailure.Invalid, inner: error)
                     .ConfigureAwait(false)
@@ -63,7 +86,7 @@ internal static class ProviderJson
     // The failure's retry time is the hold's, so the person sees the time
     // that the shared request policy keeps. A remote wait stays a request
     // block, which the person reads as a wait with its time.
-    private static Exception Failure(ReplyException error) =>
+    private static Exception Translate(ReplyException error) =>
         error switch
         {
             ReplyException.Held { Failure: ReplyFailure.Wait } wait => new RequestBlockedException(

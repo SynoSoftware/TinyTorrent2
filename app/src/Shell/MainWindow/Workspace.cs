@@ -229,11 +229,14 @@ public sealed partial class MainWindow
             _settingsPage.KeyRequested += async (_, setup) =>
                 await ShowKey(setup.Provider, setup.EnableAutomaticDownload);
             _settingsPage.AutomaticDataRequested += async (_, _) =>
-                await ConfirmDownload(Model.Library, Model.PrepareAutomaticDownload);
-            _settingsPage.UpdateRequested += async (_, dataset) =>
-                await ConfirmDownload(dataset, () => Model.DownloadData(dataset));
-            _settingsPage.DeleteRequested += async (_, dataset) =>
-                await ConfirmDataDeletion(dataset);
+            {
+                if (Model.Library.Download is { } download)
+                    await ConfirmDownload(download, Model.PrepareAutomaticDownload);
+            };
+            _settingsPage.UpdateRequested += async (_, download) =>
+                await ConfirmDownload(download, () => Model.DownloadData(download));
+            _settingsPage.DeleteRequested += async (_, download) =>
+                await ConfirmDataDeletion(download);
             _settingsPage.ConnectionRequested += async (_, _) => await ShowConnection();
             _settingsPage.ResetRequested += async (_, _) => await ConfirmReset();
             _settingsPage.LayoutChanged += (_, _) => UpdateChrome();

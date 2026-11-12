@@ -27,10 +27,11 @@
       >
         <Setter Property="Foreground" Value="{ThemeResource SystemFillColorCautionBrush}" />
       </Style>
-      <Style x:Key="TinyTorrentWorkDividerStyle" TargetType="Border">
-        <Setter Property="Background" Value="{ThemeResource DividerStrokeColorDefaultBrush}" />
-        <Setter Property="Width" Value="1" />
-        <Setter Property="Height" Value="16" />
+      <Style
+        x:Key="TinyTorrentWorkDividerStyle"
+        TargetType="Border"
+        BasedOn="{StaticResource TinyTorrentVerticalDividerStyle}"
+      >
         <Setter Property="Margin" Value="10,0" />
       </Style>
     </Grid.Resources>
@@ -80,34 +81,7 @@
         >
           <!-- Flat until pointed at, like the menus beside it in the title bar. -->
           <DropDownButton.Resources>
-            <ResourceDictionary>
-              <ResourceDictionary.ThemeDictionaries>
-                <ResourceDictionary x:Key="Light">
-                  <StaticResource x:Key="ButtonBackground" ResourceKey="AppBarButtonBackground" />
-                  <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="AppBarButtonBackgroundPointerOver" />
-                  <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AppBarButtonBackgroundPressed" />
-                  <StaticResource x:Key="ButtonBorderBrush" ResourceKey="AppBarButtonBorderBrush" />
-                  <StaticResource x:Key="ButtonBorderBrushPointerOver" ResourceKey="AppBarButtonBorderBrushPointerOver" />
-                  <StaticResource x:Key="ButtonBorderBrushPressed" ResourceKey="AppBarButtonBorderBrushPressed" />
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="Dark">
-                  <StaticResource x:Key="ButtonBackground" ResourceKey="AppBarButtonBackground" />
-                  <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="AppBarButtonBackgroundPointerOver" />
-                  <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AppBarButtonBackgroundPressed" />
-                  <StaticResource x:Key="ButtonBorderBrush" ResourceKey="AppBarButtonBorderBrush" />
-                  <StaticResource x:Key="ButtonBorderBrushPointerOver" ResourceKey="AppBarButtonBorderBrushPointerOver" />
-                  <StaticResource x:Key="ButtonBorderBrushPressed" ResourceKey="AppBarButtonBorderBrushPressed" />
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="HighContrast">
-                  <StaticResource x:Key="ButtonBackground" ResourceKey="AppBarButtonBackground" />
-                  <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="AppBarButtonBackgroundPointerOver" />
-                  <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AppBarButtonBackgroundPressed" />
-                  <StaticResource x:Key="ButtonBorderBrush" ResourceKey="AppBarButtonBorderBrush" />
-                  <StaticResource x:Key="ButtonBorderBrushPointerOver" ResourceKey="AppBarButtonBorderBrushPointerOver" />
-                  <StaticResource x:Key="ButtonBorderBrushPressed" ResourceKey="AppBarButtonBorderBrushPressed" />
-                </ResourceDictionary>
-              </ResourceDictionary.ThemeDictionaries>
-            </ResourceDictionary>
+            <ResourceDictionary Source="ms-appx:///Controls/SubtleButtonResources.xaml" />
           </DropDownButton.Resources>
           <StackPanel Orientation="Horizontal" Spacing="8">
             <Grid Width="{StaticResource TinyTorrentSurfaceIconSize}" Height="{StaticResource TinyTorrentSurfaceIconSize}" AutomationProperties.AccessibilityView="Raw">
@@ -311,8 +285,7 @@
                       <TextBlock
                         Grid.Column="2"
                         Text="{x:Bind Count, Mode=OneWay}"
-                        Style="{StaticResource TinyTorrentStatusTextStyle}"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Style="{StaticResource TinyTorrentSecondaryStatusStyle}"
                         Visibility="{x:Bind IsCountNeutral, Mode=OneWay}"
                       />
                       <TextBlock
@@ -951,7 +924,7 @@
                 />
                 <FontIcon
                   FontFamily="{x:Bind icons:Segoe.Font}"
-                  Glyph="{x:Bind icons:Segoe.CircleAlert}"
+                  Glyph="{x:Bind icons:Segoe.CircleX}"
                   Style="{StaticResource TinyTorrentStatusIconStyle}"
                   Foreground="{ThemeResource SystemFillColorCriticalBrush}"
                   Visibility="{x:Bind IsError, Mode=OneWay}"
@@ -1067,11 +1040,9 @@
     </Popup>
     <Border
       Grid.Row="2"
-      Height="1"
+      Style="{StaticResource TinyTorrentDividerStyle}"
       VerticalAlignment="Top"
-      Background="{ThemeResource DividerStrokeColorDefaultBrush}"
       IsHitTestVisible="False"
-      AutomationProperties.AccessibilityView="Raw"
     />
     <Grid x:Name="StatusBar" Grid.Row="2" Margin="16,6,16,6" MinHeight="32">
       <Grid.ColumnDefinitions>
@@ -1109,12 +1080,8 @@
         <StackPanel x:Name="WorkItems" Orientation="Horizontal" VerticalAlignment="Center" />
         <Border
           x:Name="WorkSeparator"
-          Width="1"
-          Height="16"
-          Margin="10,0"
-          Background="{ThemeResource DividerStrokeColorDefaultBrush}"
+          Style="{StaticResource TinyTorrentWorkDividerStyle}"
           Visibility="Collapsed"
-          AutomationProperties.AccessibilityView="Raw"
         />
         <controls:ActionButton
           x:Name="WorkButton"
@@ -1187,8 +1154,7 @@
         >
           <TextBlock
             x:Name="MemoryCaption"
-            Style="{StaticResource TinyTorrentStatusTextStyle}"
-            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+            Style="{StaticResource TinyTorrentSecondaryStatusStyle}"
           />
           <StackPanel x:Name="EngineMemory" Orientation="Horizontal" Spacing="6">
             <FontIcon
@@ -1213,17 +1179,13 @@
           </StackPanel>
           <Border
             x:Name="MemoryDivider"
-            Width="1"
-            Height="16"
-            Background="{ThemeResource DividerStrokeColorDefaultBrush}"
-            AutomationProperties.AccessibilityView="Raw"
+            Style="{StaticResource TinyTorrentVerticalDividerStyle}"
           />
         </StackPanel>
         <TextBlock
           x:Name="TransferLabel"
-          Style="{StaticResource TinyTorrentStatusTextStyle}"
+          Style="{StaticResource TinyTorrentSecondaryStatusStyle}"
           TextTrimming="CharacterEllipsis"
-          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
         />
         <StackPanel
           x:Name="DownloadRate"
@@ -1333,9 +1295,8 @@
         </StackPanel>
         <TextBlock
           x:Name="LimitsLabel"
-          Style="{StaticResource TinyTorrentStatusTextStyle}"
+          Style="{StaticResource TinyTorrentSecondaryStatusStyle}"
           TextTrimming="CharacterEllipsis"
-          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
         />
         <StackPanel
           x:Name="FreeSpaceStatus"
@@ -1351,9 +1312,8 @@
           />
           <TextBlock
             x:Name="FreeSpaceLabel"
-            Style="{StaticResource TinyTorrentStatusTextStyle}"
+            Style="{StaticResource TinyTorrentSecondaryStatusStyle}"
             TextTrimming="CharacterEllipsis"
-            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
           />
         </StackPanel>
         <StackPanel
@@ -1370,9 +1330,8 @@
           />
           <TextBlock
             x:Name="ExternalIpLabel"
-            Style="{StaticResource TinyTorrentStatusTextStyle}"
+            Style="{StaticResource TinyTorrentSecondaryStatusStyle}"
             TextTrimming="CharacterEllipsis"
-            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
           />
         </StackPanel>
         <StackPanel
@@ -1426,9 +1385,8 @@
           />
           <TextBlock
             x:Name="UpdateLabel"
-            Style="{StaticResource TinyTorrentStatusTextStyle}"
+            Style="{StaticResource TinyTorrentSecondaryStatusStyle}"
             TextTrimming="CharacterEllipsis"
-            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
           />
         </StackPanel>
       </StackPanel>

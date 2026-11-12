@@ -390,7 +390,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         RemovalDraft = new RemovalDraft(this, _client);
         SpeedLimit = new SpeedLimit(this, _client);
         Geolocation = new Geolocation(_providerHttp, Work);
-        Geolocation.Failed += (_, error) => Notifications.Report(error);
+        Geolocation.Download.Failed += (_, error) => Notifications.Report(error);
         Inspector = new Inspector(this, _client, dispatcher);
         Updates = new Updates(_providerHttp, Work, _client, Settings.Updates);
         Updates.Changed += (_, _) => Changed(nameof(HasUpdate));

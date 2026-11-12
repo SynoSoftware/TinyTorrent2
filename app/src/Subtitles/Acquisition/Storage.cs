@@ -179,8 +179,7 @@ internal sealed partial class Acquisition
             cancellation
         );
 
-    private Task? _reconciling;
-    private bool _reconcilePending;
+    private Rerun? _reconciliation;
 
     internal Task Reconcile()
     {
@@ -188,38 +187,18 @@ internal sealed partial class Acquisition
         {
             if (_disposed || !_connected)
                 return Task.CompletedTask;
-            _reconcilePending = true;
-            return _reconciling ??= Task.Run(ReconcileChanges);
+            return (_reconciliation ??= new(ReconcilePass)).Request();
         }
     }
 
-    private async Task ReconcileChanges()
+    private async Task ReconcilePass()
     {
-        try
+        await ReconcileOnce().ConfigureAwait(false);
+        // A reconciliation can follow a move of a displayed movie, so the
+        // displayed movies are checked after it too.
+        lock (_requestSync)
         {
-            while (true)
-            {
-                lock (_requestSync)
-                {
-                    if (!_reconcilePending || _disposed || !_connected)
-                    {
-                        _reconciling = null;
-                        return;
-                    }
-                    _reconcilePending = false;
-                }
-                await ReconcileOnce().ConfigureAwait(false);
-                // A reconciliation can follow a move of a displayed movie, so
-                // the displayed movies are checked after it too.
-                lock (_requestSync)
-                    QueueInspect();
-            }
-        }
-        catch
-        {
-            lock (_requestSync)
-                _reconciling = null;
-            throw;
+            QueueInspect();
         }
     }
 
@@ -714,14 +693,7 @@ internal sealed partial class Acquisition
 
     private bool CanLookup(SqliteConnection connection, Target target)
     {
-        var lookup = new SubtitleLookup(
-            Path.GetFileName(target.Videos[0].FinalPath),
-            target.Language,
-            _ => Task.CompletedTask
-        )
-        {
-            Stage = Stage(target),
-        };
+        var lookup = LookupFor(target);
         var counter = SearchCount(lookup.FileName, lookup.Language);
         if (SearchProtection(connection, lookup) is null)
             return true;

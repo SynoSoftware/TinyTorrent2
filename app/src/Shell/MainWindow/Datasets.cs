@@ -13,27 +13,27 @@ public sealed partial class MainWindow
     // data is not downloaded, and when the person updates installed data,
     // which states the data's age. The download that start begins continues
     // after the dialog closes, and Settings shows its progress.
-    private async Task ConfirmDownload(IDataset dataset, Func<Task> start)
+    private async Task ConfirmDownload(DataDownload download, Func<Task> start)
     {
-        var installed = dataset.Installed;
-        var current = dataset.IsCurrent;
+        var installed = download.Installed;
+        var current = download.IsCurrent;
         var dialog = new Dialog
         {
             Glyph = Segoe.Database,
             PrimaryGlyph = Segoe.Download,
-            IsPrimaryButtonEnabled = dataset.CanDownload,
+            IsPrimaryButtonEnabled = download.CanStart,
         };
         void Follow(object? sender, PropertyChangedEventArgs args)
         {
-            if (args.PropertyName is nameof(IDataset.CanDownload) or "")
+            if (args.PropertyName is nameof(DataDownload.CanStart) or "")
             {
-                dialog.IsPrimaryButtonEnabled = dataset.CanDownload;
+                dialog.IsPrimaryButtonEnabled = download.CanStart;
             }
         }
-        dataset.PropertyChanged += Follow;
+        download.PropertyChanged += Follow;
         dialog.PrimaryButtonClick += (sender, args) =>
         {
-            args.Cancel = !dataset.CanDownload;
+            args.Cancel = !download.CanStart;
             if (!args.Cancel)
             {
                 _ = start();
@@ -45,7 +45,7 @@ public sealed partial class MainWindow
                 dialog,
                 () =>
                 {
-                    var section = dataset.Section;
+                    var section = download.Section;
                     if (installed is null)
                     {
                         dialog.Title = Model.Text.Get(section, "download_title");
@@ -79,13 +79,13 @@ public sealed partial class MainWindow
         }
         finally
         {
-            dataset.PropertyChanged -= Follow;
+            download.PropertyChanged -= Follow;
         }
     }
 
-    private async Task ConfirmDataDeletion(IDataset dataset)
+    private async Task ConfirmDataDeletion(DataDownload download)
     {
-        if (dataset.Installed is not { } data)
+        if (download.Installed is not { } data)
             return;
         var dialog = new Dialog
         {
@@ -96,7 +96,7 @@ public sealed partial class MainWindow
             dialog,
             () =>
             {
-                var section = dataset.Section;
+                var section = download.Section;
                 dialog.Title = Model.Text.Get(section, "delete_title");
                 dialog.Content = DataConfirmation(
                     [
@@ -115,7 +115,7 @@ public sealed partial class MainWindow
                 dialog.PrimaryButtonText = Model.Text.Get("file_action", "delete");
                 dialog.PrimaryToolTip = Model.Text.Get(section, "delete_tip");
             },
-            dataset.Delete
+            download.Delete
         );
     }
 

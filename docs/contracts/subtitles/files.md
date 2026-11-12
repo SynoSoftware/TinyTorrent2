@@ -94,8 +94,10 @@ plain `English.srt` in a season folder covers no episode.
 Samples and unselected files never count as the folder's one movie. The
 language comes from every token of the subtitle's name after the video's name
 and from the names of the folders between them; it is accepted when exactly one
-language appears. A `forced` token marks a forced-only file, which gets no
-record and does not stop a full subtitle from being downloaded.
+language appears. A label that says "forced", or "foreign" with "parts" or
+"only", marks a forced-only file, which gets no record and does not stop a full
+subtitle from being downloaded. `SubtitleFile.IsForced` owns the rule, and
+SubDL's labels are read with it.
 
 When the names do not tell, the first part of a text subtitle (`.srt`, `.ass`,
 `.ssa`, `.vtt`) is read through the shared subtitle decoding, with cue numbers,

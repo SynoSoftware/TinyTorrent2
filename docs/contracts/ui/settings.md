@@ -147,9 +147,14 @@ Use 24-DIP gaps between major tasks, 8-DIP gaps between sibling cards in either
 direction, 8 DIPs from an external section heading to its card, and 16-DIP
 horizontal card insets. Related rows share themed separators, no exterior row
 gaps, a compact 52-DIP minimum or 64 DIPs with a description. Trailing controls
-align to the actual right inset. Reserve an action column only where a group
-has related actions. Numeric inputs use native TextBox, including its clear
-button; optional limits use the Unlimited placeholder.
+align to the actual right inset. Card headers, icon-led rows and Settings links
+share one geometry: a 20-DIP icon column and a 24-DIP gap to their text. A
+switch row shows On or Off beside its switch, from its setting. A folder
+setting's editor is its path and Browse; the path takes the row's accessible
+help, as every other editor does, and Browse's tooltip names the folder it
+chooses. Reserve an action column only where a group has related actions.
+Numeric inputs use native TextBox, including its clear button; optional limits
+use the Unlimited placeholder.
 
 Cards and expanders retain their native card strokes, fills and control
 rounding, so they remain quieter than the pane surfaces. Row dividers and

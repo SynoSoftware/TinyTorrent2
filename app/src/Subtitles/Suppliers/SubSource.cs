@@ -1,10 +1,9 @@
 using System.Globalization;
 using System.Net.Http;
-using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Network;
+using static Syno.TinyTorrent.Shared.Network.ProviderJson;
 using static Syno.TinyTorrent.Subtitles.Supplier;
 
 namespace Syno.TinyTorrent.Subtitles.Suppliers;
@@ -38,11 +37,7 @@ internal sealed partial class SubSource : ISupplier
         );
     }
 
-    public string? BuiltInKey { get; } =
-        typeof(SubSource)
-            .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
-            .FirstOrDefault(value => value.Key == "SubSourceKey")
-            ?.Value;
+    public string? BuiltInKey { get; } = ApiKey.BuiltIn("SubSourceKey");
 
     public void Authenticate(HttpRequestMessage request, string key) =>
         request.Headers.Add("X-API-Key", key);
@@ -98,69 +93,62 @@ internal sealed partial class SubSource : ISupplier
         return listings;
     }
 
-    public async IAsyncEnumerable<SubtitleSearch> Search(
+    public async Task<SubtitleSearch.Reply> Search(
         SubtitleQuery query,
+        int page,
         SupplierClient client,
-        [EnumeratorCancellation] CancellationToken cancellation
+        CancellationToken cancellation
     )
     {
         // Titles always lists, so the host searches only a title it chose.
         var title = query.Title!;
-        for (var page = 1; ; page++)
+        var address =
+            "/api/v1/subtitles?movieId="
+            + title.TitleId.ToString(CultureInfo.InvariantCulture)
+            + "&language="
+            + Uri.EscapeDataString(query.Code)
+            + "&sort=rating&limit=100&page="
+            + page.ToString(CultureInfo.InvariantCulture);
+        var reply = await client.Get(new Uri(Origin, address), cancellation).ConfigureAwait(false);
+        using var subtitles = Parse(reply.Bytes);
+        var data = Data(subtitles.RootElement);
+        var candidates = new List<SubtitleCandidate>();
+        foreach (var subtitle in data.EnumerateArray())
         {
-            var address =
-                "/api/v1/subtitles?movieId="
-                + title.TitleId.ToString(CultureInfo.InvariantCulture)
-                + "&language="
-                + Uri.EscapeDataString(query.Code)
-                + "&sort=rating&limit=100&page="
-                + page.ToString(CultureInfo.InvariantCulture);
-            var reply = await client
-                .Get(new Uri(Origin, address), cancellation)
-                .ConfigureAwait(false);
-            using var subtitles = Parse(reply.Bytes);
-            var data = Data(subtitles.RootElement);
-            var candidates = new List<SubtitleCandidate>();
-            foreach (var subtitle in data.EnumerateArray())
-            {
-                if (
-                    Number(subtitle, "movieId") != title.TitleId
-                    || Text(subtitle, "language") != query.Code
-                    || Number(subtitle, "files") != 1
-                    || Number(subtitle, "subtitleId") is not { } id
-                    || id <= 0
-                    || !subtitle.TryGetProperty("releaseInfo", out var releases)
-                    || releases.ValueKind != JsonValueKind.Array
-                )
-                    continue;
-                // Only an explicit false says that the subtitle is full.
-                var forced =
-                    !subtitle.TryGetProperty("foreignParts", out var foreign)
-                    || foreign.ValueKind != JsonValueKind.False
-                    || Text(subtitle, "productionType") == "forced";
-                var names = releases
-                    .EnumerateArray()
-                    .Where(value => value.ValueKind == JsonValueKind.String)
-                    .Select(value => value.GetString()!);
-                foreach (var name in names)
-                    candidates.Add(
-                        new(query.Language, name, name, id.ToString(CultureInfo.InvariantCulture))
-                        {
-                            Season = title.Listing.Season,
-                            Forced = forced,
-                        }
-                    );
-            }
             if (
-                !subtitles.RootElement.TryGetProperty("pagination", out var pagination)
-                || Number(pagination, "pages") is not { } pages
-                || pages < 0
+                Number(subtitle, "movieId") != title.TitleId
+                || Text(subtitle, "language") != query.Code
+                || Number(subtitle, "files") != 1
+                || Number(subtitle, "subtitleId") is not { } id
+                || id <= 0
+                || !subtitle.TryGetProperty("releaseInfo", out var releases)
+                || releases.ValueKind != JsonValueKind.Array
             )
-                throw new SubtitleException(SubtitleFailure.Format);
-            yield return new(candidates, data.GetArrayLength() == 0);
-            if (page >= pages)
-                yield break;
+                continue;
+            // Only an explicit false says that the subtitle is full.
+            var forced =
+                !subtitle.TryGetProperty("foreignParts", out var foreign)
+                || foreign.ValueKind != JsonValueKind.False
+                || Text(subtitle, "productionType") == "forced";
+            var names = releases
+                .EnumerateArray()
+                .Where(value => value.ValueKind == JsonValueKind.String)
+                .Select(value => value.GetString()!);
+            foreach (var name in names)
+                candidates.Add(
+                    new(query.Language, name, name, id.ToString(CultureInfo.InvariantCulture))
+                    {
+                        Season = title.Listing.Season,
+                        Forced = forced,
+                    }
+                );
         }
+        if (
+            !subtitles.RootElement.TryGetProperty("pagination", out var pagination)
+            || Number(pagination, "pages") is not { } pages
+        )
+            throw new SubtitleException(SubtitleFailure.Format);
+        return new(candidates, pages) { Empty = data.GetArrayLength() == 0 };
     }
 
     public async Task<ProviderReply> Download(

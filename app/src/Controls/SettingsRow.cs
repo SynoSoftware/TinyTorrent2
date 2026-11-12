@@ -44,9 +44,11 @@ public sealed partial class SettingsRow : ContentControl
 
     /// <summary>
     /// The setting this row edits. The row shows its label, unless the row
-    /// sets its own header, and its error. It enables and names its content
-    /// control and unit selector, and saves a switch, a selection or a unit
-    /// through the setting. The page owns typed input.
+    /// sets its own header, and its error. A switch row also shows the
+    /// setting's state, On or Off, unless the row sets its own state text. It
+    /// enables and names its content control and unit selector, and saves a
+    /// switch, a selection or a unit through the setting. The page owns typed
+    /// input.
     /// </summary>
     public Setting? Setting
     {
@@ -150,8 +152,9 @@ public sealed partial class SettingsRow : ContentControl
     private void OnContentEnabled(object sender, DependencyPropertyChangedEventArgs args) =>
         Update();
 
-    // A header or automation name set locally wins, whether it arrives before
-    // or after the setting, because a local value replaces a binding.
+    // A header, state text or automation name set locally wins, whether it
+    // arrives before or after the setting, because a local value replaces a
+    // binding.
     private void Attach()
     {
         if (Setting is null)
@@ -176,7 +179,13 @@ public sealed partial class SettingsRow : ContentControl
             {
                 Enable(editor, nameof(Setting.Label));
                 if (editor is ToggleSwitch toggle)
+                {
                     toggle.Toggled += OnToggled;
+                    if (ReadLocalValue(StateTextProperty) == DependencyProperty.UnsetValue)
+                    {
+                        SetBinding(StateTextProperty, Bind(nameof(Setting.StateText)));
+                    }
+                }
                 if (editor is Selector choice)
                     choice.SelectionChanged += OnSelected;
             }

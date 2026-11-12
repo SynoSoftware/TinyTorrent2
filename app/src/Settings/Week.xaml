@@ -30,6 +30,8 @@
       >
         <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
       </Style>
+      <!-- Scheduler's legend repeats the fill and outline of the track, alternative
+           and paused styles, so a change to one of them belongs in the legend too. -->
       <Style x:Key="WeekTrackStyle" TargetType="Border">
         <Setter Property="Background" Value="{ThemeResource ControlFillColorSecondaryBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />

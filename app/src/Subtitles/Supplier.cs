@@ -11,7 +11,8 @@ namespace Syno.TinyTorrent.Subtitles;
 /// <summary>
 /// The host of one <see cref="ISupplier"/>. It sends the supplier's requests,
 /// signs them, accounts for them in the request policy, follows their
-/// redirects, decodes subtitle files and decides which subtitles fit a file.
+/// redirects, asks for each page of a search, decodes subtitle files and
+/// decides which subtitles fit a file.
 /// </summary>
 internal sealed class Supplier(ISupplier supplier, RequestPolicy policy)
 {
@@ -24,9 +25,12 @@ internal sealed class Supplier(ISupplier supplier, RequestPolicy policy)
             .Concat(SubSource.LanguageCodes.Keys);
 
     internal SubtitleSupplier SupplierId => supplier.SupplierId;
-    internal bool Available => supplier.Available;
+
+    // A password supplier sends the built-in key with every request, so it
+    // works only in a release that has one.
+    internal bool Available => Access != Access.Password || HasBuiltInKey;
     internal Access Access => supplier.Access;
-    internal bool HasBuiltInKey => !string.IsNullOrWhiteSpace(supplier.BuiltInKey);
+    internal bool HasBuiltInKey => supplier.BuiltInKey is not null;
     internal bool SupportsHash => supplier.SupportsHash;
     internal Uri Privacy => supplier.Privacy;
     internal Uri Terms => supplier.Terms;
@@ -151,9 +155,6 @@ internal sealed class Supplier(ISupplier supplier, RequestPolicy policy)
     {
         if (!Available)
             throw new SubtitleException(SubtitleFailure.Unavailable);
-        var release = FileName.Interpret(lookup.FileName);
-        if (release.Title.Length == 0 || release.IsExtra)
-            return new([]);
         if (!supplier.Codes.TryGetValue(lookup.Language, out var code))
             throw new SubtitleException(SubtitleFailure.Unavailable);
         var operation = new Operation(http, account, lookup.Validate)
@@ -161,7 +162,12 @@ internal sealed class Supplier(ISupplier supplier, RequestPolicy policy)
             Fresh = lookup.Fresh,
             GivesWay = lookup.GivesWay,
         };
-        var query = new SubtitleQuery(release, lookup.FileName, lookup.Language, code)
+        var query = new SubtitleQuery(
+            FileName.Interpret(lookup.FileName),
+            lookup.FileName,
+            lookup.Language,
+            code
+        )
         {
             Hash = SupportsHash ? lookup.Hash : null,
             Size = lookup.Size,
@@ -208,18 +214,30 @@ internal sealed class Supplier(ISupplier supplier, RequestPolicy policy)
         }
         var candidates = new List<SubtitleCandidate>();
         var empty = true;
-        await foreach (
-            var page in supplier.Search(query, client, cancellation).ConfigureAwait(false)
-        )
+        Listing? title = null;
+        for (var page = 1; ; page++)
         {
-            empty &= page.Empty;
-            candidates.AddRange(page.Candidates.Where(candidate => Fits(query, candidate)));
+            var reply = await supplier
+                .Search(query, page, client, cancellation)
+                .ConfigureAwait(false);
+            // A supplier that matches the file to a title answers every page for
+            // that title, so a page under another title contradicts the first.
+            if (reply.Pages < 0 || (page > 1 && !Same(title, reply.Title)))
+            {
+                throw new SubtitleException(SubtitleFailure.Format);
+            }
+            title = reply.Title;
+            empty &= reply.Empty;
+            var named = Named(query, reply.Title);
+            if (named)
+            {
+                candidates.AddRange(reply.Candidates.Where(candidate => Fits(query, candidate)));
+            }
             // A title that is not the file's costs no further page.
-            if (
-                page.Candidates.Count > 0
-                && !page.Candidates.Any(candidate => Named(query, candidate))
-            )
+            if ((reply.Candidates.Count > 0 && !named) || page >= reply.Pages)
+            {
                 break;
+            }
         }
         return new(candidates, empty);
     }
@@ -290,7 +308,7 @@ internal sealed class Supplier(ISupplier supplier, RequestPolicy policy)
                     if (
                         redirect == 3
                         || !Uri.TryCreate(message.RequestUri, reply.Header("Location"), out var target)
-                        || target is not { Scheme: "https", UserInfo: "", IsDefaultPort: true }
+                        || !ProviderHttp.CanFollow(target)
                         || !supplier.CanRedirect(message.RequestUri!, target)
                     )
                         throw await ProviderHttp
@@ -400,16 +418,28 @@ internal sealed class Supplier(ISupplier supplier, RequestPolicy policy)
         return !candidate.Forced
             && candidate.Season == release.Season
             && SameYear(release, candidate.Year)
-            && (candidate.Episode is not { } episode || release.Episodes.Contains(episode))
-            && Named(query, candidate);
+            && (candidate.Episode is not { } episode || release.Episodes.Contains(episode));
     }
 
-    // Whether the subtitle is listed under the file's title. It needs no
-    // title of its own when the query named the file's title or hash.
-    private static bool Named(SubtitleQuery query, SubtitleCandidate candidate) =>
+    // Whether a page's subtitles are listed under the file's title. They need
+    // no title of their own when the query named the file's title or hash.
+    private static bool Named(SubtitleQuery query, Listing? title) =>
         query.Title is not null
         || query.Hash is not null
-        || candidate.Title is { } title && Matches(query.Release, title);
+        || title is { } listing && Matches(query.Release, listing);
+
+    // Whether two pages of one answer are listed under the same title. A
+    // record compares its list of titles by reference, so its own equality
+    // does not serve.
+    private static bool Same(Listing? first, Listing? second) =>
+        first is null
+            ? second is null
+            : second is not null
+                && first.Kind == second.Kind
+                && first.Year == second.Year
+                && first.Season == second.Season
+                && first.Episode == second.Episode
+                && first.Titles.SequenceEqual(second.Titles);
 
     // Chooses, by the supplier's own key, the listing that names the file:
     // the one listing that matches it, or else the one whose title holds the
@@ -430,11 +460,15 @@ internal sealed class Supplier(ISupplier supplier, RequestPolicy policy)
     }
 
     // Whether the listing is the file's title, by its kind, season, year and
-    // title words.
+    // title words. A file name spells "U.N.C.L.E." as "U N C L E", so titles
+    // compare by their words alone, in either form.
     private static bool Matches(Release release, Listing listing) =>
         Agrees(release, listing)
         && listing.Titles.Any(title =>
-            string.Equals(TitleWords(title), TitleWords(release.Title), StringComparison.Ordinal)
+            FileName
+                .TitleKeys(title)
+                .Zip(FileName.TitleKeys(release.Title))
+                .Any(pair => string.Equals(pair.First, pair.Second, StringComparison.Ordinal))
         );
 
     private static bool Agrees(Release release, Listing listing) =>
@@ -449,16 +483,16 @@ internal sealed class Supplier(ISupplier supplier, RequestPolicy policy)
     private static bool SameYear(Release release, int? year) =>
         release.Year is null || year is null || year == release.Year;
 
-    // A file name spells "U.N.C.L.E." as "U N C L E", so titles compare by
-    // their words alone.
-    private static string TitleWords(string title) =>
-        string.Join(' ', FileName.Words(FileName.Normalize(title)));
-
     private static bool Within(Release release, string title) =>
-        (" " + TitleWords(title) + " ").Contains(
-            " " + TitleWords(release.Title) + " ",
-            StringComparison.Ordinal
-        );
+        FileName
+            .TitleKeys(title)
+            .Zip(FileName.TitleKeys(release.Title))
+            .Any(pair =>
+                (" " + pair.First + " ").Contains(
+                    " " + pair.Second + " ",
+                    StringComparison.Ordinal
+                )
+            );
 
     private static readonly string[] Editions =
     [
@@ -513,21 +547,6 @@ internal sealed class Supplier(ISupplier supplier, RequestPolicy policy)
                 StringComparison.Ordinal
             );
     }
-
-    internal static string? Text(JsonElement value, string name) =>
-        value.ValueKind == JsonValueKind.Object
-        && value.TryGetProperty(name, out var field)
-        && field.ValueKind == JsonValueKind.String
-            ? field.GetString()
-            : null;
-
-    internal static long? Number(JsonElement value, string name) =>
-        value.ValueKind == JsonValueKind.Object
-        && value.TryGetProperty(name, out var field)
-        && field.ValueKind == JsonValueKind.Number
-        && field.TryGetInt64(out var number)
-            ? number
-            : null;
 
     internal static JsonDocument Parse(byte[] bytes)
     {
@@ -586,22 +605,34 @@ internal sealed record SubtitleCandidate(
     internal int? Season { get; init; }
     internal int? Episode { get; init; }
     internal bool Forced { get; init; }
-
-    /// <summary>
-    /// The title the supplier lists the subtitle under, which the host checks
-    /// when the query named neither the file's title nor its hash.
-    /// </summary>
-    internal Listing? Title { get; init; }
 }
 
 /// <summary>
-/// A supplier's answer, or one page of it: its subtitles, and whether it
-/// lists no subtitle at all.
+/// A supplier's answer: its subtitles, and whether it lists no subtitle at
+/// all.
 /// </summary>
 internal sealed record SubtitleSearch(
     IReadOnlyList<SubtitleCandidate> Candidates,
     bool Empty = false
-);
+)
+{
+    /// <summary>
+    /// One reply of a supplier's search: a page of its answer, and how many
+    /// pages the answer has.
+    /// </summary>
+    internal sealed record Reply(IReadOnlyList<SubtitleCandidate> Candidates, long Pages)
+    {
+        /// <summary>Whether the page lists no subtitle at all.</summary>
+        internal bool Empty { get; init; }
+
+        /// <summary>
+        /// The title the supplier lists the page's subtitles under, when it
+        /// matched the file itself to a title. The host checks that it is the
+        /// file's, and that every page reports the same one.
+        /// </summary>
+        internal Listing? Title { get; init; }
+    }
+}
 
 internal sealed record Allowance(
     DateTimeOffset? RequestReset = null,

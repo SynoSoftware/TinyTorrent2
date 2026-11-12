@@ -1,13 +1,12 @@
 using System.Globalization;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Network;
+using static Syno.TinyTorrent.Shared.Network.ProviderJson;
 using static Syno.TinyTorrent.Subtitles.Supplier;
 
 namespace Syno.TinyTorrent.Subtitles.Suppliers;
@@ -19,13 +18,8 @@ internal sealed partial class OpenSubtitles : ISupplier
     private readonly Dictionary<string, Session> _sessions = [];
 
     public SubtitleSupplier SupplierId => SubtitleSupplier.OpenSubtitles;
-    public bool Available => !string.IsNullOrWhiteSpace(BuiltInKey);
     public Access Access => Access.Password;
-    public string? BuiltInKey { get; } =
-        typeof(OpenSubtitles)
-            .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
-            .FirstOrDefault(value => value.Key == "OpenSubtitlesKey")
-            ?.Value;
+    public string? BuiltInKey { get; } = ApiKey.BuiltIn("OpenSubtitlesKey");
     public bool SupportsHash => true;
     public Uri Privacy { get; } = new("https://www.opensubtitles.com/en/privacy");
     public Uri Terms { get; } = new("https://www.opensubtitles.com/en/tos");
@@ -88,10 +82,11 @@ internal sealed partial class OpenSubtitles : ISupplier
             throw new SubtitleException(SubtitleFailure.Format);
     }
 
-    public async IAsyncEnumerable<SubtitleSearch> Search(
+    public async Task<SubtitleSearch.Reply> Search(
         SubtitleQuery query,
+        int page,
         SupplierClient client,
-        [EnumeratorCancellation] CancellationToken cancellation
+        CancellationToken cancellation
     )
     {
         var release = query.Release;
@@ -114,77 +109,72 @@ internal sealed partial class OpenSubtitles : ISupplier
             filter["moviehash"] = query.Hash!;
             filter["moviebytesize"] = query.Size.ToString(CultureInfo.InvariantCulture);
         }
-        for (var page = 1; ; page++)
+        var parameters = new SortedDictionary<string, string>(filter, StringComparer.Ordinal)
         {
-            var parameters = new SortedDictionary<string, string>(filter, StringComparer.Ordinal)
-            {
-                ["languages"] = query.Code,
-                ["order_by"] = "ratings",
-                ["order_direction"] = "desc",
-            };
-            if (page > 1)
-                parameters["page"] = page.ToString(CultureInfo.InvariantCulture);
-            var reply = await Request(
-                    client,
-                    "/api/v1/subtitles?" + Query(parameters),
-                    null,
-                    cancellation
+            ["languages"] = query.Code,
+            ["order_by"] = "ratings",
+            ["order_direction"] = "desc",
+        };
+        if (page > 1)
+            parameters["page"] = page.ToString(CultureInfo.InvariantCulture);
+        var reply = await Request(
+                client,
+                "/api/v1/subtitles?" + Query(parameters),
+                null,
+                cancellation
+            )
+            .ConfigureAwait(false);
+        using var document = Parse(reply.Bytes);
+        var subtitles = Data(document.RootElement);
+        var candidates = new List<SubtitleCandidate>();
+        foreach (var subtitle in subtitles.EnumerateArray())
+        {
+            if (
+                subtitle.ValueKind != JsonValueKind.Object
+                || !subtitle.TryGetProperty("attributes", out var attributes)
+                || attributes.ValueKind != JsonValueKind.Object
+                || Text(attributes, "language") != query.Code
+                || !attributes.TryGetProperty("files", out var files)
+                || files.ValueKind != JsonValueKind.Array
+                || files.GetArrayLength() != 1
+                || Number(files[0], "file_id") is not { } id
+                || id <= 0
+                || Number(attributes, "nb_cd") is { } discs && discs != 1
+                || Text(attributes, "release") is not { } name
+                || !attributes.TryGetProperty("feature_details", out var feature)
+                || feature.ValueKind != JsonValueKind.Object
+            )
+                continue;
+            // A movie's subtitle has no season or episode.
+            var movie = string.Equals(
+                Text(feature, "feature_type"),
+                "Movie",
+                StringComparison.OrdinalIgnoreCase
+            );
+            candidates.Add(
+                new(
+                    query.Language,
+                    name,
+                    Text(files[0], "file_name") ?? name,
+                    id.ToString(CultureInfo.InvariantCulture)
                 )
-                .ConfigureAwait(false);
-            using var document = Parse(reply.Bytes);
-            var subtitles = Data(document.RootElement);
-            var candidates = new List<SubtitleCandidate>();
-            foreach (var subtitle in subtitles.EnumerateArray())
-            {
-                if (
-                    subtitle.ValueKind != JsonValueKind.Object
-                    || !subtitle.TryGetProperty("attributes", out var attributes)
-                    || attributes.ValueKind != JsonValueKind.Object
-                    || Text(attributes, "language") != query.Code
-                    || !attributes.TryGetProperty("files", out var files)
-                    || files.ValueKind != JsonValueKind.Array
-                    || files.GetArrayLength() != 1
-                    || Number(files[0], "file_id") is not { } id
-                    || id <= 0
-                    || Number(attributes, "nb_cd") is { } discs && discs != 1
-                    || Text(attributes, "release") is not { } name
-                    || !attributes.TryGetProperty("feature_details", out var feature)
-                    || feature.ValueKind != JsonValueKind.Object
-                )
-                    continue;
-                // A movie's subtitle has no season or episode.
-                var movie = string.Equals(
-                    Text(feature, "feature_type"),
-                    "Movie",
-                    StringComparison.OrdinalIgnoreCase
-                );
-                candidates.Add(
-                    new(
-                        query.Language,
-                        name,
-                        Text(files[0], "file_name") ?? name,
-                        id.ToString(CultureInfo.InvariantCulture)
-                    )
-                    {
-                        HashMatch =
-                            attributes.TryGetProperty("moviehash_match", out var hashed)
-                            && hashed.ValueKind == JsonValueKind.True,
-                        Year = (int?)Number(feature, "year"),
-                        Season = movie ? null : (int?)Number(feature, "season_number"),
-                        Episode = movie ? null : (int?)Number(feature, "episode_number"),
-                        // Only an explicit false says that the subtitle is full.
-                        Forced =
-                            !attributes.TryGetProperty("foreign_parts_only", out var foreign)
-                            || foreign.ValueKind != JsonValueKind.False,
-                    }
-                );
-            }
-            if (Number(document.RootElement, "total_pages") is not { } pages || pages < 0)
-                throw new SubtitleException(SubtitleFailure.Format);
-            yield return new(candidates, subtitles.GetArrayLength() == 0);
-            if (page >= pages)
-                yield break;
+                {
+                    HashMatch =
+                        attributes.TryGetProperty("moviehash_match", out var hashed)
+                        && hashed.ValueKind == JsonValueKind.True,
+                    Year = (int?)Number(feature, "year"),
+                    Season = movie ? null : (int?)Number(feature, "season_number"),
+                    Episode = movie ? null : (int?)Number(feature, "episode_number"),
+                    // Only an explicit false says that the subtitle is full.
+                    Forced =
+                        !attributes.TryGetProperty("foreign_parts_only", out var foreign)
+                        || foreign.ValueKind != JsonValueKind.False,
+                }
+            );
         }
+        if (Number(document.RootElement, "total_pages") is not { } pages)
+            throw new SubtitleException(SubtitleFailure.Format);
+        return new(candidates, pages) { Empty = subtitles.GetArrayLength() == 0 };
     }
 
     public async Task<ProviderReply> Download(
@@ -299,7 +289,7 @@ internal sealed partial class OpenSubtitles : ISupplier
             : throw new SubtitleException(SubtitleFailure.Format);
 
     private static bool CanDownload(Uri uri) =>
-        uri is { Scheme: "https", UserInfo: "", IsDefaultPort: true }
+        ProviderHttp.CanFollow(uri)
         && (uri.Host is "www.opensubtitles.com" or "dl.opensubtitles.com")
         && uri.AbsolutePath.StartsWith("/download/", StringComparison.Ordinal);
 

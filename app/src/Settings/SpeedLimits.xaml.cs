@@ -26,6 +26,8 @@ public sealed partial class SpeedLimits : UserControl
         Profiles.SecondaryWidth = new GridLength(1, GridUnitType.Star);
         Selector = new(main);
         ModeRow.Content = Selector;
+        Connection.Glyph = Segoe.Gauge;
+        RefreshConnection();
         _rows =
         [
             AddRate(StandardRows, Model.Download, "DownloadLimit"),
@@ -86,6 +88,13 @@ public sealed partial class SpeedLimits : UserControl
         Bindings.Update();
         foreach (var row in _rows)
             RefreshRate(row);
+        RefreshConnection();
+    }
+
+    private void RefreshConnection()
+    {
+        Connection.Header = Model.Text.Get("settings", "connection_setup");
+        Connection.Description = Model.Text.Get("settings", "setup_hint");
     }
 
     private void RefreshRate(SettingsRow row)

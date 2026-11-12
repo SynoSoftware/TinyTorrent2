@@ -110,6 +110,96 @@ internal static partial class FileName
         Separators().Split(text).Where(word => word.Length > 0).ToArray();
 
     /// <summary>
+    /// The words of a title, as written, with each apostrophe joining its word:
+    /// "Ocean's Eleven" gives Oceans and Eleven, as the file name Oceans.Eleven
+    /// does. Search splits at every such character instead; see
+    /// <see cref="Words"/>.
+    /// </summary>
+    internal static string[] TitleWords(string title) => TitleWords(title, apostropheJoins: true);
+
+    /// <summary>
+    /// A title in lower case without accents or punctuation, with each
+    /// apostrophe joining its word: "Ocean's Eleven" gives "oceans eleven".
+    /// The installed IMDb data stores its titles under this key.
+    /// </summary>
+    internal static string TitleKey(string title) => string.Join(' ', TitleWords(Normalize(title)));
+
+    /// <summary>
+    /// A title's words in lower case without accents, in the two forms a file
+    /// name writes: with each apostrophe joining its word, as Oceans.Eleven
+    /// writes "Ocean's Eleven", and with each apostrophe separating words, as
+    /// L.Auberge.Espagnole writes "L'Auberge espagnole". Two titles agree when
+    /// their words agree in either form.
+    /// </summary>
+    internal static string[][] TitleForms(string title)
+    {
+        var text = Normalize(title);
+        return [TitleWords(text, apostropheJoins: true), TitleWords(text, apostropheJoins: false)];
+    }
+
+    /// <summary>
+    /// The <see cref="TitleForms"/> of a title, each with its words joined by
+    /// spaces.
+    /// </summary>
+    internal static string[] TitleKeys(string title) =>
+        [.. TitleForms(title).Select(words => string.Join(' ', words))];
+
+    /// <summary>
+    /// What follows <paramref name="title"/> at the start of
+    /// <paramref name="name"/>, or the whole name when it does not start with
+    /// the title. Only letters and digits are compared, without case, and the
+    /// title must end at a word boundary: Forced.Vengeance.en gives ".en" for
+    /// the title "Forced Vengeance".
+    /// </summary>
+    internal static string TrimTitle(string name, string title)
+    {
+        var index = 0;
+        foreach (var character in title)
+        {
+            if (!char.IsLetterOrDigit(character))
+            {
+                continue;
+            }
+            while (index < name.Length && !char.IsLetterOrDigit(name[index]))
+            {
+                index++;
+            }
+            if (
+                index == name.Length
+                || char.ToLowerInvariant(name[index]) != char.ToLowerInvariant(character)
+            )
+            {
+                return name;
+            }
+            index++;
+        }
+        return index < name.Length && char.IsLetterOrDigit(name[index]) ? name : name[index..];
+    }
+
+    private static string[] TitleWords(string title, bool apostropheJoins)
+    {
+        var words = new List<string>();
+        var word = new StringBuilder();
+        foreach (var character in title)
+        {
+            if (char.IsLetterOrDigit(character))
+            {
+                word.Append(character);
+            }
+            else if (!(apostropheJoins && character is ('\'' or '’')) && word.Length > 0)
+            {
+                words.Add(word.ToString());
+                word.Clear();
+            }
+        }
+        if (word.Length > 0)
+        {
+            words.Add(word.ToString());
+        }
+        return [.. words];
+    }
+
+    /// <summary>
     /// The normalized words of a search query, which <see cref="Matches"/>
     /// finds in normalized text.
     /// </summary>
@@ -219,4 +309,10 @@ internal sealed record Release(string Title, string Name)
 
     // A name with a season names a series; any other names a movie.
     internal VideoKind Kind => Season is null ? VideoKind.Movie : VideoKind.Series;
+
+    /// <summary>
+    /// Whether a catalogue can be asked for the release: it is no sample or
+    /// trailer and has a title.
+    /// </summary>
+    internal bool IsSearchable => !IsExtra && Title.Length > 0;
 }

@@ -1,5 +1,4 @@
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 
@@ -46,8 +45,7 @@ public static class TextEditor
     {
         if (RevealButton(control) is not { } button)
             return;
-        ToolTipService.SetToolTip(button, text);
-        AutomationProperties.SetName(button, text);
+        IconButton.Name(button, text);
     }
 
     private static FrameworkElement? RevealButton(DependencyObject element)

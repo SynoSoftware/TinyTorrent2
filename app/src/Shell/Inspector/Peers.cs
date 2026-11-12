@@ -348,7 +348,7 @@ public sealed partial class Inspector
 #if CAPTURE
         CaptureLocation is not null ||
 #endif
-        _owner.Geolocation.Installed is not null;
+        _owner.Geolocation.Download.Installed is not null;
 
     internal bool ShowsAllPeers { get; private set; }
     internal IReadOnlyList<Torrent>? PeerSelection { get; private set; }

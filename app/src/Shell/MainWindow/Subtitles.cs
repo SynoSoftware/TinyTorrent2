@@ -54,7 +54,6 @@ public sealed partial class MainWindow
             finally
             {
                 content.SetVisible(false);
-                content.Attach(null);
             }
             return true;
         });

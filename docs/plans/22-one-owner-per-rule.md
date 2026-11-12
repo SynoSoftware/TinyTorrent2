@@ -570,7 +570,12 @@ This stage has the largest design. It starts with the
 
 Settled as: one "forced" pattern, the wider one. A missing JSON text is
 no value, and text is trimmed; a provider's own words such as "N/A" stay
-with that provider. An apostrophe never separates title words.
+with that provider. Two titles match when their words agree with the
+apostrophe joining its word or separating it, so Oceans.Eleven matches
+"Ocean's Eleven" and L.Auberge.Espagnole matches "L'Auberge espagnole". The
+stage's review found that joining alone breaks dotted elisions, which matched
+before; the lead changed this choice on 12 November 2026, because the stage
+cannot be correct without it.
 
 Open question: a score of 0 is no rating in `MdbList` and a rating in
 `Omdb` and `Wikidata`. Decide from the Library contract.

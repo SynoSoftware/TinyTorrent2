@@ -11,7 +11,7 @@ internal sealed class Provider(Dataset dataset) : IProvider
     internal static ProviderOption Option(Dataset dataset) =>
         new(
             CatalogId,
-            "IMDb",
+            dataset.Name,
             new("https://www.imdb.com/privacy"),
             new("https://data.imdb.com/non-commercial-datasets/"),
             _ => new Provider(dataset)
@@ -37,7 +37,7 @@ internal sealed class Provider(Dataset dataset) : IProvider
                 if (words.Length == 0)
                     return new([], false);
                 using var command = connection.CreateCommand();
-                // Exact titles come first, compared by Dataset.Key, so an
+                // Exact titles come first, compared by FileName.TitleKey, so an
                 // obscure film with a common title is not cut by the limit.
                 // Without the vote order, the index
                 // returns its matches by ascending IMDb ID, and a common word
@@ -50,7 +50,7 @@ internal sealed class Provider(Dataset dataset) : IProvider
                         t.votes DESC LIMIT 50;
                     """;
                 command.Parameters.AddWithValue("$query", string.Join(' ', words));
-                command.Parameters.AddWithValue("$title", Dataset.Key(query.Text));
+                command.Parameters.AddWithValue("$title", FileName.TitleKey(query.Text));
                 command.Parameters.AddWithValue("$year", (object?)query.Year ?? DBNull.Value);
                 var choices = new List<VideoChoice>();
                 using (var reader = command.ExecuteReader())
@@ -78,10 +78,7 @@ internal sealed class Provider(Dataset dataset) : IProvider
         CancellationToken cancellation
     )
     {
-        if (
-            choice.Kind is not (VideoKind.Movie or VideoKind.Series)
-            || VideoInformation.ParseImdbId(choice.VideoId) is not { } identity
-        )
+        if (VideoInformation.ParseImdbId(choice.VideoId) is not { } identity)
             throw new VideoException(VideoFailure.InvalidResult);
         return dataset.Read(
             connection =>

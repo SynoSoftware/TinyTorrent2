@@ -224,7 +224,7 @@ internal sealed partial class VideoLookup
             yield return (query, null);
         if (context.Access is null)
             yield break;
-        var plain = context.Provider.Prepare(string.Join(' ', FileName.Words(query)));
+        var plain = context.Provider.Prepare(string.Join(' ', FileName.TitleWords(query)));
         if (plain.Length > 0 && plain != query)
             yield return (plain, null);
     }
@@ -232,12 +232,19 @@ internal sealed partial class VideoLookup
     private async Task<VideoSearch> SearchOne(Context context, string query, int? year = null)
     {
         if (context.Access is not { } access)
-            return await context
-                .Provider.Search(
-                    new(query, context.Language, Offline) { Year = year },
-                    context.Token
+        {
+            var found = await Ask(() =>
+                    context.Provider.Search(
+                        new(query, context.Language, Offline) { Year = year },
+                        context.Token
+                    )
                 )
                 .ConfigureAwait(false);
+            return found with
+            {
+                Choices = [.. found.Choices.Where(choice => HasTitle(choice.Title))],
+            };
+        }
         var request = SearchRequest(context, query, year);
         var since = context.Scope == FetchScope.New ? 0 : context.Accepted ?? 0;
         if (
@@ -257,13 +264,18 @@ internal sealed partial class VideoLookup
         VideoSearch answer;
         try
         {
-            answer = await context
-                .Provider.Search(
-                    new(query, context.Language, Get(context, "search", context.Fresh(request.Key)))
-                    {
-                        Year = year,
-                    },
-                    context.Token
+            answer = await Ask(() =>
+                    context.Provider.Search(
+                        new(
+                            query,
+                            context.Language,
+                            Get(context, "search", context.Fresh(request.Key))
+                        )
+                        {
+                            Year = year,
+                        },
+                        context.Token
+                    )
                 )
                 .ConfigureAwait(false);
         }
@@ -274,6 +286,10 @@ internal sealed partial class VideoLookup
                 .ConfigureAwait(false);
             throw new ProviderException(VideoFailure.InvalidResult, hold.RetryAt, error);
         }
+        answer = answer with
+        {
+            Choices = [.. answer.Choices.Where(choice => HasTitle(choice.Title))],
+        };
         await store.SaveSearch(request, answer, CancellationToken.None).ConfigureAwait(false);
         await policy.Succeed(access with { Operation = "search" }).ConfigureAwait(false);
         await Recovered(context, access).ConfigureAwait(false);
@@ -294,39 +310,9 @@ internal sealed partial class VideoLookup
             parts.Add(requested.ToString(System.Globalization.CultureInfo.InvariantCulture));
         return new(
             RequestKey.Create(option.ProviderId, "search", parts),
-            RequestKey.Create(
-                option.ProviderId,
-                "search-count",
-                [FileName.Normalize(string.Join(' ', FileName.Words(query)))]
-            )
+            RequestKey.Create(option.ProviderId, "search-count", [FileName.TitleKey(query)])
         );
     }
-
-    // Sends an online provider's request with the protection of its key and
-    // the operation Library runs; a 404 for a detail means the video is gone.
-    // A refusal holds every request that uses the key.
-    private ProviderGet Get(Context context, string operation, FreshRequest? fresh) =>
-        context.Access is not { } access
-            ? Offline
-            : (message, cancellation, refusal) =>
-                ProviderJson.Get(
-                    http,
-                    new ProviderCall(
-                        message,
-                        policy,
-                        new(access with { Operation = operation }) { Authentication = access }
-                    )
-                    {
-                        Fresh = fresh,
-                        NamesResource = operation == "detail",
-                    },
-                    cancellation,
-                    refusal
-                );
-
-    // A provider that answers from downloaded data sends no request.
-    private static readonly ProviderGet Offline = (_, _, _) =>
-        throw new InvalidOperationException();
 
     private async Task<VideoRecord> Read(
         Context context,
@@ -360,7 +346,7 @@ internal sealed partial class VideoLookup
         VideoRecord record;
         try
         {
-            record = await download(cancellation).ConfigureAwait(false);
+            record = await Ask(() => download(cancellation)).ConfigureAwait(false);
         }
         catch (VideoException error) when (error is not ProviderException)
         {
@@ -406,18 +392,54 @@ internal sealed partial class VideoLookup
         VideoRequest request
     )
     {
-        var video = await context
-            .Provider.Describe(choice, request, context.Token)
+        if (!context.Option.Kinds.Contains(choice.Kind))
+        {
+            throw new VideoException(VideoFailure.InvalidResult);
+        }
+        var video = await Ask(() => context.Provider.Describe(choice, request, context.Token))
             .ConfigureAwait(false);
+        if (!HasTitle(video.Title))
+        {
+            throw new VideoException(VideoFailure.InvalidResult);
+        }
+        video = video with
+        {
+            Related = [.. video.Related.Where(related => HasTitle(related.Title))],
+        };
         await store.SaveChoices(video, CancellationToken.None).ConfigureAwait(false);
         context.Token.ThrowIfCancellationRequested();
         return video;
     }
 
+    // A provider reads its answer with JsonElement, and the IMDb data with
+    // SqliteDataReader, whose accessors throw these when the answer has another
+    // shape. SearchOne backs off an online provider's searches for such an
+    // answer; any other call fails the one video. A disposed owner is not an
+    // answer.
+    private static async Task<T> Ask<T>(Func<Task<T>> provider)
+    {
+        try
+        {
+            return await provider().ConfigureAwait(false);
+        }
+        catch (Exception error)
+            when (error
+                    is (InvalidOperationException and not ObjectDisposedException)
+                        or KeyNotFoundException
+                        or FormatException
+            )
+        {
+            throw new VideoException(VideoFailure.InvalidResult, error);
+        }
+    }
+
+    // A title has 1 to 300 characters. A choice without one is not listed, and a
+    // description without one is unusable.
+    private static bool HasTitle(string title) => title.Length is > 0 and <= 300;
+
     // A season without an episode number names no episode a provider can describe.
     private static bool CanMatch(ProviderOption option, Release release) =>
-        !release.IsExtra
-        && release.Title.Length > 0
+        release.IsSearchable
         && option.Kinds.Contains(release.Kind)
         && (release.Season is null || release.Episodes.Count > 0);
 
@@ -429,24 +451,26 @@ internal sealed partial class VideoLookup
             )
             .ToArray();
 
+    // A title agrees in either form of its words, so the better form counts.
     private static double Confidence(Release release, VideoChoice choice)
     {
         if (release.Year is { } year && choice.Year is { } candidate && year != candidate)
             return 0;
-        var title = FileName.Words(FileName.Normalize(release.Title)).ToHashSet();
+        var forms = FileName.TitleForms(release.Title);
+        double Best(string value) =>
+            forms.Zip(FileName.TitleForms(value)).Max(pair => Similarity(pair.First, pair.Second));
+        return Math.Max(Best(choice.Title), choice.Original is { } original ? Best(original) : 0);
+    }
+
+    private static double Similarity(string[] first, string[] second)
+    {
+        var title = first.ToHashSet();
+        var words = second.ToHashSet();
         var numbers = title.Where(word => word.All(char.IsDigit)).ToHashSet();
-        double Similarity(string value)
-        {
-            var words = FileName.Words(FileName.Normalize(value)).ToHashSet();
-            if (!numbers.SetEquals(words.Where(word => word.All(char.IsDigit))))
-                return 0;
-            return title.Count + words.Count == 0
-                ? 0
-                : 2.0 * title.Intersect(words).Count() / (title.Count + words.Count);
-        }
-        return Math.Max(
-            Similarity(choice.Title),
-            choice.Original is { } original ? Similarity(original) : 0
-        );
+        if (!numbers.SetEquals(words.Where(word => word.All(char.IsDigit))))
+            return 0;
+        return title.Count + words.Count == 0
+            ? 0
+            : 2.0 * title.Intersect(words).Count() / (title.Count + words.Count);
     }
 }

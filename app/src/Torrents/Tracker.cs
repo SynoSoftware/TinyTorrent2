@@ -26,7 +26,7 @@ public sealed class Tracker : INotifyPropertyChanged
             TrackerStatus.Waiting => Syno.Segoe.Hourglass,
             TrackerStatus.Announcing => Syno.Segoe.RadioTower,
             TrackerStatus.Working => Syno.Segoe.CircleCheck,
-            TrackerStatus.Error => Syno.Segoe.CircleAlert,
+            TrackerStatus.Error => Syno.Segoe.CircleX,
             TrackerStatus.Disabled => Syno.Segoe.CircleOff,
             _ => Syno.Segoe.CircleQuestionMark,
         };

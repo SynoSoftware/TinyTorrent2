@@ -83,7 +83,7 @@ internal sealed partial class Details : UserControl, IDisposable
             var fileType = new Field
             {
                 Label = text.Get("library", "file_type"),
-                Glyph = row.Glyph,
+                Glyph = row.KindGlyph,
                 Content = Value(string.Empty),
             };
             right.Children.Add(fileType);

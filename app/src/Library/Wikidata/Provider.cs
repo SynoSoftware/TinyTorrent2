@@ -1,8 +1,9 @@
 using System.Globalization;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Text;
 using System.Text.Json;
+using Syno.TinyTorrent.Shared;
+using static Syno.TinyTorrent.Shared.Network.ProviderJson;
 
 namespace Syno.TinyTorrent.Library.Wikidata;
 
@@ -32,15 +33,10 @@ internal sealed class Provider : IProvider
             IsLocalized = true,
         };
 
-    public string Prepare(string query)
-    {
-        // The search service reads quotes, colons and capitalised AND, OR and
-        // NOT as syntax, so only lowercase words reach it.
-        var words = new StringBuilder();
-        foreach (var letter in query.ToLowerInvariant())
-            words.Append(char.IsLetterOrDigit(letter) ? letter : ' ');
-        return string.Join(' ', words.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries));
-    }
+    // The search service reads quotes, colons and capitalised AND, OR and NOT
+    // as syntax, so only lowercase words reach it.
+    public string Prepare(string query) =>
+        string.Join(' ', FileName.TitleWords(query.ToLowerInvariant()));
 
     public async Task<VideoSearch> Search(VideoQuery query, CancellationToken cancellation)
     {
@@ -78,37 +74,30 @@ internal sealed class Provider : IProvider
                 cancellation
             )
             .ConfigureAwait(false);
-        try
-        {
-            var rows = Rows(data).ToArray();
-            var choices = rows.Select(row =>
-                    (
-                        Item: Item(Value(row, "item")),
-                        Title: Value(row, "title"),
-                        Original: Value(row, "original"),
-                        Year: Value(row, "year")
-                    )
+        var rows = Rows(data).ToArray();
+        var choices = rows.Select(row =>
+                (
+                    Item: Item(Value(row, "item") ?? string.Empty),
+                    Title: Value(row, "title") ?? string.Empty,
+                    Original: Value(row, "original"),
+                    Year: Value(row, "year")
                 )
-                .Where(row => row.Item.Length > 0 && row.Title.Length is > 0 and <= 300)
-                .Select(row => new VideoChoice(CatalogId, row.Item, VideoKind.Movie, row.Title)
-                {
-                    Year = int.TryParse(
-                        row.Year,
-                        NumberStyles.AllowLeadingSign,
-                        CultureInfo.InvariantCulture,
-                        out var year
-                    )
-                        ? year
-                        : null,
-                    Original = row.Original.Length == 0 ? null : row.Original,
-                })
-                .ToArray();
-            return new(choices, rows.Length == 0);
-        }
-        catch (Exception error) when (error is InvalidOperationException or KeyNotFoundException)
-        {
-            throw new VideoException(VideoFailure.InvalidResult, error);
-        }
+            )
+            .Where(row => row.Item.Length > 0)
+            .Select(row => new VideoChoice(CatalogId, row.Item, VideoKind.Movie, row.Title)
+            {
+                Year = int.TryParse(
+                    row.Year,
+                    NumberStyles.AllowLeadingSign,
+                    CultureInfo.InvariantCulture,
+                    out var year
+                )
+                    ? year
+                    : null,
+                Original = row.Original,
+            })
+            .ToArray();
+        return new(choices, rows.Length == 0);
     }
 
     public async Task<VideoInformation> Describe(
@@ -118,7 +107,7 @@ internal sealed class Provider : IProvider
     )
     {
         // The item identity is written into the query, so it must be one.
-        if (choice.Kind != VideoKind.Movie || Item(choice.VideoId) != choice.VideoId)
+        if (Item(choice.VideoId) != choice.VideoId)
             throw new VideoException(VideoFailure.InvalidResult);
         var item = choice.VideoId;
         var record = await request
@@ -170,77 +159,65 @@ internal sealed class Provider : IProvider
 
     private VideoInformation Information(string item, VideoRecord record)
     {
-        try
+        var rows = Rows(record.Content);
+        IEnumerable<JsonElement> Field(string field) =>
+            rows.Where(row => Value(row, "field") == field);
+        IReadOnlyList<string> Names(IEnumerable<JsonElement> values) =>
+            values.Select(row => Value(row, "valueLabel")).OfType<string>().Distinct().ToArray();
+        // Editors record a score again when it changes, so the newest one applies.
+        Rating? Score(string site, string suffix = "") =>
+            Field("score")
+                .Where(row =>
+                    Item(Value(row, "by") ?? string.Empty) == site
+                    && Value(row, "value") is { } score
+                    && score.EndsWith(suffix, StringComparison.Ordinal)
+                )
+                .OrderByDescending(row => Value(row, "date"), StringComparer.Ordinal)
+                .Select(ReadRating)
+                .FirstOrDefault(rating => rating is not null);
+        var movie = Field("title").FirstOrDefault();
+        // The label service leaves the label empty when the item has none in
+        // the requested language, in any language or in English.
+        var title = Value(movie, "valueLabel") ?? string.Empty;
+        return new VideoInformation(CatalogId, item, title, VideoKind.Movie)
         {
-            var rows = Rows(record.Content);
-            IEnumerable<JsonElement> Field(string field) =>
-                rows.Where(row => Value(row, "field") == field);
-            IReadOnlyList<string> Names(IEnumerable<JsonElement> values) =>
-                values
-                    .Select(row => Value(row, "valueLabel"))
-                    .Where(name => name.Length > 0)
-                    .Distinct()
-                    .ToArray();
-            // Editors record a score again when it changes, so the newest one applies.
-            Rating? Score(string site, string suffix = "") =>
-                Field("score")
-                    .Where(row =>
-                        Item(Value(row, "by")) == site
-                        && Value(row, "value").EndsWith(suffix, StringComparison.Ordinal)
-                    )
-                    .OrderByDescending(row => Value(row, "date"), StringComparer.Ordinal)
-                    .Select(ReadRating)
-                    .FirstOrDefault(rating => rating is not null);
-            var movie = Field("title").FirstOrDefault();
-            // The label service leaves the label empty when the item has none in
-            // the requested language, in any language or in English.
-            var title = Value(movie, "valueLabel");
-            if (title.Length is 0 or > 300)
-                throw new VideoException(VideoFailure.InvalidResult);
-            return new VideoInformation(CatalogId, item, title, VideoKind.Movie)
-            {
-                Year = Field("date")
-                    .Select(row => VideoInformation.ParseYear(Value(row, "value")))
-                    .Min(),
-                Genres = Names(Field("genre")),
-                Cast = Names(
-                    Field("cast")
-                        .OrderByDescending(row =>
-                            int.TryParse(
-                                Value(row, "links"),
-                                CultureInfo.InvariantCulture,
-                                out var links
-                            )
-                                ? links
-                                : 0
+            Year = Field("date")
+                .Select(row => VideoInformation.ParseYear(Value(row, "value") ?? string.Empty))
+                .Min(),
+            Genres = Names(Field("genre")),
+            Cast = Names(
+                Field("cast")
+                    .OrderByDescending(row =>
+                        int.TryParse(
+                            Value(row, "links"),
+                            CultureInfo.InvariantCulture,
+                            out var links
                         )
-                ),
-                Synopsis = Value(movie, "valueDescription"),
-                Records = [record],
-                Ratings = new()
-                {
-                    Imdb = Score(Imdb),
-                    // Rotten Tomatoes' average rating is also recorded, over
-                    // ten; only the percentage is its Tomatometer.
-                    RottenTomatoes = Score(RottenTomatoes, "%"),
-                    Metacritic = Score(Metacritic),
-                },
-                // An item that names several IMDb IDs cannot say which rating
-                // belongs to it.
-                ImdbId = Field("imdb")
-                    .Select(row => VideoInformation.ParseImdbId(Value(row, "value")))
-                    .OfType<long>()
-                    .Distinct()
-                    .ToArray()
-                    is [var id]
-                    ? id
-                    : null,
-            };
-        }
-        catch (Exception error) when (error is InvalidOperationException or KeyNotFoundException)
-        {
-            throw new VideoException(VideoFailure.InvalidResult, error);
-        }
+                            ? links
+                            : 0
+                    )
+            ),
+            Synopsis = Value(movie, "valueDescription") ?? string.Empty,
+            Records = [record],
+            Ratings = new()
+            {
+                Imdb = Score(Imdb),
+                // Rotten Tomatoes' average rating is also recorded, over
+                // ten; only the percentage is its Tomatometer.
+                RottenTomatoes = Score(RottenTomatoes, "%"),
+                Metacritic = Score(Metacritic),
+            },
+            // An item that names several IMDb IDs cannot say which rating
+            // belongs to it.
+            ImdbId = Field("imdb")
+                .Select(row => VideoInformation.ParseImdbId(Value(row, "value")))
+                .OfType<long>()
+                .Distinct()
+                .ToArray()
+                is [var id]
+                ? id
+                : null,
+        };
     }
 
     // Wikidata writes a score as its value over the scale's maximum, such as
@@ -248,7 +225,8 @@ internal sealed class Provider : IProvider
     // when an editor recorded it, as a qualifier of the score.
     private static Rating? ReadRating(JsonElement row)
     {
-        var score = Value(row, "value");
+        if (Value(row, "value") is not { } score)
+            return null;
         var parts = score.EndsWith('%') ? new[] { score[..^1], "100" } : score.Split('/');
         return
             parts is [var text, var scale]
@@ -264,23 +242,19 @@ internal sealed class Provider : IProvider
                 CultureInfo.InvariantCulture,
                 out var maximum
             )
-            && double.IsFinite(maximum)
-            && maximum > 0
-            && value >= 0
-            && value <= maximum
-            ? new Rating(value / maximum * 10, VideoKind.Movie)
-            {
-                Votes =
-                    long.TryParse(
-                        Value(row, "votes"),
-                        NumberStyles.AllowLeadingSign,
-                        CultureInfo.InvariantCulture,
-                        out var votes
-                    )
-                    && votes > 0
-                        ? votes
-                        : null,
-            }
+            ? Rating.From(
+                value,
+                maximum,
+                VideoKind.Movie,
+                long.TryParse(
+                    Value(row, "votes"),
+                    NumberStyles.AllowLeadingSign,
+                    CultureInfo.InvariantCulture,
+                    out var votes
+                )
+                    ? votes
+                    : null
+            )
             : null;
     }
 
@@ -304,14 +278,8 @@ internal sealed class Provider : IProvider
         data.GetProperty("results").GetProperty("bindings").EnumerateArray().ToArray();
 
     // A row omits a column the query left unbound.
-    private static string Value(JsonElement row, string column) =>
-        row.ValueKind == JsonValueKind.Object
-        && row.TryGetProperty(column, out var cell)
-        && cell.ValueKind == JsonValueKind.Object
-        && cell.TryGetProperty("value", out var value)
-        && value.ValueKind == JsonValueKind.String
-            ? value.GetString()!
-            : string.Empty;
+    private static string? Value(JsonElement row, string column) =>
+        Text(Child(row, column), "value");
 
     /// <summary>
     /// The item identity, such as "Q25188", at the end of an entity address or

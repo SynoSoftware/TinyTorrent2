@@ -1,9 +1,10 @@
 using System.Globalization;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Reflection;
 using System.Text.Json;
 using Syno.TinyTorrent.Shared;
+using Syno.TinyTorrent.Shared.Network;
+using static Syno.TinyTorrent.Shared.Network.ProviderJson;
 
 namespace Syno.TinyTorrent.Library.Tmdb;
 
@@ -22,10 +23,7 @@ internal sealed class Provider(string key) : IProvider
         )
         {
             Access = Access.Key,
-            BuiltInKey = typeof(Provider)
-                .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
-                .FirstOrDefault(value => value.Key == "TmdbToken")
-                ?.Value,
+            BuiltInKey = ApiKey.BuiltIn("TmdbToken"),
             Kinds = new HashSet<VideoKind> { VideoKind.Movie, VideoKind.Series },
             IsLocalized = true,
         };
@@ -51,21 +49,9 @@ internal sealed class Provider(string key) : IProvider
                         cancellation
                     )
                     .ConfigureAwait(false);
-                try
-                {
-                    var results = response.GetProperty("results");
-                    empty &= results.GetArrayLength() == 0;
-                    choices.AddRange(results.EnumerateArray().Select(item => Choice(item, kind)));
-                }
-                catch (Exception error)
-                    when (error
-                            is InvalidOperationException
-                                or KeyNotFoundException
-                                or FormatException
-                    )
-                {
-                    throw new VideoException(VideoFailure.InvalidResult, error);
-                }
+                var results = response.GetProperty("results");
+                empty &= results.GetArrayLength() == 0;
+                choices.AddRange(results.EnumerateArray().Select(item => Choice(item, kind)));
             }
             return new(choices, empty);
         }
@@ -78,10 +64,9 @@ internal sealed class Provider(string key) : IProvider
                 cancellation
             )
             .ConfigureAwait(false);
-        try
-        {
-            var results = data.GetProperty("results");
-            var choices = results
+        var found = data.GetProperty("results");
+        return new(
+            found
                 .EnumerateArray()
                 .Where(item => Text(item, "media_type") is "movie" or "tv")
                 .Select(item =>
@@ -90,14 +75,9 @@ internal sealed class Provider(string key) : IProvider
                         Text(item, "media_type") == "movie" ? VideoKind.Movie : VideoKind.Series
                     )
                 )
-                .ToArray();
-            return new(choices, results.GetArrayLength() == 0);
-        }
-        catch (Exception error)
-            when (error is InvalidOperationException or KeyNotFoundException or FormatException)
-        {
-            throw new VideoException(VideoFailure.InvalidResult, error);
-        }
+                .ToArray(),
+            found.GetArrayLength() == 0
+        );
     }
 
     public async Task<VideoInformation> Describe(
@@ -106,11 +86,7 @@ internal sealed class Provider(string key) : IProvider
         CancellationToken cancellation
     )
     {
-        if (
-            choice.Kind is not (VideoKind.Movie or VideoKind.Series)
-            || !int.TryParse(choice.VideoId, out var identity)
-            || identity <= 0
-        )
+        if (!int.TryParse(choice.VideoId, out var identity) || identity <= 0)
             throw new VideoException(VideoFailure.InvalidResult);
         var root = (choice.Kind == VideoKind.Movie ? "movie/" : "tv/") + choice.VideoId;
         var record = await Read(root, request, value => Information(choice, value), cancellation)
@@ -142,7 +118,9 @@ internal sealed class Provider(string key) : IProvider
             Episodes = episodes,
             Year = records
                 .Skip(1)
-                .Select(value => VideoInformation.ParseYear(Text(value.Content, "air_date")))
+                .Select(value =>
+                    VideoInformation.ParseYear(Text(value.Content, "air_date") ?? string.Empty)
+                )
                 .FirstOrDefault(year => year is not null),
             Records = records,
         };
@@ -150,102 +128,76 @@ internal sealed class Provider(string key) : IProvider
 
     private VideoInformation Information(VideoChoice choice, VideoRecord record)
     {
-        try
-        {
-            var data = record.Content;
-            var title = Text(data, choice.Kind == VideoKind.Movie ? "title" : "name");
-            if (title.Length == 0 || data.GetProperty("id").GetInt32() <= 0)
-                throw new VideoException(VideoFailure.InvalidResult);
-            var keywords = data.TryGetProperty("keywords", out var terms)
-                ? terms.TryGetProperty("keywords", out var movieWords)
-                    ? Names(movieWords)
-                    : terms.TryGetProperty("results", out var seriesWords)
-                        ? Names(seriesWords)
-                        : []
+        var data = record.Content;
+        var title = Text(data, choice.Kind == VideoKind.Movie ? "title" : "name") ?? string.Empty;
+        if (data.GetProperty("id").GetInt32() <= 0)
+            throw new VideoException(VideoFailure.InvalidResult);
+        var keywords = data.TryGetProperty("keywords", out var terms)
+            ? terms.TryGetProperty("keywords", out var movieWords)
+                ? Names(movieWords)
+                : terms.TryGetProperty("results", out var seriesWords)
+                    ? Names(seriesWords)
+                    : []
+            : [];
+        var cast =
+            data.TryGetProperty("credits", out var credits)
+            && credits.TryGetProperty("cast", out var actors)
+                ? Names(actors)
                 : [];
-            var cast =
-                data.TryGetProperty("credits", out var credits)
-                && credits.TryGetProperty("cast", out var actors)
-                    ? Names(actors)
-                    : [];
-            var genres = Names(data.GetProperty("genres"));
-            // A movie's recommendations are movies and a series' are series,
-            // so each takes the kind of the described choice.
-            VideoChoice[] related =
-                data.TryGetProperty("recommendations", out var recommendations)
-                && recommendations.TryGetProperty("results", out var results)
-                    ? results.EnumerateArray().Select(item => Choice(item, choice.Kind)).ToArray()
-                    : [];
-            return new VideoInformation(CatalogId, choice.VideoId, title, choice.Kind)
-            {
-                Year = VideoInformation.ParseYear(Text(data, "release_date")),
-                Genres = genres,
-                Cast = cast,
-                Synopsis = choice.Kind == VideoKind.Movie ? Text(data, "overview") : string.Empty,
-                Keywords = keywords,
-                Records = [record],
-                Ratings = new() { Tmdb = ReadRating(data, choice.Kind) },
-                Directors =
-                    data.TryGetProperty("credits", out var team)
-                    && team.TryGetProperty("crew", out var crew)
-                    && crew.ValueKind == JsonValueKind.Array
-                        ? crew.EnumerateArray()
-                            .Where(member => Text(member, "job") == "Director")
-                            .Select(member => Text(member, "name"))
-                            .Where(name => name.Length > 0)
-                            .Distinct()
-                            .ToArray()
-                        : [],
-                // TMDB writes 0 for takings it does not know.
-                BoxOffice =
-                    data.TryGetProperty("revenue", out var revenue)
-                    && revenue.ValueKind == JsonValueKind.Number
-                    && revenue.TryGetInt64(out var takings)
-                    && takings > 0
-                        ? takings
-                        : null,
-                ImdbId =
-                    choice.Kind == VideoKind.Movie
-                        ? VideoInformation.ParseImdbId(Text(data, "imdb_id"))
-                        : null,
-                Related = related,
-            };
-        }
-        catch (Exception error)
-            when (error is InvalidOperationException or KeyNotFoundException or FormatException)
+        var genres = Names(data.GetProperty("genres"));
+        // A movie's recommendations are movies and a series' are series,
+        // so each takes the kind of the described choice.
+        VideoChoice[] related =
+            data.TryGetProperty("recommendations", out var recommendations)
+            && recommendations.TryGetProperty("results", out var results)
+                ? results.EnumerateArray().Select(item => Choice(item, choice.Kind)).ToArray()
+                : [];
+        return new VideoInformation(CatalogId, choice.VideoId, title, choice.Kind)
         {
-            throw new VideoException(VideoFailure.InvalidResult, error);
-        }
+            Year = VideoInformation.ParseYear(Text(data, "release_date") ?? string.Empty),
+            Genres = genres,
+            Cast = cast,
+            Synopsis =
+                choice.Kind == VideoKind.Movie
+                    ? Text(data, "overview") ?? string.Empty
+                    : string.Empty,
+            Keywords = keywords,
+            Records = [record],
+            Ratings = new() { Tmdb = ReadRating(data, choice.Kind) },
+            Directors =
+                data.TryGetProperty("credits", out var team)
+                && team.TryGetProperty("crew", out var crew)
+                && crew.ValueKind == JsonValueKind.Array
+                    ? crew.EnumerateArray()
+                        .Where(member => Text(member, "job") == "Director")
+                        .Select(member => Text(member, "name"))
+                        .OfType<string>()
+                        .Distinct()
+                        .ToArray()
+                    : [],
+            // TMDB writes 0 for takings it does not know.
+            BoxOffice = Number(data, "revenue") is > 0 and var takings ? takings : null,
+            ImdbId =
+                choice.Kind == VideoKind.Movie
+                    ? VideoInformation.ParseImdbId(Text(data, "imdb_id"))
+                    : null,
+            Related = related,
+        };
     }
 
     private static Episode ReadEpisode(VideoRecord record, int season, int number)
     {
-        try
-        {
-            var data = record.Content;
-            var name = Text(data, "name");
-            if (name.Length == 0 || data.GetProperty("id").GetInt32() <= 0)
-                throw new VideoException(VideoFailure.InvalidResult);
-            return new(season, number, name, Text(data, "overview"));
-        }
-        catch (Exception error)
-            when (error is InvalidOperationException or KeyNotFoundException or FormatException)
-        {
-            throw new VideoException(VideoFailure.InvalidResult, error);
-        }
+        var data = record.Content;
+        if (Text(data, "name") is not { } name || data.GetProperty("id").GetInt32() <= 0)
+            throw new VideoException(VideoFailure.InvalidResult);
+        return new(season, number, name, Text(data, "overview") ?? string.Empty);
     }
 
     private static Rating? ReadRating(JsonElement data, VideoKind kind) =>
-        data.TryGetProperty("vote_count", out var count)
-        && count.ValueKind == JsonValueKind.Number
-        && count.TryGetInt64(out var votes)
-        && votes > 0
-        && data.TryGetProperty("vote_average", out var average)
-        && average.ValueKind == JsonValueKind.Number
+        Number(data, "vote_count") is > 0 and var votes
+        && Child(data, "vote_average") is { ValueKind: JsonValueKind.Number } average
         && average.TryGetDouble(out var value)
-        && double.IsFinite(value)
-        && value is >= 0 and <= 10
-            ? new Rating(value, kind) { Votes = votes }
+            ? Rating.From(value, 10, kind, votes)
             : null;
 
     private async Task<JsonElement> Get(
@@ -306,30 +258,35 @@ internal sealed class Provider(string key) : IProvider
 
     private VideoChoice Choice(JsonElement item, VideoKind kind) =>
         kind == VideoKind.Movie
-            ? new VideoChoice(CatalogId, Id(item), VideoKind.Movie, Text(item, "title"))
+            ? new VideoChoice(
+                CatalogId,
+                Id(item),
+                VideoKind.Movie,
+                Text(item, "title") ?? string.Empty
+            )
             {
-                Year = VideoInformation.ParseYear(Text(item, "release_date")),
+                Year = VideoInformation.ParseYear(Text(item, "release_date") ?? string.Empty),
                 Original = Text(item, "original_title"),
             }
-            : new VideoChoice(CatalogId, Id(item), VideoKind.Series, Text(item, "name"))
+            : new VideoChoice(
+                CatalogId,
+                Id(item),
+                VideoKind.Series,
+                Text(item, "name") ?? string.Empty
+            )
             {
-                Year = VideoInformation.ParseYear(Text(item, "first_air_date")),
+                Year = VideoInformation.ParseYear(Text(item, "first_air_date") ?? string.Empty),
                 Original = Text(item, "original_name"),
             };
 
     private static string Id(JsonElement item) =>
         item.GetProperty("id").GetInt32().ToString(CultureInfo.InvariantCulture);
 
-    private static string Text(JsonElement element, string property) =>
-        element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
-            ? value.GetString()!
-            : string.Empty;
-
     private static IReadOnlyList<string> Names(JsonElement values) =>
         values
             .EnumerateArray()
             .Select(value => Text(value, "name"))
-            .Where(value => value.Length > 0)
+            .OfType<string>()
             .Distinct()
             .ToArray();
 }

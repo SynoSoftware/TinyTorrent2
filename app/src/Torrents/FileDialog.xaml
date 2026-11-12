@@ -31,8 +31,7 @@
         <TextBlock
           Grid.Column="1"
           Text="{x:Bind SizeText, Mode=OneWay}"
-          Style="{StaticResource TinyTorrentBodyTextStyle}"
-          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+          Style="{StaticResource TinyTorrentSecondaryTextStyle}"
           VerticalAlignment="Center"
         />
       </Grid>
@@ -202,8 +201,7 @@
           x:Name="ConsequenceText"
           Grid.Column="1"
           Text="{x:Bind Removal.Consequence, Mode=OneWay}"
-          Style="{StaticResource TinyTorrentBodyTextStyle}"
-          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+          Style="{StaticResource TinyTorrentSecondaryTextStyle}"
           TextWrapping="Wrap"
         />
       </Grid>
@@ -237,8 +235,7 @@
           Margin="12,0,0,0"
           Text="{x:Bind Move.FolderText, Mode=OneWay}"
           controls:Trimming.ShowsToolTip="True"
-          Style="{StaticResource TinyTorrentBodyTextStyle}"
-          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+          Style="{StaticResource TinyTorrentSecondaryTextStyle}"
           TextWrapping="NoWrap"
           TextTrimming="CharacterEllipsis"
           IsTextSelectionEnabled="True"

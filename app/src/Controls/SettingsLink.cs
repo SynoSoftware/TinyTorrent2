@@ -6,7 +6,10 @@ namespace Syno.TinyTorrent.Controls;
 
 public sealed partial class SettingsLink : Button
 {
-    private readonly TextBlock _header = new() { TextTrimming = TextTrimming.CharacterEllipsis };
+    private readonly TextBlock _header = new()
+    {
+        Style = (Style)Application.Current.Resources["TinyTorrentBodyTextStyle"],
+    };
     private readonly TextBlock _description = new()
     {
         Style = (Style)Application.Current.Resources["TinyTorrentTitleDetailTextStyle"],
@@ -64,8 +67,10 @@ public sealed partial class SettingsLink : Button
         Style = (Style)Application.Current.Resources["TinyTorrentSettingsLinkStyle"];
         Trimming.SetShowsToolTip(_header, true);
         Trimming.SetShowsToolTip(_description, true);
-        var content = new Grid { ColumnSpacing = 16 };
-        content.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        // The icon column and gap of a SettingsSection header, so a link's
+        // text lines up with the cards around it.
+        var content = new Grid { ColumnSpacing = 24 };
+        content.ColumnDefinitions.Add(new() { Width = new(20) });
         content.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
         content.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var text = new StackPanel { Spacing = 4, Children = { _header, _description } };

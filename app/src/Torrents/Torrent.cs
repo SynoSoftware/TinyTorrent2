@@ -164,7 +164,7 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
             or TorrentState.WaitingCheck
             or TorrentState.WaitingMove
             or TorrentState.Metadata => Syno.Segoe.Hourglass,
-            TorrentState.Error => Syno.Segoe.CircleAlert,
+            TorrentState.Error => Syno.Segoe.CircleX,
             _ => Syno.Segoe.CircleQuestionMark,
         };
 

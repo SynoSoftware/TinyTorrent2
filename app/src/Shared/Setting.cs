@@ -93,6 +93,9 @@ public sealed class Setting : INotifyPropertyChanged
     }
     public bool IsOn => _choice ?? ConfirmedOn == true;
 
+    /// <summary>A switch setting's state, On or Off, in the person's language.</summary>
+    public string StateText => _text.Get("settings", IsOn ? "on" : "off");
+
     // The tag of the item a selector shows, as Select reads it.
     public string SelectedValue =>
         Kind == SettingKind.Boolean ? IsOn ? "true" : "false"

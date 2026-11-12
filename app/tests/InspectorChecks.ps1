@@ -24,6 +24,9 @@ public static class InspectorChecks
         var reading = new CancellationTokenSource();
         var token = reading.Token;
         field.SetValue(inspector, reading);
+        // CancelReading also returns the waiting observations.
+        var observed = type.GetField("_observed", flags);
+        observed.SetValue(inspector, Activator.CreateInstance(observed.FieldType, StringComparer.Ordinal));
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         var caller = Environment.CurrentManagedThreadId;

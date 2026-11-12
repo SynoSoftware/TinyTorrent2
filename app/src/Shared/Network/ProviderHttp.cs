@@ -219,7 +219,7 @@ internal sealed partial class ProviderHttp : IDisposable
         ProviderCall? call
     )
     {
-        if (request.RequestUri is not { IsAbsoluteUri: true, Scheme: "https", UserInfo: "" })
+        if (request.RequestUri is not { } address || !IsProtected(address))
             throw new InvalidOperationException(
                 "Provider requests require HTTPS without URL credentials."
             );
@@ -295,6 +295,15 @@ internal sealed partial class ProviderHttp : IDisposable
             throw await Fail(call, ReplyFailure.Unavailable, inner: error).ConfigureAwait(false);
         }
     }
+
+    private static bool IsProtected(Uri address) =>
+        address is { IsAbsoluteUri: true, Scheme: "https", UserInfo: "" };
+
+    /// <summary>
+    /// Whether a request may go to an address that a reply names, in a redirect
+    /// or in its body: HTTPS on the default port without credentials.
+    /// </summary>
+    internal static bool CanFollow(Uri address) => IsProtected(address) && address.IsDefaultPort;
 
     // The confirmed route cannot carry the request: its proxy or adapter
     // fails, or the request is one it never sends, such as plain HTTP.

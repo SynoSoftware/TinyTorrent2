@@ -8,10 +8,10 @@ using Syno.TinyTorrent.Controls;
 namespace Syno.TinyTorrent.Shared;
 
 /// <summary>
-/// The Settings row of one <see cref="IDataset"/>: its count, size and age,
-/// the running download with its Cancel, and Delete beside Download or
-/// Update. Update and Delete ask first, so the row raises them for the
-/// window's dialogs; Download of missing data starts at once.
+/// The Settings row of one dataset's <see cref="DataDownload"/>: its count,
+/// size and age, the running download with its Cancel, and Delete beside
+/// Download or Update. Update and Delete ask first, so the row raises them
+/// for the window's dialogs; Download of missing data starts at once.
 /// </summary>
 public sealed partial class DatasetRow : UserControl
 {
@@ -27,8 +27,10 @@ public sealed partial class DatasetRow : UserControl
         Glyph = Segoe.Trash2,
         Visibility = Visibility.Collapsed,
     };
-    private readonly ActionButton _download = new() { Glyph = Segoe.Download };
-    private IDataset? _dataset;
+
+    // Download, or Update once the data is installed.
+    private readonly ActionButton _start = new() { Glyph = Segoe.Download };
+    private DataDownload? _download;
     private Strings? _text;
     private FileInfo? _installed;
     private Task<long>? _count;
@@ -39,9 +41,9 @@ public sealed partial class DatasetRow : UserControl
         set => _row.Icon = value;
     }
 
-    internal event EventHandler<IDataset>? DownloadRequested;
-    internal event EventHandler<IDataset>? UpdateRequested;
-    internal event EventHandler<IDataset>? DeleteRequested;
+    internal event EventHandler<DataDownload>? DownloadRequested;
+    internal event EventHandler<DataDownload>? UpdateRequested;
+    internal event EventHandler<DataDownload>? DeleteRequested;
 
     public DatasetRow()
     {
@@ -54,32 +56,32 @@ public sealed partial class DatasetRow : UserControl
         {
             Orientation = Orientation.Horizontal,
             Spacing = 8,
-            Children = { _work, _delete, _download },
+            Children = { _work, _delete, _start },
         };
         Content = _row;
-        _download.Click += (_, _) =>
+        _start.Click += (_, _) =>
         {
-            if (_dataset is { } dataset)
-                (_installed is null ? DownloadRequested : UpdateRequested)?.Invoke(this, dataset);
+            if (_download is { } download)
+                (_installed is null ? DownloadRequested : UpdateRequested)?.Invoke(this, download);
         };
         _delete.Click += (_, _) =>
         {
-            if (_dataset is { } dataset)
-                DeleteRequested?.Invoke(this, dataset);
+            if (_download is { } download)
+                DeleteRequested?.Invoke(this, download);
         };
         _work.FocusInvalidated += (_, _) => _row.Focus(FocusState.Programmatic);
     }
 
-    /// <summary>Shows <paramref name="dataset"/> and follows its changes; null hides the row.</summary>
-    internal void Show(IDataset? dataset, Strings text)
+    /// <summary>Shows <paramref name="download"/> and follows its changes; null hides the row.</summary>
+    internal void Show(DataDownload? download, Strings text)
     {
-        if (!ReferenceEquals(_dataset, dataset))
+        if (!ReferenceEquals(_download, download))
         {
-            if (_dataset is not null)
-                _dataset.PropertyChanged -= OnDataset;
-            _dataset = dataset;
-            if (dataset is not null)
-                dataset.PropertyChanged += OnDataset;
+            if (_download is not null)
+                _download.PropertyChanged -= OnDownload;
+            _download = download;
+            if (download is not null)
+                download.PropertyChanged += OnDownload;
         }
         _text = text;
         Refresh();
@@ -87,13 +89,13 @@ public sealed partial class DatasetRow : UserControl
 
     internal void RefreshText() => Refresh();
 
-    private void OnDataset(object? sender, PropertyChangedEventArgs args)
+    private void OnDownload(object? sender, PropertyChangedEventArgs args)
     {
         if (
             args.PropertyName
-            is nameof(IDataset.Installed)
-                or nameof(IDataset.DataWork)
-                or nameof(IDataset.CanDownload)
+            is nameof(DataDownload.Installed)
+                or nameof(DataDownload.Work)
+                or nameof(DataDownload.CanStart)
                 or ""
         )
             Refresh();
@@ -101,22 +103,22 @@ public sealed partial class DatasetRow : UserControl
 
     private void Refresh()
     {
-        if (_dataset is not { } dataset || _text is not { } text)
+        if (_download is not { } download || _text is not { } text)
         {
             Visibility = Visibility.Collapsed;
             return;
         }
         Visibility = Visibility.Visible;
-        var section = dataset.Section;
-        _installed = dataset.Installed;
-        var count = _installed is null ? null : dataset.Count;
+        var section = download.Section;
+        _installed = download.Installed;
+        var count = _installed is null ? null : download.Count;
         if (!ReferenceEquals(count, _count))
         {
             _count = count;
             if (count is { IsCompleted: false })
                 ShowCount(count);
         }
-        var progress = dataset.DataWork;
+        var progress = download.Work;
         var focused = XamlRoot is null ? null : FocusManager.GetFocusedElement(XamlRoot) as Control;
         var focus = focused?.FocusState ?? FocusState.Unfocused;
         var workFocused = _work.HasFocus;
@@ -124,14 +126,14 @@ public sealed partial class DatasetRow : UserControl
         _row.Description = _installed is { } installed
             ? Describe(section, installed, text)
             : text.Get(section, "data_hint");
-        _download.Text = text.Get(section, _installed is null ? "download" : "update");
+        _start.Text = text.Get(section, _installed is null ? "download" : "update");
         ToolTipService.SetToolTip(
-            _download,
+            _start,
             text.Get(section, _installed is null ? "download_tip" : "update_tip")
         );
-        AutomationProperties.SetAutomationId(_download, Name + "Download");
-        _download.IsEnabled = dataset.CanDownload;
-        _download.Visibility = progress is null ? Visibility.Visible : Visibility.Collapsed;
+        AutomationProperties.SetAutomationId(_start, Name + "Download");
+        _start.IsEnabled = download.CanStart;
+        _start.Visibility = progress is null ? Visibility.Visible : Visibility.Collapsed;
         _delete.Text = text.Get("file_action", "delete");
         ToolTipService.SetToolTip(_delete, text.Get(section, "delete_tip"));
         AutomationProperties.SetName(_delete, text.Get(section, "delete"));
@@ -143,7 +145,7 @@ public sealed partial class DatasetRow : UserControl
             focused is not null
             && (
                 workFocused
-                || ReferenceEquals(focused, _download)
+                || ReferenceEquals(focused, _start)
                 || ReferenceEquals(focused, _delete)
             )
             && (
@@ -153,8 +155,8 @@ public sealed partial class DatasetRow : UserControl
             )
         )
         {
-            if (progress is null && _download.IsEnabled)
-                _download.Focus(focus);
+            if (progress is null && _start.IsEnabled)
+                _start.Focus(focus);
             else if (!_work.FocusCancel(focus))
                 _row.Focus(FocusState.Programmatic);
         }

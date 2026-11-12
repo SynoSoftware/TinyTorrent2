@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Syno.TableView;
 
@@ -22,7 +23,7 @@ public sealed partial class LibraryTable : UserControl
         {
             RatingSample.Small => "TinyTorrentRatingSubduedStyle",
             RatingSample.Large => "TinyTorrentRatingPrimaryStyle",
-            _ => "TinyTorrentRatingSecondaryStyle",
+            _ => "TinyTorrentSecondaryTextStyle",
         };
         return (Style)Application.Current.Resources[key];
     }
@@ -126,14 +127,14 @@ public sealed partial class LibraryTable : UserControl
         if (_table is not null)
             _table.EmptyContent = null;
         _configuration = _model.RowsConfiguration;
-        var template = _configuration switch
+        var table = new Table();
+        AutomationProperties.SetAutomationId(table, "LibraryTable");
+        var columns = Columns(_configuration);
+        for (var index = 0; index < columns.Length; index++)
         {
-            LibraryConfiguration.Videos => "LibraryVideosTable",
-            LibraryConfiguration.Music => "LibraryMusicTable",
-            LibraryConfiguration.Files => "LibraryFilesTable",
-            _ => throw new InvalidOperationException("Unknown Library configuration."),
-        };
-        var table = (Table)((DataTemplate)Resources[template]).LoadContent();
+            var (id, shown) = columns[index];
+            table.Columns.Add(Define(id, shown, canHide: index > 0));
+        }
         var schema = table.Schema<LibraryRow>().Key(row => row.Entry.EntryId);
         foreach (var column in table.Columns)
         {
@@ -268,6 +269,144 @@ public sealed partial class LibraryTable : UserControl
         if (Layouts.TryGetValue(_configuration, out var layout))
             table.Layout = layout;
         _table = table;
+    }
+
+    // Each configuration's columns in their default order. The first one
+    // cannot be hidden.
+    private static (string Id, bool Shown)[] Columns(LibraryConfiguration configuration) =>
+        configuration switch
+        {
+            LibraryConfiguration.Videos =>
+            [
+                ("title", true),
+                ("type", true),
+                ("year", true),
+                ("duration", true),
+                ("resolution", false),
+                ("bitrate", false),
+                ("subtitles", true),
+                ("imdb", true),
+                ("tmdb", true),
+                ("rottentomatoes", true),
+                ("popcornmeter", true),
+                ("metacritic", false),
+                ("genres", true),
+                ("cast", false),
+                ("size", false),
+                ("name", false),
+                ("folder", false),
+                ("modified", false),
+            ],
+            LibraryConfiguration.Music =>
+            [
+                ("title", true),
+                ("artist", true),
+                ("album", true),
+                ("track", true),
+                ("duration", true),
+                ("year", true),
+                ("bitrate", false),
+                ("genres", false),
+                ("name", false),
+                ("folder", false),
+                ("size", false),
+                ("modified", false),
+            ],
+            LibraryConfiguration.Files =>
+            [
+                ("name", true),
+                ("folder", true),
+                ("size", true),
+                ("modified", true),
+                ("kind", false),
+                ("title", false),
+                ("duration", false),
+                ("resolution", false),
+                ("bitrate", false),
+            ],
+            _ => throw new InvalidOperationException("Unknown Library configuration."),
+        };
+
+    private Column Define(string id, bool shown, bool canHide)
+    {
+        var column = id switch
+        {
+            "title" => new Column { CellTemplate = Cell("Title"), Width = 300 },
+            "name" => new Column { CellTemplate = Cell("Name"), Width = 300 },
+            "folder" => new Column { CellTemplate = Cell("Folder"), Width = 300 },
+            "type" => new Column { CellTemplate = Cell("Type"), CanShrink = false },
+            "year" => new Column { CellTemplate = Cell("Year"), CanShrink = false },
+            "resolution" => new Column { CellTemplate = Cell("Resolution"), CanShrink = false },
+            "subtitles" => new Column { CellTemplate = Cell("Subtitles"), CanShrink = false },
+            "modified" => new Column { CellTemplate = Cell("Modified"), CanShrink = false },
+            "kind" => new Column { CellTemplate = Cell("Kind"), CanShrink = false },
+            "track" => new Column { CellTemplate = Cell("Track"), CanShrink = false },
+            "duration" => new Column
+            {
+                CellTemplate = Cell("Duration"),
+                CanShrink = false,
+                CellAlignment = HorizontalAlignment.Right,
+            },
+            "bitrate" => new Column
+            {
+                CellTemplate = Cell("Bitrate"),
+                CanShrink = false,
+                CellAlignment = HorizontalAlignment.Right,
+            },
+            "size" => new Column
+            {
+                CellTemplate = Cell("Size"),
+                CanShrink = false,
+                Width = 110,
+                CellAlignment = HorizontalAlignment.Right,
+            },
+            "imdb" => new Column
+            {
+                CellTemplate = Cell("ImdbRating"),
+                CanShrink = false,
+                Width = 110,
+                CellAlignment = HorizontalAlignment.Right,
+            },
+            "tmdb" => new Column
+            {
+                CellTemplate = Cell("TmdbRating"),
+                CanShrink = false,
+                Width = 110,
+                CellAlignment = HorizontalAlignment.Right,
+            },
+            "metacritic" => new Column
+            {
+                CellTemplate = Cell("MetacriticRating"),
+                CanShrink = false,
+                Width = 110,
+                CellAlignment = HorizontalAlignment.Right,
+            },
+            "rottentomatoes" => new Column
+            {
+                CellTemplate = Cell("RottenTomatoesRating"),
+                CanShrink = false,
+                Width = 140,
+                CellAlignment = HorizontalAlignment.Right,
+            },
+            "popcornmeter" => new Column
+            {
+                CellTemplate = Cell("PopcornmeterRating"),
+                CanShrink = false,
+                Width = 120,
+                CellAlignment = HorizontalAlignment.Right,
+            },
+            "genres" => new Column { CellTemplate = Cell("Genres") },
+            "cast" => new Column { CellTemplate = Cell("Cast") },
+            "artist" => new Column { CellTemplate = Cell("Artist") },
+            "album" => new Column { CellTemplate = Cell("Album") },
+            _ => throw new InvalidOperationException($"Unknown Library column: {id}"),
+        };
+        column.Id = id;
+        column.IsVisible = shown;
+        column.CanHide = canHide;
+        return column;
+
+        DataTemplate Cell(string key) => (DataTemplate)Resources[key];
     }
 
     private sealed class ArtistOrder : IComparer<LibraryRow>

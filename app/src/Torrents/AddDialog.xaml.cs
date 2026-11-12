@@ -1,5 +1,4 @@
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
@@ -70,8 +69,7 @@ public sealed partial class AddDialog : UserControl, IDisposable
     internal void RefreshText()
     {
         Bindings.Update();
-        ToolTipService.SetToolTip(Close, Model.Text.Get("add", "close"));
-        AutomationProperties.SetName(Close, Model.Text.Get("add", "close"));
+        IconButton.Name(Close, Model.Text.Get("add", "close"));
         ShowResize();
         ShowChoices();
         _browser.RefreshText();
@@ -96,8 +94,7 @@ public sealed partial class AddDialog : UserControl, IDisposable
     {
         var text = Model.Text.Get("add", _maximized ? "restore" : "maximize");
         ResizeIcon.Glyph = _maximized ? Segoe.Minimize2 : Segoe.Maximize2;
-        ToolTipService.SetToolTip(Resize, text);
-        AutomationProperties.SetName(Resize, text);
+        IconButton.Name(Resize, text);
     }
 
     private void OnRootChanged(XamlRoot sender, XamlRootChangedEventArgs args) => Fit();
@@ -129,8 +126,7 @@ public sealed partial class AddDialog : UserControl, IDisposable
         Split.SetBounds(Available * 0.3, Available - ChoicesMinimum, Available * share);
         var text = Model.Text.Get("add", shown ? "hide_choices" : "show_choices");
         ChoicesIcon.Glyph = shown ? Segoe.PanelLeftClose : Segoe.PanelLeftOpen;
-        ToolTipService.SetToolTip(ChoicesButton, text);
-        AutomationProperties.SetName(ChoicesButton, text);
+        IconButton.Name(ChoicesButton, text);
     }
 
     private void OnChoices(object sender, RoutedEventArgs args)

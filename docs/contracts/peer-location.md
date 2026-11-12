@@ -36,16 +36,21 @@ installer's presence check carry the file into the installation.
 ## City data in Settings
 
 The City data row sits under IMDb data in Plugins and is the same control,
-`DatasetRow`, fed by the same contract, `IDataset`, that Library fulfils for
-IMDb data and `Geolocation` fulfils for city data. One pair of dialogs,
-worded from the dataset's text section, asks before an update or a deletion.
+`DatasetRow`. Each row shows one `DataDownload`, the owner of a dataset's
+copy on this computer: it runs the download with its cancel and its
+interruption, replaces the installed file, deletes it and reports a
+failure. `Imdb.Dataset` and `Geolocation` each implement `IDataset`, which
+states what differs: the names, the file, the build, and how the dataset's
+reads give way to a replacement. One pair of dialogs, worded from the
+dataset's text section, asks before an update or a deletion.
 The download goes through the shared HTTP owner, so the saved proxy and
 adapter apply, and through search protection under the `dbip` catalogue. It
 fetches this month's archive, or the previous month's when this month's does
 not exist yet, unpacks it beside the installed file, checks that the result
 opens as a database, flushes it to disk and moves it over the installed copy
-under the lookup lock. Failure or cancellation before that keeps the previous
-copy. A reply that asks the app to wait, such as HTTP 429, records the hold:
+under the lookup lock, off the window thread. Failure or cancellation before
+that keeps the previous copy. A reply that asks the app to wait, such as HTTP
+429, records the hold:
 the failure names the time to try again, and Download sends nothing until
 then. A route change or a protection reset interrupts the download and
 reports it. Both behave as they do for the IMDb download. The status bar

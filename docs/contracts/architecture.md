@@ -434,9 +434,9 @@ issues own actionable work and its status.
 - [Supplier](../../app/src/Subtitles/Supplier.cs) hosts each
   [ISupplier](../../app/src/Subtitles/ISupplier.cs). It owns validity before
   every send and allowance reservation, the key on each request, the sign-in
-  request's accounting, redirects, subtitle decoding and which subtitles fit
-  a file. Its operation carries account, HTTP access and the acquisition
-  validity callback through sign-in, retries and redirects. A supplier builds
+  request's accounting, redirects, subtitle decoding, the page loop and which
+  subtitles fit a file. Its operation carries account, HTTP access and the
+  acquisition validity callback through sign-in, retries and redirects. A supplier builds
   its requests, reads the answers into facts and declares its sign-in style
   and quota facts; it reaches the network only through the host's send
   delegate. Account Check has no movie membership requirement. Acquisition
@@ -499,6 +499,64 @@ issues own actionable work and its status.
 - `Controls.DragDistance` and the table library's `DragDistance` each read
   the Windows drag distance, because the table uses no app code and
   publishes no Windows metric.
+- Each feature translates a failed provider reply into its own failures:
+  `VideoLookup`, `Supplier` and `DataDownload` each hold one switch over
+  `ReplyException`. `ProviderHttp` reads the reply and records the hold once.
+  One shared mapper would take a table per feature, because the three
+  failure lists share no member.
+- A Library provider keeps `Search` and `Describe` as whole operations.
+  `VideoLookup` wraps each call into a provider and reports a wrong answer
+  shape as `InvalidResult`. Splitting a provider into request builders and
+  answer readers, so the host could run each reader, would need a multi-step
+  protocol for TMDB's two-request search and its per-episode records.
+- A plugin declares its built-in key by one call of `ApiKey.BuiltIn` with
+  the key's name. The hosts do not read keys by name, because
+  `ProviderOption.BuiltInKey` is read where no host object is present, and a
+  central list of keys would change with every plugin.
+- `DataDownload` owns the copy of a dataset on this computer for the IMDb
+  data and the city data, and Settings shows it. `IDataset` states what
+  differs. The lock between reads and a replacement stays in the dataset,
+  in `IDataset.Replace`, because every read is there and the city data
+  must close and reopen its reader inside that lock; a lock in
+  `DataDownload` would put the reads and their lock in different files.
+  Library gives its `DataDownload` the step that runs a replacement inside
+  `VideoLookup.Reload`, because `Imdb.Dataset` is created before the
+  lookup and cannot reach it. A base class for datasets was rejected:
+  `Geolocation` is more than a dataset.
+- [Bridge](../../app/src/Subtitles/Bridge.cs) connects each view of
+  subtitle work to its `Acquisition`. It listens only while the view is
+  shown, refreshes the view once for a burst of changes, and runs the
+  actions the person starts there. A failed action is reported in the
+  window unless subtitle work closed or was replaced meanwhile. A host
+  hides a view and never detaches it, so the failure of an action is
+  reported also after the person left the view. The three views have no
+  common base class, because no host treats them as one. `Acquisition`
+  does not report these failures itself, because the choice and account
+  dialogs show a failure inside the dialog.
+- In `Acquisition`, Check, the choice list, the chosen download, Scan and
+  Find take the operation gate through `TakeForPerson` and end through
+  `ReleaseForPerson`, which also wakes the worker. A settings write waits
+  through `TakeForPerson` too and releases the gate itself. Check,
+  the choice list and the chosen download run through `Ask`: they belong
+  to the configuration they started under, so a configuration change ends
+  them. Find and a settings write act on the configuration that is current
+  when they run, so a configuration change does not end their wait.
+  `Reconfigure` saves a change that changes jobs; the extras count changes
+  none and saves by itself. Closing subtitle work first ends the running
+  work, the person's scan or search included, and then waits for the
+  queued settings writes, so a setting the person chose is still saved and
+  the close does not wait for a whole scan.
+- [Pass](../../app/src/Library/Pass.cs) holds the targets that one
+  automatic pass over the entries on screen accepted, for the metadata
+  sweep and the file-properties read. Each owner keeps its work item and
+  accepts a stop under its own gate. One loop for both was rejected,
+  because the sweep shares its work loop with the batch and waits out
+  provider holds.
+- [Rerun](../../app/src/Shared/Rerun.cs) runs a background pass again
+  when it is requested during its run. Subtitle reconciliation, the check
+  of displayed movies and the file-properties read use it. The metadata
+  sweep does not, because `VideoLookup.Refresh` decides whether a new
+  sweep may start.
 
 Each `Setting` saves through a `SettingStore`. A store says whether its value
 can be edited and saved, saves it, and says whether a failed save proves the
@@ -555,6 +613,39 @@ line, a `using` alias or a qualified type name, so a reviewer checks
 this rule in the diff. The rule limits names: a feature still reads
 another feature's state through its `MainViewModel`. It keeps a feature
 from becoming the authority for a rule that another feature also needs.
+
+Each rule that more than one caller needs has one owner. A new caller uses
+that owner, and a second copy of its rule is a defect, because two copies
+drift apart.
+
+| Concept | Owner |
+| --- | --- |
+| Engine refusals in the app | `CommandException` |
+| A torrent's problem | `Torrent` |
+| Torrent, peer, file and limit facts | The model type that holds the data |
+| Which pages are workspaces | `Shell/Navigation` |
+| The text of a failure | The failure itself, through `IFailure.Describe` |
+| Display text and number formats | `Shared/Strings` |
+| Whether two folders or paths are the same | `Shared/FolderComparer` |
+| Work on the window thread once per frame or turn | `Shared/FrameCallback`, `Shared/TurnCallback` |
+| A background pass that runs again on request | `Shared/Rerun` |
+| Dialogs, menus and command shells | The dialog owners in `Shell/MainWindow/Dialogs.cs`, `Controls/MenuItems` |
+| Settings | `Setting`, `Settings.Editor`, `Schedule`, `PeriodSpan`, `Overview` |
+| Custom-drawn controls | `Controls`, and the peer map's own owners |
+| SQLite access and small saved files | `Shared/Storage` |
+| Provider access: keys, replies and JSON | `Shared/Network`: `ProviderHttp`, `ApiKey`, `ProviderJson` |
+| What every plugin shares | The hosts: `VideoLookup` with `ProviderOption`, and `Supplier` |
+| Downloaded data files | `Shared/DataDownload` with `IDataset` |
+| Subtitle operations | `Subtitles.Acquisition` |
+| A subtitle view's subscription and actions | `Subtitles.Bridge` |
+| An automatic pass over the Library entries on screen | `Library.Pass` |
+| Rules inside the table | TableView: `Body/Row`, `ItemIdentity` |
+| Tokens, styles and shared controls | `App.xaml` and `Controls` |
+| Engine paths, text, errors and Windows resources | `engine/inc/Engine.h`, `Owned.h`, `Drives` |
+| Engine command, save and storage shells | `Commands.cpp`, `Changes`, `Files.cpp`, `Storage.cpp`, `Policy.cpp` |
+| Handler registration | One table in `Registration.cpp` |
+| Engine windows | `Acrylic`, `Popup`, `Toasts`, as the [engine instructions](../../engine/AGENTS.md) say |
+| Test and diagnostic harness | TableView's `ProofHarness`; the capture journeys' `CaptureMatrix` |
 
 TableView owns its templates and English text and has no engine dependency.
 Hosts supply rows, columns, templates, identity and handlers through its public

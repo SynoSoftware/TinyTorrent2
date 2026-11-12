@@ -9,18 +9,17 @@ namespace Syno.TinyTorrent.Subtitles;
 internal sealed class Automatic : UserControl
 {
     private readonly Strings _text;
-    private readonly Action<Exception, string> _report;
+    private readonly Bridge _bridge;
     private readonly bool _home;
     private readonly ToggleSwitch _toggle = new();
     private readonly SettingsRow _row;
-    private Acquisition? _model;
     private bool _refreshing;
     internal Control Field => _toggle;
 
     internal Automatic(Strings text, Action<Exception, string> report, bool home = false)
     {
         _text = text;
-        _report = report;
+        _bridge = new Bridge(DispatcherQueue, Refresh, report);
         _home = home;
         _row = new SettingsRow { Content = _toggle };
         Content = _row;
@@ -30,26 +29,31 @@ internal sealed class Automatic : UserControl
         );
         _toggle.Toggled += (_, _) =>
         {
-            if (!_refreshing && _model is { } model)
-                _ = Save(model, _toggle.IsOn);
+            if (!_refreshing)
+            {
+                var enabled = _toggle.IsOn;
+                _ = _bridge.Run(model => model.SetEnabled(enabled), "failed_settings");
+            }
         };
-        Unloaded += (_, _) => Attach(null);
+        Unloaded += (_, _) => SetVisible(false);
         Refresh();
     }
 
     internal void Attach(Acquisition? model)
     {
-        if (_model == model)
-            return;
-        if (_model is not null)
-            _model.Changed -= OnChanged;
-        _model = model;
-        if (_model is not null)
-            _model.Changed += OnChanged;
-        Refresh();
+        if (_bridge.Attach(model))
+        {
+            Refresh();
+        }
     }
 
-    private void OnChanged(object? sender, EventArgs args) => DispatcherQueue.TryEnqueue(Refresh);
+    internal void SetVisible(bool visible)
+    {
+        if (_bridge.SetVisible(visible) && visible)
+        {
+            Refresh();
+        }
+    }
 
     internal void Refresh()
     {
@@ -63,37 +67,14 @@ internal sealed class Automatic : UserControl
             _home ? "home_automatic_hint" : "automatic_hint"
         );
         AutomationProperties.SetName(_toggle, _row.Header);
-        if (_model?.Saving.IsCompleted != false)
-            _toggle.IsOn = _model?.Enabled == true;
-        _toggle.IsEnabled = _model is not null;
+        if (_bridge.Model?.Saving.IsCompleted != false)
+            _toggle.IsOn = _bridge.Model?.Enabled == true;
+        _toggle.IsEnabled = _bridge.Model is not null;
         _row.StateText = SettingsRow.State(
             _toggle.IsOn,
             _text.Get("settings", "on"),
             _text.Get("settings", "off")
         );
         _refreshing = false;
-    }
-
-    private async Task Save(Acquisition model, bool enabled)
-    {
-        try
-        {
-            if (model.IsDisposed)
-                return;
-            await model.SetEnabled(enabled);
-        }
-        catch (OperationCanceledException)
-        {
-            System.Diagnostics.Debug.WriteLine("Automatic subtitle setting save cancelled.");
-        }
-        catch (Exception error)
-        {
-            if (!model.IsDisposed && (_model is null || _model == model))
-                _report(error, "failed_settings");
-        }
-        finally
-        {
-            Refresh();
-        }
     }
 }

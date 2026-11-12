@@ -563,19 +563,21 @@ public sealed partial class MainViewModel
     private bool CanDownloadSubtitles =>
         Subtitles is { Ready: true } && Library.IsAvailable && Library.SupportsMetadata;
 
-    internal Task DownloadData(IDataset dataset) => AnnounceData(dataset, dataset.Download());
+    internal Task DownloadData(DataDownload download) => AnnounceData(download, download.Start());
 
     /// <summary>
     /// Downloads the data of the provider the person chose, which the
     /// installed data selects.
     /// </summary>
     internal Task PrepareAutomaticDownload() =>
-        AnnounceData(Library, Library.Download(enableAutomaticDownload: true));
+        Library.Download is { } download
+            ? AnnounceData(download, Library.PrepareAutomaticDownload())
+            : Task.CompletedTask;
 
-    private async Task AnnounceData(IDataset dataset, Task<bool> download)
+    private async Task AnnounceData(DataDownload download, Task<bool> installed)
     {
-        if (await download)
-            Notifications.Announce(Text.Get(dataset.Section, "ready"));
+        if (await installed)
+            Notifications.Announce(Text.Get(download.Section, "ready"));
     }
 
     /// <summary>All providers and suppliers first, then each one, for the Settings reset.</summary>

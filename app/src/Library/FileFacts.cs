@@ -10,8 +10,7 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
 {
     private readonly CancellationTokenSource _lifetime = new();
     private readonly object _gate = new();
-    private Task? _work;
-    private bool _again;
+    private Rerun? _reads;
     private bool _connected;
     private CancellationTokenSource _connection = new();
     private readonly HashSet<Target> _cancelled = [];
@@ -54,9 +53,7 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
     {
         if (_lifetime.IsCancellationRequested || !_connected || _displayed.Count == 0)
             return;
-        _again = true;
-        if (_work is null || _work.IsCompleted)
-            _work = Task.Run(Run);
+        (_reads ??= new(Run)).Request();
     }
 
     private async Task Run()
@@ -65,12 +62,8 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
         IReadOnlySet<long> displayed;
         lock (_gate)
         {
-            if (!_connected)
-            {
-                _work = null;
+            if (!_connected || _lifetime.IsCancellationRequested)
                 return;
-            }
-            _again = false;
             displayed = _displayed;
             request = CancellationTokenSource.CreateLinkedTokenSource(_connection.Token);
         }
@@ -78,9 +71,7 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
         // The read shows in the work list only once it has files to read, and
         // then takes over request.
         CancellableWork? run = null;
-        Target[] accepted = [];
-        var skipped = 0;
-        var done = 0;
+        Pass<Target>? pass = null;
         var unreadable = 0;
         try
         {
@@ -116,34 +107,33 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
                 )
                 .ConfigureAwait(false);
             lock (_gate)
-                accepted = pending.Where(target => !_cancelled.Contains(target)).ToArray();
-            if (accepted.Length == 0)
+                pass = new Pass<Target>(pending, _cancelled, target => target.EntryId);
+            if (pass.Count == 0)
                 return;
             lock (_gate)
                 run = new CancellableWork(
                     work,
                     new(
                         new WorkDescription.FileProperties(),
-                        new WorkProgress.Fraction(0, accepted.Length, WorkUnit.Files),
+                        pass.Progress,
                         new WorkExecution.Running()
                     ),
                     Stop,
                     request
                 );
-            foreach (var target in accepted)
+            while (true)
             {
                 cancellation.ThrowIfCancellationRequested();
+                Target? target;
                 lock (_gate)
                 {
-                    // A row that scrolled away before its turn is read when it
-                    // shows again.
-                    if (!_displayed.Contains(target.EntryId))
-                    {
-                        skipped++;
+                    var count = pass.Count;
+                    target = pass.Next(_displayed);
+                    if (pass.Count != count)
                         Report();
-                        continue;
-                    }
                 }
+                if (target is null)
+                    break;
                 Facts? facts = null;
                 try
                 {
@@ -206,6 +196,8 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
                         "Library file properties: " + error.GetType().Name
                     );
                 }
+                // A lost connection cancelled the token, so the loop ends the
+                // pass at its next turn.
                 lock (_gate)
                     if (!_connected)
                         continue;
@@ -216,7 +208,7 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
                     Changed?.Invoke(this, EventArgs.Empty);
                 lock (_gate)
                 {
-                    done++;
+                    pass.Advance();
                     Report();
                 }
             }
@@ -248,38 +240,18 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
                 {
                     run.Operation.Summarize(
                         "properties_result",
-                        done,
-                        accepted.Length - skipped,
+                        pass!.Done,
+                        pass.Count,
                         unreadable
                     );
                     ending = run.DisposeAsync();
                 }
                 await ending.ConfigureAwait(false);
             }
-            lock (_gate)
-            {
-                _work = null;
-                if (_connected && _again && !_lifetime.IsCancellationRequested)
-                    _work = Task.Run(Run);
-            }
         }
 
-        // Callers hold _gate. Nothing is left when every target scrolled away
-        // before its turn.
-        void Report() =>
-            run!.Report(
-                run.Observation with
-                {
-                    Progress =
-                        accepted.Length - skipped > 0
-                            ? new WorkProgress.Fraction(
-                                done,
-                                accepted.Length - skipped,
-                                WorkUnit.Files
-                            )
-                            : new WorkProgress.Unknown(),
-                }
-            );
+        // Callers hold _gate. The read and its pass exist together.
+        void Report() => run!.Report(run.Observation with { Progress = pass!.Progress });
 
         // The person's Cancel also keeps the files not read yet from the next
         // read in this session.
@@ -288,8 +260,7 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
             lock (_gate)
             {
                 if (stopping.TryCancel(out var signalling))
-                    foreach (var target in accepted.Skip(done + skipped))
-                        _cancelled.Add(target);
+                    pass!.Cancel();
                 return signalling;
             }
         }
@@ -344,11 +315,11 @@ internal sealed class FileFacts(Database database, BackgroundWork work) : IAsync
     public async ValueTask DisposeAsync()
     {
         _lifetime.Cancel();
-        Task? work;
+        Task? reads;
         lock (_gate)
-            work = _work;
-        if (work is not null)
-            await work.ConfigureAwait(false);
+            reads = _reads?.Completion;
+        if (reads is not null)
+            await reads.ConfigureAwait(false);
         _lifetime.Dispose();
         _connection.Dispose();
     }

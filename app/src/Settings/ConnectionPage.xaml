@@ -95,6 +95,14 @@
         />
       </Grid>
     </DataTemplate>
+    <Style x:Key="ConnectionShareStyle" TargetType="Slider">
+      <Setter Property="Minimum" Value="5" />
+      <Setter Property="Maximum" Value="100" />
+      <Setter Property="StepFrequency" Value="5" />
+      <Setter Property="SmallChange" Value="5" />
+      <Setter Property="SnapsTo" Value="StepValues" />
+      <Setter Property="IsThumbToolTipEnabled" Value="False" />
+    </Style>
   </UserControl.Resources>
   <Grid RowSpacing="16">
     <Grid.RowDefinitions>
@@ -576,12 +584,7 @@
                     />
                   </Grid>
                   <Slider
-                    Minimum="5"
-                    Maximum="100"
-                    StepFrequency="5"
-                    SmallChange="5"
-                    SnapsTo="StepValues"
-                    IsThumbToolTipEnabled="False"
+                    Style="{StaticResource ConnectionShareStyle}"
                     Value="{x:Bind Model.StandardShare, Mode=TwoWay}"
                     IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"
                     AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'standard_caps'), Mode=OneWay}"
@@ -617,12 +620,7 @@
                     />
                   </Grid>
                   <Slider
-                    Minimum="5"
-                    Maximum="100"
-                    StepFrequency="5"
-                    SmallChange="5"
-                    SnapsTo="StepValues"
-                    IsThumbToolTipEnabled="False"
+                    Style="{StaticResource ConnectionShareStyle}"
                     Value="{x:Bind Model.AlternativeShare, Mode=TwoWay}"
                     IsEnabled="{x:Bind Model.CanEdit, Mode=OneWay}"
                     AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'alternative_caps'), Mode=OneWay}"

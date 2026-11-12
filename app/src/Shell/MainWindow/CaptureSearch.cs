@@ -173,10 +173,12 @@ public sealed partial class MainWindow
                 return (false, false);
             var shown =
                 Model.Page == WindowPage.Settings
-                && CaptureElements(page)
-                    .OfType<SelectorBar>()
-                    .Single(control => control.Name == "Categories")
-                    .SelectedItem?.Tag?.ToString() == "Limits";
+                && (
+                    CaptureElements(page)
+                        .OfType<NavigationView>()
+                        .Single(control => control.Name == "Categories")
+                        .SelectedItem as FrameworkElement
+                )?.Tag?.ToString() == "Limits";
             var editor = CaptureElements(page)
                 .OfType<ComboBox>()
                 .SingleOrDefault(control => control.Name == "LimitsChoice");

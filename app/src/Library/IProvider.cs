@@ -13,7 +13,11 @@ namespace Syno.TinyTorrent.Library;
 /// </summary>
 /// <remarks>
 /// A <see cref="ProviderException"/> means the provider cannot serve any request
-/// now; any other <see cref="VideoException"/> concerns one video only.
+/// now; any other <see cref="VideoException"/> concerns one video only. A
+/// provider lets an answer of another shape throw, and gives an empty title
+/// when the answer has none: Library reports the first as
+/// <see cref="VideoFailure.InvalidResult"/>, and lists no choice and accepts no
+/// description without a title of 1 to 300 characters.
 /// </remarks>
 internal interface IProvider
 {
@@ -60,7 +64,7 @@ internal sealed record ProviderOption(
     internal Access Access { get; init; }
 
     internal string? BuiltInKey { get; init; }
-    internal bool HasBuiltInKey => !string.IsNullOrWhiteSpace(BuiltInKey);
+    internal bool HasBuiltInKey => BuiltInKey is not null;
 
     /// <summary>The kinds the provider's searches return: movies, series, or both.</summary>
     internal IReadOnlySet<VideoKind> Kinds { get; init; } = Movies;
@@ -204,6 +208,16 @@ public sealed record Rating(double Value, VideoKind Kind)
     /// much; null when the source does not report it.
     /// </summary>
     public long? Votes { get; init; }
+
+    /// <summary>
+    /// The rating for a site's <paramref name="score"/> on a scale that ends at
+    /// <paramref name="maximum"/>, or null when the score is outside the scale.
+    /// A vote count that is not positive is unknown.
+    /// </summary>
+    internal static Rating? From(double score, double maximum, VideoKind kind, long? votes = null) =>
+        maximum > 0 && double.IsFinite(maximum) && score >= 0 && score <= maximum
+            ? new Rating(score / maximum * 10, kind) { Votes = votes > 0 ? votes : null }
+            : null;
 }
 
 /// <summary>A video's ratings, at most one from each <see cref="RatingSource"/>.</summary>
@@ -309,6 +323,12 @@ internal class ProviderException(
         : this(VideoFailure.Blocked, block.RetryAt) => Block = block;
 
     internal DateTimeOffset? RetryAt { get; } = retryAt;
+
+    /// <summary>
+    /// Whether the retry time is still ahead, so a request now would only
+    /// repeat the wait.
+    /// </summary>
+    internal bool IsWaiting => RetryAt > DateTimeOffset.UtcNow;
 
     /// <summary>The request protection that holds lookups back, when the failure is <see cref="VideoFailure.Blocked"/>.</summary>
     internal RequestBlock? Block { get; }

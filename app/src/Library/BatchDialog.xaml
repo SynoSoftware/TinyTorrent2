@@ -7,13 +7,6 @@
 >
   <UserControl.Resources>
     <Style
-      x:Key="BatchDialogLabelStyle"
-      TargetType="TextBlock"
-      BasedOn="{StaticResource TinyTorrentBodyTextStyle}"
-    >
-      <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
-    </Style>
-    <Style
       x:Key="BatchDialogNoteIconStyle"
       TargetType="FontIcon"
       BasedOn="{StaticResource TinyTorrentStatusIconStyle}"
@@ -33,7 +26,7 @@
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
-      <TextBlock x:Name="ProviderLabel" Style="{StaticResource BatchDialogLabelStyle}" />
+      <TextBlock x:Name="ProviderLabel" Style="{StaticResource TinyTorrentSecondaryTextStyle}" />
       <TextBlock
         x:Name="ProviderName"
         Grid.Column="1"
@@ -42,7 +35,7 @@
       <TextBlock
         x:Name="SelectedLabel"
         Grid.Row="1"
-        Style="{StaticResource BatchDialogLabelStyle}"
+        Style="{StaticResource TinyTorrentSecondaryTextStyle}"
       />
       <TextBlock
         x:Name="SelectedCount"
@@ -104,7 +97,7 @@
         <TextBlock
           x:Name="OutsideText"
           Grid.Column="1"
-          Style="{StaticResource BatchDialogLabelStyle}"
+          Style="{StaticResource TinyTorrentSecondaryTextStyle}"
           controls:Trimming.ShowsToolTip="True"
         />
       </Grid>
@@ -129,7 +122,7 @@
                 Grid.Column="1"
                 Text="{x:Bind}"
                 controls:Trimming.ShowsToolTip="True"
-                Style="{StaticResource BatchDialogLabelStyle}"
+                Style="{StaticResource TinyTorrentSecondaryTextStyle}"
               />
             </Grid>
           </DataTemplate>

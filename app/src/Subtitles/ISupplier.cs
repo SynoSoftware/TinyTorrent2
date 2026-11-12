@@ -17,9 +17,6 @@ internal interface ISupplier
 {
     SubtitleSupplier SupplierId { get; }
 
-    /// <summary>Whether this release can use the supplier at all.</summary>
-    bool Available => true;
-
     Access Access => Access.Key;
 
     /// <summary>
@@ -78,14 +75,15 @@ internal interface ISupplier
     ) => Task.FromResult<IReadOnlyDictionary<long, Listing>?>(null);
 
     /// <summary>
-    /// Lists the full SRT subtitles in the query's language for the title the
-    /// host chose, or else for the file, by its name or hash, with what the
-    /// supplier reports about each, one page per reply. The host decides
-    /// which fit the file, and reads no further page after one whose
-    /// subtitles all report a title that is not the file's.
+    /// Reads page <paramref name="page"/>, counted from 1, of the full SRT
+    /// subtitles in the query's language for the title the host chose, or else
+    /// for the file, by its name or hash, with what the supplier reports about
+    /// each. The host asks for each page, decides which subtitles fit the file,
+    /// and reads no further page after one that is listed under another title.
     /// </summary>
-    IAsyncEnumerable<SubtitleSearch> Search(
+    Task<SubtitleSearch.Reply> Search(
         SubtitleQuery query,
+        int page,
         SupplierClient client,
         CancellationToken cancellation
     );

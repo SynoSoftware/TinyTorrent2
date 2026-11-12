@@ -12,11 +12,7 @@ using Selection = Syno.TableView.Selection;
 
 namespace Syno.TinyTorrent.Library;
 
-public sealed partial class Browser
-    : INotifyPropertyChanged,
-        IDataset,
-        IDisposable,
-        IAsyncDisposable
+public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyncDisposable
 {
     private readonly DispatcherQueue _dispatcher;
     private readonly object _gate = new();
@@ -151,7 +147,7 @@ public sealed partial class Browser
     internal string Error(Exception error)
     {
         var message = Text.Error(error);
-        return error is ProviderException { RetryAt: { } retry } && retry > DateTimeOffset.UtcNow
+        return error is ProviderException { IsWaiting: true, RetryAt: { } retry }
             ? Text.Format("library", "provider_retry_at", message, Text.Time(retry))
             : message;
     }
@@ -447,13 +443,11 @@ public sealed partial class Browser
             () =>
                 Selected?.OpeningFailure is not null ? Open.CanExecute(null)
                 : _outcome is FetchOutcome.Failed fetch
-                    ? !(
-                        fetch.Error is ProviderException { RetryAt: { } retry }
-                        && retry > DateTimeOffset.UtcNow
-                    ) && RefreshMetadata.CanExecute(null)
+                    ? !(fetch.Error is ProviderException { IsWaiting: true })
+                        && RefreshMetadata.CanExecute(null)
                 : AutomaticWait is not null
                     && _videos?.Failure is { } failure
-                    && !(failure.RetryAt > DateTimeOffset.UtcNow)
+                    && !failure.IsWaiting
                     && FetchMetadata.CanExecute(null)
         );
         ClearFilters = new RelayCommand(
@@ -472,6 +466,20 @@ public sealed partial class Browser
     {
         _store = store;
         _videos = videos;
+        if (DataProvider is { Dataset: { } dataset } option)
+        {
+            Download = new DataDownload(
+                dataset,
+                _work,
+                change => ReplaceData(videos, option, change)
+            );
+            Download.Failed += (_, error) =>
+            {
+                if (error is VideoException failure)
+                    failure.Provider ??= option;
+                ReportCommand(error);
+            };
+        }
         _facts = facts;
         videos.Changed += OnVideosChanged;
         videos.Stored += OnStored;
@@ -1294,7 +1302,7 @@ public sealed partial class Browser
             _videos.BatchLimited -= OnBatchLimited;
             _videos.Failed -= OnWorkerFailed;
         }
-        _ = CancelDownload();
+        _ = Download?.Cancel();
         if (_facts is not null)
         {
             _facts.Changed -= OnStored;
@@ -1318,12 +1326,15 @@ public sealed partial class Browser
         var ratings = _ratings;
         var facts = _facts;
         var videos = _videos;
+        var download = Download;
         _starting = null;
         _hasCatalogue = false;
         _store = null;
         _facts = null;
         _videos = null;
-        await CancelDownload();
+        Download = null;
+        if (download is not null)
+            await download.Cancel();
         _rows.Clear();
         _imdb.Clear();
         _selections.Clear();
@@ -1381,9 +1392,11 @@ public sealed class LibraryRow(Entry entry, Browser library) : INotifyPropertyCh
                 + Text.Error(OpeningFailure);
     public Entry Entry { get; private set; } = entry;
     public string Name => Entry.Name;
-    public string Glyph =>
-        OpeningFailure is not null ? Segoe.TriangleAlert
-        : Entry.Kind == FileKind.Video && Entry.Type == "episode" ? Segoe.Tv
+    public string Glyph => OpeningFailure is not null ? Segoe.CircleX : KindGlyph;
+
+    // The file's kind, which a failed open does not change.
+    internal string KindGlyph =>
+        Entry.Kind == FileKind.Video && Entry.Type == "episode" ? Segoe.Tv
         : FileName.Glyph(Entry.Kind);
     public string Folder => Entry.Folder;
     public string Title => Entry.Title;

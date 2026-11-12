@@ -49,8 +49,8 @@ public sealed partial class SettingsPage : UserControl
 
     /// <summary>Automatic downloading needs the selected provider's data installed.</summary>
     internal event EventHandler? AutomaticDataRequested;
-    internal event EventHandler<IDataset>? UpdateRequested;
-    internal event EventHandler<IDataset>? DeleteRequested;
+    internal event EventHandler<DataDownload>? UpdateRequested;
+    internal event EventHandler<DataDownload>? DeleteRequested;
     public event EventHandler? ConnectionRequested;
     internal event EventHandler? ResetRequested;
     internal event EventHandler? LayoutChanged;
@@ -102,12 +102,8 @@ public sealed partial class SettingsPage : UserControl
 
     internal void Release()
     {
-        _automatic?.Attach(null);
-        if (SubtitlesContent?.Content is SubtitleSettings subtitles)
-        {
-            subtitles.SetVisible(false);
-            subtitles.Attach(null);
-        }
+        _automatic?.SetVisible(false);
+        (SubtitlesContent?.Content as SubtitleSettings)?.SetVisible(false);
         Model.HidePlugins();
         ClearOutline();
         _motion.Stop();
@@ -230,8 +226,7 @@ public sealed partial class SettingsPage : UserControl
     }
 
     // The row has nothing to manage until Library attaches.
-    private void ShowImdb() =>
-        ImdbRow?.Show(Main.Library.DataProvider is null ? null : Main.Library, Model.Text);
+    private void ShowImdb() => ImdbRow?.Show(Main.Library.Download, Model.Text);
 
     private void OnTextScale(UISettings sender, object args) =>
         DispatcherQueue.TryEnqueue(AlignCategory);
@@ -518,11 +513,11 @@ public sealed partial class SettingsPage : UserControl
         {
             foreach (var row in new[] { ImdbRow, CityRow })
             {
-                row.DownloadRequested += (_, dataset) => _ = Main.DownloadData(dataset);
-                row.UpdateRequested += (_, dataset) => UpdateRequested?.Invoke(this, dataset);
-                row.DeleteRequested += (_, dataset) => DeleteRequested?.Invoke(this, dataset);
+                row.DownloadRequested += (_, download) => _ = Main.DownloadData(download);
+                row.UpdateRequested += (_, download) => UpdateRequested?.Invoke(this, download);
+                row.DeleteRequested += (_, download) => DeleteRequested?.Invoke(this, download);
             }
-            CityRow.Show(Main.Geolocation, Model.Text);
+            CityRow.Show(Main.Geolocation.Download, Model.Text);
             var subtitles = new SubtitleSettings(
                 Model.Text,
                 Main.Features.RetrySubtitles,
@@ -836,11 +831,8 @@ public sealed partial class SettingsPage : UserControl
             Model.SelectLanguage(language);
     }
 
-    private void OnFolder(object sender, RoutedEventArgs args)
-    {
-        if (RowOf((DependencyObject)sender)?.Setting is { } setting)
-            FolderRequested?.Invoke(this, setting);
-    }
+    private void OnFolder(object? sender, Setting setting) =>
+        FolderRequested?.Invoke(this, setting);
 
     private void OnProxy(object sender, RoutedEventArgs args) =>
         ProxyRequested?.Invoke(this, EventArgs.Empty);

@@ -8,56 +8,22 @@ internal sealed partial class Acquisition
 {
     // Lists the supplier's subtitles for one video, so the person can choose
     // one when no release matches.
-    internal async Task<IReadOnlyList<SubtitleCandidate>> Candidates(
+    internal Task<IReadOnlyList<SubtitleCandidate>> Candidates(
         long entryId,
         string language,
         CancellationToken cancellation,
         RetryCommand? command = null
-    )
-    {
-        CancellationToken requests;
-        lock (_requestSync)
-            requests = _requests.Token;
-        using var pending = CancellationTokenSource.CreateLinkedTokenSource(
-            requests,
-            _lifetime.Token,
-            cancellation
+    ) =>
+        Ask(
+            cancellation,
+            async pending =>
+            {
+                var chosen = await Chosen(entryId, language, pending).ConfigureAwait(false);
+                var target = chosen with { Manual = true };
+                var lookup = LookupFor(target) with { Fresh = Fresh(target, command) };
+                return await Lookup(lookup, pending, choices: true).ConfigureAwait(false);
+            }
         );
-        await TakeForPerson(pending.Token).ConfigureAwait(false);
-        try
-        {
-            if (
-                await Chosen(entryId, language, pending.Token).ConfigureAwait(false)
-                is not { } chosen
-            )
-                throw new OperationCanceledException(pending.Token);
-            var target = chosen.Target with { Manual = true };
-            var lookup = new SubtitleLookup(
-                Path.GetFileName(chosen.Video.FinalPath),
-                language,
-                token => Validate(target, token)
-            )
-            {
-                Stage = Stage(target),
-                Fresh = command is null
-                    ? null
-                    : new(command, SearchCount(chosen.Video.FinalPath, language)),
-            };
-            return await Lookup(lookup, pending.Token, choices: true).ConfigureAwait(false);
-        }
-        finally
-        {
-            try
-            {
-                await RefreshAllowance().ConfigureAwait(false);
-            }
-            finally
-            {
-                _operation.Release();
-                Notify();
-            }
-        }
-    }
 
     internal async Task<RequestBlock?> Protection(
         long entryId,
@@ -65,16 +31,7 @@ internal sealed partial class Acquisition
         CancellationToken cancellation
     )
     {
-        if (await Chosen(entryId, language, cancellation).ConfigureAwait(false) is not { } chosen)
-            throw new SubtitleException(SubtitleFailure.Changed);
-        var lookup = new SubtitleLookup(
-            Path.GetFileName(chosen.Video.FinalPath),
-            language,
-            _ => Task.CompletedTask
-        )
-        {
-            Stage = Stage(chosen.Target),
-        };
+        var lookup = LookupFor(await Chosen(entryId, language, cancellation).ConfigureAwait(false));
         return await Run(connection => Protection(connection, lookup), cancellation)
             .ConfigureAwait(false);
     }
@@ -82,106 +39,68 @@ internal sealed partial class Acquisition
     // Downloads the chosen subtitle beside the video, after any subtitles
     // already there, and records the movie as searched so the default Find
     // scope leaves it alone.
-    internal async Task Choose(
+    internal Task Choose(
         long entryId,
         SubtitleCandidate candidate,
         CancellationToken cancellation,
         RetryCommand? command = null
-    )
-    {
-        CancellationToken requests;
-        lock (_requestSync)
-            requests = _requests.Token;
-        using var pending = CancellationTokenSource.CreateLinkedTokenSource(
-            requests,
-            _lifetime.Token,
-            cancellation
-        );
-        await TakeForPerson(pending.Token).ConfigureAwait(false);
-        try
-        {
-            if (
-                await Chosen(entryId, candidate.Language, pending.Token).ConfigureAwait(false)
-                is not { } chosen
-            )
-                throw new OperationCanceledException(pending.Token);
-            var target = chosen.Target with { Manual = true };
-            var lookup = new SubtitleLookup(
-                Path.GetFileName(chosen.Video.FinalPath),
-                candidate.Language,
-                token => Validate(target, token)
-            )
+    ) =>
+        Ask(
+            cancellation,
+            async pending =>
             {
-                Fresh = command is null
-                    ? null
-                    : new(command, SearchCount(chosen.Video.FinalPath, candidate.Language)),
-            };
-            if (
-                !await Download(Vacant(target), candidate, lookup, pending.Token)
-                    .ConfigureAwait(false)
-            )
-                throw new SubtitleException(SubtitleFailure.Exists);
-            await Run(
-                    connection =>
-                    {
-                        Execute(
-                            connection,
-                            """
-                            INSERT INTO subtitle_jobs(path,language,stage,outcome,manual,match)
-                            VALUES($path,$language,$stage,$complete,1,$likely)
-                            ON CONFLICT(path,language) DO UPDATE SET outcome=excluded.outcome,reference=NULL,
-                                match=CASE WHEN match=$exact THEN match ELSE excluded.match END;
-                            """,
-                            ("$path", target.Path),
-                            ("$language", target.Language),
-                            ("$stage", (int)Stage(target)),
-                            ("$complete", (int)SubtitleOutcome.Complete),
-                            ("$likely", (int)SubtitleMatch.Likely),
-                            ("$exact", (int)SubtitleMatch.Exact)
-                        );
-                        AssociateJob(connection, target);
-                        Execute(connection, Database.Cleanup);
-                        return true;
-                    },
-                    CancellationToken.None
+                var chosen = await Chosen(entryId, candidate.Language, pending)
+                    .ConfigureAwait(false);
+                var target = chosen with { Manual = true };
+                var lookup = LookupFor(target) with { Fresh = Fresh(target, command) };
+                if (
+                    !await Download(Vacant(target), candidate, lookup, pending)
+                        .ConfigureAwait(false)
                 )
-                .ConfigureAwait(false);
-            await RefreshCounts().ConfigureAwait(false);
-        }
-        finally
-        {
-            try
-            {
-                await RefreshAllowance().ConfigureAwait(false);
+                    throw new SubtitleException(SubtitleFailure.Exists);
+                await Run(
+                        connection =>
+                        {
+                            Execute(
+                                connection,
+                                """
+                                INSERT INTO subtitle_jobs(path,language,stage,outcome,manual,match)
+                                VALUES($path,$language,$stage,$complete,1,$likely)
+                                ON CONFLICT(path,language) DO UPDATE SET outcome=excluded.outcome,reference=NULL,
+                                    match=CASE WHEN match=$exact THEN match ELSE excluded.match END;
+                                """,
+                                ("$path", target.Path),
+                                ("$language", target.Language),
+                                ("$stage", (int)Stage(target)),
+                                ("$complete", (int)SubtitleOutcome.Complete),
+                                ("$likely", (int)SubtitleMatch.Likely),
+                                ("$exact", (int)SubtitleMatch.Exact)
+                            );
+                            AssociateJob(connection, target);
+                            Execute(connection, Database.Cleanup);
+                            return true;
+                        },
+                        CancellationToken.None
+                    )
+                    .ConfigureAwait(false);
+                await RefreshCounts().ConfigureAwait(false);
             }
-            finally
-            {
-                _operation.Release();
-                Notify();
-                Wake();
-            }
-        }
-    }
+        );
 
-    // The video's subtitle destination for the language; null once the video
-    // left the torrents or shares its subtitle name with another video.
-    private async Task<(Target Target, Video Video)?> Chosen(
-        long entryId,
-        string language,
-        CancellationToken cancellation
-    )
+    // The video's subtitle destination for the language. A video that left
+    // the torrents, or shares its subtitle name with another video, has
+    // Changed.
+    private async Task<Target> Chosen(long entryId, string language, CancellationToken cancellation)
     {
         if (!Ready)
+        {
             throw new SubtitleException(SubtitleFailure.Unconfigured);
+        }
         var targets = await Targets(cancellation).ConfigureAwait(false);
-        foreach (
-            var target in targets.Where(target => target.Language == language && Eligible(target))
-        )
-            if (
-                target.Videos.FirstOrDefault(video => video.EntryId == entryId && video.Eligible) is
-                { } video
-            )
-                return (target, video);
-        return null;
+        return targets.FirstOrDefault(target =>
+                target.Language == language
+                && Eligible(target)
+                && target.Videos.Any(video => video.EntryId == entryId && video.Eligible)
+            ) ?? throw new SubtitleException(SubtitleFailure.Changed);
     }
 }

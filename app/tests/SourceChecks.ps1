@@ -959,7 +959,7 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
         foreach ($number in @(1, 2)) {
             $request = [Net.Http.HttpRequestMessage]::new([Net.Http.HttpMethod]::Get, "https://provider.invalid/detail/$number")
             $call = New-Value 'Shared.Network.ProviderCall' @($request, $policy, (New-Value 'Shared.Network.OutboundRequest' @($access)))
-            try { $assembly.GetType('Syno.TinyTorrent.Library.ProviderJson').GetMethod('Get', $staticFlags).Invoke($null, (Unwrap @($http, $call, $cancel, $null))).GetAwaiter().GetResult() | Out-Null }
+            try { $assembly.GetType('Syno.TinyTorrent.Library.VideoLookup').GetMethod('Send', $staticFlags).Invoke($null, (Unwrap @($http, $call, $cancel, $null))).GetAwaiter().GetResult() | Out-Null }
             catch {
                 $failure = $_.Exception
                 while ($failure.InnerException -and $failure.GetType().Name -notin @('ProviderException', 'RequestBlockedException')) { $failure = $failure.InnerException }
@@ -971,13 +971,25 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
 
         # Library, Subtitles and the city data read one reply table alike: each
         # records the same hold, and its failure carries the hold's time.
-        $getJson = $assembly.GetType('Syno.TinyTorrent.Library.ProviderJson').GetMethod('Get', $staticFlags)
+        $getJson = $assembly.GetType('Syno.TinyTorrent.Library.VideoLookup').GetMethod('Send', $staticFlags)
         $replyAccess = New-Value 'Shared.Network.ProviderAccess' @('replies', 'fixture', 'search')
         $subdlSupplier = New-Value 'Subtitles.Supplier' @((New-Value 'Subtitles.Suppliers.SubDL' @()), $policy)
         $subdlAccount = New-Value 'Subtitles.Account+OwnKey' @([Enum]::Parse($supplierType, 'SubDL'), 'offline-fixture')
         $subdlOperation = New-Value 'Subtitles.Supplier+Operation' @($http, $subdlAccount, $validate)
         $geolocation = New-Value 'Shared.Geolocation' @($http, $work)
-        $cityPhase = [Enum]::Parse($assembly.GetType('Syno.TinyTorrent.CityPhase'), 'Downloading')
+        Invoke-Value $geolocation 'Attach' @($directory, $policy) | Out-Null
+        $cityDownload = $geolocation.GetType().GetProperty('Download', $flags).GetValue($geolocation)
+        # A download reports its failure through Failed, which can arrive on a
+        # thread without a PowerShell runspace, so a compiled handler keeps it.
+        Add-Type @'
+public sealed class CityFailure {
+    public System.Exception Error;
+    public void Record(object sender, System.Exception error) { Error = error; }
+}
+'@
+        $cityFailure = [CityFailure]::new()
+        $cityFailed = [Delegate]::CreateDelegate([EventHandler[Exception]], $cityFailure, [CityFailure].GetMethod('Record'))
+        $cityDownload.GetType().GetEvent('Failed', $flags).GetAddMethod($true).Invoke($cityDownload, @($cityFailed)) | Out-Null
         $replyFeatures = @(
             @{ Name = 'Library'; Provider = 'replies'; Send = {
                 $request = [Net.Http.HttpRequestMessage]::new([Net.Http.HttpMethod]::Get, 'https://replies.invalid/search')
@@ -993,9 +1005,9 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
                 finally { $request.Dispose() }
             } },
             @{ Name = 'City'; Provider = 'dbip'; Send = {
-                $download = New-Value 'Shared.DataDownload' @($work, (New-Value 'Shared.WorkDescription+City' @($cityPhase)))
-                try { Invoke-Value $geolocation 'Build' @($directory, $policy, $download) | Out-Null }
-                finally { $download.GetType().GetProperty('Operation', $flags).GetValue($download).Dispose() }
+                $cityFailure.Error = $null
+                Invoke-Value $cityDownload 'Start' @() | Out-Null
+                if ($null -ne $cityFailure.Error) { throw $cityFailure.Error }
             } }
         )
         # Returns the failure a feature reports, or null when the send succeeded.
@@ -1235,8 +1247,8 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
         Invoke-Value $inventory 'Reconcile' @() | Out-Null
         # The check of displayed movies runs on its own task, after the reconciliation.
         function Wait-Inspection {
-            $inspecting = $inventory.GetType().GetField('_inspecting', $flags).GetValue($inventory)
-            if ($inspecting) { $inspecting.GetAwaiter().GetResult() }
+            $inspection = $inventory.GetType().GetField('_inspection', $flags).GetValue($inventory)
+            if ($inspection) { $inspection.GetType().GetProperty('Completion', $flags).GetValue($inspection).GetAwaiter().GetResult() }
         }
         Wait-Inspection
         Require ((Sql "SELECT group_concat(language) FROM subtitle_languages WHERE origin='first';") -eq 'de') 'A displayed movie was not checked for subtitles at its new folder.'

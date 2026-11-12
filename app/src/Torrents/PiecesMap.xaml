@@ -135,7 +135,7 @@
           x:Name="ErrorSign"
           Style="{StaticResource PiecesMapSignStyle}"
           FontFamily="{x:Bind icons:Segoe.Font}"
-          Glyph="{x:Bind icons:Segoe.CircleAlert}"
+          Glyph="{x:Bind icons:Segoe.CircleX}"
           Foreground="{ThemeResource SystemFillColorCriticalBrush}"
         />
         <TextBlock

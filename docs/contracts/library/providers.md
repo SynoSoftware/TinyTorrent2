@@ -31,7 +31,11 @@ provider that found them.** Library saves each site's score, the directors,
 the age rating and the box office once per IMDb ID. A provider that names the
 same IMDb ID adds to that record, so an IMDb rating from OMDb and one from
 MDBList fill the same IMDb slot. The sites stay separate, because a Rotten
-Tomatoes percentage and an IMDb score measure different things. A value the
+Tomatoes percentage and an IMDb score measure different things. A provider
+builds each rating with `Rating.From`, which scales the site's score to ten
+points and gives no rating for a score outside the site's scale. A score of 0
+that a site states is a rating, such as a Rotten Tomatoes 0%; a provider's own
+mark for a score it lacks, such as MDBList's 0, is none. A value the
 provider lacks never removes a saved one. A site's rating is replaced unless
 the saved rating has more votes: a site's vote count only grows, so this keeps
 the newer rating, and an editor's old Wikidata score without a count does not
@@ -81,6 +85,13 @@ without reading video contents.
 If an online provider finds no candidates for a punctuated title, search once
 more with punctuation separated into words, because some catalogues miss that
 spelling. Both searches count toward the same per-title limit.
+Titles compare by their words in lower case without accents or punctuation. A
+file name writes an apostrophe in one of two ways, so a title agrees when its
+words agree in either form (`FileName.TitleForms`): with the apostrophe
+joining its word, as Oceans.Eleven matches "Ocean's Eleven", or separating
+it, as L.Auberge.Espagnole matches "L'Auberge espagnole". The second search,
+the per-title limit and the IMDb data's title keys use the joining form
+(`FileName.TitleKey`).
 
 Associate automatically only when the available evidence supports an
 unambiguous match with title similarity greater than 80%, consistent sequel
@@ -195,16 +206,32 @@ person's disclosed network behavior.
 
 Library owns what every provider shares. It chooses the key, the person's own
 or else the built-in one, and passes it to the option's `Create`. It decides
-whether a provider is available. It sends a request through `ProviderGet`,
-which applies the saved network route and the search protection of the key and
-of the operation Library runs; a 404 for a detail means the video is missing. A
-provider reports a failure as a `VideoFailure`, and Library writes its text
-with the provider's name. `VideoInformation` carries `Related`, the other
-choices its page listed, and Library keeps them. The provider's text section
-holds its disclosure. Settings binds to the provider options, and MainWindow
-imports no provider implementation. Providers have no settings of their own: a
-provider that answers from downloaded data, such as IMDb, declares it on its
-option, and Settings offers the download, update and deletion.
+what a provider still needs before it can answer, its data or a key
+(`VideoLookup.Requirement`). It sends a request through `ProviderGet`, which
+applies the saved network route and the search protection of the key and of
+the operation Library runs; a 404 for a detail means the video is missing.
+A provider reads its answer and lets a wrong shape throw, and Library reports
+an answer the provider cannot read as `InvalidResult`. For an online search,
+Library backs off that provider's searches, as
+[search protection](../search-protection.md#answers-holds-and-recovery) requires
+for a malformed answer; a description, or a search of the IMDb data, fails
+that one video. Library lists a choice only when its title has 1 to 300
+characters, refuses a description without such a title, and asks a provider to
+describe only the kinds its option lists. A provider reports any other failure
+as a `VideoFailure`, and Library writes its text with the provider's name.
+`VideoInformation` carries `Related`, the other choices its page listed, and
+Library keeps them. The provider's text section holds its disclosure.
+Settings binds to the provider options, and MainWindow imports no provider
+implementation. Providers have no settings of their own: a provider that
+answers from downloaded data, such as IMDb, declares it on its option, and
+Settings offers the download, update and deletion.
+
+`Shared/Network` owns what the providers and the subtitle suppliers both
+need: `ApiKey.BuiltIn` reads a key the build wrote into the release,
+`ProviderJson` reads a value from an answer, where a missing or blank value
+is no value and text is trimmed, and `ProviderHttp.CanFollow` decides whether
+an address that a reply names may receive a request. A provider's own mark
+for a fact it lacks, such as OMDb's `N/A`, stays with that provider.
 
 `VideoKind` names a movie, a series or an episode, and Library stores the
 existing words for them. `VideoInformation` carries facts: genres, cast and

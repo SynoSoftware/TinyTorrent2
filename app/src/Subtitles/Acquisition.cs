@@ -260,30 +260,16 @@ internal sealed partial class Acquisition(
         }
     }
 
-    internal Task SetEnabled(bool enabled) => Queue(() => WriteEnabled(enabled));
-
-    private async Task WriteEnabled(bool enabled)
+    // Saves a configuration change that changes jobs, alone under the
+    // operation gate and ahead of the worker. The counts are read again before
+    // other work continues. Reconcile takes the gate itself, so it runs after
+    // the release.
+    private async Task Reconfigure(Func<Task> save)
     {
-        Invalidate();
-        await _operation.WaitAsync(_lifetime.Token).ConfigureAwait(false);
+        await TakeForPerson(_lifetime.Token).ConfigureAwait(false);
         try
         {
-            await Run(
-                    connection =>
-                    {
-                        Execute(
-                            connection,
-                            "UPDATE subtitle_settings SET enabled=$value WHERE singleton=1;",
-                            ("$value", enabled)
-                        );
-                        if (!enabled)
-                            Cancel(connection, manual: false);
-                        return true;
-                    },
-                    _lifetime.Token
-                )
-                .ConfigureAwait(false);
-            Enabled = enabled;
+            await save().ConfigureAwait(false);
             await RefreshCounts().ConfigureAwait(false);
         }
         finally
@@ -292,6 +278,33 @@ internal sealed partial class Acquisition(
         }
         Notify();
         await Reconcile().ConfigureAwait(false);
+    }
+
+    internal Task SetEnabled(bool enabled) => Queue(() => WriteEnabled(enabled));
+
+    private async Task WriteEnabled(bool enabled)
+    {
+        Invalidate();
+        await Reconfigure(async () =>
+            {
+                await Run(
+                        connection =>
+                        {
+                            Execute(
+                                connection,
+                                "UPDATE subtitle_settings SET enabled=$value WHERE singleton=1;",
+                                ("$value", enabled)
+                            );
+                            if (!enabled)
+                                Cancel(connection, manual: false);
+                            return true;
+                        },
+                        _lifetime.Token
+                    )
+                    .ConfigureAwait(false);
+                Enabled = enabled;
+            })
+            .ConfigureAwait(false);
     }
 
     internal Task SetLanguages(IEnumerable<string> languages) =>
@@ -327,45 +340,39 @@ internal sealed partial class Acquisition(
         )
             throw new SubtitleException(SubtitleFailure.Unconfigured);
         Invalidate();
-        await _operation.WaitAsync(_lifetime.Token).ConfigureAwait(false);
-        try
-        {
-            await Run(
-                    connection =>
-                    {
-                        Execute(
-                            connection,
-                            "UPDATE subtitle_settings SET languages=$value WHERE singleton=1;",
-                            ("$value", System.Text.Json.JsonSerializer.Serialize(values))
-                        );
-                        var wanted = values.Length == 0 ? new[] { _language } : values;
-                        using var jobs = connection.CreateCommand();
-                        jobs.CommandText = "SELECT DISTINCT language FROM subtitle_jobs;";
-                        var obsolete = new List<string>();
-                        using (var reader = jobs.ExecuteReader())
-                            while (reader.Read())
-                                if (
-                                    !wanted.Contains(
-                                        reader.GetString(0),
-                                        StringComparer.OrdinalIgnoreCase
+        await Reconfigure(async () =>
+            {
+                await Run(
+                        connection =>
+                        {
+                            Execute(
+                                connection,
+                                "UPDATE subtitle_settings SET languages=$value WHERE singleton=1;",
+                                ("$value", System.Text.Json.JsonSerializer.Serialize(values))
+                            );
+                            var wanted = values.Length == 0 ? new[] { _language } : values;
+                            using var jobs = connection.CreateCommand();
+                            jobs.CommandText = "SELECT DISTINCT language FROM subtitle_jobs;";
+                            var obsolete = new List<string>();
+                            using (var reader = jobs.ExecuteReader())
+                                while (reader.Read())
+                                    if (
+                                        !wanted.Contains(
+                                            reader.GetString(0),
+                                            StringComparer.OrdinalIgnoreCase
+                                        )
                                     )
-                                )
-                                    obsolete.Add(reader.GetString(0));
-                        foreach (var language in obsolete)
-                            Cancel(connection, language: language);
-                        return true;
-                    },
-                    _lifetime.Token
-                )
-                .ConfigureAwait(false);
-            Languages = values;
-            await RefreshCounts().ConfigureAwait(false);
-        }
-        finally
-        {
-            _operation.Release();
-        }
-        await Reconcile().ConfigureAwait(false);
+                                        obsolete.Add(reader.GetString(0));
+                            foreach (var language in obsolete)
+                                Cancel(connection, language: language);
+                            return true;
+                        },
+                        _lifetime.Token
+                    )
+                    .ConfigureAwait(false);
+                Languages = values;
+            })
+            .ConfigureAwait(false);
     }
 
     internal Task SetExtras(int extras) => Queue(() => WriteExtras(extras));
@@ -374,7 +381,7 @@ internal sealed partial class Acquisition(
     {
         ArgumentOutOfRangeException.ThrowIfNegative(extras);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(extras, MaximumExtras);
-        await _operation.WaitAsync(_lifetime.Token).ConfigureAwait(false);
+        await TakeForPerson(_lifetime.Token).ConfigureAwait(false);
         try
         {
             await Run(
@@ -467,148 +474,130 @@ internal sealed partial class Acquisition(
             Account.SignedIn user => Credentials.Protect(user.Password),
             _ => null,
         };
-        await _operation.WaitAsync(_lifetime.Token).ConfigureAwait(false);
-        try
-        {
-            // Saving the values Check just accepted corrects refused access even
-            // when they equal the saved ones.
-            var verified = _checkedAccount == account;
-            var allowance = changed
-                ? await RequireSupplier(account.SupplierId).Allowance(account).ConfigureAwait(false)
-                : _allowance;
-            await Run(
-                    connection =>
-                    {
-                        Execute(
-                            connection,
-                            """
-                            UPDATE subtitle_settings SET supplier=$supplier, username=$username, secret=$secret WHERE singleton=1;
-                            """,
-                            ("$supplier", (int)account.SupplierId),
-                            ("$username", username),
-                            ("$secret", secret)
-                        );
-                        if (changed)
-                            policy.Succeed(
-                                connection,
-                                RequireSupplier(account.SupplierId).Authentication(account)
-                            );
-                        if (changed || verified)
-                            Resume(connection);
-                        if (changed)
-                            Execute(
-                                connection,
-                                "UPDATE subtitle_jobs SET fresh=NULL WHERE fresh IS NOT NULL;"
-                            );
-                        // References cannot cross suppliers; extra jobs only
-                        // download their reference, while the first job can search again.
-                        if (account.SupplierId != SupplierId)
-                        {
-                            using var references = connection.CreateCommand();
-                            references.CommandText = """
-                                SELECT path,language FROM subtitle_jobs WHERE reference IS NOT NULL
-                                    AND lower(path) GLOB '*.'||lower(language)||'.[2-9]*.srt';
-                                """;
-                            var extras = new List<(string Path, string Language)>();
-                            using (var reader = references.ExecuteReader())
-                                while (reader.Read())
-                                    extras.Add((reader.GetString(0), reader.GetString(1)));
-                            foreach (var extra in extras)
-                                Cancel(connection, language: extra.Language, path: extra.Path);
-                            Execute(
-                                connection,
-                                "UPDATE subtitle_jobs SET reference=NULL WHERE reference IS NOT NULL;"
-                            );
-                        }
-                        if (changed)
-                            Unblock(connection);
-                        return true;
-                    },
-                    _lifetime.Token
-                )
-                .ConfigureAwait(false);
-            _account = account;
-            _allowance = allowance;
-            if (changed)
+        await Reconfigure(async () =>
             {
-                _retryCommands.Clear();
-                _check = AccountCheck.Unchecked;
-                _reach = SupplierReach.Ok;
-            }
-            if (verified)
-                Answered(SubtitleFailure.None);
-            _checkedAccount = null;
-            await RefreshCounts().ConfigureAwait(false);
-        }
-        finally
-        {
-            _operation.Release();
-        }
-        Notify();
-        await Reconcile().ConfigureAwait(false);
+                // Saving the values Check just accepted corrects refused access even
+                // when they equal the saved ones.
+                var verified = _checkedAccount == account;
+                var allowance = changed
+                    ? await RequireSupplier(account.SupplierId)
+                        .Allowance(account)
+                        .ConfigureAwait(false)
+                    : _allowance;
+                await Run(
+                        connection =>
+                        {
+                            Execute(
+                                connection,
+                                """
+                                UPDATE subtitle_settings SET supplier=$supplier, username=$username, secret=$secret WHERE singleton=1;
+                                """,
+                                ("$supplier", (int)account.SupplierId),
+                                ("$username", username),
+                                ("$secret", secret)
+                            );
+                            if (changed)
+                                policy.Succeed(
+                                    connection,
+                                    RequireSupplier(account.SupplierId).Authentication(account)
+                                );
+                            if (changed || verified)
+                                Resume(connection);
+                            if (changed)
+                                Execute(
+                                    connection,
+                                    "UPDATE subtitle_jobs SET fresh=NULL WHERE fresh IS NOT NULL;"
+                                );
+                            // References cannot cross suppliers; extra jobs only
+                            // download their reference, while the first job can search again.
+                            if (account.SupplierId != SupplierId)
+                            {
+                                using var references = connection.CreateCommand();
+                                references.CommandText = """
+                                    SELECT path,language FROM subtitle_jobs WHERE reference IS NOT NULL
+                                        AND lower(path) GLOB '*.'||lower(language)||'.[2-9]*.srt';
+                                    """;
+                                var extras = new List<(string Path, string Language)>();
+                                using (var reader = references.ExecuteReader())
+                                    while (reader.Read())
+                                        extras.Add((reader.GetString(0), reader.GetString(1)));
+                                foreach (var extra in extras)
+                                    Cancel(connection, language: extra.Language, path: extra.Path);
+                                Execute(
+                                    connection,
+                                    "UPDATE subtitle_jobs SET reference=NULL WHERE reference IS NOT NULL;"
+                                );
+                            }
+                            if (changed)
+                                Unblock(connection);
+                            return true;
+                        },
+                        _lifetime.Token
+                    )
+                    .ConfigureAwait(false);
+                _account = account;
+                _allowance = allowance;
+                if (changed)
+                {
+                    _retryCommands.Clear();
+                    _check = AccountCheck.Unchecked;
+                    _reach = SupplierReach.Ok;
+                }
+                if (verified)
+                    Answered(SubtitleFailure.None);
+                _checkedAccount = null;
+            })
+            .ConfigureAwait(false);
     }
 
     internal async Task Check(Draft? draft = null, CancellationToken cancellation = default)
     {
         var account = draft is null ? _account : Interpret(draft);
-        CancellationToken requests;
-        lock (_requestSync)
-            requests = _requests.Token;
-        using var pending = CancellationTokenSource.CreateLinkedTokenSource(
-            requests,
-            _lifetime.Token,
-            cancellation
-        );
-        await TakeForPerson(pending.Token).ConfigureAwait(false);
-        try
-        {
-            await RequireSupplier(account.SupplierId)
-                .Check(http, account, pending.Token)
-                .ConfigureAwait(false);
-            if (draft is null && _check == AccountCheck.Refused)
-                await Run(
-                        connection =>
+        await Ask(
+                cancellation,
+                async pending =>
+                {
+                    try
+                    {
+                        await RequireSupplier(account.SupplierId)
+                            .Check(http, account, pending)
+                            .ConfigureAwait(false);
+                        if (draft is null && _check == AccountCheck.Refused)
+                            await Run(
+                                    connection =>
+                                    {
+                                        Resume(connection);
+                                        return true;
+                                    },
+                                    pending
+                                )
+                                .ConfigureAwait(false);
+                        lock (_requestSync)
                         {
-                            Resume(connection);
-                            return true;
-                        },
-                        pending.Token
-                    )
-                    .ConfigureAwait(false);
-            lock (_requestSync)
-            {
-                pending.Token.ThrowIfCancellationRequested();
-                if (draft is not null)
-                    _checkedAccount = account;
-                else if (_account == account)
-                    Answered(SubtitleFailure.None);
-            }
-        }
-        catch (SubtitleException error)
-        {
-            if (!pending.IsCancellationRequested)
-            {
-                if (error.Reason == SubtitleFailure.Authentication && _checkedAccount == account)
-                    _checkedAccount = null;
-                if (draft is null && _account == account)
-                    Answered(error.Reason);
-            }
-            throw;
-        }
-        finally
-        {
-            try
-            {
-                if (account == _account && GetSupplier(account.SupplierId) is { } supplier)
-                    _allowance = await supplier.Allowance(account).ConfigureAwait(false);
-            }
-            finally
-            {
-                _operation.Release();
-                Notify();
-                Wake();
-            }
-        }
+                            pending.ThrowIfCancellationRequested();
+                            if (draft is not null)
+                                _checkedAccount = account;
+                            else if (_account == account)
+                                Answered(SubtitleFailure.None);
+                        }
+                    }
+                    catch (SubtitleException error)
+                    {
+                        if (!pending.IsCancellationRequested)
+                        {
+                            if (
+                                error.Reason == SubtitleFailure.Authentication
+                                && _checkedAccount == account
+                            )
+                                _checkedAccount = null;
+                            if (draft is null && _account == account)
+                                Answered(error.Reason);
+                        }
+                        throw;
+                    }
+                }
+            )
+            .ConfigureAwait(false);
     }
 
     // Waits for _operation as the person's own operation, which the worker's
@@ -626,15 +615,69 @@ internal sealed partial class Acquisition(
         }
     }
 
+    // Ends an operation the person started: the views show its result, and
+    // the worker continues.
+    private void ReleaseForPerson()
+    {
+        _operation.Release();
+        Notify();
+        Wake();
+    }
+
+    // Runs an operation that asks the supplier for the person, ahead of the
+    // worker's next search. It belongs to the configuration it started under,
+    // so a configuration change ends it, waiting or running. The supplier's
+    // reply can change the allowance, so the allowance is read again.
+    private async Task<T> Ask<T>(
+        CancellationToken cancellation,
+        Func<CancellationToken, Task<T>> operation
+    )
+    {
+        CancellationToken requests;
+        lock (_requestSync)
+        {
+            requests = _requests.Token;
+        }
+        using var pending = CancellationTokenSource.CreateLinkedTokenSource(
+            requests,
+            _lifetime.Token,
+            cancellation
+        );
+        await TakeForPerson(pending.Token).ConfigureAwait(false);
+        try
+        {
+            return await operation(pending.Token).ConfigureAwait(false);
+        }
+        finally
+        {
+            try
+            {
+                await RefreshAllowance().ConfigureAwait(false);
+            }
+            finally
+            {
+                ReleaseForPerson();
+            }
+        }
+    }
+
+    private Task Ask(CancellationToken cancellation, Func<CancellationToken, Task> operation) =>
+        Ask(
+            cancellation,
+            async pending =>
+            {
+                await operation(pending).ConfigureAwait(false);
+                return true;
+            }
+        );
+
     private bool PersonWaits => Volatile.Read(ref _personWaiting) > 0;
 
     private void Invalidate()
     {
         lock (_requestSync)
         {
-            foreach (var run in new[] { _manualWork, _automaticWork })
-                if (run is not null)
-                    run.Report(run.Observation.Progress, new WorkExecution.Waiting());
+            ReportWorkWaiting();
             _requests.Cancel();
             _requests.Dispose();
             _requests = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
@@ -693,14 +736,21 @@ internal sealed partial class Acquisition(
 
     public async ValueTask DisposeAsync()
     {
+        // Running subtitle work ends first, the person's scan or search
+        // included, so a queued settings write waits for none of it and is
+        // still saved. A write that changes jobs replaces _requests with a
+        // source that _lifetime ends below.
+        lock (_requestSync)
+        {
+            _requests.Cancel();
+        }
         await _saves.ConfigureAwait(false);
         _disposed = true;
         _lifetime.Cancel();
         Task?[] background;
         lock (_requestSync)
         {
-            _requests.Cancel();
-            background = [_reconciling, _inspecting];
+            background = [_reconciliation?.Completion, _inspection?.Completion];
         }
         if (_worker is not null)
             await _worker.ConfigureAwait(false);

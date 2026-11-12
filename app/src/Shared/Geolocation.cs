@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.ComponentModel;
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
@@ -15,10 +14,9 @@ namespace Syno.TinyTorrent.Shared;
 /// copy that <see cref="IDataset"/> describes, kept beside the Library
 /// database. Lookups fail closed: an address the data lacks has no location.
 /// </summary>
-internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDataset, IDisposable
+internal sealed class Geolocation : IDataset, IDisposable
 {
     private const string CityFileName = "dbip-city-lite.mmdb";
-    private const string Name = "DB-IP";
     private static readonly string CountryPath = Path.Combine(
         AppContext.BaseDirectory,
         "Assets",
@@ -29,14 +27,14 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
         RequestKey.Digest(string.Empty),
         "dataset"
     );
+    private readonly ProviderHttp _http;
     private Reader? _countries = Open(CountryPath);
     private Reader? _cities;
     private string? _directory;
     private RequestPolicy? _policy;
-    private DataDownload? _download;
 
-    // Lookups share the files; Install and Delete replace the city file
-    // alone, because Windows refuses to replace an open file.
+    // Lookups share the files; Replace changes the city file alone, because
+    // Windows refuses to replace an open file.
     private readonly ReaderWriterLockSlim _file = new();
 
     // Every lookup decodes new places with their names in every language, and
@@ -45,33 +43,35 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
     private readonly ConcurrentDictionary<string, Place> _countryPlaces = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<(string Code, GeoPoint? Point, string? City), Location> _locations = new();
 
+    internal Geolocation(ProviderHttp http, BackgroundWork work)
+    {
+        _http = http;
+        Download = new DataDownload(this, work);
+    }
+
+    internal DataDownload Download { get; }
+
     /// <summary>Changes when the city data is installed, deleted or detached, so a kept location is looked up again.</summary>
     internal int Version { get; private set; }
 
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    /// <summary>A failed download or deletion, which the window reports.</summary>
-    internal event EventHandler<Exception>? Failed;
-
     public string Section => "city";
 
-    public FileInfo? Installed =>
-        _directory is { } directory
-        && new FileInfo(Path.Combine(directory, CityFileName)) is { Exists: true } file
-            ? file
-            : null;
+    public string Name => "DB-IP";
 
-    /// <summary>DB-IP publishes its data once a month, so a copy from this month is the current one.</summary>
-    public bool IsCurrent =>
-        Installed is { LastWriteTimeUtc: var written }
-        && written.Year == DateTime.UtcNow.Year
-        && written.Month == DateTime.UtcNow.Month;
+    public string? FilePath =>
+        _directory is { } directory ? Path.Combine(directory, CityFileName) : null;
+
+    public WorkDescription Downloading { get; } = new WorkDescription.City(CityPhase.Downloading);
+
+    public WorkDescription Installing { get; } = new WorkDescription.City(CityPhase.Installing);
 
     public Task<long>? Count => null;
 
-    public BackgroundWork.Operation? DataWork => _download?.Operation;
+    public IReadOnlyList<string> Leftovers => [];
 
-    public bool CanDownload => _policy is not null && _download is null;
+    /// <summary>DB-IP publishes its data once a month, so a copy from this month is the current one.</summary>
+    public bool IsCurrent(DateTime written) =>
+        written.Year == DateTime.UtcNow.Year && written.Month == DateTime.UtcNow.Month;
 
     /// <summary>
     /// Serves the city data from <paramref name="directory"/>, downloading it
@@ -91,13 +91,13 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
         {
             _file.ExitWriteLock();
         }
-        Changed(string.Empty);
+        Download.Refresh();
     }
 
     /// <summary>Ends a running download and closes the city data, and completes when both are done.</summary>
     internal async Task Detach()
     {
-        await CancelDownload();
+        await Download.Cancel();
         _file.EnterWriteLock();
         try
         {
@@ -111,7 +111,7 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
         {
             _file.ExitWriteLock();
         }
-        Changed(string.Empty);
+        Download.Refresh();
     }
 
     /// <summary>The location of <paramref name="address"/>, or null when the data lacks it.</summary>
@@ -145,71 +145,6 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
         }
     }
 
-    public async Task<bool> Download()
-    {
-        if (!CanDownload || _directory is not { } directory || _policy is not { } policy)
-            return false;
-        var download = new DataDownload(work, new WorkDescription.City(CityPhase.Downloading));
-        _download = download;
-        ShowDownload();
-        try
-        {
-            return await download.Run(
-                () => Build(directory, policy, download),
-                () =>
-                {
-                    download.Install(
-                        new WorkDescription.City(CityPhase.Installing),
-                        () => Install(directory)
-                    );
-                    return Task.CompletedTask;
-                },
-                () => Discard(directory),
-                Report
-            );
-        }
-        finally
-        {
-            _download = null;
-            ShowDownload();
-        }
-    }
-
-    /// <summary>Stops the running download at the person's request, and completes when it has ended.</summary>
-    internal Task CancelDownload() => StopDownload(interrupted: false);
-
-    /// <summary>
-    /// Stops the running download as one the person did not ask for, which
-    /// reports it, and completes when the download has ended.
-    /// </summary>
-    internal Task InterruptDownload() => StopDownload(interrupted: true);
-
-    public async Task Delete()
-    {
-        if (_download is not null || _directory is not { } directory)
-            return;
-        using var operation = work.Begin(
-            new(
-                new WorkDescription.Maintenance(MaintenanceWork.DeleteDataset),
-                new WorkProgress.Unknown(),
-                new WorkExecution.Finishing()
-            )
-        );
-        try
-        {
-            await Task.Run(() => Replace(() => File.Delete(Path.Combine(directory, CityFileName))));
-            operation.Outcome = WorkOutcome.Completed;
-            // The Settings row shows that the data is gone.
-            operation.ReportsSuccess = false;
-        }
-        catch (Exception error)
-        {
-            operation.Error = error;
-            Report(error);
-        }
-        Changed(nameof(Installed));
-    }
-
     public void Dispose()
     {
         _file.EnterWriteLock();
@@ -226,40 +161,34 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
         }
     }
 
-    private Task StopDownload(bool interrupted)
+    // Downloads the month's archive and unpacks it to path, beside the
+    // installed file, which stays in use until the replacement.
+    public async Task Build(
+        string path,
+        Action<WorkDescription, WorkProgress> report,
+        CancellationToken cancellation
+    )
     {
-        if (_download is not { } download)
-            return Task.CompletedTask;
-        var stopped = download.Stop(interrupted);
-        ShowDownload();
-        return stopped;
-    }
-
-    // Downloads the month's archive and unpacks it beside the installed file,
-    // which stays in use until Install.
-    private async Task Build(string directory, RequestPolicy policy, DataDownload download)
-    {
-        var building = Building(directory);
+        if (_directory is not { } directory || _policy is not { } policy)
+            throw new InvalidOperationException("The city data serves no folder.");
         var archive = Path.Combine(directory, CityFileName + ".gz");
         var fresh = FreshRequest.Once(Access);
-        var cancellation = download.Cancellation;
         try
         {
             await Fetch(
                 archive,
                 policy,
                 fresh,
-                progress =>
-                    download.Report(new WorkDescription.City(CityPhase.Downloading), progress),
+                progress => report(Downloading, progress),
                 cancellation
             );
             await Task.Run(
                 () =>
                     Unpack(
                         archive,
-                        building,
+                        path,
                         percent =>
-                            download.Report(
+                            report(
                                 new WorkDescription.City(CityPhase.Unpacking),
                                 new WorkProgress.Fraction(percent, 100, WorkUnit.Percent, true)
                             ),
@@ -268,29 +197,12 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
                 cancellation
             );
         }
-        catch (ReplyException error)
-        {
-            throw DataDownload.Failure(error);
-        }
-        catch (Exception error) when (error is InvalidDataException or InvalidDatabaseException)
-        {
-            throw new DownloadException(DownloadFailure.Damaged, error);
-        }
-        catch (IOException error) when (DataDownload.IsDiskFull(error))
-        {
-            throw new DownloadException(DownloadFailure.DiskFull, error);
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        {
-            throw new DownloadException(DownloadFailure.Failed, error);
-        }
         finally
         {
             File.Delete(archive);
         }
     }
 
-    // Downloads beside the archive and renames the file when it is complete.
     // DB-IP publishes a month's file during its first hours, so the previous
     // month's file stands in until then.
     private async Task Fetch(
@@ -301,23 +213,14 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
         CancellationToken cancellation
     )
     {
-        var part = archive + ".part";
         var now = DateTime.UtcNow;
         try
         {
-            try
-            {
-                await Get(now).ConfigureAwait(false);
-            }
-            catch (ReplyException.Missing)
-            {
-                await Get(now.AddMonths(-1)).ConfigureAwait(false);
-            }
-            File.Move(part, archive, overwrite: true);
+            await Get(now).ConfigureAwait(false);
         }
-        finally
+        catch (ReplyException.Missing)
         {
-            File.Delete(part);
+            await Get(now.AddMonths(-1)).ConfigureAwait(false);
         }
 
         async Task Get(DateTime month)
@@ -331,12 +234,12 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
                 Fresh = fresh,
                 NamesResource = true,
             };
-            await http.Download(call, part, progress, cancellation).ConfigureAwait(false);
+            await DataDownload.Fetch(_http, call, archive, progress, cancellation).ConfigureAwait(false);
         }
     }
 
-    // Writes the file that Install moves into place, and checks that it is a
-    // readable database before the installed copy is replaced.
+    // Writes the file that replaces the installed copy, and checks first that
+    // it is a readable database.
     private static void Unpack(
         string archive,
         string building,
@@ -360,20 +263,21 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
             // never reached the disk.
             unpacked.Flush(flushToDisk: true);
         }
-        using var reader = new Reader(building);
-    }
-
-    private void Install(string directory)
-    {
-        Replace(() =>
-            File.Move(Building(directory), Path.Combine(directory, CityFileName), overwrite: true)
-        );
-        Changed(nameof(Installed));
+        // The reader's exception belongs to the MaxMind library, so it is
+        // translated here.
+        try
+        {
+            using var reader = new Reader(building);
+        }
+        catch (InvalidDatabaseException error)
+        {
+            throw new DownloadException(DownloadFailure.Damaged, error);
+        }
     }
 
     // Closes the city data around a change of its file, and serves the file
     // that remains afterwards.
-    private void Replace(Action change)
+    public void Replace(Action change)
     {
         _file.EnterWriteLock();
         try
@@ -381,10 +285,6 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
             _cities?.Dispose();
             _cities = null;
             change();
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        {
-            throw new DownloadException(DownloadFailure.InUse, error);
         }
         finally
         {
@@ -403,19 +303,6 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
         Version++;
     }
 
-    // A build that another program holds is deleted by the next build.
-    private static void Discard(string directory)
-    {
-        try
-        {
-            File.Delete(Building(directory));
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
-    }
-
-    private static string Building(string directory) =>
-        Path.Combine(directory, CityFileName + ".tmp");
-
     // A missing or damaged file gives no locations; a damaged city file is
     // replaced by the next download.
     private static Reader? Open(string path)
@@ -430,22 +317,6 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
             return null;
         }
     }
-
-    private void Report(Exception error)
-    {
-        if (error is DownloadException failure)
-            failure.Subject ??= Name;
-        Failed?.Invoke(this, error);
-    }
-
-    private void ShowDownload()
-    {
-        Changed(nameof(DataWork));
-        Changed(nameof(CanDownload));
-    }
-
-    private void Changed(string property) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property));
 
     // The parts of a DB-IP record that the app reads; the reader fills the
     // constructor from the record's keys and leaves absent keys null.

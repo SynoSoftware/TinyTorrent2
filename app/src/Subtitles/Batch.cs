@@ -11,7 +11,7 @@ namespace Syno.TinyTorrent.Subtitles;
 internal sealed class Batch : UserControl, INotifyPropertyChanged
 {
     private readonly Strings _text;
-    private readonly Action<Exception, string> _report;
+    private readonly Bridge _bridge;
     private readonly IReadOnlySet<long>? _entries;
     private readonly ComboBox _scope = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly ComboBox _download = new()
@@ -19,7 +19,6 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
         HorizontalAlignment = HorizontalAlignment.Stretch,
     };
     private readonly TextBlock _status = new() { TextTrimming = TextTrimming.CharacterEllipsis };
-    private Acquisition? _model;
     private string? _language;
     private bool _busy;
     private bool _refreshing;
@@ -27,9 +26,7 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
     private int[] _counts = [0, 0, 0];
     private int Count => _counts[Math.Max(0, _scope.SelectedIndex)];
     private int _recount;
-    private bool _visible;
     private bool _reading;
-    private int _queued;
     private SettingsRow? _coverage;
     private SettingsRow? _scopeRow;
     private SettingsRow? _downloadRow;
@@ -44,11 +41,12 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
 
     // A batch runs from Find until its manual jobs finish, so manual jobs kept
     // from an earlier session count as one.
-    public bool Finding => _busy || _model?.Finding == true;
+    public bool Finding => _busy || _bridge.Model?.Finding == true;
 
     // Each host draws one button for the batch: Find while none runs and Stop
     // while one does, so the pressed button stays enabled and keeps focus.
-    public bool CanAct => Finding ? _model is not null : _model is { CanFind: true } && Count > 0;
+    public bool CanAct =>
+        Finding ? _bridge.Model is not null : _bridge.Model is { CanFind: true } && Count > 0;
     internal string ActionGlyph => Finding ? Segoe.Square : Segoe.Search;
     internal string ActionText => T(Finding ? "stop" : "find");
     internal string ActionHint => T(Finding ? "stop_hint" : "batch_hint");
@@ -61,7 +59,7 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
     )
     {
         _text = text;
-        _report = report;
+        _bridge = new Bridge(DispatcherQueue, Refresh, report);
         _entries = entries;
         AutomationProperties.SetAutomationId(_scope, "SubtitleScope");
         AutomationProperties.SetAutomationId(_download, "SubtitleDownload");
@@ -84,45 +82,21 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
 
     internal void Attach(Acquisition? model)
     {
-        if (_model == model)
+        if (!_bridge.Attach(model))
+        {
             return;
-        if (_model is not null)
-            _model.Changed -= OnChanged;
-        _model = model;
+        }
         _counts = [0, 0, 0];
         _batchId = null;
-        if (_visible && _model is not null)
-            _model.Changed += OnChanged;
         Refresh();
     }
 
     internal void SetVisible(bool visible)
     {
-        if (_visible == visible)
-            return;
-        _visible = visible;
-        if (_model is not null)
+        if (_bridge.SetVisible(visible))
         {
-            if (visible)
-                _model.Changed += OnChanged;
-            else
-                _model.Changed -= OnChanged;
+            Refresh();
         }
-        Refresh();
-    }
-
-    private void OnChanged(object? sender, EventArgs args)
-    {
-        if (Interlocked.Exchange(ref _queued, 1) != 0)
-            return;
-        if (
-            !DispatcherQueue.TryEnqueue(() =>
-            {
-                Interlocked.Exchange(ref _queued, 0);
-                Refresh();
-            })
-        )
-            Interlocked.Exchange(ref _queued, 0);
     }
 
     internal void ShowSettings(ActionButton action)
@@ -156,7 +130,7 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
     internal void Refresh()
     {
         _recount++;
-        if (!_visible)
+        if (!_bridge.IsVisible)
             return;
         Present();
         if (!_reading)
@@ -168,7 +142,7 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
         _reading = true;
         try
         {
-            while (_visible && _model is { } model)
+            while (_bridge.IsVisible && _bridge.Model is { } model)
             {
                 var version = _recount;
                 var counts = new int[3];
@@ -224,10 +198,10 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
             );
         AutomationProperties.SetName(_scope, T("movies_to_search"));
         AutomationProperties.SetName(_download, T("matches_to_download"));
-        _scope.IsEnabled = _download.IsEnabled = !_busy && _model?.Finding != true;
+        _scope.IsEnabled = _download.IsEnabled = !_busy && _bridge.Model?.Finding != true;
         _status.Text =
-            _model is { Finding: true } finding ? Waiting(finding)
-            : _model is { Found: { } found } completed && _batchId == completed.BatchId
+            _bridge.Model is { Finding: true } finding ? Waiting(finding)
+            : _bridge.Model is { Found: { } found } completed && _batchId == completed.BatchId
                 ? _text.Format("subtitles", "batch_found", found, completed.FindTotal)
             : _text.Format("subtitles", "to_search", Count);
         if (_scopeRow is not null)
@@ -255,51 +229,29 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
 
     private async Task Find()
     {
-        if (!CanAct || Finding || _model is not { } model)
+        if (!CanAct || Finding)
+        {
             return;
+        }
         var scope = (SubtitleScope)_scope.SelectedIndex;
         var guesses = _download.SelectedIndex;
         _busy = true;
-        Refresh();
-        try
-        {
-            await model.Find(scope, guesses, _entries);
-            _batchId = model.BatchId;
-        }
-        catch (OperationCanceledException)
-        {
-            System.Diagnostics.Debug.WriteLine($"Subtitle batch search cancelled ({scope}).");
-        }
-        catch (Exception error)
-        {
-            _report(error, "failed_subtitle_find");
-        }
-        finally
-        {
-            _busy = false;
-            Refresh();
-        }
+        await _bridge.Run(
+            async model =>
+            {
+                try
+                {
+                    await model.Find(scope, guesses, _entries);
+                    _batchId = model.BatchId;
+                }
+                finally
+                {
+                    _busy = false;
+                }
+            },
+            "failed_subtitle_find"
+        );
     }
 
-    private async Task Stop()
-    {
-        if (_model is not { } model)
-            return;
-        try
-        {
-            await model.StopFinding();
-        }
-        catch (OperationCanceledException)
-        {
-            System.Diagnostics.Debug.WriteLine("Stopping the subtitle batch was cancelled.");
-        }
-        catch (Exception error)
-        {
-            _report(error, "failed_subtitle_stop");
-        }
-        finally
-        {
-            Refresh();
-        }
-    }
+    private Task Stop() => _bridge.Run(model => model.StopFinding(), "failed_subtitle_stop");
 }

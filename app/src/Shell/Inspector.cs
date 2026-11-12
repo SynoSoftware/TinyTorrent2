@@ -248,8 +248,8 @@ public sealed partial class Inspector : INotifyPropertyChanged
         _client = client;
         _dispatcher = dispatcher;
         DownloadCities = new RelayCommand(
-            () => _owner.DownloadData(_owner.Geolocation),
-            () => _owner.Geolocation.CanDownload && !_owner.IsClosing
+            () => _owner.DownloadData(_owner.Geolocation.Download),
+            () => _owner.Geolocation.Download.CanStart && !_owner.IsClosing
         );
         LimitSpeed = owner.SpeedCommand(() => _target is { } target ? [target] : []);
         MoveFiles = owner.MoveCommand(() => _target is { } target ? [target] : []);
@@ -314,7 +314,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
             DownloadCities,
         ];
         _enabled = new bool?[_commands.Length];
-        owner.Geolocation.PropertyChanged += (_, _) =>
+        owner.Geolocation.Download.PropertyChanged += (_, _) =>
         {
             Refresh();
             // Each reply looks its kept peers up again in new location data,

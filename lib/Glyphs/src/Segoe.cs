@@ -56,7 +56,6 @@ public static class Segoe
     public const string ChevronUp = "\uE70E";
     public const string ChevronsDownUp = "\uF165";
     public const string ChevronsUpDown = "\uECCD";
-    public const string CircleAlert = "\uE783";
     public const string CircleCheck = "\uE930";
     public const string CircleFadingArrowUp = "\uE895";
     public const string CircleOff = "\uECE4";

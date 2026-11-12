@@ -55,15 +55,18 @@ internal static partial class SubtitleFile
             }
             return tag;
         }
-        var title = FileName.Interpret(movie).Name;
-        var names = Names(subtitle, folder)
-            .Select(name =>
-                name.StartsWith(title, StringComparison.OrdinalIgnoreCase)
-                    ? name[title.Length..]
-                    : name
-            )
-            .ToArray();
-        if (names.Any(name => Forced().IsMatch(name)))
+        var release = FileName.Interpret(movie);
+        // What follows the video's file name, in a name that starts with it.
+        string? Rest(string name) =>
+            name.StartsWith(release.Name, StringComparison.OrdinalIgnoreCase)
+                ? name[release.Name.Length..]
+                : null;
+        var found = Names(subtitle, folder).ToArray();
+        var names = found.Select(name => Rest(name) ?? name).ToArray();
+        // A title can hold a forced label, as Forced.Vengeance does, so a name
+        // that does not start with the video's file name counts only after the
+        // video's title.
+        if (found.Any(name => IsForced(Rest(name) ?? FileName.TrimTitle(name, release.Title))))
             return null;
         var tokens = names
             .SelectMany(name =>
@@ -457,8 +460,14 @@ internal static partial class SubtitleFile
     [GeneratedRegex(@"<[^>]*>|\{[^}]*\}", RegexOptions.CultureInvariant)]
     private static partial Regex Markup();
 
+    /// <summary>
+    /// Whether a file name, release name or description marks a forced-only
+    /// subtitle, which holds only the foreign dialogue.
+    /// </summary>
+    internal static bool IsForced(string label) => Forced().IsMatch(label);
+
     [GeneratedRegex(
-        @"(?:^|[. _\-\[(])forced(?:$|[. _\-\])])",
+        @"(?:^|[\W_])(?:forced|foreign[ ._-]*(?:parts?(?:[ ._-]*only)?|only))(?:$|[\W_])",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant
     )]
     private static partial Regex Forced();

@@ -223,7 +223,11 @@ outstanding save error.
 Supplier status shows Checking, Access checked after a check or request
 succeeded, the time a used-up allowance returns, or Not checked. Refused access
 returns it to Not checked. Failures are reported through the window's feedback,
-because the status line holds state, not events. Filled fields never imply access.
+because the status line holds state, not events. The failure of Find, Stop,
+Check, Scan or a settings change is reported also after the person left the
+view. It is dropped only when subtitle work closed or was replaced, for example
+by a database reset, because it then describes work that no longer exists.
+Filled fields never imply access.
 Saving a changed supplier, account, proxy, or network adapter returns the
 status to Not checked, because the old result no longer describes the saved
 configuration. The one exception: saving the exact supplier values the dialog

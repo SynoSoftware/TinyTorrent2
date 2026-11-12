@@ -8,7 +8,7 @@ namespace Syno.TinyTorrent.Subtitles;
 
 internal sealed class Settings : UserControl
 {
-    private Acquisition? _model;
+    private readonly Bridge _bridge;
     private readonly Func<Task> _retry;
     private readonly ComboBox _extras = new() { Width = 260 };
     private readonly Batch _batch;
@@ -78,13 +78,8 @@ internal sealed class Settings : UserControl
         IsActive = false,
     };
     private bool _checking;
-
-    // Reports a failed action to the window's notifications, with the
-    // notification title key that names the action.
-    private readonly Action<Exception, string> _report;
-    private bool Saving => _model?.Saving.IsCompleted == false;
+    private bool Saving => _bridge.Model?.Saving.IsCompleted == false;
     private bool _refreshing;
-    private bool _visible;
     private Strings Text { get; }
     internal event EventHandler<SubtitleSupplier>? SupplierRequested;
 
@@ -109,7 +104,7 @@ internal sealed class Settings : UserControl
     {
         Text = text;
         _retry = retry;
-        _report = report;
+        _bridge = new Bridge(DispatcherQueue, Refresh, report);
         Trimming.SetShowsToolTip(_status, true);
         Trimming.SetShowsToolTip(_selection, true);
         AutomationProperties.SetAutomationId(_extras, "SubtitleExtras");
@@ -244,33 +239,30 @@ internal sealed class Settings : UserControl
         _check.Click += async (_, _) => await Check();
         _extras.SelectionChanged += async (_, _) =>
         {
-            if (
-                !_refreshing
-                && _model is { } model
-                && _extras.SelectedItem is ComboBoxItem { Tag: int extras }
-            )
-                await Save(model.SetExtras(extras));
+            if (!_refreshing && _extras.SelectedItem is ComboBoxItem { Tag: int extras })
+            {
+                await _bridge.Run(model => model.SetExtras(extras), "failed_settings");
+            }
         };
         _edit.Click += (_, _) =>
         {
-            if (_model is { } model)
+            if (_bridge.Model is { } model)
                 SupplierRequested?.Invoke(this, model.SupplierId);
         };
         _supplier.SelectionChanged += async (_, _) =>
         {
-            if (
-                _refreshing
-                || _model is not { } model
-                || _supplier.SelectedItem is not SubtitleSupplier chosen
-            )
-                return;
-            await Save(model.SelectSupplier(chosen));
+            if (!_refreshing && _supplier.SelectedItem is SubtitleSupplier chosen)
+            {
+                await _bridge.Run(model => model.SelectSupplier(chosen), "failed_settings");
+            }
         };
         _languageMode.SelectionChanged += async (_, _) =>
         {
-            if (_refreshing || _model is not { } model)
-                return;
-            await Save(model.FollowLanguage(_languageMode.SelectedIndex == 0));
+            if (!_refreshing)
+            {
+                var follows = _languageMode.SelectedIndex == 0;
+                await _bridge.Run(model => model.FollowLanguage(follows), "failed_settings");
+            }
         };
         _language.TextChanged += (_, _) => FilterLanguages();
         _language.QuerySubmitted += (_, args) =>
@@ -281,7 +273,7 @@ internal sealed class Settings : UserControl
         _languages.SelectionChanged += OnLanguageChoice;
         _information.Click += (_, _) =>
         {
-            if (_model?.Supplier is { } supplier)
+            if (_bridge.Model?.Supplier is { } supplier)
                 Disclosure
                     .Create(
                         Text,
@@ -296,47 +288,35 @@ internal sealed class Settings : UserControl
         {
             _motion.Stop();
             SetVisible(false);
-            Attach(null);
         };
         RefreshText();
     }
 
     internal void Attach(Acquisition? model)
     {
-        if (_model == model)
+        if (!_bridge.Attach(model))
+        {
             return;
-        if (_model is not null)
-            _model.Changed -= OnChanged;
-        _model = model;
+        }
         _scanned = null;
         _batch.Attach(model);
-        _automatic.Attach(_visible ? model : null);
-        if (_visible && _model is not null)
-            _model.Changed += OnChanged;
+        _automatic.Attach(model);
         Refresh();
     }
 
     internal void SetVisible(bool visible)
     {
-        if (_visible == visible)
-            return;
-        _visible = visible;
-        if (_model is not null)
+        if (!_bridge.SetVisible(visible))
         {
-            if (visible)
-                _model.Changed += OnChanged;
-            else
-                _model.Changed -= OnChanged;
+            return;
         }
         _batch.SetVisible(visible && _tasks.SelectedItem == _searchTab);
-        _automatic.Attach(visible ? _model : null);
+        _automatic.SetVisible(visible);
         if (!visible)
             _motion.Stop();
         if (visible)
             RefreshText();
     }
-
-    private void OnChanged(object? sender, EventArgs args) => DispatcherQueue.TryEnqueue(Refresh);
 
     private void OnTask(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {
@@ -347,7 +327,7 @@ internal sealed class Settings : UserControl
             : _preferences;
         var previous = _motion.Current is { } current ? _pages.Children.IndexOf(current) : -1;
         var forward = _pages.Children.IndexOf(content) >= previous;
-        _batch.SetVisible(_visible && selected == _searchTab);
+        _batch.SetVisible(_bridge.IsVisible && selected == _searchTab);
         _motion.Show(content, forward);
     }
 
@@ -403,15 +383,15 @@ internal sealed class Settings : UserControl
 
     private void Refresh()
     {
-        if (!_visible)
+        if (!_bridge.IsVisible)
             return;
         _refreshing = true;
         if (!Saving)
             _extras.SelectedItem = _extras
                 .Items.Cast<ComboBoxItem>()
-                .FirstOrDefault(item => (int)item.Tag == _model?.Extras);
-        _extras.IsEnabled = _model is not null;
-        _scan.IsEnabled = _model is not null;
+                .FirstOrDefault(item => (int)item.Tag == _bridge.Model?.Extras);
+        _extras.IsEnabled = _bridge.Model is not null;
+        _scan.IsEnabled = _bridge.Model is not null;
         var scanned =
             _scanning ? T("scanning")
             : _scanned is { } result ? F("scanned", result.Found, result.Unreadable)
@@ -422,28 +402,28 @@ internal sealed class Settings : UserControl
             scanned,
             scanned
         );
-        _check.IsEnabled = !Saving && _model?.CanCheck == true;
-        _edit.IsEnabled = !Saving && _model is not null && !_checking;
-        _language.IsEnabled = _languageMode.IsEnabled = _model is not null;
-        _supplier.ItemsSource ??= _model
+        _check.IsEnabled = !Saving && _bridge.Model?.CanCheck == true;
+        _edit.IsEnabled = !Saving && _bridge.Model is not null && !_checking;
+        _language.IsEnabled = _languageMode.IsEnabled = _bridge.Model is not null;
+        _supplier.ItemsSource ??= _bridge.Model
             ?.Suppliers.Select(supplier => supplier.SupplierId)
             .ToArray();
         if (!Saving)
-            _supplier.SelectedItem = _model?.SupplierId;
-        _supplier.IsEnabled = _model is not null && !_checking;
+            _supplier.SelectedItem = _bridge.Model?.SupplierId;
+        _supplier.IsEnabled = _bridge.Model is not null && !_checking;
         _progress.IsActive = _checking;
         _progress.Visibility = _checking ? Visibility.Visible : Visibility.Collapsed;
         // Problems go to the window's message bar and notifications; this line
         // states only the supplier's access and allowance.
         _status.Text =
             _checking ? Text.Get("settings", "proxy_checking")
-            : _model?.RetryAt is { } reset && reset > DateTimeOffset.UtcNow
+            : _bridge.Model?.RetryAt is { } reset && reset > DateTimeOffset.UtcNow
                 ? F("retry_at", Text.Time(reset))
-            : _model?.Checked == true ? T("connected")
+            : _bridge.Model?.Checked == true ? T("connected")
             : T("not_checked");
         AutomationProperties.SetHelpText(_status, _status.Text);
         RefreshLanguages();
-        _section.Summary = _model is { } model
+        _section.Summary = _bridge.Model is { } model
             ? F(
                 "preferences_summary",
                 model.SupplierId,
@@ -456,20 +436,21 @@ internal sealed class Settings : UserControl
 
     private void RefreshLanguages()
     {
-        var selected = _model?.EffectiveLanguages ?? [];
+        var model = _bridge.Model;
+        var selected = model?.EffectiveLanguages ?? [];
         _languageDefault.Content = Text.LanguageName(Text.Language);
         if (!Saving)
-            _languageMode.SelectedIndex = _model?.Languages.Length > 0 ? 1 : 0;
+            _languageMode.SelectedIndex = model?.Languages.Length > 0 ? 1 : 0;
         _languageChoices.Visibility =
             _languageMode.SelectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
         _selection.Text = string.Join(", ", selected.Select(Text.LanguageName));
         _selected.Text = F("selected", selected.Count);
-        var tags = (_model?.Supplier?.Languages ?? [])
+        var tags = (model?.Supplier?.Languages ?? [])
             .Concat(selected)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(Text.LanguageName, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
-        var signature = string.Join(",", tags) + ":" + Text.Language + ":" + _model?.SupplierId;
+        var signature = string.Join(",", tags) + ":" + Text.Language + ":" + model?.SupplierId;
         if (!Equals(_languages.Tag, signature))
         {
             _languages.Tag = signature;
@@ -477,8 +458,8 @@ internal sealed class Settings : UserControl
             foreach (var tag in tags)
             {
                 var name = Text.LanguageName(tag);
-                if (_model?.Supplier?.Supports(tag) != true)
-                    name += " · " + F("unsupported", _model?.SupplierId ?? default);
+                if (model?.Supplier?.Supports(tag) != true)
+                    name += " · " + F("unsupported", model?.SupplierId ?? default);
                 var label = new TextBlock
                 {
                     Text = name,
@@ -505,9 +486,9 @@ internal sealed class Settings : UserControl
                     _languages.SelectedItems.Remove(choice);
             }
             choice.IsEnabled =
-                _model is not null
+                model is not null
                 && (
-                    _model.Supplier?.Supports(tag) == true
+                    model.Supplier?.Supports(tag) == true
                     || selected.Contains(tag, StringComparer.OrdinalIgnoreCase)
                 );
         }
@@ -550,8 +531,10 @@ internal sealed class Settings : UserControl
 
     private async void OnLanguageChoice(object sender, SelectionChangedEventArgs args)
     {
-        if (_refreshing || _model is not { } model)
+        if (_refreshing)
+        {
             return;
+        }
         var added = args
             .AddedItems.Cast<ListViewItem>()
             .Select(choice => (string)choice.Tag)
@@ -560,62 +543,42 @@ internal sealed class Settings : UserControl
             .RemovedItems.Cast<ListViewItem>()
             .Select(choice => (string)choice.Tag)
             .ToArray();
-        // Save refreshes afterwards, which checks a refused language again.
-        await Save(model.ChangeLanguages(added, removed));
+        // Run refreshes afterwards, which checks a refused language again.
+        await _bridge.Run(model => model.ChangeLanguages(added, removed), "failed_settings");
     }
 
-    // Waits for a write the model queued, and reports its failure.
-    private async Task Save(Task saving)
-    {
-        var model = _model;
-        try
-        {
-            Refresh();
-            await saving;
-        }
-        catch (OperationCanceledException)
-        {
-            System.Diagnostics.Debug.WriteLine("Subtitle settings save cancelled.");
-        }
-        catch (Exception error)
-        {
-            if (CanReport(model))
-                _report(error, "failed_settings");
-        }
-        finally
-        {
-            Refresh();
-        }
-    }
-
+    // The retry can end with another model attached, so the check runs on the
+    // model attached after it.
     private async Task Check()
     {
-        if (_checking || _model is not { CanCheck: true } model)
+        if (_checking || _bridge.Model is not { CanCheck: true })
+        {
             return;
+        }
         _checking = true;
-        Refresh();
         try
         {
-            await _retry();
-            if (_model is not { CanCheck: true } current)
-                return;
-            model = current;
-            await model.Check();
-        }
-        catch (OperationCanceledException)
-        {
-            System.Diagnostics.Debug.WriteLine(
-                $"Subtitle supplier check cancelled ({model.SupplierId})."
-            );
-        }
-        // The status line already says when a used-up allowance returns.
-        catch (SubtitleException error)
-            when (error.Reason == SubtitleFailure.Quota && _model?.RetryAt > DateTimeOffset.UtcNow)
-        { }
-        catch (Exception error)
-        {
-            if (CanReport(model))
-                _report(error, "failed_subtitle_check");
+            if (await _bridge.Run(_ => _retry(), "failed_subtitle_check"))
+            {
+                await _bridge.Run(
+                    async model =>
+                    {
+                        if (!model.CanCheck)
+                        {
+                            return;
+                        }
+                        try
+                        {
+                            await model.Check();
+                        }
+                        // The status line already says when a used-up allowance returns.
+                        catch (SubtitleException error)
+                            when (error.Reason == SubtitleFailure.Quota
+                                && model.RetryAt > DateTimeOffset.UtcNow) { }
+                    },
+                    "failed_subtitle_check"
+                );
+            }
         }
         finally
         {
@@ -626,35 +589,31 @@ internal sealed class Settings : UserControl
 
     private async Task Scan()
     {
-        if (_scanning || _model is not { } model)
+        if (_scanning || _bridge.Model is null)
+        {
             return;
+        }
         _scanning = true;
         _scanned = null;
-        Refresh();
-        try
-        {
-            var result = await model.Rescan();
-            if (ReferenceEquals(model, _model))
-                _scanned = result;
-        }
-        catch (OperationCanceledException)
-        {
-            System.Diagnostics.Debug.WriteLine("Subtitle file rescan cancelled.");
-        }
-        catch (Exception error)
-        {
-            if (CanReport(model))
-                _report(error, "failed_subtitle_scan");
-        }
-        finally
-        {
-            _scanning = false;
-            Refresh();
-        }
+        await _bridge.Run(
+            async model =>
+            {
+                try
+                {
+                    var result = await model.Rescan();
+                    if (ReferenceEquals(model, _bridge.Model))
+                    {
+                        _scanned = result;
+                    }
+                }
+                finally
+                {
+                    _scanning = false;
+                }
+            },
+            "failed_subtitle_scan"
+        );
     }
-
-    private bool CanReport(Acquisition? model) =>
-        model is { IsDisposed: false } && (_model is null || ReferenceEquals(model, _model));
 
     private static Grid Pair(FrameworkElement value, FrameworkElement action)
     {
