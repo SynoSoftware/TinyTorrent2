@@ -365,6 +365,14 @@ void Engine::State::CommitEdit(std::string const& id, std::vector<ResolvedChoice
         for (auto const& choice : choices)
             chosen->named.insert(choice.files.begin(), choice.files.end());
     }
+    // The person answered for these files, so their records, which described
+    // the files that left, go.
+    std::vector<lt::file_index_t> answered;
+    for (auto const& [file, priority] : torrent.facts.Asked().files)
+    {
+        if (chosen && chosen->named.contains(file))
+            answered.push_back(file);
+    }
     bool hasPriorities = chosen.has_value();
     CommitFacts({id}, [chosen, trackers](std::string const&, Facts& saved)
     {
@@ -376,7 +384,7 @@ void Engine::State::CommitEdit(std::string const& id, std::vector<ResolvedChoice
         {
             saved.trackers = trackers;
         }
-    }, [this, id, hasPriorities, hasTrackers = trackers.has_value(), completion](Outcome outcome, auto const&)
+    }, [this, id, hasPriorities, answered, hasTrackers = trackers.has_value(), completion](Outcome outcome, auto const&)
     {
         if (outcome.error)
         {
@@ -385,6 +393,20 @@ void Engine::State::CommitEdit(std::string const& id, std::vector<ResolvedChoice
         }
         auto& torrent = torrents.at(id);
         torrent.unsaved = true;
+        for (auto file : answered)
+            torrent.recordsUnsaved |= torrent.records.erase(file) != 0;
+        // A file of the question that downloads again is an ordinary file
+        // without data, which takes the unfinished name at a new preparation.
+        auto const& priorities = torrent.facts.Priorities();
+        if (torrent.namePhase == NamePhase::Ready && std::any_of(answered.begin(), answered.end(), [&](auto file)
+            {
+                auto item = static_cast<std::size_t>(static_cast<int>(file));
+                return item < priorities.size() && priorities[item] != lt::dont_download;
+            }))
+        {
+            torrent.namePhase = NamePhase::Pending;
+            ContinueNames();
+        }
         // Its add applies the saved trackers and, through ApplyIntent, the
         // saved priorities, which its parameters also carry.
         if (torrent.waiting)

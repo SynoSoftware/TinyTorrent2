@@ -86,7 +86,14 @@
     "show_torrent_tip": "Afficher ce torrent dans la liste des torrents",
     "download_folder": "Dossier de téléchargement",
     "torrent_stopped": "Torrent arrêté",
-    "torrents_stopped": "{0} torrents nécessitent votre attention"
+    "torrents_stopped": "{0} torrents nécessitent votre attention",
+    "files_missing": "Fichiers manquants",
+    "files_missing_one": "{0} a des fichiers supprimés ou déplacés hors de TinyTorrent.",
+    "files_missing_other": "{0} torrents ont des fichiers supprimés ou déplacés hors de TinyTorrent.",
+    "review": "Examiner",
+    "review_tip": "Ouvrir TinyTorrent pour retélécharger ou ignorer les fichiers manquants",
+    "followed": "Fichiers déplacés retrouvés",
+    "followed_body": "{0} utilise maintenant les fichiers de ce dossier."
   },
   "power": {
     "transfers": "TinyTorrent transfère des fichiers."

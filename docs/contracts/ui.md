@@ -327,9 +327,11 @@ beyond its title and buttons has no body.
 Remove, Delete and Exit default to the requested act, not Cancel, because the
 person already chose the act and the dialog only confirms it, as File Explorer's
 permanent-delete confirmation does. A Cancel default answers a request with its
-opposite. The one exception is the question that a pending Add or Move raises
-when the window closes: it asks about an act the person did not choose, so
-Cancel is its default.
+opposite. The exceptions are questions about an act the person did not choose,
+so Cancel is their default: the question that a pending Add or Move raises when
+the window closes, and the question whether to redownload or skip files that
+were deleted or moved outside TinyTorrent, where the person chose neither
+answer.
 
 A button runs a command or opens a surface. A control that directly changes a
 setting, such as View > Toolbar, is a toggle or a selection control: it

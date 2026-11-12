@@ -86,7 +86,14 @@
     "show_torrent_tip": "Deze torrent in de torrentlijst tonen",
     "download_folder": "Downloadmap",
     "torrent_stopped": "Torrent gestopt",
-    "torrents_stopped": "{0} torrents vereisen aandacht"
+    "torrents_stopped": "{0} torrents vereisen aandacht",
+    "files_missing": "Bestanden ontbreken",
+    "files_missing_one": "{0} heeft bestanden die buiten TinyTorrent zijn verwijderd of verplaatst.",
+    "files_missing_other": "{0} torrents hebben bestanden die buiten TinyTorrent zijn verwijderd of verplaatst.",
+    "review": "Bekijken",
+    "review_tip": "TinyTorrent openen om de ontbrekende bestanden opnieuw te downloaden of over te slaan",
+    "followed": "Verplaatste bestanden gevonden",
+    "followed_body": "{0} gebruikt nu de bestanden in deze map."
   },
   "power": {
     "transfers": "TinyTorrent draagt bestanden over."

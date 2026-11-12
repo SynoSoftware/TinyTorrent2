@@ -317,7 +317,8 @@ void Engine::State::ContinueNames()
         // that ends in it, judged by the pieces the engine keeps or, once
         // libtorrent accepted the add, by the handle's.
         VolumeWorker(torrent.facts.savePath).Run([this, params = std::move(params), handle = torrent.handle,
-            kept = torrent.kept, appendsSuffix = torrent.facts.appendsSuffix, layout = torrent.facts.layout]() mutable
+            kept = torrent.kept, appendsSuffix = torrent.facts.appendsSuffix, layout = torrent.facts.layout,
+            asked = torrent.facts.Asked()]() mutable
         {
             auto status = handle.status(lt::torrent_handle::query_save_path | lt::torrent_handle::query_torrent_file |
                 lt::torrent_handle::query_renamed_files | lt::torrent_handle::query_pieces);
@@ -325,7 +326,13 @@ void Engine::State::ContinueNames()
                 status.pieces = *kept;
             CheckReachable(Wide(params.save_path));
             auto lost = LostData(status, handle.get_file_priorities());
-            auto choice = ChooseNames(handle, std::move(params), appendsSuffix, layout, lost);
+            // The question's files wait for the person under the names they
+            // left with, so a file put back is found under its own name.
+            auto named = lost;
+            for (auto const& [file, priority] : asked.files)
+                named.push_back(file);
+            std::sort(named.begin(), named.end());
+            auto choice = ChooseNames(handle, std::move(params), appendsSuffix, layout, named);
             choice.lost = std::move(lost);
             return choice;
         }, [this, id](std::expected<NameChoice, StorageOutcome> choice)
@@ -369,7 +376,7 @@ bool Engine::State::IsUnfinished(std::string const& actual, std::string const& n
 }
 
 void Engine::State::PrepareNames(lt::add_torrent_params& params, bool appendsSuffix, Layout layout,
-    std::vector<lt::file_index_t> const& lost)
+    std::vector<lt::file_index_t> const& kept)
 {
     if (!params.ti)
         return;
@@ -393,9 +400,9 @@ void Engine::State::PrepareNames(lt::add_torrent_params& params, bool appendsSuf
             }
             return;
         }
-        // A lost file keeps the name the engine knows it by, and a name
-        // change would start a check of every file.
-        if (std::binary_search(lost.begin(), lost.end(), index))
+        // A lost file, and a file of the question, keeps the name the engine
+        // knows it by, and a name change would start a check of every file.
+        if (std::binary_search(kept.begin(), kept.end(), index))
             return;
         if (appendsSuffix && !Present(path))
         {
@@ -408,12 +415,12 @@ void Engine::State::PrepareNames(lt::add_torrent_params& params, bool appendsSuf
 }
 
 Engine::State::NameChoice Engine::State::ChooseNames(lt::torrent_handle const& handle, lt::add_torrent_params params,
-    bool appendsSuffix, Layout layout, std::vector<lt::file_index_t> const& lost)
+    bool appendsSuffix, Layout layout, std::vector<lt::file_index_t> const& kept)
 {
     ReleaseFiles({handle});
     auto current = handle.get_renamed_files();
     params.renamed_files = current.export_filenames(params.ti->layout());
-    PrepareNames(params, appendsSuffix, layout, lost);
+    PrepareNames(params, appendsSuffix, layout, kept);
     auto renames = Renames(params, current);
     return NameChoice{std::move(params), std::move(renames)};
 }
@@ -679,24 +686,15 @@ void Engine::State::FinishFiles(Torrent& torrent, std::optional<lt::file_index_t
 // sends the Completed toast that is due.
 void Engine::State::FinishDownload(Torrent& torrent)
 {
-    // A torrent whose every file is in the question is finished for
-    // libtorrent, and would move to its final folder with no files.
     if (IsShuttingDown() || torrent.WorkWaits() || torrent.control.AwaitsReload() || torrent.filesPending ||
-        torrent.completion.NeedsSample() || torrent.completion.IsWorking() || !torrent.Done() ||
-        torrent.namePhase != NamePhase::Ready ||
+        torrent.completion.NeedsSample() || torrent.completion.IsWorking() || !torrent.status.has_metadata ||
+        !torrent.status.is_finished || torrent.namePhase != NamePhase::Ready ||
         !torrent.completedFiles.empty() || torrent.facts.marker || torrent.waitingMove || torrent.unfinished)
         return;
-    if (!torrent.facts.finalFolder.empty())
-    {
-        // The move waits its turn for its drives and busy files, as a move
-        // the person asks for does.
-        if (!torrent.MoveBlocked())
-            torrent.waitingMove = WaitingMove{.destination = torrent.facts.finalFolder, .turn = ++turns, .final = true};
-        return;
-    }
     // libtorrent called the torrent finished again, so the repair of the
     // pieces that lost files shared with their neighbours ended. It is no
-    // download of the person's, so it sends no toast and starts no check.
+    // download of the person's, so it sends no toast and starts no check. It
+    // ends while the question stays open too, so the seed limits apply again.
     if (torrent.facts.Repairs())
     {
         torrent.completion.Finish();
@@ -708,6 +706,19 @@ void Engine::State::FinishDownload(Torrent& torrent)
             CommitFacts({id}, [](std::string const&, Facts& facts) { facts.Revise(Facts::Repaired{}); },
                 [](Outcome, auto const&) {});
         });
+        return;
+    }
+    // A torrent whose every file is in the question is finished for
+    // libtorrent, and would move to its final folder with no files.
+    if (!torrent.Done())
+        return;
+    if (!torrent.facts.finalFolder.empty())
+    {
+        // The move waits its turn for its drives and busy files, as a move
+        // the person asks for does.
+        if (!torrent.MoveBlocked())
+            torrent.waitingMove = WaitingMove{.destination = torrent.facts.finalFolder, .turn = ++turns,
+                .cause = MoveCause::Final};
         return;
     }
     if (settings.rechecksFinished && torrent.completion.BeginCheck())
@@ -944,6 +955,13 @@ void Engine::State::On(lt::file_completed_alert const& alert)
     // File completion is also posted by checking; the ordered state alerts
     // identify its cause even when the latest sampled status is already seeding.
     bool downloaded = torrent->completion.FileFinished();
+    // The records pass takes the record of a file that has none, once its
+    // name is final. A download wrote the file's bytes, so its record is
+    // taken anew; a check or an accepted resume left them as they were.
+    if (downloaded)
+        torrent->recordsUnsaved |= torrent->records.erase(alert.index) != 0;
+    if (!torrent->records.contains(alert.index))
+        Request(torrent->recording);
     if (!downloaded || renames)
     {
         FinishFiles(*torrent);

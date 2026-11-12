@@ -695,6 +695,91 @@ lookup finds a torrent's folder on another drive, the torrent moves there
 once its old drive answers, because its work on the old drive must end
 first; until then it counts in the old drive's location notice.
 
+## Records and the follow
+
+**The engine continues what the person did to a torrent's files in another
+program.** A payload that the person moved is used where it is now; files that
+are gone wait for the person, as [lost files](../engine.md#lost-files) says.
+
+| The person | Result |
+| --- | --- |
+| Moved the payload on its drive, or moved or renamed a folder above it | The torrent follows, with no check, no notice and no click. |
+| Put deleted files back, for example from the Recycle Bin | The torrent uses them again, with no check. |
+| Moved the payload to another fixed drive that gozler indexes | The torrent follows with no check. One notice names the torrent and the folder. |
+| Deleted files, or moved them where the engine cannot find them | Asked: Redownload or Skip. The other files keep running. |
+| Renamed a file, or the torrent's own top folder, or moved only some files | Asked. A torrent has one folder, and the engine uses a file under the name the torrent gives it. |
+
+**The record.** For each finished file of a torrent, the engine keeps the
+file's identity on its volume and its last write time, in the torrent's
+records file beside its resume data. The facts document is written whole at
+every commit and sent to the window, so 50,000 records stay out of it. A
+volume without stable file IDs, such as FAT or exFAT, gives a record without
+an ID. The records pass takes a record, on the drive's worker, for each file
+that is complete, has its final name and has none: after a file finishes,
+after a check or a move, and once at the first start of a torrent that has no
+records file. The file is written at most every 30 seconds per torrent and at
+Exit; a lost write costs a check later, not data. A record stays while its
+file is in the question, because it is then the only description of the file
+that left, and while the file's pieces stop counting only because a file that
+shares them is gone. It goes when a check fails a piece of the file and every
+file that the piece covers is on disk, when the person answers Redownload or
+Skip for the file, when the engine moves the file, and when the torrent's
+folder changes and the file is not proven at the new folder.
+
+**A file is proven** when it has its record's file ID, the size that the
+torrent gives it and its record's last write time. The ID alone is not
+enough, because a program that changes a file in place keeps its ID. Name and
+size prove nothing: another program's download of the same torrent has the
+same names and sizes. A piece counts without a check when every file that it
+covers is proven. **Owner ruling:** a payload that plainly moved to another
+drive is proven by size and time, because Windows gives every copied file a
+new ID: every file that held data is gone from its old folder, and exactly one
+other folder holds all of them under their names, with their records' sizes
+and times. When two folders hold such a set, nothing shows which one the
+person moved, and the person is asked. Any other copy is checked by its
+hashes, as the ruling on a move's existing destination asks.
+
+**Set download folder compares before it checks.** When every file that holds
+data is proven at the chosen folder, the torrent continues there with the
+pieces those files prove, nothing is read, and it is not marked for
+verification. Otherwise libtorrent checks every file at the chosen folder. It
+is the person's answer to the question: the files that the chosen folder does
+not prove download there.
+
+**The search.** After files join the question, at each start of a torrent
+that has a question, after the person answers and when the window asks for a
+look, the engine searches for the question's files on the torrent's drive
+worker. Files back in their place and proven leave the question; the reload
+gives back the pieces that they and the neighbours they share pieces with
+prove. When every file that held data has left its place and has a record,
+Windows opens each file by its ID on the volume of the old folder: a file
+under `$Recycle.Bin` counts as deleted, and when one other folder holds every
+file at the path the torrent gives it, the torrent follows through Set
+download folder, which the engine asks for itself. The follow takes its turn
+for its drives as any move does. A follow that is refused or fails leaves the
+question for the person, with no move error and no notice, because the person
+did not ask for the move. The search then does not follow to that folder again
+while the engine runs, so the person's answer applies.
+
+**On another drive, gozler finds the folder.** When the IDs find no folder and
+the person has not answered, the engine asks an installed gozler, under the
+rules of running `gozler.exe` in [plan 13](../../plans/13-using-gozler.md):
+it finds the program beside the service's program, runs it directly on a
+worker of its own, so a gozler that does not answer holds up no drive's work
+and no save, ends a call after 30 seconds and at Exit, and tries exit code 7
+again 5 seconds later, three times at most. One call asks for at most five of
+the files, the largest first, each by its whole name and size, outside the
+Recycle Bin. Each result, less the file's path inside the torrent, names a
+folder; each folder is checked on its own drive's worker for every file with
+its record's size and time, and the torrent follows exactly one folder that
+passes. The search ends with gozler's answer, at once when the service is
+stopped or missing, and after the deadline or the third try. While gozler
+still builds or scans again the index of a volume, as after Windows starts, a
+search that followed nothing asks again a minute later. A result that arrives
+after the question or the torrent's folder changed is discarded. The engine
+runs gozler itself, because it works while the window is closed, which is the
+usual state while torrents seed; it never installs or starts gozler.
+
 ## Unfinished files
 
 An accepted torrent whose name preparation fails retains the typed filesystem

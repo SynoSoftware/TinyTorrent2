@@ -101,7 +101,11 @@ queries or keep another copy of the file catalogue for Library. These features
 consume existing torrent/file replies; they add no C++ catalogue, enrichment,
 subtitle-file handling or feature API, including under a generic helper name. A data
 source's assertion of membership means that it reports the entry, not that
-Library has independently verified the file on disk.
+Library has independently verified the file on disk. A torrent's file is
+present when it is wanted and the engine answers that its data is on disk
+(`on_disk` in the [file pages](pipe-api.md#file-pages)), not by Library's own
+count of verified pieces: the engine's reload drops the pieces that a lost file
+shares with its neighbours, and the neighbours' own bytes stay.
 
 Filename interpretation, title and normalized text are computed once on
 ingestion, because moving them into queries adds query work without improving

@@ -309,6 +309,74 @@ bool Complete(lt::torrent_info const& metadata, lt::file_index_t index,
     return true;
 }
 
+void Request(PassPhase& pass)
+{
+    if (pass == PassPhase::Idle)
+        pass = PassPhase::Wanted;
+    else if (pass == PassPhase::Running)
+        pass = PassPhase::Again;
+}
+
+std::int64_t HeldData(lt::file_storage const& layout, lt::file_index_t index,
+    lt::typed_bitfield<lt::piece_index_t> const& pieces, bool skipped)
+{
+    auto const pieceLength = std::int64_t(layout.piece_length());
+    auto const start = layout.file_offset(index);
+    auto const end = start + layout.file_size(index);
+    auto have = [&pieces](std::int64_t piece)
+    {
+        return piece < pieces.size() && pieces.get_bit(lt::piece_index_t(static_cast<int>(piece)));
+    };
+    if (skipped)
+    {
+        // From the file's start to the end of the last piece wholly inside it.
+        auto first = (start + pieceLength - 1) / pieceLength;
+        // The torrent's last piece is shorter, so it ends inside the last file.
+        auto last = end == layout.total_size() ? std::int64_t(layout.num_pieces()) : end / pieceLength;
+        for (auto piece = last - 1; piece >= first; --piece)
+        {
+            if (have(piece))
+                return std::min(end, (piece + 1) * pieceLength) - start;
+        }
+        return 0;
+    }
+    // The bytes the pieces cover, as libtorrent's file progress at piece
+    // granularity counts them.
+    std::int64_t covered = 0;
+    for (auto piece = start / pieceLength; piece * pieceLength < end; ++piece)
+    {
+        if (have(piece))
+            covered += std::min(end, (piece + 1) * pieceLength) - std::max(start, piece * pieceLength);
+    }
+    return covered;
+}
+
+lt::typed_bitfield<lt::piece_index_t> Counted(lt::torrent_info const& metadata,
+    std::set<lt::file_index_t> const& proven)
+{
+    auto const& layout = metadata.layout();
+    lt::typed_bitfield<lt::piece_index_t> counted(metadata.num_pieces(), false);
+    auto mark = [&metadata, &counted](lt::file_index_t index, bool proof)
+    {
+        auto range = Pieces(metadata, index);
+        for (auto piece = range.first; piece < range.end; ++piece)
+        {
+            if (proof)
+                counted.set_bit(lt::piece_index_t(static_cast<int>(piece)));
+            else
+                counted.clear_bit(lt::piece_index_t(static_cast<int>(piece)));
+        }
+    };
+    for (auto index : proven)
+        mark(index, true);
+    for (auto index : layout.file_range())
+    {
+        if (!layout.pad_file_at(index) && layout.file_size(index) > 0 && !proven.contains(index))
+            mark(index, false);
+    }
+    return counted;
+}
+
 
 void Torrent::VisitPaths(bool logical, std::function<void(std::string)> const& visit) const
 {
@@ -1517,13 +1585,23 @@ Json Torrent::DescribeFilePage(std::shared_ptr<lt::torrent_info const> const& me
     auto masks = ChoiceMasks();
     auto& files = data["files"];
     std::size_t names = 0;
+    // A file's data is on disk when it is neither lost nor in the question,
+    // and every piece of it is verified or it has its record: the reload
+    // drops the pieces that a lost file shares with its neighbours, whose own
+    // bytes stay.
+    auto have = kept ? *kept : waiting ? waiting->params.have_pieces : handle.status(lt::torrent_handle::query_pieces).pieces;
+    std::set<lt::file_index_t> lost(control.Lost().begin(), control.Lost().end());
+    auto const& asked = facts.Asked().files;
     for (int item = offset; item < storage.num_files() && files.size() < filePage && names < filePageNames; ++item)
     {
         lt::file_index_t index(item);
         auto pieces = Pieces(*metadata, index);
+        bool missing = asked.contains(index);
         Json file = {{"index", item}, {"size", storage.file_size(index)}, {"padding", storage.pad_file_at(index)},
             {"first_piece", pieces.first}, {"end_piece", pieces.end},
-            {"priority", static_cast<std::uint8_t>(ChosenPriority(storage, index, masks))}};
+            {"priority", static_cast<std::uint8_t>(ChosenPriority(storage, index, masks))}, {"missing", missing},
+            {"on_disk", !missing && !lost.contains(index) &&
+                (records.contains(index) || Complete(*metadata, index, have))}};
         if (paths)
         {
             auto path = storage.file_path(index);
@@ -1585,6 +1663,14 @@ Json Torrent::Row(Status shown, int queue, std::optional<double> moveProgress, D
     auto complete = completion.IsReached(Done());
     auto saved = status.state == lt::torrent_status::checking_resume_data ? savedProgress : std::nullopt;
     auto hashes = Hashes();
+    auto const& asked = facts.Asked();
+    auto metadata = waiting ? waiting->params.ti : names ? names->metadata : nullptr;
+    std::int64_t missingSize = 0;
+    for (auto const& [file, priority] : asked.files)
+    {
+        if (metadata && file < metadata->layout().end_file())
+            missingSize += metadata->layout().file_size(file);
+    }
     return {{"torrent_id", torrentId}, {"save_path", facts.savePath}, {"final_folder", facts.finalFolder},
         {"moving", ShowsPathWork()}, {"move_destination", facts.marker ? facts.marker->destination : std::string()},
         {"paused", facts.intent == Intent::Paused}, {"forced", facts.intent == Intent::Forced},
@@ -1606,6 +1692,7 @@ Json Torrent::Row(Status shown, int queue, std::optional<double> moveProgress, D
         {"swarm_leecher_count", status.num_incomplete >= 0 ? status.num_incomplete : status.list_peers - status.list_seeds},
         {"downloaded", status.all_time_download}, {"uploaded", status.all_time_upload},
         {"queue", queue},
+        {"missing_files", asked.files.size()}, {"missing_size", missingSize}, {"question", asked.number},
         {"complete", complete}, {"completed_on", complete ? status.completed_time : 0},
         {"incoming", status.has_incoming}, {"hashes", std::move(hashes)}};
 }

@@ -151,21 +151,35 @@ public sealed partial class Inspector : INotifyPropertyChanged
                 return string.Empty;
             if (torrent.IsError)
                 return torrent.ErrorText;
-            if (!HasMetadata)
-                return Text.Get("inspector", "size_unknown");
-            if (torrent.IsMoving || torrent.Completed >= torrent.Size)
-                return torrent.SizeText;
-            var progress = Text.Format(
-                "inspector",
-                "progress",
-                Text.Bytes(torrent.Completed),
-                torrent.SizeText
-            );
-            return torrent.Eta is null
-                ? progress
-                : Text.Format("inspector", "progress_eta", progress, torrent.EtaText);
+            // A torrent that only waits for the answer shows the count beside
+            // Review; one that still downloads other files adds it to its
+            // progress.
+            if (torrent.State == TorrentState.FilesMissing)
+                return torrent.MissingText;
+            var summary = ProgressSummary(torrent);
+            return torrent.Question is null
+                ? summary
+                : Text.Format("units", "detail", summary, torrent.MissingText);
         }
     }
+
+    private string ProgressSummary(Torrent torrent)
+    {
+        if (!HasMetadata)
+            return Text.Get("inspector", "size_unknown");
+        if (torrent.IsMoving || torrent.Completed >= torrent.Size)
+            return torrent.SizeText;
+        var progress = Text.Format(
+            "inspector",
+            "progress",
+            Text.Bytes(torrent.Completed),
+            torrent.SizeText
+        );
+        return torrent.Eta is null
+            ? progress
+            : Text.Format("inspector", "progress_eta", progress, torrent.EtaText);
+    }
+
     public string CommentText => Comment.Length > 0 ? Comment : Strings.NoValue;
     public string CreatorText => Creator.Length > 0 ? Creator : Strings.NoValue;
     public string CreatedText => Created is { } created ? Text.Time(created) : Strings.NoValue;
@@ -232,6 +246,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
     internal event EventHandler<InspectorSection>? RowsUpdated;
     public ICommand Reannounce { get; }
     public ICommand RetryTorrent { get; }
+    public ICommand ReviewMissing { get; }
     public ICommand OpenFolder { get; }
     public ICommand CopyV1 { get; }
     public ICommand CopyV2 { get; }
@@ -253,6 +268,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
         );
         LimitSpeed = owner.SpeedCommand(() => _target is { } target ? [target] : []);
         MoveFiles = owner.MoveCommand(() => _target is { } target ? [target] : []);
+        ReviewMissing = owner.MissingCommand(() => _target is { } target ? [target] : []);
         OpenFolder = new RelayCommand(
             () => _owner.OpenTorrent(_target!, true),
             () =>
@@ -305,6 +321,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
             Retry,
             Reannounce,
             RetryTorrent,
+            ReviewMissing,
             OpenFolder,
             CopyV1,
             CopyV2,
@@ -1393,8 +1410,15 @@ public sealed partial class Inspector : INotifyPropertyChanged
     /// state and progress style rather than a binding, as one fact, so a
     /// change of them alone reaches the pane.
     /// </summary>
-    internal (bool IsProgressMuted, bool CanRetry, bool IsError)? GeneralState =>
-        _target is { } target ? (target.IsProgressMuted, target.CanRetry, target.IsError) : null;
+    internal (bool IsProgressMuted, bool CanRetry, bool IsError, bool Waits)? GeneralState =>
+        _target is { } target
+            ? (
+                target.IsProgressMuted,
+                target.CanRetry,
+                target.IsError,
+                target.State == TorrentState.FilesMissing
+            )
+            : null;
 
     /// <summary>
     /// Whether a notice names one of the facts a poll changes, which the pane

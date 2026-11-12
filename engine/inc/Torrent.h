@@ -2,6 +2,7 @@
 
 #include "Engine.h"
 #include "Enums.h"
+#include "Record.h"
 #include "SpeedHistory.h"
 #include <libtorrent/add_torrent_params.hpp>
 #include <libtorrent/announce_entry.hpp>
@@ -202,8 +203,8 @@ struct FileNames
 };
 
 // A move that waits for busy files or its drives: one the person asked for,
-// or the move to the final folder. The torrents of one request share its turn,
-// their place among the jobs that wait for drives.
+// the move to the final folder, or a follow. The torrents of one request
+// share its turn, their place among the jobs that wait for drives.
 struct WaitingMove
 {
     std::string destination;
@@ -213,9 +214,12 @@ struct WaitingMove
     // the give-back of the torrent's cut move, which the move waits for,
     // failed.
     std::optional<Problem> refusal;
-    // The engine's own move of a finished torrent to its final folder, whose
-    // failure waits for the minute check instead of the person.
-    bool final = false;
+    // The failure of the engine's own move to the final folder waits for the
+    // minute check instead of the person.
+    MoveCause cause = MoveCause::Person;
+    // A follow to a folder that gozler found on another drive, which the
+    // engine chose by itself, so a notice names it once the follow is saved.
+    bool announced = false;
     MoveMode mode = MoveMode::Files;
 };
 
@@ -696,6 +700,38 @@ struct Torrent
     // look: libtorrent's check after the error clears must find the lost
     // files in the question.
     std::optional<FailureAnswer> answering;
+    // The records of its finished files. The records pass takes those that
+    // are missing, and SaveRecords writes the records file after a change.
+    Records records;
+    PassPhase recording = PassPhase::Idle;
+    bool recordsUnsaved = false;
+    std::chrono::steady_clock::time_point recordsSaved{};
+    // The search for the files of its question, which runs after files
+    // join it and at each start. It ends in a follow, in files that are back
+    // in their place, or in nothing. A search that waits for gozler's index
+    // starts again at `searchAt`.
+    PassPhase search = PassPhase::Idle;
+    std::chrono::steady_clock::time_point searchAt{};
+    // The number of the question that a search last settled. A search of the
+    // same question again, as a look asks for, keeps its notice.
+    std::optional<std::uint64_t> searched;
+    // Files of the question that the last search found back in their place
+    // and proven. The reload gives their pieces back and saves them as found.
+    std::set<lt::file_index_t> returned;
+    // The person's answer for the question's files, while it waits for the
+    // search that runs before it applies: a file that is back is used, not
+    // downloaded again. It applies to `files`, the question when the engine
+    // accepted it, as far as they are still in it.
+    struct Answer
+    {
+        MissingAnswer choice = MissingAnswer::Redownload;
+        std::set<lt::file_index_t> files;
+    };
+    std::optional<Answer> answer;
+    // The folder of a follow that failed or was refused. The search does not
+    // follow there again while the engine runs, so the person's answer
+    // applies instead of the same follow failing again.
+    std::optional<std::string> failedFollow;
     std::optional<WaitingMove> waitingMove;
     // The kind of its work that the last end left unfinished, while that work
     // waits for the person to continue or abandon it: a move, which leaves
@@ -882,6 +918,8 @@ private:
 
 // libtorrent checks the torrent's files in this state.
 bool Checks(lt::torrent_status::state_t state);
+// Asks for a records pass or a search; see PassPhase.
+void Request(PassPhase& pass);
 
 // Rules about torrent content that previews share with torrents.
 // The hashes as hexadecimal text, v1 first.
@@ -944,5 +982,15 @@ PieceRange Pieces(lt::torrent_info const& metadata, lt::file_index_t index);
 // `pieces` holds every piece of the file, which holds data.
 bool Complete(lt::torrent_info const& metadata, lt::file_index_t index,
     lt::typed_bitfield<lt::piece_index_t> const& pieces);
+// The bytes the file must hold for `pieces`. A `skipped` file counts only the
+// pieces wholly inside it: libtorrent keeps a skipped file's part of a piece
+// it shares in the part file, and a piece wholly inside it was written while
+// the file was wanted, because libtorrent keeps writing to a file that exists.
+std::int64_t HeldData(lt::file_storage const& layout, lt::file_index_t index,
+    lt::typed_bitfield<lt::piece_index_t> const& pieces, bool skipped);
+// The pieces that count without a check: those whose every file that is not
+// padding is proven.
+lt::typed_bitfield<lt::piece_index_t> Counted(lt::torrent_info const& metadata,
+    std::set<lt::file_index_t> const& proven);
 std::vector<std::string> Urls(std::vector<lt::announce_entry> const& trackers);
 }

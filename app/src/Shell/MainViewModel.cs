@@ -156,6 +156,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         && !Settings.IsPending
         && !MoveDraft.IsPending
         && !RemovalDraft.IsPending
+        && !MissingDraft.IsPending
         && !SpeedLimit.IsPending
         && _limitsChoice is not { Sequence: null };
     public bool CanExit => _connected && CanClose;
@@ -289,6 +290,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 return StoppedStatus(condition);
             if (_locations.Count > 0 && !LocationsSilenced)
                 return LocationStatus();
+            if (_missing is { } missing)
+                return MissingStatus(missing);
             if (Features.Failure is { } featureFailure)
                 return FeatureStatus(featureFailure);
             if (
@@ -353,6 +356,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public string RestartText => Text.Get("connection", "restart");
     private ICommand RetryFeatures { get; }
     private ICommand RetryAll { get; }
+    private ICommand ReviewStarted { get; }
     private ICommand ShowErrors { get; }
     private ICommand DeleteDatabase { get; }
     private ICommand RepairDatabase { get; }
@@ -388,6 +392,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         AddDraft = new AddDraft(this, _client, strings);
         MoveDraft = new MoveDraft(this, _client);
         RemovalDraft = new RemovalDraft(this, _client);
+        MissingDraft = new MissingDraft(this, _client);
         SpeedLimit = new SpeedLimit(this, _client);
         Geolocation = new Geolocation(_providerHttp, Work);
         Geolocation.Download.Failed += (_, error) => Notifications.Report(error);
@@ -427,6 +432,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         };
         MoveDraft.PropertyChanged += OnTaskChanged;
         RemovalDraft.PropertyChanged += OnTaskChanged;
+        MissingDraft.PropertyChanged += OnTaskChanged;
         SpeedLimit.PropertyChanged += OnTaskChanged;
         Restart = new RelayCommand(
             () =>
@@ -518,6 +524,19 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             () => Act("retry", [.. Torrents.Where(torrent => torrent.CanRetry)]),
             () => CanEdit
         );
+        // The bar counts only started torrents; a stopped one keeps its
+        // question on its row. As with RetryAll, the bar shows only while the
+        // engine reports such torrents, so Review reads no row to enable
+        // itself.
+        ReviewStarted = new RelayCommand(
+            () =>
+            {
+                RequestMissing([.. Torrents.Where(torrent => !torrent.IsStopped)]);
+                return Task.CompletedTask;
+            },
+            () => CanEdit
+        );
+        ReviewMissing = MissingCommand(() => _selected);
         SwitchSequential = new RelayCommand(
             () => SetPieceOrder(PieceOrder.Sequential, Sequential != true),
             () => CanEditSelection
@@ -684,6 +703,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             Resume,
             Force,
             Retry,
+            ReviewMissing,
             SwitchSequential,
             SwitchFirstLast,
             LimitSpeed,
@@ -707,6 +727,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             Add,
             AddMagnet,
             RetryAll,
+            ReviewStarted,
             SwitchFilters,
             SwitchToolbar,
             PauseAll,
@@ -770,6 +791,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 // The engine resolves its conditions only while connected.
                 _stopped = null;
                 _locations.Clear();
+                _missing = null;
                 AddDraft.Invalidate();
                 Inspector.Disconnect();
                 foreach (var torrent in Torrents)
@@ -994,6 +1016,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                     MoveDraft.Refresh();
                 if (RemovalDraft.Torrents.Length > 0)
                     RemovalDraft.Refresh();
+                if (MissingDraft.Torrents.Length > 0)
+                    MissingDraft.Refresh();
             }
             RefreshCountStatus();
             if (previousCount != Torrents.Count)
@@ -1341,6 +1365,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Settings.RefreshText();
         MoveDraft.Refresh();
         RemovalDraft.Refresh();
+        MissingDraft.Refresh();
         Refresh();
         TextChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -1352,6 +1377,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         await Settings.CancelDraft();
         await MoveDraft.Discard();
         await RemovalDraft.Discard();
+        await MissingDraft.Discard();
     }
 
     internal void Reveal(string[] torrentIds)
@@ -1413,6 +1439,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
         Settings.Refresh();
         MoveDraft.Refresh();
         RemovalDraft.Refresh();
+        MissingDraft.Refresh();
         SpeedLimit.Refresh();
         RefreshWindow();
     }

@@ -19,10 +19,6 @@ internal sealed class LibrarySource : IAsyncDisposable
     private string? _session;
     private long _revision;
     private Dictionary<string, (Contribution Contribution, long Size)>? _contributions;
-
-    // The torrents with wanted bytes present in the latest snapshot, whose
-    // verified pieces the collection reads.
-    private HashSet<string> _completed = [];
     private CancellationTokenSource _generation = new();
 
     internal event EventHandler? Changed;
@@ -213,15 +209,12 @@ internal sealed class LibrarySource : IAsyncDisposable
                         Changed?.Invoke(this, EventArgs.Empty);
                     return;
                 }
-                FileDetail? detail = null;
+                IReadOnlyList<DetailFile>? detail = null;
                 var failed = false;
-                bool completed;
-                lock (_gate)
-                    completed = _completed.Contains(next.Origin);
                 try
                 {
                     detail = await _client
-                        .ReadFiles(next.Origin, completed, cancellation)
+                        .ReadFiles(next.Origin, cancellation)
                         .ConfigureAwait(false);
                 }
                 catch (Exception error)
@@ -312,17 +305,8 @@ internal sealed class LibrarySource : IAsyncDisposable
     private async Task<bool> Reconcile(JsonElement snapshot, CancellationToken cancellation)
     {
         Dictionary<string, (Contribution Contribution, long Size)>? previous;
-        var completed = snapshot
-            .GetProperty("torrents")
-            .EnumerateArray()
-            .Where(row => row.GetProperty("completed").GetInt64() > 0)
-            .Select(row => row.GetProperty("torrent_id").GetString()!)
-            .ToHashSet();
         lock (_gate)
-        {
             previous = _contributions;
-            _completed = completed;
-        }
         var contributions = snapshot
             .GetProperty("torrents")
             .EnumerateArray()
@@ -393,10 +377,16 @@ internal sealed class LibrarySource : IAsyncDisposable
         );
     }
 
-    private static IReadOnlyList<SourceFile>? Files(Contribution contribution, FileDetail detail)
+    // A file counts as complete by the engine's answer that its data is on
+    // disk, not by its verified pieces: a reload drops the pieces that a lost
+    // file shares with its intact neighbours.
+    private static IReadOnlyList<SourceFile>? Files(
+        Contribution contribution,
+        IReadOnlyList<DetailFile> detail
+    )
     {
         List<SourceFile> files = [];
-        foreach (var file in detail.Files)
+        foreach (var file in detail)
         {
             if (file.DiskPath is not { } disk)
                 return null;
@@ -408,22 +398,13 @@ internal sealed class LibrarySource : IAsyncDisposable
                     file.Size
                 )
                 {
-                    Complete = IsVerified(file, detail.Verified),
+                    Complete = file.OnDisk,
                     Wanted = file.Priority > 0,
                 }
             );
         }
         return files;
     }
-
-    private static bool IsVerified(DetailFile file, bool[]? bits) =>
-        bits is not null
-        && file.Pieces.First >= 0
-        && file.Pieces.End <= bits.Length
-        && file.Pieces.End >= file.Pieces.First
-        && Enumerable
-            .Range(file.Pieces.First, file.Pieces.End - file.Pieces.First)
-            .All(index => bits[index]);
 
     public async ValueTask DisposeAsync()
     {

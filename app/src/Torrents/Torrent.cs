@@ -56,8 +56,29 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
             : (double)Uploaded / Downloaded;
     public TorrentState State { get; private set; }
 
+    // Whether the person stopped the torrent: its intent, which the engine
+    // calls paused. State shows Stopped only while nothing else, such as a
+    // check, shows instead.
+    public bool IsStopped { get; private set; }
+
+    // The torrent's lost files that wait for the person's answer; null when
+    // none wait.
+    public Question? Question { get; private set; }
+
+    // The count and size of the question's files, such as "3 files missing ·
+    // 4.2 GiB"; empty without a question.
+    internal string MissingText =>
+        Question is { } question
+            ? strings.Format(
+                "units",
+                "detail",
+                strings.FormatCount("missing", "count", question.Files),
+                strings.Bytes(question.Size)
+            )
+            : string.Empty;
+
     // The status column names a waiting job by its short label; StatusTip
-    // says that it waits.
+    // says that it waits, and counts the files of a question.
     public string Status =>
         State switch
         {
@@ -123,6 +144,8 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
                     : nameOf(WaitingTorrentId) is { } holder
                         ? strings.Format("status", "waiting_for_torrent", WaitingDrive, holder)
                         : strings.Format("status", "waiting_for", WaitingDrive);
+            if (Question is not null)
+                detail = detail is null ? MissingText : detail + " · " + MissingText;
             if (!IsWaiting)
                 return detail;
             var waiting = StateText;
@@ -337,9 +360,11 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
         ErrorCode = 1UL << 30,
         ErrorDetail = 1UL << 31,
         CanRetry = 1UL << 32,
-        Connected = 1UL << 33,
+        IsStopped = 1UL << 33,
+        Question = 1UL << 34,
+        Connected = 1UL << 35,
         // A minute passed, so the ages shown change.
-        Time = 1UL << 34,
+        Time = 1UL << 36,
     }
 
     // Each property with the facts it is computed from. An update raises a
@@ -411,6 +436,8 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
         (new(nameof(IsError)), Fields.ErrorCode),
         (new(nameof(ErrorText)), Fields.ErrorCode | Fields.ErrorDetail),
         (new(nameof(CanRetry)), Fields.CanRetry),
+        (new(nameof(IsStopped)), Fields.IsStopped),
+        (new(nameof(Question)), Fields.Question),
         (new(nameof(SizeText)), Fields.Size),
         (new(nameof(DownloadedText)), Fields.Downloaded),
         (new(nameof(UploadedText)), Fields.Uploaded),
@@ -501,6 +528,8 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
         ErrorCode = ReadText("error", ErrorCode, Fields.ErrorCode);
         ErrorDetail = ReadText("detail", ErrorDetail, Fields.ErrorDetail);
         CanRetry = Set(CanRetry, row.GetProperty("retry").GetBoolean(), Fields.CanRetry);
+        IsStopped = Set(IsStopped, row.GetProperty("paused").GetBoolean(), Fields.IsStopped);
+        ReadQuestion();
         if ((changed & (Fields.Name | Fields.State)) != 0)
         {
             _searchText = null;
@@ -532,5 +561,28 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
             changed |= field;
             return value.GetString()!;
         }
+
+        // A question is made only when it changed, so an unchanged one costs
+        // no object at each snapshot.
+        void ReadQuestion()
+        {
+            var files = row.GetProperty("missing_files").GetInt32();
+            if (files == 0)
+            {
+                Question = Set(Question, null, Fields.Question);
+                return;
+            }
+            var number = row.GetProperty("question").GetUInt64();
+            var size = row.GetProperty("missing_size").GetInt64();
+            if (Question is { } known && known.Number == number && known.Files == files && known.Size == size)
+                return;
+            Question = new Question(number, files, size);
+            changed |= Fields.Question;
+        }
     }
 }
+
+// A torrent's question as the engine reports it: the count and size of its
+// files, and its number, which rises at each change of the question. An
+// answer sends the number back, so it acts only on the files it was shown.
+public sealed record Question(ulong Number, int Files, long Size);

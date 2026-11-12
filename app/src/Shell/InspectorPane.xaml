@@ -54,6 +54,15 @@
             />
           </VisualState.Setters>
         </VisualState>
+        <!-- Files missing waits for the person and nothing failed, so the
+             summary keeps its colour. Nothing downloads then, so Review takes
+             the download rate's place, and the upload rate stays. -->
+        <VisualState x:Name="Missing">
+          <VisualState.Setters>
+            <Setter Target="DownloadRate.Visibility" Value="Collapsed" />
+            <Setter Target="ReviewMissing.Visibility" Value="Visible" />
+          </VisualState.Setters>
+        </VisualState>
       </VisualStateGroup>
     </VisualStateManager.VisualStateGroups>
     <controls:Pane.Header>
@@ -340,6 +349,19 @@
                     Text="{x:Bind Model.Text.Get('inspector', 'retry')}"
                     ToolTipService.ToolTip="{x:Bind Model.Text.Get('notifications', 'retry_torrent_tip')}"
                     AutomationProperties.HelpText="{x:Bind Model.Text.Get('notifications', 'retry_torrent_tip')}"
+                  />
+                  <controls:ActionButton
+                    x:Name="ReviewMissing"
+                    Grid.Column="1"
+                    Margin="0,-6"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center"
+                    Visibility="Collapsed"
+                    Command="{x:Bind Model.ReviewMissing}"
+                    Glyph="{x:Bind icons:Segoe.Files}"
+                    Text="{x:Bind Model.Text.Get('missing', 'review')}"
+                    ToolTipService.ToolTip="{x:Bind Model.Text.Get('missing', 'review_tip')}"
+                    AutomationProperties.HelpText="{x:Bind Model.Text.Get('missing', 'review_tip')}"
                   />
                 </Grid>
                 <controls:Strip Margin="0,16,0,0" ColumnSpacing="32" RowSpacing="12">

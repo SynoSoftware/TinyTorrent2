@@ -320,6 +320,7 @@ message cannot be the only explanation of unfinished or failed work.
 | A language choice that could not be saved | The message bar as a warning, with Settings. |
 | Torrents that wait for the person: the engine stopped retrying their storage error, or their move to the final folder failed | The message bar as an error, for all of them together, with Retry, which continues them all, and Show torrents, which shows the Errors filter. One torrent is named, with its reason; several are counted, with the reason they share. The row's menu and the details pane offer Retry for one torrent, so a closed bar never leaves a torrent without it. |
 | Torrents that wait for their drive or share to answer | The message bar as a warning, naming the drive root or UNC share and counting the torrents, with Show torrents. |
+| Started torrents whose files were deleted or moved outside TinyTorrent and wait for the person's answer | The message bar as a warning, titled Files missing: the torrents wait for the person, and nothing failed. One torrent is named, several are counted, with the reason. Its action, Review, opens the [missing files dialog](torrents.md#missing-files) for every started torrent with missing files, which answers for all of them at once; the dialog names each torrent, so one that the bar does not count yet is no surprise. The person opens the dialog, because a dialog that opens by itself takes the focus from what the person is doing. The row and the details pane show the count of missing files, and the row's command opens the same dialog, stopped torrents included, so a closed bar never leaves a torrent without its answer; a stopped torrent counts in the bar when it starts. The details pane offers Review beside the count once nothing is left to download, and while other files download it adds the count to the progress and keeps the rates. |
 | The selected torrent has an error | The details pane shows the error in its summary and progress bar; the window adds no message for it. |
 | A finished download | A success toast for each download, titled Download finished, with the torrent name below it and Open folder, as the [notification policy](../engine/notifications.md#notifications-and-sleep) defines a finished download. It closes by itself. |
 | Another torrent error, a move the person asked for that failed, or a deletion that failed after removal | A background error toast, titled Torrent stopped, Move failed or Files not deleted, separate from a failed user-command toast. A failed move's body gives the reason, then the file it concerns; it does not repeat the original folder below it. An unavailable-source move failure reports its failed group once, retains the destination, and offers Download here instead of Open folder. That action starts recovery directly for the failed group. An accepted recovery retires its earlier toast; an unavailable destination reports the attempted folder without offering to open it. A stopped torrent also stays in the Errors count. With the window closed, the engine's [notification policy](../engine/notifications.md#notifications-and-sleep) shows its native popup instead. |
@@ -351,8 +352,8 @@ does not go at the top of the page.
 
 - It shows the most important problem: the engine, then the download state,
   then torrents that wait for the person, then torrents that wait for their
-  drive or share, then Library and subtitles, then the subtitle supplier, then
-  the language.
+  drive or share, then torrents whose files are missing, then Library and
+  subtitles, then the subtitle supplier, then the language.
 - Its title names the problem without a final period, such as Downloads
   stopped, and its message gives the reason and the next step.
 - An error or warning always has the action that resolves it, because Fluent 2
@@ -387,6 +388,7 @@ repair would conceal work the person still needs to do:
 | --- | --- |
 | Engine startup, disconnection, version mismatch or unreadable download state | Close until the condition changes; no timed silence. |
 | Stopped torrents that require Retry | Close until the condition changes; the row keeps Retry and its error. |
+| Torrents whose files are missing | Close until the condition changes; the row and the details pane keep the command that opens the dialog. |
 | Library/subtitle failures, paused subtitle suppliers or an unsaved language | Close until the condition changes; no timed silence for a required setup, repair or save. |
 | Failed commands, subtitles or background work | Close the failure; no timed silence for the result of an attempted action. |
 | Starts waiting for the global pause | Close that explanation, or resume to clear it. |

@@ -436,6 +436,16 @@ destination directly, without asking for the same folder again.
 An unavailable recovery destination reports `move_destination_unavailable`
 with the attempted destination in `folder`, retaining the current save path.
 
+`answer_missing` takes `torrents`, each `{torrent_id, question}` with the
+question number the dialog showed, and `answer`, `redownload` or `skip`. The
+engine replies at once and applies the answer to each listed torrent that
+still exists and whose question still has that number, after the search that
+runs before it applies. `look` takes `torrent_ids` and replies, once each
+torrent's look and the search after it ended, with `torrents`, each
+`{torrent_id, folder}`: the folder the torrent follows its files to, or null.
+The window waits at most 2 seconds for it before Open reports a path as not
+found.
+
 `recovery_required` remains the general unconfirmed-operation code for other
 commands, so file-specific instructions cannot misdirect an Add or priority
 edit.
@@ -508,7 +518,10 @@ failed and waits for Retry. It has no row, so alone it has an empty
 `torrent_id`, and `retry` tries it again. Key `location:<root>` counts the torrents that wait because one drive
 root or UNC share does not answer, whatever error Windows reported, with
 `code:"download_location_unavailable"`, the typed cause code in `detail` and
-the root in `folder`.
+the root in `folder`. Key `missing` counts the started torrents whose question
+waits for the person, with `code:"files_missing"`; with one, `torrent_id` and
+`name` name it. Kind `followed` is an event: a torrent follows its files to
+the folder in `folder`, on another drive that the engine chose by itself.
 `count` includes the affected torrents or coalesced problem events. Problem
 bursts coalesce before window/desktop routing. A completion queued for the tray
 stays there. The window
@@ -701,8 +714,11 @@ added (Unix seconds), seed_count and peer_count (connected; peers include seeds)
 swarm_seed_count and swarm_peer_count (tracker scrape totals, else known peers),
 downloaded/uploaded (bytes), queue
 (libtorrent position), complete, completed_on (Unix seconds when libtorrent
-finished the wanted files; 0 until complete), incoming, forced, sequential, first_last, and
-hashes. Protocol version 6 adds `completed`, so content totals and remaining time
+finished the wanted files; 0 until complete), incoming, forced, sequential, first_last,
+hashes, and missing_files, missing_size and question: the count and the bytes
+of the files in its [question](engine.md#lost-files), and the question's
+number, which rises at each change, so an answer names the question the person
+saw. Protocol version 6 adds `completed`, so content totals and remaining time
 do not mistake verification progress for downloaded bytes. `torrent` without
 a view returns the torrent's saved facts with its General view: torrent_id,
 metadata_ready, name, folder (the current content folder), hashes, comment,
@@ -718,7 +734,7 @@ paths, and `files`, an array of file indexes, at most 10,000 of each; either
 may be empty. A request that names neither gets only file_count. The reply carries `wanted_count` and `wanted_size`, the
 torrent's totals, `folders`, one object per named folder that exists with
 `path` and the [folder values](#folder-values), and `files`, one object per
-named file with `index`, `priority` and `downloaded`. Until libtorrent
+named file with `index`, `priority`, `downloaded` and `missing`. Until libtorrent
 reports the priorities, these four fields are null; `downloaded` is null until
 it reports progress. Choices that wait for busy files show before libtorrent
 has them. A path or index that names nothing is left out, and the browser
@@ -730,8 +746,13 @@ torrent's whole file list as one message, and the engine keeps no copy of it:
 it builds each page from libtorrent's file table when asked. `files` takes a
 torrent_id, an offset (default 0) and `paths` (default true), and replies
 with file_count, offset and files. Each file carries index, size, padding,
-first_piece and end_piece (its pieces, end exclusive) and priority, the choice
-the torrent saved. With `paths`, it also carries path and disk_path, its
+first_piece and end_piece (its pieces, end exclusive), priority, the choice
+the torrent saved, `missing`, true while the file is in the question, and
+`on_disk`, the engine's answer whether the file's data is on disk: it is
+neither lost nor in the question, and every piece of it is verified or it has
+its [record](engine/files.md#records-and-the-follow). Library reads `on_disk`
+instead of counting pieces, because the reload drops the pieces that a lost
+file shares with its neighbours, whose own bytes stay. With `paths`, it also carries path and disk_path, its
 current name on disk, or null until the engine has read its names; without
 them, a map of a large torrent's pieces reads its files without their names.
 A preview's files come only from `tree`. A page holds at most 5,000 files and ends earlier
@@ -771,8 +792,9 @@ path of `folder`; and `folder`, the object of that folder:
   entries, both null when its entries are not in the reply.
 - A file object carries `index`, `name`, `size`, `priority`, `first_piece`,
   `end_piece` and `match`, and for a torrent `disk_path` (its current name on
-  disk, or null until the engine has read its names) and `downloaded` (bytes,
-  or null until libtorrent reports progress).
+  disk, or null until the engine has read its names), `downloaded` (bytes,
+  or null until libtorrent reports progress) and `missing` (true while the
+  file is in the question).
 
 With `folder`, the reply is that folder with its direct entries, and then each
 deeper level of its subtree whole, while the entries still fit. A folder whose

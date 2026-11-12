@@ -49,6 +49,10 @@ public sealed partial class MainViewModel
     // the errors text of the cause, when the engine names one.
     internal sealed record LocationCondition(string Root, string? CauseKey, int Count);
 
+    // The started torrents whose question waits for the person's answer.
+    // Name is the torrent's name when Count is 1.
+    internal sealed record MissingCondition(int Count, string Name);
+
     // The status the person closed. Fluent 2 brings a closed message bar
     // back while its problem lasts, so it returns when the problem changes
     // and at the next start.
@@ -56,6 +60,7 @@ public sealed partial class MainViewModel
     private bool _showsStatus;
 
     private StoppedCondition? _stopped;
+    private MissingCondition? _missing;
 
     // In the order the engine raised them, keyed by its condition key.
     private readonly List<(string Key, LocationCondition Location)> _locations = [];
@@ -183,6 +188,14 @@ public sealed partial class MainViewModel
         Changed(nameof(CurrentStatus));
     }
 
+    // Records the torrents with a question the engine reported, or forgets
+    // them when missing is null because the engine resolved the condition.
+    internal void ObserveMissing(MissingCondition? missing)
+    {
+        _missing = missing;
+        Changed(nameof(CurrentStatus));
+    }
+
     internal bool IsLocationUnavailable(string path) =>
         _locations.Any(known =>
             FolderComparer.Instance.Equals(path, known.Location.Root)
@@ -242,6 +255,23 @@ public sealed partial class MainViewModel
             CanSilence: true
         );
     }
+
+    // The torrents wait for the person and nothing failed, so the bar is a
+    // warning, as for torrents that wait for their drive. Review opens the
+    // question for all of them; the person opens it, because a dialog that
+    // opens by itself takes the focus from what the person is doing.
+    private Status MissingStatus(MissingCondition missing) =>
+        new(
+            Text.Get("status", "files_missing"),
+            Text.FormatCount("missing", "reason", missing.Count, missing.Name),
+            InfoBarSeverity.Warning,
+            new(
+                ReviewStarted,
+                Text.Get("missing", "review"),
+                Syno.Segoe.Files,
+                Text.Get("missing", "review_tip")
+            )
+        );
 
     // Show alone would not say what the bar shows, so the label is two words.
     private StatusAction ShowErrorsAction =>

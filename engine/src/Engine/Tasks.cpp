@@ -1036,7 +1036,7 @@ void Engine::State::EndReturn(std::list<Returning>::iterator running, GiveBackTr
         returning.erase(running);
         if (auto torrent = FindWorking(id))
         {
-            EndMove(*torrent, std::move(problem), false);
+            EndMove(*torrent, std::move(problem), MoveCause::Person);
             torrent->ApplyIntent();
         }
     };

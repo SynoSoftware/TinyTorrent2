@@ -7,8 +7,11 @@ start in the order at the end. No decision is open. The
 current behavior; update them alongside implementation.
 
 The engine's part of the earlier draft, torrent files that were deleted or
-moved outside TinyTorrent, is [plan 21](21-missing-torrent-files.md). It is not
-ready, and this plan does not depend on it.
+moved outside TinyTorrent, is built: the engine contract's
+[lost files](../contracts/engine.md#lost-files) and
+[records and the follow](../contracts/engine/files.md#records-and-the-follow)
+hold it. The engine runs `gozler.exe` under this plan's
+[rules](#running-gozlerexe) to follow a payload to another drive.
 
 ## North star
 
@@ -41,7 +44,8 @@ milliseconds. TinyTorrent does not index files itself.
 
 1. **TinyTorrent uses gozler** for Library's media discovery, and later for
    finding torrent files that were moved outside TinyTorrent
-   ([plan 21](21-missing-torrent-files.md)). Reason: the owner does not want
+   ([records and the follow](../contracts/engine/files.md#records-and-the-follow)).
+   Reason: the owner does not want
    to build a file index a second time.
 2. **TinyTorrent's installer does not bundle gozler, and does not offer it.**
    The only way TinyTorrent installs gozler is the in-app prompt in decision 6.
@@ -181,9 +185,9 @@ SQLite database on the same PC:
 ## The option
 
 **Discover media for Library** starts **off**. With it off, Library never
-runs `gozler.exe`. The engine's use of gozler in
-[plan 21](21-missing-torrent-files.md) has no setting: it asks a gozler that
-is installed, and never installs or starts one. The option is saved in
+runs `gozler.exe`. The engine's use of gozler to
+[follow a payload](../contracts/engine/files.md#records-and-the-follow) has no
+setting: it asks a gozler that is installed, and never installs or starts one. The option is saved in
 `library_settings`, because the engine has no use for it and Library's other
 options are there.
 
@@ -500,13 +504,13 @@ file.
 - The fact also ends when the location loses its last contributor, and when
   the option is switched off. With the option off, the torrent's claim decides
   alone, as today.
-- A file that is downloaded again returns at the next refresh. Until
-  [plan 21](21-missing-torrent-files.md) is built, the engine downloads such a
-  file again by itself when it notices the loss.
-- When plan 21 is built, Library also asks the engine for a look at that
-  torrent. The engine then skips the lost file until the person answers.
-  Library's own rule for a file that is not wanted keeps the row out, and this
-  saved fact is removed for torrent-listed files, as that plan says.
+- A file that is downloaded again returns at the next refresh.
+- Library also asks the engine for a look at that torrent, with the `look`
+  command. The engine then skips the lost file until the person answers, as
+  the engine contract's [lost files](../contracts/engine.md#lost-files) say,
+  and Library reads the engine's `on_disk` for a torrent's file. Library's own
+  rule for a file that is not wanted keeps the row out, so this saved fact has
+  no reader for torrent-listed files and is removed for them.
 - A torrent's file that gozler never reported, such as one on a network share,
   is never checked, so it stays listed as today.
 

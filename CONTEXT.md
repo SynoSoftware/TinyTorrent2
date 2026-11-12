@@ -178,9 +178,26 @@ or Skip, and the torrent's other files keep running. A finished torrent with a
 question shows Files missing.
 _Avoid_: prompt, which is a popup.
 
-**Look**: one search of a torrent's files for lost files, judged by the pieces
+**Look**: one reading of a torrent's files for lost files, judged by the pieces
 the torrent had. It comes before every check of every file, because a check
 discards those pieces.
+
+**Search**: what the engine does for a question's files after a look: it finds
+the files that are back in their place, and a payload that the person moved,
+first by the files' IDs on their drive and then with gozler on another drive.
+
+**Record**: what the engine remembers of a torrent's finished file: its
+identity on its volume and its last write time, so it knows the file again
+without reading it.
+
+**Proven**: a file that its record shows to be the same, unchanged file, or a
+file of a payload that plainly moved to another drive. A piece counts without a
+check when every file it covers is proven.
+_Avoid_: verified, which means the file's pieces were checked by their hashes.
+
+**Follow**: the torrent continues at the folder where the person moved its
+payload, as Set download folder would, with no check when its files are
+proven.
 
 **Recovery marker**: a torrent's move destination, saved before its files move
 and cleared when its own move ends. After an interruption it keeps the torrent

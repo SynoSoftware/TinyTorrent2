@@ -6,9 +6,9 @@ using Syno.TinyTorrent.Shell;
 
 namespace Syno.TinyTorrent.Torrents;
 
-// What Move and Remove share: the selected torrents, the file scope the engine
-// reads for them, and the submit that sends one command. Each subclass owns
-// its own input and command.
+// What Move, Remove and the question about lost files share: the selected
+// torrents, the file scope the engine reads for them, and the submit that
+// sends one command. Each subclass owns its own input and command.
 public abstract class FileDraft : IDraft
 {
     private string[] _torrentIds = [];
@@ -134,7 +134,11 @@ public abstract class FileDraft : IDraft
         }
     }
 
-    public async Task<bool> Submit()
+    public Task<bool> Submit() => Submit(Send);
+
+    // Runs a submit's command, Send or another answer's: the draft is pending
+    // while it runs, and a failure stays as its error.
+    private protected async Task<bool> Submit(Func<Task<bool>> send)
     {
         if (!CanSubmit)
             return false;
@@ -142,7 +146,7 @@ public abstract class FileDraft : IDraft
         Refresh();
         try
         {
-            var accepted = await Send();
+            var accepted = await send();
             Failure = null;
             return accepted;
         }
@@ -181,7 +185,7 @@ public abstract class FileDraft : IDraft
 
     public void Stop() { }
 
-    internal void Refresh() =>
+    internal virtual void Refresh() =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
 
     private protected virtual void RefreshItems() =>

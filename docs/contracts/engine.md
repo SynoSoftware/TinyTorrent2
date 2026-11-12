@@ -544,8 +544,9 @@ download and the row's `complete` read that, so a finished torrent with a
 question shows Files missing and stays in its folder. Files that join the
 question of a finished torrent set the repair mark, saved with its facts: the
 download of the pieces they shared with their neighbours then sends no toast
-and starts no check. The mark ends when the torrent is next done, and when
-the person makes a skipped file wanted.
+and starts no check. The mark ends when libtorrent next calls the torrent
+finished, with the question open or not, so the seed limits apply again, and
+when the person makes a skipped file wanted.
 
 The engine looks for lost files, on the drive's worker, before every check of
 every file can start, because the check discards the pieces that show which
@@ -561,6 +562,23 @@ lost files' pieces, so the check of every file never runs. Name preparation
 at an add is that add's look, and a lost file keeps its name. While the engine
 keeps pieces, checkpoints and reloads use them. The restore of a torrent
 marked for verification keeps the pieces it clears for its look.
+
+After files join the question, the engine [searches](engine/files.md#records-and-the-follow)
+for them: files back in their place leave it, and a payload that moved is
+followed. The person's answer, Redownload or Skip, carries for each torrent
+the question's number that the dialog showed, which rises at each change, so
+it acts only on the question the person saw: a count is no identity. The
+engine accepts it at once and applies it after a search: a file that is back
+is used, a follow answers the question itself, a torrent whose drive does not
+answer keeps its question, and the files still in it get the answer through
+the person's edit of the priorities. Redownload gives each the priority the
+person gave it and the unfinished name; Skip makes it an ordinary skipped
+file. Checking such a file in Files is Redownload for that file. The started
+torrents whose question waits for the person once a search settled it form one
+condition, which waits two minutes as every condition does; a later search of
+the same question, as a look asks for, keeps the notice, and a stopped torrent
+counts when it starts. The window's look request runs a look and a search for
+its torrents, and its reply names the folder each one follows to.
 
 <a id="mark-of-the-web"></a>Mark each payload file as downloaded from the internet when it completes while
 its torrent is downloading, by writing the internet zone to the file's

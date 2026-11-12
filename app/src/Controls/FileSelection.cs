@@ -720,8 +720,12 @@ public sealed class FileNode : INotifyPropertyChanged
     // A folder's is the priority all its files share, or -1 when they differ.
     private int _priority;
     private long? _downloaded;
+
+    // A file in its torrent's question, which waits skipped until the person
+    // answers; checking it is the answer Redownload for it.
+    private bool _missing;
     private FolderState _state = FolderState.Loaded;
-    private (long, long, long, int, long?, FolderState) _shown;
+    private (long, long, long, int, long?, bool, FolderState) _shown;
     public IReadOnlyList<FileNode> Children => _children ?? [];
     public string Name { get; }
     public string Path { get; }
@@ -755,7 +759,8 @@ public sealed class FileNode : INotifyPropertyChanged
         : _size == 0 ? 1
         : Math.Clamp((double)downloaded / _size, 0, 1);
     public string ProgressText =>
-        Progress?.ToString("P1", CultureInfo.CurrentCulture) ?? Strings.NoValue;
+        _missing ? _owner.Text.Get("files", "missing")
+        : Progress?.ToString("P1", CultureInfo.CurrentCulture) ?? Strings.NoValue;
     public double ProgressValue => Progress ?? 0;
     public bool IsIndeterminate => Progress is null;
     public bool IsComplete => Progress is >= 1;
@@ -867,6 +872,8 @@ public sealed class FileNode : INotifyPropertyChanged
             _count = count.GetInt64();
         if (value.TryGetProperty("match", out var match))
             IsMatch = match.GetBoolean();
+        if (value.TryGetProperty("missing", out var missing))
+            _missing = missing.GetBoolean();
         if (preserveChoices || !value.TryGetProperty("priority", out var priority))
             return;
         if (!IsFolder)
@@ -914,7 +921,7 @@ public sealed class FileNode : INotifyPropertyChanged
         var changed = false;
         foreach (var child in Children)
             changed |= child.Refresh(notify);
-        var shown = (_size, _count, _wantedCount, _priority, _downloaded, _state);
+        var shown = (_size, _count, _wantedCount, _priority, _downloaded, _missing, _state);
         var updated = shown != _shown;
         if (notify || updated)
         {

@@ -86,7 +86,14 @@
     "show_torrent_tip": "Show this torrent in the torrent list",
     "download_folder": "Download folder",
     "torrent_stopped": "Torrent stopped",
-    "torrents_stopped": "{0} torrents need attention"
+    "torrents_stopped": "{0} torrents need attention",
+    "files_missing": "Files missing",
+    "files_missing_one": "{0} has files that were deleted or moved outside TinyTorrent.",
+    "files_missing_other": "{0} torrents have files that were deleted or moved outside TinyTorrent.",
+    "review": "Review",
+    "review_tip": "Open TinyTorrent to redownload or skip the missing files",
+    "followed": "Moved files found",
+    "followed_body": "{0} now uses the files in this folder."
   },
   "power": {
     "transfers": "TinyTorrent is transferring files."

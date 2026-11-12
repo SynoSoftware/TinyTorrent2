@@ -145,8 +145,11 @@ public sealed class Notifications
             var reason = message.GetProperty("detail").GetString() ?? string.Empty;
             // For the stopped condition the engine describes one torrent; for
             // several it sends only the code they share, empty when their
-            // problems differ.
-            if (key != "stopped")
+            // problems differ. The missing condition names one torrent and
+            // counts several, as the stopped one does.
+            if (key == "missing")
+                _owner.ObserveMissing(resolved ? null : new MainViewModel.MissingCondition(count, name));
+            else if (key != "stopped")
                 _owner.ObserveLocation(
                     key,
                     resolved
@@ -169,6 +172,8 @@ public sealed class Notifications
         }
         if (kind == "completed")
             ShowCompletion(torrentId, name, @switch);
+        else if (kind == "followed" && Folder() is { } followed)
+            ShowFollowed(name, followed, @switch);
         else if (kind is "error" or "add_failed" or "delete_failed")
         {
             var recovery = message.TryGetProperty("recovery", out var move) && move.ValueKind == JsonValueKind.Object
@@ -231,6 +236,25 @@ public sealed class Notifications
         );
         Show(toast);
         Announce(_text.Format("notifications", "completed", name));
+    }
+
+    // The engine chose a folder on another drive by itself, so the toast
+    // names the torrent and the folder. Opening the folder is what the toast
+    // offers, so the toast closes with it.
+    private void ShowFollowed(string name, string folder, string? @switch)
+    {
+        var toast = new Toast.Followed(name, folder, @switch);
+        toast.Action = new RelayCommand(
+            () =>
+            {
+                Toasts.Remove(toast);
+                _owner.RequestOpen(folder);
+                return Task.CompletedTask;
+            },
+            () => true
+        );
+        Show(toast);
+        Announce(toast.Message);
     }
 
     // Opening the folder is what the toast offers, so the toast closes with it.
@@ -503,6 +527,13 @@ public sealed class Notifications
                 subtitle.ActionText = _text.Get("notifications", "settings");
                 subtitle.ActionTip = _text.Get("notifications", "subtitles_tip");
                 subtitle.ActionGlyph = Syno.Segoe.Settings;
+                break;
+            case Toast.Followed followed:
+                followed.Title = _text.Get("notifications", "followed");
+                followed.Message = _text.Format("notifications", "followed_message", followed.Name);
+                followed.ActionText = _text.Get("commands", "open_folder");
+                followed.ActionTip = _text.Get("notifications", "files_folder_tip");
+                followed.ActionGlyph = Syno.Segoe.FolderOpen;
                 break;
             case Toast.Completion completion:
                 completion.Title = _text.Get("notifications", "finished");
@@ -813,6 +844,22 @@ public abstract class Toast : INotifyPropertyChanged
         }
 
         internal string TorrentId { get; }
+    }
+
+    // A torrent that now uses its files in a folder on another drive, where
+    // the person moved them. It closes by itself like a finished download,
+    // because nothing remains to do.
+    internal sealed class Followed : Toast
+    {
+        internal Followed(string name, string folder, string? @switch)
+            : base(InfoBarSeverity.Informational, Lifetime)
+        {
+            Name = name;
+            Folder = folder;
+            Switch = @switch;
+        }
+
+        internal string Name { get; }
     }
 
     // A result the person asked for, such as a passed check. It closes by

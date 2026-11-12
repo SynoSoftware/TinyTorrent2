@@ -652,6 +652,14 @@ internal enum OemKey
     Minus = 0xBD,
 }
 
+// The person's answer for the lost files of the checked torrents. The
+// engine's words are these names in lower case.
+internal enum MissingAnswer
+{
+    Redownload,
+    Skip,
+}
+
 // What started the window's close.
 internal enum CloseRequest
 {

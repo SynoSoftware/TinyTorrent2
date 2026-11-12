@@ -37,7 +37,7 @@ bool DestinationError(Toast const& toast)
 
 bool UsesWindow(ToastKind kind)
 {
-    return IsProblem(kind) || kind == ToastKind::Completed;
+    return IsProblem(kind) || kind == ToastKind::Completed || kind == ToastKind::Followed;
 }
 
 std::optional<Setting> Switch(ToastKind kind)
@@ -53,6 +53,7 @@ std::optional<Setting> Switch(ToastKind kind)
     case ToastKind::AddFailed:
     case ToastKind::DeleteFailed:
     case ToastKind::MissingProgram:
+    case ToastKind::Followed:
         return Setting::NotifyProblems;
     case ToastKind::Background:
         return Setting::NotifyBackground;
@@ -361,6 +362,28 @@ Popup::Content Toasts::Message(Toast const& toast) const
             {Strings::Number(toast.count)});
         if (!toast.detail.empty())
             content.body = ErrorText(strings_, toast.detail) + L"\n" + content.body;
+        content.location = Popup::Location{strings_.Text("notification", "download_folder"), Wide(toast.folder)};
+        content.actions = {OpenFolder(strings_, [folder = Wide(toast.folder)] { return folder; },
+            strings_.Text("notification", "files_folder_tip"))};
+    }
+    // Files deleted or moved outside TinyTorrent wait for the person's
+    // answer, which the window's message bar asks for.
+    else if (toast.condition && toast.condition->key == Toast::Condition::missing)
+    {
+        content.title = strings_.Text("notification", "files_missing");
+        content.body = toast.count == 1 ? strings_.Format("notification", "files_missing_one", {Wide(toast.name)}) :
+            strings_.Format("notification", "files_missing_other", {Strings::Number(toast.count)});
+        content.select = commands_.open;
+        content.actions = {{.glyph = L'\uEC50', .label = strings_.Text("notification", "review"),
+            .tooltip = strings_.Text("notification", "review_tip"), .run = commands_.open,
+            .automationId = L"Review"}};
+    }
+    // The engine chose a folder on another drive by itself, so the notice
+    // names it; Set download folder leads back.
+    else if (toast.kind == ToastKind::Followed)
+    {
+        content.title = strings_.Text("notification", "followed");
+        content.body = strings_.Format("notification", "followed_body", {Wide(toast.name)});
         content.location = Popup::Location{strings_.Text("notification", "download_folder"), Wide(toast.folder)};
         content.actions = {OpenFolder(strings_, [folder = Wide(toast.folder)] { return folder; },
             strings_.Text("notification", "files_folder_tip"))};

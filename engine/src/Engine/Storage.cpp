@@ -16,43 +16,6 @@ constexpr std::size_t probesPerPass = 64;
 
 // The files of one torrent that lost the data they held.
 using LostFiles = std::vector<lt::file_index_t>;
-
-// The bytes a file must hold for the complete pieces that lie wholly inside
-// it: from its start to the end of the last such piece, or 0 when none.
-std::int64_t InnerData(lt::file_storage const& layout, lt::file_index_t index, lt::typed_bitfield<lt::piece_index_t> const& have)
-{
-    auto const pieceLength = std::int64_t(layout.piece_length());
-    auto const start = layout.file_offset(index);
-    auto const end = start + layout.file_size(index);
-    auto first = (start + pieceLength - 1) / pieceLength;
-    // The torrent's last piece is shorter, so it ends inside the last file.
-    auto last = end == layout.total_size() ? std::int64_t(layout.num_pieces()) : end / pieceLength;
-    for (auto piece = last - 1; piece >= first; --piece)
-    {
-        if (piece < have.size() && have.get_bit(lt::piece_index_t(static_cast<int>(piece))))
-        {
-            return std::min(end, (piece + 1) * pieceLength) - start;
-        }
-    }
-    return 0;
-}
-
-// The bytes of a file that the pieces in `have` cover, as libtorrent's file
-// progress at piece granularity counts them.
-std::int64_t CoveredData(lt::file_storage const& layout, lt::file_index_t index,
-    lt::typed_bitfield<lt::piece_index_t> const& have)
-{
-    auto const pieceLength = std::int64_t(layout.piece_length());
-    auto const start = layout.file_offset(index);
-    auto const end = start + layout.file_size(index);
-    std::int64_t covered = 0;
-    for (auto piece = start / pieceLength; piece * pieceLength < end && piece < have.size(); ++piece)
-    {
-        if (have.get_bit(lt::piece_index_t(static_cast<int>(piece))))
-            covered += std::min(end, (piece + 1) * pieceLength) - std::max(start, piece * pieceLength);
-    }
-    return covered;
-}
 }
 
 bool Engine::State::Retryable(lt::error_code const& error)
@@ -119,12 +82,8 @@ std::vector<lt::file_index_t> Engine::State::LostData(lt::torrent_status const& 
         auto item = static_cast<std::size_t>(static_cast<int>(index));
         if (layout.pad_file_at(index))
             continue;
-        // A skipped file can hold its data in the part file, which only
-        // libtorrent reads. A complete piece wholly inside the file was
-        // written while the file was wanted, so it is still in the file:
-        // libtorrent keeps writing to a file that exists when it is skipped.
-        auto needed = item < priorities.size() && priorities[item] == lt::dont_download ?
-            InnerData(layout, index, status.pieces) : CoveredData(layout, index, status.pieces);
+        auto needed = HeldData(layout, index, status.pieces,
+            item < priorities.size() && priorities[item] == lt::dont_download);
         if (needed <= 0)
             continue;
         auto path = FullPath(Wide(status.renamed_files.file_path(layout, index, status.save_path)));
@@ -477,8 +436,10 @@ void Engine::State::ContinueLooks()
 
 void Engine::State::EndLook(std::string const& id, lt::torrent_handle const& handle, std::optional<LostFiles> lost)
 {
+    // During Exit the driver takes no event, so a look's result would leave
+    // the kept pieces unsaved; the next start looks again.
     auto found = torrents.find(id);
-    if (found == torrents.end() || found->second.look != LookPhase::Running)
+    if (found == torrents.end() || found->second.look != LookPhase::Running || IsShuttingDown())
     {
         return;
     }
@@ -501,7 +462,7 @@ void Engine::State::EndLook(std::string const& id, lt::torrent_handle const& han
     }
     // Nothing is lost, so the hold ends once libtorrent has judged the add,
     // and the check that libtorrent queued after a rejection runs.
-    if (lost && torrent.kept && !torrent.control.AwaitsReload() &&
+    if (lost && lost->empty() && torrent.kept && !torrent.control.AwaitsReload() &&
         torrent.status.state != lt::torrent_status::checking_resume_data)
     {
         torrent.kept.reset();
@@ -917,6 +878,7 @@ void Engine::State::SaveQuestions()
     {
         std::vector<std::string> ids;
         std::map<std::string, Facts::Lost> found;
+        std::map<std::string, Facts::Found> back;
         for (auto const& [id, job] : pending)
         {
             auto entry = torrents.find(id);
@@ -944,9 +906,15 @@ void Engine::State::SaveQuestions()
             }
             ids.push_back(id);
             found.emplace(id, Facts::Lost{torrent.control.Lost(), std::move(chosen), finished});
+            // Files that a search found back in their place leave the
+            // question; the rebuild gives their pieces back.
+            back.emplace(id, Facts::Found{{torrent.returned.begin(), torrent.returned.end()}});
         }
-        CommitFacts(ids, [found](std::string const& id, Facts& facts) { facts.Revise(found.at(id)); },
-            [this, pending, fail](Outcome outcome, auto const&)
+        CommitFacts(ids, [found, back](std::string const& id, Facts& facts)
+        {
+            facts.Revise(back.at(id));
+            facts.Revise(found.at(id));
+        }, [this, pending, fail](Outcome outcome, auto const&)
         {
             if (outcome.error)
             {
@@ -962,9 +930,14 @@ void Engine::State::SaveQuestions()
                 // A removed torrent is not added again; its removal ends the
                 // handle, so the reload has nothing left to do.
                 if (!torrents.contains(id))
+                {
                     Steer(*torrent, Control::Reloaded{job});
-                else
-                    Rebuild(*torrent, job);
+                    continue;
+                }
+                // The files that joined the question may have moved.
+                if (!torrent->control.Lost().empty())
+                    Request(torrent->search);
+                Rebuild(*torrent, job);
             }
         });
     }))
@@ -984,7 +957,8 @@ void Engine::State::Rebuild(Torrent& torrent, std::shared_ptr<Control::Job const
     // from those the engine kept. The add uses the saved priorities, so the
     // torrent requests nothing for a lost file.
     VolumeWorker(torrent.facts.savePath).Run([this, handle, params, lost = torrent.control.Lost(), kept = torrent.kept,
-        priorities = torrent.ChosenPriorities(torrent.Metadata()), stop = exitStop.get_token()]
+        priorities = torrent.ChosenPriorities(torrent.Metadata()), returned = torrent.returned,
+        records = torrent.records, stop = exitStop.get_token()]
     {
         *params = PrepareReload(handle, stop);
         if (kept)
@@ -993,6 +967,32 @@ void Engine::State::Rebuild(Torrent& torrent, std::shared_ptr<Control::Job const
             params->verified_pieces.clear();
         }
         params->file_priorities = priorities;
+        // Files back in their place give back the pieces that they and the
+        // neighbours they share pieces with prove, so nothing is read.
+        if (!returned.empty() && params->ti)
+        {
+            std::set<lt::file_index_t> candidates(returned.begin(), returned.end());
+            for (auto const& [file, record] : records)
+            {
+                auto range = Pieces(*params->ti, file);
+                if (std::any_of(returned.begin(), returned.end(), [&](auto back)
+                {
+                    auto shared = Pieces(*params->ti, back);
+                    return range.first < shared.end && shared.first < range.end;
+                }))
+                {
+                    candidates.insert(file);
+                }
+            }
+            auto counted = Counted(*params->ti, Prove(*params, candidates, records, false));
+            if (params->have_pieces.size() < counted.size())
+                params->have_pieces.resize(counted.size(), false);
+            for (int piece = 0; piece < counted.size(); ++piece)
+            {
+                if (counted.get_bit(lt::piece_index_t(piece)))
+                    params->have_pieces.set_bit(lt::piece_index_t(piece));
+            }
+        }
         DropPieces(*params, lost);
         params->flags &= ~(lt::torrent_flags::no_verify_files | lt::torrent_flags::upload_mode);
     }, [this, id, handle, job, params](StorageOutcome outcome)
@@ -1028,6 +1028,7 @@ void Engine::State::Rebuild(Torrent& torrent, std::shared_ptr<Control::Job const
             return;
         }
         torrent->unsaved = true;
+        torrent->returned.clear();
         // The lost files download again, so none of them takes its final
         // name before it is complete.
         for (auto file : torrent->control.Lost())
