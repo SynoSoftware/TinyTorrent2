@@ -131,12 +131,14 @@ internal static class Menu
         }
 
         // A right-click on unused header space has no column to act on, so the menu starts here.
+        // Auto fit is a check box, so it keeps the menu open like the column list.
         menu.Items.Add(
             Item(
-                () => owner.Strings.FitColumns,
-                Icons.FitColumns,
+                () => owner.Strings.AutoFit,
+                () => owner.IsAutomaticFillEnabled ? Icons.Checked() : Icons.Unchecked(),
                 () => owner.CanFitColumns,
-                Close(owner.FitColumns)
+                owner.ToggleAutomaticFill,
+                () => owner.IsAutomaticFillEnabled ? owner.Strings.On : owner.Strings.Off
             )
         );
         menu.Items.Add(
@@ -145,6 +147,24 @@ internal static class Menu
                 Icons.FitWidth,
                 () => owner.CanFitColumns,
                 Close(owner.FitWidth)
+            )
+        );
+        menu.Items.Add(
+            Item(
+                () => owner.Strings.FitColumns,
+                Icons.FitColumns,
+                () => owner.CanFitColumns,
+                Close(owner.FitColumns)
+            )
+        );
+
+        // A header click only sorts or reverses, so this is the way back to natural order.
+        menu.Items.Add(
+            Item(
+                () => owner.Strings.ClearSort,
+                Icons.ClearSort,
+                () => owner.Sort is not null,
+                Close(() => owner.Sort = null)
             )
         );
 
@@ -175,7 +195,7 @@ internal static class Menu
             menu.Items.Add(
                 Item(
                     () => target.Column.DisplayName,
-                    () => target.IsVisible ? Icons.Shown() : Icons.Hidden(),
+                    () => target.IsVisible ? Icons.Checked() : Icons.Unchecked(),
                     () => !target.IsVisible || owner.CanHideColumn(target),
                     () => owner.SetColumnVisibility(target, !target.IsVisible),
                     () => target.IsVisible ? owner.Strings.ColumnShown : owner.Strings.ColumnHidden

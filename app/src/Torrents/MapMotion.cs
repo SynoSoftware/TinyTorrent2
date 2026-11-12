@@ -30,8 +30,7 @@ internal sealed class MapMotion : IDisposable
 
     /// <summary>The smallest dot size, which the legend shows before the first traffic.</summary>
     internal const long SmallestDot = 1024;
-    /// <summary>The radius of a destination's dot, in DIPs.</summary>
-    internal const float MarkerRadius = 1.5f;
+    private const float MarkerRadius = 1.5f;
     private const float HaloRadius = 4;
 
     private readonly DispatcherQueue _dispatcher;

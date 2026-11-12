@@ -20,7 +20,7 @@ namespace Syno.TableView.Tests;
 public class RealSortTests
 {
     [TestMethod]
-    public Task ARealHeaderClickRunsTheWholeSortCycle() =>
+    public Task ARealHeaderClickSortsAndTheNextReversesIt() =>
         TestHost.RunAsync(async () =>
         {
             ObservableCollection<SortRow> rows = Rows(3, 1, 2, 1);
@@ -39,7 +39,11 @@ public class RealSortTests
 
             await ClickAsync(h, 100);
 
-            CollectionAssert.AreEqual(new[] { "k0", "k1", "k2", "k3" }, ViewKeys(h.Table));
+            CollectionAssert.AreEqual(
+                new[] { "k1", "k3", "k2", "k0" },
+                ViewKeys(h.Table),
+                "a click reverses the sort and never clears it"
+            );
             CollectionAssert.AreEqual(
                 new[] { LayoutChange.Sort, LayoutChange.Sort, LayoutChange.Sort },
                 kinds
@@ -68,7 +72,7 @@ public class RealSortTests
         });
 
     [TestMethod]
-    public Task RealEnterAndSpaceOnAFocusedHeaderRunTheSameCycle() =>
+    public Task RealEnterAndSpaceOnAFocusedHeaderSortTheSameWay() =>
         TestHost.RunAsync(async () =>
         {
             ObservableCollection<SortRow> rows = Rows(3, 1, 2, 1);
@@ -94,14 +98,14 @@ public class RealSortTests
             CollectionAssert.AreEqual(
                 new[] { "k0", "k2", "k1", "k3" },
                 ViewKeys(h.Table),
-                "Space continued the cycle"
+                "Space reversed it"
             );
 
             await h.KeyAsync(VirtualKey.Space);
             await h.Table.ViewReady;
             h.Table.UpdateLayout();
 
-            CollectionAssert.AreEqual(new[] { "k0", "k1", "k2", "k3" }, ViewKeys(h.Table));
+            CollectionAssert.AreEqual(new[] { "k1", "k3", "k2", "k0" }, ViewKeys(h.Table));
         });
 
     // ------------------------------------------------------------------ helpers

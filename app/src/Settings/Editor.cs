@@ -137,6 +137,7 @@ public sealed partial class Editor : INotifyPropertyChanged
     public Schedule Schedule { get; }
     public Setting Language { get; }
     public Setting Theme { get; }
+    public Setting Backdrop { get; }
     // Settings.Apply confirms every engine setting from one snapshot, and the
     // engine sends them all, so a summary is "—" until the first snapshot and
     // reads only confirmed values after it.
@@ -824,6 +825,7 @@ public sealed partial class Editor : INotifyPropertyChanged
             new(Engine, Text, "language", SettingKind.Text, SettingsCategory.Appearance)
         );
         Theme = Add(new(Engine, Text, "theme", SettingKind.Text, SettingsCategory.Appearance));
+        Backdrop = Add(new(Engine, Text, "backdrop", SettingKind.Text, SettingsCategory.Appearance));
         IncompleteFolder = Add(
             new(Engine, Text, "incomplete_folder", SettingKind.Text, SettingsCategory.Transfers)
             {

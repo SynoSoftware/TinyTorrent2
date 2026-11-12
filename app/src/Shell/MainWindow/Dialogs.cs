@@ -331,7 +331,7 @@ public sealed partial class MainWindow
         foreach (var text in texts)
         {
             var line = new TextBlock { Text = text, TextTrimming = TextTrimming.CharacterEllipsis };
-            ToolTipService.SetToolTip(line, text);
+            Controls.Trimming.SetShowsToolTip(line, true);
             lines.Children.Add(line);
         }
         return new ScrollViewer { MaxHeight = 240, Content = lines };

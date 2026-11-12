@@ -39,6 +39,9 @@ public enum LayoutChange
     Fit,
     Visibility,
     Reset,
+
+    /// <summary>Automatic fill was switched on or off.</summary>
+    AutomaticFill,
 }
 
 /// <summary>

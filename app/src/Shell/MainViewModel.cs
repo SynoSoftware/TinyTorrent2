@@ -109,6 +109,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     internal Geolocation Geolocation { get; }
     internal int LookupLimit => Features.LookupLimit;
     public string Theme => Settings.Theme.ConfirmedText is { Length: > 0 } theme ? theme : "system";
+    public string Backdrop =>
+        Settings.Backdrop.ConfirmedText is { Length: > 0 } backdrop ? backdrop : "mica";
     public bool ShowsTitleSpeeds => Settings.ShowTitleSpeeds.IsOn;
     public bool ShowsFreeSpace =>
         IsRunning
@@ -1432,6 +1434,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             ObserveSpace();
             ObserveMemory();
             Changed(nameof(Theme));
+            Changed(nameof(Backdrop));
             Changed(nameof(ShowsExternalIp));
             Changed(nameof(ShowsTitleSpeeds));
             Changed(nameof(ShowsFreeSpace));

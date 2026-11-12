@@ -162,29 +162,46 @@ public sealed partial class Cell : Control
         }
 
         _presenter.ContentTemplate = null;
+        TextBlock fullName;
         if (Column.ShortName is { Length: > 0 } shortName)
         {
             if (_label is not Label label)
+            {
                 _label = label = new Label { VerticalAlignment = VerticalAlignment.Center };
+                label.FullName.IsTextTrimmedChanged += (_, _) =>
+                    ApplyToolTip(label, label.FullName);
+            }
             label.SetNames(Column.DisplayName, shortName);
+            fullName = label.FullName;
         }
         else
         {
             if (_label is not TextBlock label)
+            {
                 _label = label = new TextBlock
                 {
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     TextWrapping = TextWrapping.NoWrap,
                     VerticalAlignment = VerticalAlignment.Center,
                 };
+                label.IsTextTrimmedChanged += (_, _) => ApplyToolTip(label, label);
+            }
             label.Text = Column.DisplayName;
+            fullName = label;
         }
-        ToolTipService.SetToolTip(_label, Column.DisplayName);
+        ApplyToolTip(_label, fullName);
         if (!ReferenceEquals(_presenter.Content, _label))
         {
             _presenter.Content = _label;
         }
     }
+
+    /// <summary>
+    /// A tooltip that repeats the readable label adds nothing, so a generated label
+    /// offers its full DisplayName only while the header cuts that name off.
+    /// </summary>
+    private static void ApplyToolTip(FrameworkElement label, TextBlock fullName) =>
+        ToolTipService.SetToolTip(label, fullName.IsTextTrimmed ? fullName.Text : null);
 
     private sealed partial class Label : Panel
     {
@@ -201,6 +218,12 @@ public sealed partial class Cell : Control
                 Children.Add(label);
             }
         }
+
+        /// <summary>
+        /// The full name. It is arranged at the shown width even while hidden, so its
+        /// <see cref="TextBlock.IsTextTrimmed"/> is true whenever the short name shows.
+        /// </summary>
+        internal TextBlock FullName => _full;
 
         internal void SetNames(string full, string shortName)
         {

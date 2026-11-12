@@ -1,7 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
-using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Syno.TinyTorrent.Controls;
@@ -202,24 +201,6 @@ public sealed partial class MainWindow
 
     private void OnStackPointerExited(object sender, PointerRoutedEventArgs args) =>
         _stackHovered = false;
-
-    // A tooltip that repeats readable text adds nothing, so a toast line has
-    // one only while it is cut off. The tooltip follows the line's text,
-    // which can change while it stays cut off.
-    private void OnToastTextTrimmed(TextBlock sender, IsTextTrimmedChangedEventArgs args)
-    {
-        if (!sender.IsTextTrimmed)
-        {
-            ToolTipService.SetToolTip(sender, null);
-            return;
-        }
-        var tip = new ToolTip();
-        tip.SetBinding(
-            ContentControl.ContentProperty,
-            new Binding { Source = sender, Path = new PropertyPath(nameof(TextBlock.Text)) }
-        );
-        ToolTipService.SetToolTip(sender, tip);
-    }
 
     private void OnDismissStatus(InfoBar sender, object args) => Model.DismissStatus();
 

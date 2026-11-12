@@ -83,7 +83,7 @@
               Text="{x:Bind Move.SharedText, Mode=OneWay}"
               Style="{StaticResource TinyTorrentBodyTextStyle}"
               IsTextSelectionEnabled="True"
-              ToolTipService.ToolTip="{x:Bind Move.SharedText, Mode=OneWay}"
+              controls:Trimming.ShowsToolTip="True"
             />
             <CheckBox
               x:Name="IncludeShared"
@@ -121,7 +121,7 @@
                   <TextBlock
                     Grid.Column="1"
                     Text="{x:Bind Folder}"
-                    ToolTipService.ToolTip="{x:Bind Folder}"
+                    controls:Trimming.ShowsToolTip="True"
                     Style="{StaticResource TinyTorrentBodyTextStyle}"
                     FontWeight="SemiBold"
                     TextWrapping="NoWrap"
@@ -236,7 +236,7 @@
           Grid.Column="1"
           Margin="12,0,0,0"
           Text="{x:Bind Move.FolderText, Mode=OneWay}"
-          ToolTipService.ToolTip="{x:Bind Move.FolderText, Mode=OneWay}"
+          controls:Trimming.ShowsToolTip="True"
           Style="{StaticResource TinyTorrentBodyTextStyle}"
           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
           TextWrapping="NoWrap"
@@ -264,7 +264,6 @@
           AutomationProperties.LabeledBy="{x:Bind DestinationLabel}"
           IsEnabled="{x:Bind Move.CanRefresh, Mode=OneWay}"
           Text="{x:Bind Move.Destination, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-          ToolTipService.ToolTip="{x:Bind Move.Destination, Mode=OneWay}"
           FlowDirection="LeftToRight"
         />
         <controls:FieldHeader

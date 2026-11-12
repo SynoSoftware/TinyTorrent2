@@ -30,6 +30,7 @@ public sealed partial class FieldHeader : UserControl
     public FieldHeader()
     {
         InitializeComponent();
+        Trimming.SetShowsToolTip(Text, true);
         Refresh();
     }
 
@@ -66,7 +67,6 @@ public sealed partial class FieldHeader : UserControl
             new[] { Label, Error, Caution }.Where(value => value.Length > 0)
         );
         Visibility = text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
-        ToolTipService.SetToolTip(Text, text);
         AutomationProperties.SetHelpText(this, text);
         if (IsLoaded && Error.Length > 0 && ErrorRun.Text != previousError)
             FrameworkElementAutomationPeer

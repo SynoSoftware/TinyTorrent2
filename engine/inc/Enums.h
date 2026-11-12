@@ -628,6 +628,13 @@ enum class Theme
     Dark
 };
 
+enum class Backdrop
+{
+    Acrylic,
+    Mica,
+    Solid
+};
+
 enum class Layout
 {
     Keep,

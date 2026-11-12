@@ -196,6 +196,8 @@ public:
         int fileLimit = 40;
         // The window, the splash and the popup follow the theme.
         Theme theme = Theme::System;
+        // Only the window's background follows it; the popup keeps its own acrylic.
+        Backdrop backdrop = Backdrop::Mica;
         bool mapsPorts = true;
         int listenPort = 6881;
         std::string networkAdapter;

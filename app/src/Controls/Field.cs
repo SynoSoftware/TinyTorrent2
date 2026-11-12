@@ -48,6 +48,10 @@ public sealed partial class Field : ContentControl
     {
         base.OnApplyTemplate();
         _label = GetTemplateChild("PART_Label") as TextBlock;
+        if (_label is { } label)
+        {
+            Trimming.SetShowsToolTip(label, Trimming.GetShowsToolTip(this));
+        }
         _zeros = null;
         _dimmed = false;
         RefreshZeros();

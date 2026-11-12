@@ -175,7 +175,7 @@ public sealed partial class Strip : Control
             return;
         }
 
-        // Section 9 and 12: primary activation on the active passive header runs the sort cycle.
+        // Section 9 and 12: primary activation on the active passive header sorts by its column.
         // A key pressed inside a control the host put in a header template is that control's.
         if (e.Key is VirtualKey.Enter or VirtualKey.Space)
         {
@@ -735,7 +735,7 @@ public sealed partial class Strip : Control
             : cell.TransformToVisual(this).TransformPoint(new Point(0, cell.ActualHeight));
 
     /// <summary>
-    /// Run section 9's sort cycle for the passive header this input came from.
+    /// Run section 9's header sort for the passive header this input came from.
     /// </summary>
     /// <returns>False when the input was not on a passive header of a sortable column.</returns>
     private bool ActivateSortFrom(DependencyObject? source)

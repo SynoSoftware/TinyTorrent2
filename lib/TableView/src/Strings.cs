@@ -62,6 +62,10 @@ public sealed class Strings
 
     internal string FitWidth => Get("column_menu", "fit_width");
 
+    internal string AutoFit => Get("column_menu", "auto_fit");
+
+    internal string ClearSort => Get("column_menu", "clear_sort");
+
     internal string MoveLeft => Get("column_menu", "move_left");
 
     internal string MoveRight => Get("column_menu", "move_right");
@@ -82,11 +86,16 @@ public sealed class Strings
 
     internal string BrowseOrder => Get("row_drag", "browse");
 
-    // Section 19: the column list draws its state as an icon rather than as a toggle's own check,
-    // so the state has to be said rather than left to the toggle pattern to report.
+    // Section 19: the column list and the automatic fill switch draw their state as an icon rather
+    // than as a toggle's own check, so the state has to be said rather than left to the toggle
+    // pattern to report.
     internal string ColumnShown => Get("column_menu", "shown");
 
     internal string ColumnHidden => Get("column_menu", "hidden");
+
+    internal string On => Get("column_menu", "on");
+
+    internal string Off => Get("column_menu", "off");
 
     private string Get(string group, string key) =>
         _text.TryGetValue(group, out var messages) && messages.TryGetValue(key, out var text)

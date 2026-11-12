@@ -15,10 +15,14 @@
     "fit": "Fit column “{0}”",
     "fit_columns": "Fit columns",
     "fit_width": "Fit width",
+    "auto_fit": "Auto fit",
+    "clear_sort": "Clear sort",
     "move_left": "Move left",
     "move_right": "Move right",
     "shown": "Shown",
-    "hidden": "Hidden"
+    "hidden": "Hidden",
+    "on": "On",
+    "off": "Off"
   },
   "row_drag": {
     "before_row": "Insert before {0}",

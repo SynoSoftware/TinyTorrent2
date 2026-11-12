@@ -3,6 +3,7 @@
   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   xmlns:icons="using:Syno"
+  xmlns:controls="using:Syno.TinyTorrent.Controls"
 >
   <UserControl.Resources>
     <x:Double x:Key="RadioButtonsColumnSpacing">8</x:Double>
@@ -111,7 +112,6 @@
     <RadioButton
       x:Name="SystemTheme"
       AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'system_theme'), Mode=OneWay}"
-      ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'system_theme'), Mode=OneWay}"
       Tag="system"
       Style="{StaticResource SettingsThemeTileStyle}"
     >
@@ -128,13 +128,13 @@
           Text="{x:Bind Model.Text.Get('settings', 'system_theme'), Mode=OneWay}"
           Margin="6,8,28,6"
           TextTrimming="CharacterEllipsis"
+          controls:Trimming.ShowsToolTip="True"
         />
       </StackPanel>
     </RadioButton>
     <RadioButton
       x:Name="LightTheme"
       AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'light_theme'), Mode=OneWay}"
-      ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'light_theme'), Mode=OneWay}"
       Tag="light"
       Style="{StaticResource SettingsThemeTileStyle}"
     >
@@ -146,13 +146,13 @@
           Text="{x:Bind Model.Text.Get('settings', 'light_theme'), Mode=OneWay}"
           Margin="6,8,28,6"
           TextTrimming="CharacterEllipsis"
+          controls:Trimming.ShowsToolTip="True"
         />
       </StackPanel>
     </RadioButton>
     <RadioButton
       x:Name="DarkTheme"
       AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'dark_theme'), Mode=OneWay}"
-      ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'dark_theme'), Mode=OneWay}"
       Tag="dark"
       Style="{StaticResource SettingsThemeTileStyle}"
     >
@@ -164,6 +164,7 @@
           Text="{x:Bind Model.Text.Get('settings', 'dark_theme'), Mode=OneWay}"
           Margin="6,8,28,6"
           TextTrimming="CharacterEllipsis"
+          controls:Trimming.ShowsToolTip="True"
         />
       </StackPanel>
     </RadioButton>

@@ -287,6 +287,29 @@ public sealed partial class InspectorPane
 
     private void OnPeerSize(object sender, SizeChangedEventArgs args) => ArrangePeers(fit: true);
 
+    // A cell's tooltip reads its row as MainWindow.OnStatusTip explains.
+    private void OnPeerDownTip(FrameworkElement sender, object args) =>
+        ((ToolTip)sender).Content = (sender.DataContext as Peer)?.DownloadHint;
+
+    private void OnPeerUpTip(FrameworkElement sender, object args) =>
+        ((ToolTip)sender).Content = (sender.DataContext as Peer)?.UploadHint;
+
+    private void OnPeerStateTip(FrameworkElement sender, object args) =>
+        ((ToolTip)sender).Content = (sender.DataContext as Peer)?.StateHint;
+
+    // A known client needs no explanation, so its tooltip still opens but draws
+    // nothing. Loading runs in the layout before the first frame of each open, so
+    // the opacity applies from that frame; a collapsed ToolTip would skip Loading.
+    private void OnPeerClientTip(FrameworkElement sender, object args)
+    {
+        var tip = (ToolTip)sender;
+        tip.Content = (sender.DataContext as Peer)?.UnknownClientHint;
+        tip.Opacity = tip.Content is null ? 0 : 1;
+    }
+
+    private void OnPeerConnectionTip(FrameworkElement sender, object args) =>
+        ((ToolTip)sender).Content = (sender.DataContext as Peer)?.ConnectionHint;
+
     private void ArrangePeers(bool fit = false)
     {
         if (PeerContent is null || _arrangingPeers)

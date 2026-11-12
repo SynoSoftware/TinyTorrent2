@@ -141,7 +141,7 @@ integrate.
    does not require a data-grid, drag, or command-adapter package.
 7. **Pay only for enabled behavior.** Marquee selection and row reordering do
    no work when disabled or idle. Fit measurement happens only for a fit
-   command or a fill after showing or resizing the table (section 10).
+   command or an automatic fill at the times section 10 lists.
 8. **One local view projection.** Header sort operates on one private view, so
    selection, layout, and visible order have a single authority.
 9. **Be a Windows control, not a visual subsystem.** The control uses the
@@ -445,7 +445,7 @@ are immutable snapshots:
 | `ItemInvoked` | `Item`, ordered `SelectedItems` after normal input selection processing |
 | `ItemContextRequested` | `Item`, ordered `SelectedItems`, realized row `FrameworkElement Target`, nullable `Point Position` relative to it (`null` for a keyboard invocation) |
 | `ReorderRequested` | ascending numbered-order `Items`, nullable `Before` item, never one of `Items` |
-| `LayoutChanged` | one `LayoutChange`: `Sort`, `Move`, `Resize`, `Fit`, `Visibility`, or `Reset` |
+| `LayoutChanged` | one `LayoutChange`: `Sort`, `Move`, `Resize`, `Fit`, `Visibility`, `Reset`, or `AutomaticFill` |
 | `RealizedItemsChanged` | the new `RealizedItems`, in view order |
 
 `LayoutChanged` carries the change kind and nothing else. A host that wants the
@@ -1044,7 +1044,9 @@ host chooses the supported allocation and any page-level minimum size.
 
 Text overflow is intentional. A generated textual header keeps a stable
 one-line header treatment, trims its visible label when necessary, and exposes
-the full localized DisplayName through its native accessible name and tooltip.
+the full localized DisplayName through its native accessible name. It shows the
+name in a tooltip only while the label is trimmed or shows `ShortName`, because a
+tooltip that repeats the readable label adds nothing.
 A host header or cell template deliberately chooses wrapping, trimming, or
 clipping for its content and declares a sufficient MinWidth for direct resizing.
 For a control or essential value that fills must keep whole, the host sets
@@ -1110,15 +1112,24 @@ flyout surfaces, or visual recipes in XAML.
 Header passive-surface primary activation behavior:
 
 1. an unsorted sortable column becomes ascending;
-2. ascending becomes descending;
-3. descending returns to natural/source order.
+2. the sorted column reverses its direction.
 
 Mouse/pen click or touch tap on a passive header that does not become another
-gesture uses this cycle. A non-sortable header has no sort action.
+gesture does this. A non-sortable header has no sort action. A click never
+returns to natural/source order, because a click that sometimes sorts and
+sometimes unsorts makes the person count clicks. **Clear sort** in the header
+menu (section 12) does that.
 
-Only one column is sorted at a time. The active header shows direction using a
-native, theme-aware glyph when spare header space permits, and always exposes
-the state through UI Automation. Each
+Only one column is sorted at a time. The sorted header always shows its
+direction with a native, theme-aware arrow, and always exposes the state through
+UI Automation. The arrow is the only sign that a click sorted when every value
+in the column is equal, so it never hides. It takes room of its own: a fit of
+the sorted column includes it, so while automatic fill is on, the fill after a
+sort command gives the arrow room beside the whole label. While automatic fill
+is off the table changes no width by itself (section 10), so a column narrower
+than its label and the arrow shows the label's short form, and cuts the label
+only when even that does not fit; a fit command makes room. An unsorted header
+reserves no room for an arrow. Each
 passive header participates in the header strip's composite focus model;
 primary keyboard activation (Enter or Space) sorts only when that column is
 sortable.
@@ -1266,9 +1277,41 @@ the width a column has before the first fill.
 Resizing, fitting and filling change only that instance's widths. Destroying it
 discards those widths; another instance starts with a fresh fill.
 
-Every table fills its width when shown and when its available
-width changes. This includes opening a previously hidden tab, resizing the
-window, and moving a splitter, so every table uses the space it actually has.
+While automatic fill is on, which it is by default, every table fills its width
+at these times:
+
+- when it is shown and when its available width changes. This includes opening
+  a previously hidden tab, resizing the window, and moving a splitter, so every
+  table uses the space it actually has;
+- when a sort command shows its first order: a header click, the keyboard or
+  menu sort, or the host assigning `Sort` or a `Layout` with a different sort.
+  The fill measures the newly ordered rows in the layout that shows them, so
+  the person sees one change rather than a new order and then a jump. In
+  external sort mode it measures the rows on screen when the command applies,
+  because the table cannot tell which later source carries the host's order;
+- when the first rows arrive after a fill that found none, as in a table shown
+  before its rows. One fill runs, in the layout that shows those rows;
+- when it shows a different list (section 5.3), as the inspector's peers table
+  does for each torrent the person selects. This fill runs after the frame that
+  shows the new rows, not in their layout. A host switches lists at each click
+  of a selection, and a fill measures every cell on screen at its natural width
+  and then lays the rows out again. In the layout that shows the rows it made
+  every click wait for that work: the median click took 48 to 85 ms instead of
+  21 ms on 11 November 2026. WinUI measures elements only on the UI thread, so
+  the fill cannot move to another thread. The person sees the new rows at once
+  with the old widths, and the new widths in the next frame. A newer list that
+  arrives before the fill runs takes its place.
+
+A sort command, such rows and a different list replace what the screen shows,
+so a fill then moves nothing the person did not already change. Without it, a
+table fitted before its rows arrived, or to the rows another order or list
+showed, keeps widths that are wrong for what is on screen: values cut off beside
+wide, empty columns. Row inserts and removals, value updates, the re-sorts of a
+sort already in force, scrolling, filtering and assigning `Layout` do not fill,
+because a fill then moves the columns while the person reads them or aims at a
+header. A fit leaves out a container that still shows the old list's row while
+it waits for its new one.
+
 The table owns these triggers; hosts do not duplicate the calls. It waits for
 a completed visible layout, including visible ancestors, then runs the same
 bounded fit and scale as `FitWidth()`. During a burst of width changes, the first
@@ -1281,8 +1324,16 @@ without tracking host gestures. Explicit fit commands always measure. Hidden
 tables defer this work until shown.
 Several size or visibility notifications before that layout produce one fill.
 Automatic fills raise no `LayoutChanged`, because width changes must not trigger
-saved-layout writes. Assigning `Layout`, data arrival, property updates, sorting,
-filtering, and scrolling do not trigger a fill.
+saved-layout writes.
+
+Automatic fill can be switched off, because each fill replaces the widths a
+person set by hand. The switch is **Auto fit** in the header menu
+(section 12) and part of the saved `ColumnLayout` (section 18). While it is off
+the table fills at none of the times above; widths change only by direct
+resizing and the explicit fit commands. Turning it on fills at once, because the
+person who asked for fitted columns is looking at them. Switching it raises
+`LayoutChanged` with `AutomaticFill`, so the host saves it with the rest of the
+layout.
 
 A completed direct resize or an explicit fit creates a live width override.
 It wins over the baseline until another override, automatic fill, or `ResetLayout()`
@@ -1298,9 +1349,8 @@ a competing direct-touch resize recognizer to a dense header.
 - the width stops only at the column's `MinWidth`;
 - Escape cancels the active drag and restores the starting width;
 - double-clicking the mouse/pen separator fits that column;
-- the header menu includes **Fit this column**, **Fit columns**, and
-  **Fit width** when applicable, and offers no
-  per-step width command;
+- the header menu includes **Fit this column**, **Auto fit**, **Fit width**
+  and **Fit columns** when applicable, and offers no per-step width command;
 - the header itself holds no command buttons: every part of it belongs to a
   column, so a button there would either take width from the columns or cover
   one. A host that wants **Fit columns** and **Fit width** visible calls
@@ -1336,11 +1386,8 @@ solely to size columns, instantiate off-screen row templates, or maintain a
 hidden measurement table. A per-column fit changes only that column; it MUST
 NOT fall back to a fit of other columns when its result is unchanged.
 For a generated header with `ShortName`, that shorter label supplies the header's
-width; row content still participates normally. Fits do not reserve space for
-a sort glyph. The active header shows its arrow only when its chosen label and
-the arrow fit within the actual column width. Spare space is considered even at
-`MinWidth`; a minimum is not a reason to hide an arrow that fits. The sort state
-and its accessibility metadata remain independent of whether the arrow fits.
+width; row content still participates normally. The sorted column's header
+width includes its arrow (section 9); no other header reserves room for one.
 
 `FitWidth()` runs the same fit as `FitColumns()` and then scales the
 visible resizable columns so the visible columns end at the table's right
@@ -1388,10 +1435,10 @@ notifications; explicit fit commands still measure content immediately. Native
 measure and arrange continue normally as column widths change.
 
 Hiding or showing a column does not discard, recompute, or fit its width.
-`ResetLayout()` discards width overrides and restores the captured
-baseline widths; it neither fits the current data nor fills the width again.
-Automatic fills create width overrides too, so a reset discards them until the
-next show or available-width change.
+`ResetLayout()` discards width overrides, restores the captured baseline widths
+and switches automatic fill back on; it neither fits the current data nor fills
+the width again. Automatic fills create width overrides too, so a reset
+discards them until the next automatic fill.
 
 ## 11. Column drag reordering
 
@@ -1445,8 +1492,11 @@ pointer actions and keyboard-accessible alternatives:
 - **Move left** and **Move right** for the active column;
 - a separator, because the items above act on the active column and the items
   below act on every column;
-- **Fit columns** and **Fit width** when at least one visible column is
-  resizable;
+- **Auto fit**, which switches automatic fill (section 10) and carries a check
+  while it is on, **Fit width**, which is `FitWidth()`, and **Fit columns**,
+  when at least one visible column is resizable;
+- **Clear sort**, which returns to natural order (section 9), disabled while no
+  column is sorted;
 - one item per declared column, hidden ones included, carrying a check when the
   column is visible.
 
@@ -1466,8 +1516,10 @@ be held open across a change while the list collapsed underneath it, and turning
 three columns on cost three trips back through the submenu. It is also what the
 reference does.
 
-**Fit column**, **Fit columns** and **Fit width** close the menu after invocation.
-Visibility and ordering items keep it open for repeated changes. Every item that
+**Fit column**, **Fit width**, **Fit columns** and **Clear sort** close the menu
+after invocation. Visibility and ordering items keep it open for repeated
+changes. **Auto fit** keeps it open too, because it is a check box: it changes a state
+rather than running a command, and only commands close the menu. Every item that
 keeps the menu open MUST re-ask its own label, icon and enabled state after each
 invocation rather than merely be correct when the menu was built: hiding a column
 can leave another as the last visible one and
@@ -1476,8 +1528,9 @@ there, and hiding the column the menu was opened on turns that item into the one
 that shows it back. No item may be left saying something that has stopped being
 true.
 
-A column entry carries its state as a checked or empty square icon rather than
-as a toggle item's own check, so hidden columns also retain an icon. A checkable
+A column entry and **Auto fit** carry their state as a checked or empty
+square icon rather than as a toggle item's own check, so hidden columns also
+retain an icon. A checkable
 menu item keeps its check in a column of its own that holds its width even while
 the check is invisible, so one standing beside items that
 carry icons gives the menu two glyph columns and indents every label past both.
@@ -1491,12 +1544,13 @@ outright, which would take the distinction from the readers who most need it;
 and section 19 does not allow colour to be the only carrier. They differ in
 scope using horizontal width arrows: one column outline for **Fit column**,
 several column outlines for **Fit columns**, and the table's outer width stops
-for **Fit width**. They contain no height or diagonal resizing arrows.
+for **Fit width**. They contain no height or
+diagonal resizing arrows.
 
 Double-clicking a mouse/pen resizer fits one column. The fit commands provide the
 keyboard and touch path for column sizing; move commands provide the equivalent
 path for column order. Sort is available from the active passive header: Enter or
-Space follows section 9's sort cycle. The column entries use each column's
+Space sorts as a click does (section 9). The column entries use each column's
 localized `DisplayName`, and the commands that name a column place that name into
 a sentence their translation owns; every other label is localized by
 `Table`'s own `en.json`. They are not host-overridable configuration. Catalogue
@@ -1840,7 +1894,8 @@ public sealed record ColumnLayout(
     IReadOnlyList<string> Order,
     IReadOnlyDictionary<string, bool> VisibilityOverrides,
     string? SortColumnId,
-    SortDirection SortDirection);
+    SortDirection SortDirection,
+    bool IsAutomaticFillEnabled = true);
 ```
 
 The snapshot is read and written through one property, `Table.Layout`.
@@ -1867,10 +1922,13 @@ Persist:
 
 - full column order, including hidden columns;
 - visibility overrides;
-- active sort column and direction.
+- active sort column and direction;
+- whether automatic fill is on (section 10).
 
 Older stored width fields are ignored when reading the snapshot. They cannot
-override a new table's initial fill or a live table's current widths.
+override a new table's initial fill or a live table's current widths. A
+snapshot saved before `IsAutomaticFillEnabled` existed restores it as on, its
+default, so an update leaves every saved table filling as it did before.
 
 Do not persist in the layout snapshot:
 
@@ -1897,8 +1955,8 @@ Applying saved state MUST be defensive:
 
 Each read of `Layout` is an independent snapshot that the table does not mutate
 afterwards. `LayoutChanged` is raised once after each completed effective sort,
-column move, resize, fit, visibility, or reset operation, including public
-fit/reset calls, and carries only which of those it was. It is not raised by
+column move, resize, fit, visibility, reset, or automatic fill switch, including
+public fit/reset calls, and carries only which of those it was. It is not raised by
 initial setup, automatic fills, or assigning `Layout`; this prevents restore-and-persist loops.
 Initial baseline widths never force persistence. A host that persists layout
 reads `Layout` from its `LayoutChanged` handler, debounces, and writes that
@@ -2026,9 +2084,11 @@ throughput target.
   would tell them it was measured and found unnecessary. The diagnostics carry
   that measurement.
 - Column layout changes affect only headers and realized rows.
-- Source updates, property updates, sorting, and scrolling MUST NOT measure
-  content or change widths. Showing a table or changing its available width
-  schedules one bounded fill after layout, without realizing rows for measurement.
+- Source updates, property updates, the re-sorts of a sort already in force,
+  and scrolling MUST NOT measure content or change widths. While automatic fill
+  is on, showing a table, changing its available width, a sort command and rows
+  that replace the screen schedule one bounded fill after layout (section 10),
+  without realizing rows for measurement.
 - Active sorting is `O(n log n)` and occurs only on source, sort, or explicit
   `RefreshView()` changes.
 - Explicit fit commands measure only the header, visible rows, and one
@@ -2054,15 +2114,16 @@ host integration, with validation scope set by [testing](../../../docs/agents/te
    scrolling or direct column-layout gestures.
 3. A view-affecting batch followed by one `RefreshView()` applies interactivity
    and sort without re-enumerating a plain source.
-4. Header mouse/pen click, touch tap, and keyboard activation cycle ascending,
-   descending, and natural stable order without interfering with embedded
-   controls. Equal values use current source order, and clearing or resetting
-   sort returns to natural order.
+4. Header mouse/pen click, touch tap, and keyboard activation sort ascending
+   and then reverse the direction, without interfering with embedded controls.
+   Equal values use current source order, and **Clear sort** or a reset returns
+   to natural order. The sorted header always shows its arrow beside its label.
 5. Mouse/pen column drag and touch/keyboard header commands produce the same
    order; the header menu respects hide, visibility, fit, resize, and move
    eligibility and never leaves zero visible columns.
-6. Widths remain stable across data updates and scrolling; showing the table or
-   changing its available width fills it after visible layout.
+6. Widths remain stable across row updates, live re-sorts and scrolling; while
+   automatic fill is on, showing the table, changing its available width, a sort
+   command and rows that replace the screen fill it after visible layout.
    Direct resize, bounded fit, hide/show, reset, and save/reload preserve their
    specified baseline/override behavior without off-screen measurement.
 7. `None`, `Single`, `Multiple`, and `Extended` selection limits work with
@@ -2079,7 +2140,8 @@ host integration, with validation scope set by [testing](../../../docs/agents/te
     item or null to append. Null-position selections can browse without moving.
 11. Loading, empty, no-results, and refresh-with-existing-rows follow
     the stated precedence.
-12. Saved layout restores valid order, visibility, and sort; obsolete
+12. Saved layout restores valid order, visibility, sort, and the automatic
+    fill switch; obsolete
     values recover defensively to a usable natural/sorted layout. Applying it
     before or after `Loaded` is silent and never mutates source or baseline
     definitions.

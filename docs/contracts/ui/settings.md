@@ -16,7 +16,7 @@ libtorrent's default sparse files.
 
 **Owner ruling: the Settings page background is the window's acrylic with two
 translucent gear marks.** The page sets no background of its own, so the
-window's acrylic shows between and around the cards. Two large Segoe Cog glyphs
+window's background, acrylic by default, shows between and around the cards. Two large Segoe Cog glyphs
 in the accent colour overhang the top-left and bottom-right corners behind the
 content, at 4% opacity in the light theme and 3% in the dark theme, and hidden
 in High Contrast. They take no input and screen readers skip them. This is the
@@ -257,8 +257,12 @@ them when space permits.
 
 Appearance uses one responsive three-column native radio group for System,
 Light and Dark. All previews share a compact 21:9 crop with 8-DIP clipped
-corners; System splits the same Light/Dark artwork. Display language remains
-a separate row below. There is no redundant theme dropdown. Free space,
+corners; System splits the same Light/Dark artwork. A Background row follows
+it, a ComboBox of Acrylic, Mica and Solid, Mica by default. Acrylic and Mica
+follow Windows and turn solid while the window is not active, which some people
+find distracting; Solid looks the same in both states. Its help line says so,
+because a person cannot tell it from the names. The engine's popup keeps its own
+acrylic. Display language remains a separate row below. There is no redundant theme dropdown. Free space,
 external IP, memory usage and title-bar speeds use four directly accessible
 switch cards. The external-IP and memory-usage cards follow Advanced mode;
 hiding one keeps its saved value and removes its whole card from the layout.
@@ -358,7 +362,12 @@ Announce phase changes through the window's existing accessibility path, not
 each countdown tick. Measurements populate the proposal; only Apply changes
 settings. An information button beside the test heading opens a native flyout
 with the provider, traffic cost, route details and privacy link, keeping these
-details available without permanent extra lines in the form.
+details available without permanent extra lines in the form. Each fact has a
+bold label and its value beside it: provider, Quick and Longer durations, data
+use, method, result and privacy, then the privacy link. Each fact appears once.
+The values wrap inside the flyout, because WinUI's flyout is at most 456 DIPs
+wide and scrolls wider content out of view, so a trimmed or wider line hides
+part of a fact the person opened the flyout to read.
 
 ## Preferences and advanced mode
 

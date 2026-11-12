@@ -212,7 +212,7 @@ public class SortingTests
         });
 
     [TestMethod]
-    public Task Section9_TheCycleIsAscendingThenDescendingThenNaturalOrder() =>
+    public Task Section9_AClickSortsAscendingAndTheNextReversesIt() =>
         TestHost.RunAsync(async () =>
         {
             SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2, 1, 3, 2 });
@@ -225,9 +225,9 @@ public class SortingTests
 
             await h.Activate(0);
             CollectionAssert.AreEqual(
-                new[] { "k0", "k1", "k2", "k3", "k4", "k5" },
+                new[] { "k1", "k3", "k2", "k5", "k0", "k4" },
                 h.ViewKeys(),
-                "natural order returns"
+                "a click reverses the sort and never clears it"
             );
         });
 
@@ -249,7 +249,7 @@ public class SortingTests
         });
 
     [TestMethod]
-    public Task Section9_ASecondColumnStartsItsOwnCycleAtAscending() =>
+    public Task Section9_ASecondColumnStartsAtAscending() =>
         TestHost.RunAsync(async () =>
         {
             SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2 }, sortableColumns: 2);
@@ -316,7 +316,7 @@ public class SortingTests
             await h.Activate(0);
 
             Assert.AreEqual(3, raised.Count);
-            Assert.IsNull(h.Table.Layout.SortColumnId, "the cycle ended in natural order");
+            Assert.AreEqual("a", h.Table.Layout.SortColumnId, "a click never clears the sort");
         });
 
     // ------------------------------------------------------------------ persistence
@@ -692,7 +692,9 @@ public class SortingTests
                 "the status tells the directions apart"
             );
 
-            await h.Activate(0);
+            // What Clear sort in the header menu sets.
+            h.Table.Sort = null;
+            await h.Table.ViewReady;
             h.Table.UpdateLayout();
 
             Assert.AreEqual(Visibility.Collapsed, h.Glyph(0).Visibility);
@@ -984,7 +986,7 @@ internal sealed class SortHarness
         return new SortHarness(table, rows, SelectionHarness.Descendant<Header.Strip>(table)!);
     }
 
-    /// <summary>Run the header's sort cycle for the header at this visible index.</summary>
+    /// <summary>Run the header's sort for the header at this visible index.</summary>
     internal async Task Activate(int visibleIndex)
     {
         MethodInfo method = typeof(Header.Strip).GetMethod(

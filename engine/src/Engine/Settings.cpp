@@ -191,6 +191,8 @@ constexpr std::pair<std::string_view, SeedRule> seedRules[] = {
     {"any", SeedRule::Any}, {"all", SeedRule::All}};
 constexpr std::pair<std::string_view, Theme> themes[] = {
     {"system", Theme::System}, {"light", Theme::Light}, {"dark", Theme::Dark}};
+constexpr std::pair<std::string_view, Backdrop> backdrops[] = {
+    {"acrylic", Backdrop::Acrylic}, {"mica", Backdrop::Mica}, {"solid", Backdrop::Solid}};
 constexpr std::pair<std::string_view, TaskAnswer> taskAnswers[] = {
     {"ask", TaskAnswer::Ask}, {"continue", TaskAnswer::Continue}, {"abandon", TaskAnswer::Abandon}};
 
@@ -364,6 +366,7 @@ void Engine::State::Settings::Fields(Self& settings, Visit&& visit)
     visit("file_pool_size", settings.fileLimit, Range{1, 10000});
     visit(setting::language, settings.language, Text{.valid = isLanguage});
     visit("theme", settings.theme, Words{themes});
+    visit("backdrop", settings.backdrop, Words{backdrops});
     visit("port_mapping", settings.mapsPorts, Bool{});
     visit("listen_port", settings.listenPort, Range{1, 65535});
     visit("active_downloads", settings.activeDownloads, Limit{0, INT_MAX});

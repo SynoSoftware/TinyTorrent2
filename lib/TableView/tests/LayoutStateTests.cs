@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Syno.TableView.Tests;
@@ -123,6 +124,20 @@ public class LayoutStateTests
                 "guarantee at least one visible column"
             );
         });
+
+    /// <summary>
+    /// A layout saved before automatic fill could be switched off restores it as on, the
+    /// record's default, not as false, the default of a missing boolean.
+    /// </summary>
+    [TestMethod]
+    public void Section18_ALayoutSavedBeforeTheFillSwitchRestoresItOn()
+    {
+        ColumnLayout saved = JsonSerializer.Deserialize<ColumnLayout>(
+            """{"Order":["a"],"VisibilityOverrides":{},"SortColumnId":null,"SortDirection":0}"""
+        )!;
+
+        Assert.IsTrue(saved.IsAutomaticFillEnabled);
+    }
 
     // ------------------------------------------------------------ event rule
 

@@ -44,15 +44,17 @@ internal static class Icons
     internal static IconElement ShowColumn() => Glyph(Segoe.Eye);
 
     /// <summary>
-    /// A shown column, drawn in the icon slot rather than by a toggle's own check. A
-    /// <c>ToggleMenuFlyoutItem</c> keeps its check in a column of its own that holds its width
-    /// even while the check is invisible, so one in a menu beside items carrying icons produces
-    /// two glyph columns and indents every row past both. A <c>MenuFlyoutItem</c> has the icon
-    /// column only.
+    /// A shown column or a switch that is on, drawn in the icon slot rather than by a toggle's own
+    /// check. A <c>ToggleMenuFlyoutItem</c> keeps its check in a column of its own that holds its
+    /// width even while the check is invisible, so one in a menu beside items carrying icons
+    /// produces two glyph columns and indents every row past both. A <c>MenuFlyoutItem</c> has the
+    /// icon column only.
     /// </summary>
-    internal static IconElement Shown() => Glyph(Segoe.SquareCheck);
+    internal static IconElement Checked() => Glyph(Segoe.SquareCheck);
 
-    internal static IconElement Hidden() => Glyph(Segoe.Square);
+    internal static IconElement Unchecked() => Glyph(Segoe.Square);
+
+    internal static IconElement ClearSort() => Glyph(Segoe.Eraser);
 
     internal static IconElement MoveLeft() => Glyph(Segoe.ArrowLeft);
 

@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.Windows.Storage.Pickers;
 using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Settings;
@@ -424,6 +425,20 @@ public sealed partial class MainWindow : Window
             command.Execute(null);
     }
 
+    // A table cell's tooltip reads its text from the cell's row when it opens, not
+    // each time the row updates. WinUI copies the cell's DataContext into the
+    // ToolTip registered on it, and raises Loading before it measures the ToolTip
+    // at each open. The text then stays as it opened, as a Windows tooltip does. A
+    // vacant cell has no row. The peers table's cells in InspectorPane do the same.
+    private void OnStatusTip(FrameworkElement sender, object args) =>
+        ((ToolTip)sender).Content = (sender.DataContext as Torrent)?.StatusTip;
+
+    private void OnAddedTip(FrameworkElement sender, object args) =>
+        ((ToolTip)sender).Content = (sender.DataContext as Torrent)?.AddedTip;
+
+    private void OnCompletedOnTip(FrameworkElement sender, object args) =>
+        ((ToolTip)sender).Content = (sender.DataContext as Torrent)?.CompletedOnTip;
+
     private void OnModelChanged(object? sender, PropertyChangedEventArgs args)
     {
         if (
@@ -481,6 +496,11 @@ public sealed partial class MainWindow : Window
             };
         if (
             string.IsNullOrEmpty(args.PropertyName)
+            || args.PropertyName == nameof(MainViewModel.Backdrop)
+        )
+            ApplyBackdrop();
+        if (
+            string.IsNullOrEmpty(args.PropertyName)
             || args.PropertyName == nameof(MainViewModel.IsLoading)
         )
             Torrents.Placeholder = Model.IsLoading
@@ -520,6 +540,23 @@ public sealed partial class MainWindow : Window
         if (_maps?.All != maps.All)
             ((RelayCommand)AllMap).Refresh();
         _maps = maps;
+    }
+
+    // Keeps the current backdrop while the choice stays, because the model's
+    // notices that name no property also reach this.
+    private void ApplyBackdrop()
+    {
+        SolidBackground.Visibility = Model.Backdrop == "solid" ? Visibility.Visible : Visibility.Collapsed;
+        SystemBackdrop? backdrop = Model.Backdrop switch
+        {
+            "acrylic" => SystemBackdrop as DesktopAcrylicBackdrop ?? new DesktopAcrylicBackdrop(),
+            "solid" => null,
+            _ => SystemBackdrop as MicaBackdrop ?? new MicaBackdrop(),
+        };
+        if (!ReferenceEquals(backdrop, SystemBackdrop))
+        {
+            SystemBackdrop = backdrop;
+        }
     }
 
     private void OnLoaded(object sender, RoutedEventArgs args)

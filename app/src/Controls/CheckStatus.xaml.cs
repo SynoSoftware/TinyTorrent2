@@ -18,6 +18,5 @@ public sealed partial class CheckStatus : UserControl
             !checking && succeeded == false ? Visibility.Visible : Visibility.Collapsed;
         Message.Text = message;
         AutomationProperties.SetHelpText(Message, tip);
-        ToolTipService.SetToolTip(Root, tip);
     }
 }

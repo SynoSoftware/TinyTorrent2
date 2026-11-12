@@ -50,6 +50,7 @@
       Style="{StaticResource TinyTorrentBodyTextStyle}"
       VerticalAlignment="Center"
       TextTrimming="CharacterEllipsis"
+      controls:Trimming.ShowsToolTip="True"
       AutomationProperties.LiveSetting="Polite"
     />
   </Grid>

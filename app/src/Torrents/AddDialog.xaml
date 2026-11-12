@@ -42,7 +42,7 @@
         <TextBlock
           Text="{x:Bind Model.AddDraft.Heading, Mode=OneWay}"
           Style="{StaticResource TinyTorrentSurfaceTitleTextStyle}"
-          ToolTipService.ToolTip="{x:Bind Model.AddDraft.Heading, Mode=OneWay}"
+          controls:Trimming.ShowsToolTip="True"
           AutomationProperties.HeadingLevel="Level1"
         />
         <TextBlock
@@ -127,7 +127,6 @@
                     Loaded="OnDestinationLoaded"
                     AutomationProperties.LabeledBy="{x:Bind DestinationLabel}"
                     AutomationProperties.HelpText="{x:Bind Model.AddDraft.DestinationMessage, Mode=OneWay}"
-                    ToolTipService.ToolTip="{x:Bind Model.AddDraft.Destination, Mode=OneWay}"
                   />
                   <controls:ActionButton
                     Glyph="{x:Bind icons:Segoe.FolderSearch}"
@@ -150,7 +149,6 @@
                       Orientation="Horizontal"
                       Spacing="6"
                       Visibility="{x:Bind Model.AddDraft.HasSpace, Mode=OneWay}"
-                      ToolTipService.ToolTip="{x:Bind Model.AddDraft.Space, Mode=OneWay}"
                     >
                       <FontIcon
                         Style="{StaticResource TinyTorrentStatusIconStyle}"
@@ -164,12 +162,14 @@
                           Text="{x:Bind Model.AddDraft.Space, Mode=OneWay}"
                           Style="{StaticResource TinyTorrentStatusTextStyle}"
                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                          controls:Trimming.ShowsToolTip="True"
                           Visibility="{x:Bind controls:Visibilities.Unless(Model.AddDraft.LacksSpace), Mode=OneWay}"
                         />
                         <TextBlock
                           Text="{x:Bind Model.AddDraft.Space, Mode=OneWay}"
                           Style="{StaticResource TinyTorrentStatusTextStyle}"
                           Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                          controls:Trimming.ShowsToolTip="True"
                           Visibility="{x:Bind Model.AddDraft.LacksSpace, Mode=OneWay}"
                         />
                       </Grid>
@@ -207,7 +207,7 @@
                 <TextBlock
                   Text="{x:Bind Model.AddDraft.Shared, Mode=OneWay}"
                   Style="{StaticResource TinyTorrentBodyTextStyle}"
-                  ToolTipService.ToolTip="{x:Bind Model.AddDraft.Shared, Mode=OneWay}"
+                  controls:Trimming.ShowsToolTip="True"
                   Visibility="{x:Bind Model.AddDraft.IsShared, Mode=OneWay}"
                   MaxLines="1"
                   IsTextSelectionEnabled="True"
@@ -237,11 +237,11 @@
                   IsChecked="{x:Bind Model.AddDraft.Paused, Mode=TwoWay}"
                   IsEnabled="{x:Bind Model.AddDraft.CanEdit, Mode=OneWay}"
                   AutomationProperties.Name="{x:Bind Model.Text.Get('add', 'paused'), Mode=OneWay}"
-                  ToolTipService.ToolTip="{x:Bind Model.Text.Get('add', 'paused'), Mode=OneWay}"
                 >
                   <TextBlock
                     Text="{x:Bind Model.Text.Get('add', 'paused'), Mode=OneWay}"
                     Style="{StaticResource TinyTorrentBodyTextStyle}"
+                    controls:Trimming.ShowsToolTip="True"
                   />
                 </CheckBox>
                 <CheckBox
@@ -250,11 +250,11 @@
                   IsChecked="{x:Bind Model.AddDraft.QueueTop, Mode=TwoWay}"
                   IsEnabled="{x:Bind Model.AddDraft.CanEdit, Mode=OneWay}"
                   AutomationProperties.Name="{x:Bind Model.Text.Get('add', 'queue_top'), Mode=OneWay}"
-                  ToolTipService.ToolTip="{x:Bind Model.Text.Get('add', 'queue_top'), Mode=OneWay}"
                 >
                   <TextBlock
                     Text="{x:Bind Model.Text.Get('add', 'queue_top'), Mode=OneWay}"
                     Style="{StaticResource TinyTorrentBodyTextStyle}"
+                    controls:Trimming.ShowsToolTip="True"
                   />
                 </CheckBox>
                 <CheckBox
@@ -263,11 +263,11 @@
                   IsChecked="{x:Bind Model.AddDraft.Sequential, Mode=TwoWay}"
                   IsEnabled="{x:Bind Model.AddDraft.CanEdit, Mode=OneWay}"
                   AutomationProperties.Name="{x:Bind Model.Text.Get('commands', 'sequential'), Mode=OneWay}"
-                  ToolTipService.ToolTip="{x:Bind Model.Text.Get('commands', 'sequential'), Mode=OneWay}"
                 >
                   <TextBlock
                     Text="{x:Bind Model.Text.Get('commands', 'sequential'), Mode=OneWay}"
                     Style="{StaticResource TinyTorrentBodyTextStyle}"
+                    controls:Trimming.ShowsToolTip="True"
                   />
                 </CheckBox>
                 <CheckBox
@@ -276,11 +276,11 @@
                   IsChecked="{x:Bind Model.AddDraft.FirstLast, Mode=TwoWay}"
                   IsEnabled="{x:Bind Model.AddDraft.CanEdit, Mode=OneWay}"
                   AutomationProperties.Name="{x:Bind Model.Text.Get('commands', 'first_last'), Mode=OneWay}"
-                  ToolTipService.ToolTip="{x:Bind Model.Text.Get('commands', 'first_last'), Mode=OneWay}"
                 >
                   <TextBlock
                     Text="{x:Bind Model.Text.Get('commands', 'first_last'), Mode=OneWay}"
                     Style="{StaticResource TinyTorrentBodyTextStyle}"
+                    controls:Trimming.ShowsToolTip="True"
                   />
                 </CheckBox>
               </StackPanel>

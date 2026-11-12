@@ -475,6 +475,7 @@ public sealed partial class MainWindow
                     {
                         Style = (Style)Application.Current.Resources["TinyTorrentBodyTextStyle"],
                     };
+                    Trimming.SetShowsToolTip(label, true);
                     var selector = new ComboBox
                     {
                         Tag = section.Key,
@@ -513,7 +514,6 @@ public sealed partial class MainWindow
                 var choices = (ComboBox)row.Children[2];
                 var heading = (TextBlock)row.Children[1];
                 heading.Text = Model.Text.Get("library", section.Key);
-                ToolTipService.SetToolTip(heading, heading.Text);
                 Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(choices, heading.Text);
                 var existing = choices
                     .Items.OfType<ComboBoxItem>()
@@ -559,7 +559,8 @@ public sealed partial class MainWindow
                     section.Key == "subtitles"
                         ? Model.Text.Format("library", "subtitle_filter_tip", selected.Content)
                         : selected.Content;
-                ToolTipService.SetToolTip(choices, tip);
+                // The box shows its choice; only the subtitles filter has more to say.
+                ToolTipService.SetToolTip(choices, section.Key == "subtitles" ? tip : null);
                 Microsoft.UI.Xaml.Automation.AutomationProperties.SetHelpText(
                     choices,
                     tip?.ToString() ?? string.Empty

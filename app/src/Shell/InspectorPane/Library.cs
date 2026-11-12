@@ -153,7 +153,6 @@ public sealed partial class InspectorPane
             ShowActions(_libraryMore, _libraryOpen, _libraryTorrents);
         RefreshLibraryEmpty();
         HeadingName.Text = row?.Name ?? string.Empty;
-        ToolTipService.SetToolTip(HeadingName, row?.Name ?? string.Empty);
         HeadingSize.Text = row?.Size ?? string.Empty;
         _refreshing = true;
         LibrarySections.IsEnabled = row is not null;

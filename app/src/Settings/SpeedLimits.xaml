@@ -48,7 +48,7 @@
           Text="{x:Bind Model.Text.Get('settings', 'standard_caps'), Mode=OneWay}"
           Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
           TextTrimming="CharacterEllipsis"
-          ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'standard_caps'), Mode=OneWay}"
+          controls:Trimming.ShowsToolTip="True"
         />
         <Border x:Name="StandardCard" Style="{StaticResource TinyTorrentSettingsCardStyle}">
           <StackPanel x:Name="StandardRows" />
@@ -59,7 +59,7 @@
           Text="{x:Bind Model.Text.Get('settings', 'alternative_caps'), Mode=OneWay}"
           Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
           TextTrimming="CharacterEllipsis"
-          ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'alternative_caps'), Mode=OneWay}"
+          controls:Trimming.ShowsToolTip="True"
         />
         <Border x:Name="AlternativeCard" Style="{StaticResource TinyTorrentSettingsCardStyle}">
           <StackPanel x:Name="AlternativeRows" />
@@ -89,13 +89,13 @@
             Text="{x:Bind Model.Text.Get('settings', 'connection_setup'), Mode=OneWay}"
             Style="{StaticResource TinyTorrentBodyTextStyle}"
             TextTrimming="CharacterEllipsis"
-            ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'connection_setup'), Mode=OneWay}"
+            controls:Trimming.ShowsToolTip="True"
           />
           <TextBlock
             Text="{x:Bind Model.Text.Get('settings', 'setup_hint'), Mode=OneWay}"
             Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
             TextTrimming="CharacterEllipsis"
-            ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'setup_hint'), Mode=OneWay}"
+            controls:Trimming.ShowsToolTip="True"
           />
         </StackPanel>
         <FontIcon

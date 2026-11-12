@@ -575,8 +575,9 @@ notification settings as off, as the popup's More menu does), `check_proxy` (pro
 `window_closed`, `activate_reply` (available boolean), `close_reply` (state:
 waiting/closing/cancelled), `exit_reply` (answer: confirmed/cancelled/unavailable),
 `unfinished_tasks` (action: continue/abandon), and `exit`. Activation acknowledgement lets Open wait through an
-old window's close path without losing the request. Current settings changes accept language (`en`, `es`)
-and theme (`system`, `light`, `dark`); unknown fields or values are refused. A
+old window's close path without losing the request. Current settings changes accept language (`en`, `es`),
+theme (`system`, `light`, `dark`) and the window's background (`backdrop`:
+`acrylic`, `mica`, `solid`; default `mica`); unknown fields or values are refused. A
 settings acknowledgement confirms the same durable replacement as membership.
 Settings also accept `default_destination` (absolute path), `torrent_dialog` and
 `magnet_dialog` (independent booleans, default true). Settings also accept

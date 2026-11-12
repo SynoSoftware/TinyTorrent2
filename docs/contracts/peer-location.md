@@ -190,19 +190,23 @@ arrangement and uses the larger one. `MapViewport` owns that scale calculation,
 so layout and projection agree. Combined views retain separate split proportions,
 using the same accessible Splitter as the inspector frame. Coordinates
 from the installed city database are grouped at identical positions.
-Destinations closer than the place grouping distance at the shown zoom show as
-one: one arc, one light and one set of dots, landing at the place with the most
-peers, as map applications group nearby markers at each zoom level. The map
-menu's Place grouping submenu offers None, Small, Medium and Large: 25 DIPs at
-Medium, half at Small and double at Large, saved with the peer view and
-starting at Medium. At None, only places whose points lie inside another
-place's dot, closer than the dot's 1.5-DIP radius, show as one, because two
-dots that close read as one; every other place is its own destination. Zooming in
-separates them and zooming out joins them. The distance is measured on the map
-as the default view draws it, with longitude relative to the origin's meridian
-and no wrap across the seam, because places on either side of the seam are
-drawn a map width apart. Each place joins the nearest
-landing closer than that distance or becomes a landing, so landings lie that
+Destinations of places with connections closer than the place grouping distance
+at the shown zoom show as one: one arc, one light and one set of dots, landing
+at the place with the most peers, as map applications group nearby markers at
+each zoom level. The map menu's Place grouping submenu offers None, Small, Medium
+and Large: 4 DIPs at Small, 8 at Medium and 16 at Large, saved with the peer
+view and starting at Small. At None, only places closer than 1 DIP show as one,
+because their 3-DIP dots cover each other almost entirely; every other place is
+its own destination. A place whose peers are only known draws no arc, so at
+every place grouping it shows as one only with such places closer than 1 DIP,
+and the map shows where the torrent is available, not only where it transfers.
+The two kinds never show as one with each other, and a place that gains its
+first connection or loses its last one merges again by the other distance.
+Zooming in separates them and zooming out joins them. The distance is measured
+on the map as the default view draws it, with longitude relative to the
+origin's meridian and no wrap across the seam, because places on either side of
+the seam are drawn a map width apart. Each place joins the nearest landing of
+its kind closer than that distance or becomes a landing, so landings lie that
 far apart and a line of close places does not chain into one destination. The
 merge applies to every destination: cities, estimated regions and, in
 Countries detail, countries; each country keeps its own fill. The merges change
@@ -457,7 +461,7 @@ the gesture's own response comes first. The map shows in a transparent Win2D
 and the dots over it, because the map and every table share the UI thread and
 any long work there would freeze dots drawn on it. The map itself cannot lie
 under that control: a WinUI 3 swap chain shows only the window's backdrop
-through its transparent pixels, so the backdrop's acrylic stays but anything
+through its transparent pixels, so the backdrop's material stays but anything
 drawn under it does not show. Each frame therefore starts with the colour
 of every background between the backdrop and the map, composed as XAML draws
 them, so the map matches the peers table beside it in every theme.

@@ -29,6 +29,8 @@ public class ColumnMenuTests
 
     private const string FitVisible = "Fit columns";
     private const string FitWidth = "Fit width";
+    private const string AutoFit = "Auto fit";
+    private const string ClearSort = "Clear sort";
     private const string MoveLeft = "Move left";
     private const string MoveRight = "Move right";
 
@@ -95,6 +97,34 @@ public class ColumnMenuTests
 
             CollectionAssert.AreEqual(new[] { "a", "c" }, VisibleIds(table));
             AssertReported(reported, LayoutChange.Visibility);
+
+            await InvokeAsync(table, AutoFit);
+
+            Assert.IsFalse(table.Layout.IsAutomaticFillEnabled);
+            AssertReported(reported, LayoutChange.AutomaticFill);
+            Assert.AreEqual(1, OpenPopups(table).Count, "a check box keeps the menu open");
+        });
+
+    /// <summary>
+    /// A header click only sorts or reverses, so Clear sort is the way back to natural order. It is
+    /// disabled while nothing is sorted.
+    /// </summary>
+    [TestMethod]
+    public Task ClearSortReturnsToNaturalOrder() =>
+        TestHost.RunAsync(async () =>
+        {
+            SortHarness h = await SortHarness.LoadAsync(new[] { 3, 1, 2 });
+            Assert.IsFalse(Item(Menu(h.Table, null), ClearSort).IsEnabled, "nothing is sorted");
+
+            await h.Activate(0);
+            await OpenMenuAsync(h.Table, visibleIndex: null);
+            await InvokeAsync(h.Table, ClearSort);
+            await h.Table.ViewReady;
+            h.Table.UpdateLayout();
+
+            CollectionAssert.AreEqual(new[] { "k0", "k1", "k2" }, h.ViewKeys());
+            Assert.IsNull(h.Table.Sort);
+            Assert.AreEqual(0, OpenPopups(h.Table).Count, "a command closes the menu");
         });
 
     [TestMethod]

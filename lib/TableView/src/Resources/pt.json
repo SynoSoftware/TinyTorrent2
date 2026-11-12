@@ -15,10 +15,14 @@
     "fit": "Ajustar coluna “{0}”",
     "fit_columns": "Ajustar colunas",
     "fit_width": "Ajustar à largura",
+    "auto_fit": "Ajuste automático",
+    "clear_sort": "Limpar ordem",
     "move_left": "Mover para a esquerda",
     "move_right": "Mover para a direita",
     "shown": "Visível",
-    "hidden": "Oculta"
+    "hidden": "Oculta",
+    "on": "Ativado",
+    "off": "Desativado"
   },
   "row_drag": {
     "before_row": "Inserir antes de {0}",

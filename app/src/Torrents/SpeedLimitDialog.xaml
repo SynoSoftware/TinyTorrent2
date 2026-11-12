@@ -10,7 +10,7 @@
       Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
       TextTrimming="CharacterEllipsis"
       IsTextSelectionEnabled="True"
-      ToolTipService.ToolTip="{x:Bind Model.SpeedLimit.Subject, Mode=OneWay}"
+      controls:Trimming.ShowsToolTip="True"
     />
     <TextBox
       x:Name="Download"

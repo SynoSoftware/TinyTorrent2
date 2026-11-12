@@ -63,7 +63,7 @@
                 Grid.Column="1"
                 Text="{x:Bind Model.TorrentApp, Mode=OneWay}"
                 TextTrimming="CharacterEllipsis"
-                ToolTipService.ToolTip="{x:Bind Model.TorrentApp, Mode=OneWay}"
+                controls:Trimming.ShowsToolTip="True"
                 AutomationProperties.AutomationId="TorrentApp"
               />
               <TextBlock
@@ -76,7 +76,7 @@
                 Grid.Column="1"
                 Text="{x:Bind Model.MagnetApp, Mode=OneWay}"
                 TextTrimming="CharacterEllipsis"
-                ToolTipService.ToolTip="{x:Bind Model.MagnetApp, Mode=OneWay}"
+                controls:Trimming.ShowsToolTip="True"
                 AutomationProperties.AutomationId="MagnetApp"
               />
             </Grid>
@@ -98,7 +98,7 @@
                 Grid.Column="1"
                 Text="{x:Bind Model.HandlersCaution, Mode=OneWay}"
                 TextTrimming="CharacterEllipsis"
-                ToolTipService.ToolTip="{x:Bind Model.HandlersCaution, Mode=OneWay}"
+                controls:Trimming.ShowsToolTip="True"
                 Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
               />
             </Grid>
@@ -151,7 +151,7 @@
               Grid.Column="1"
               Text="{x:Bind Model.StartupOtherMessage, Mode=OneWay}"
               TextTrimming="CharacterEllipsis"
-              ToolTipService.ToolTip="{x:Bind Model.StartupOtherMessage, Mode=OneWay}"
+              controls:Trimming.ShowsToolTip="True"
               Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
             />
           </Grid>

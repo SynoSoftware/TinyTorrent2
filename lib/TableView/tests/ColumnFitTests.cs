@@ -88,60 +88,57 @@ public class ColumnFitTests
             Assert.AreEqual(100d, TableHarness.EffectiveWidth(table, "a"), 0d);
         });
 
+    /// <summary>
+    /// The sorted column always shows its glyph, because it is the only sign that a click sorted
+    /// when every value in the column is equal. With automatic fill off the label gives way, and a
+    /// fit makes room. An unsorted header reserves nothing.
+    /// </summary>
     [TestMethod]
-    public Task SortingUsesSpareSpaceWithoutChangingAFittedWidth() =>
+    public Task TheSortedColumnAlwaysShowsItsGlyph() =>
         TestHost.RunAsync(async () =>
         {
             Column tight = Column("tight", 400);
             tight.MinWidth = 124;
-            Column spare = Column("spare", 400);
-            spare.MinWidth = 200;
-            foreach (var column in new[] { tight, spare })
+            Column other = Column("other", 400);
+            foreach (var column in new[] { tight, other })
                 column.Header = new Border { Width = 100, Height = 20 };
-            Table table = Build(tight, spare);
+            Table table = Build(tight, other);
             table.Schema<FitRow>()
                 .SortKey(tight, row => row.CellWidth)
-                .SortKey(spare, row => row.CellWidth);
+                .SortKey(other, row => row.CellWidth);
             table.ItemsSource = Rows(20, 40);
             await TableHarness.LoadAsync(table);
             await SettleAsync(table);
 
+            // A sort fills the width while automatic fill is on, and this is about the glyph.
+            table.Layout = table.Layout with { IsAutomaticFillEnabled = false };
             table.FitColumns();
+            Assert.AreEqual(124d, TableHarness.EffectiveWidth(table, "tight"), 0d);
+
             table.Sort = new Sort(tight);
             await SettleAsync(table);
-            var headers = Descendants<Header.Cell>(table).ToArray();
-            var tightHeader = headers[0];
-            var tightGlyph = Descendants<FontIcon>(tightHeader).Single();
-            Assert.AreEqual(124d, TableHarness.EffectiveWidth(table, "tight"), 0d);
-            Assert.AreEqual(0d, tightGlyph.Opacity, 0d);
-            Assert.AreEqual(0d, GlyphSpace(tightGlyph), 0d);
-            Assert.AreSame(tight, table.Sort?.Column);
-
-            TableHarness.SetWidth(table, "tight", 160);
-            await SettleAsync(table);
-            Assert.AreEqual(1d, tightGlyph.Opacity, 0d);
-            Assert.IsTrue(GlyphSpace(tightGlyph) > 0);
-            Assert.AreEqual(160d, TableHarness.EffectiveWidth(table, "tight"), 0d);
+            var tightGlyph = Descendants<FontIcon>(Descendants<Header.Cell>(table).First()).Single();
+            Assert.AreEqual(124d, TableHarness.EffectiveWidth(table, "tight"), 0d, "no width changed");
+            Assert.AreEqual(
+                tightGlyph.DesiredSize.Width,
+                GlyphSpace(tightGlyph),
+                0.001,
+                "the label gave way to the glyph"
+            );
 
             table.Fit(tight);
             await SettleAsync(table);
-            Assert.AreEqual(124d, TableHarness.EffectiveWidth(table, "tight"), 0d);
-            Assert.AreEqual(0d, tightGlyph.Opacity, 0d);
-            Assert.AreEqual(0d, GlyphSpace(tightGlyph), 0d);
-            Assert.AreSame(tight, table.Sort?.Column);
-
-            table.Sort = new Sort(spare, SortDirection.Descending);
-            await SettleAsync(table);
-            var spareHeader = headers[1];
-            var spareGlyph = Descendants<FontIcon>(spareHeader).Single();
-            Assert.AreEqual(200d, TableHarness.EffectiveWidth(table, "spare"), 0d);
-            Assert.AreEqual(1d, spareGlyph.Opacity, 0d);
-            Assert.IsTrue(GlyphSpace(spareGlyph) > 0);
-            Assert.AreEqual(Visibility.Collapsed, tightGlyph.Visibility);
+            Assert.AreEqual(
+                100 + tightGlyph.DesiredSize.Width + Inset(table),
+                TableHarness.EffectiveWidth(table, "tight"),
+                0.001,
+                "a fit makes room for the glyph beside the whole label"
+            );
 
             table.Sort = null;
             await SettleAsync(table);
-            Assert.AreEqual(0d, GlyphSpace(spareGlyph), 0d);
+            Assert.AreEqual(Visibility.Collapsed, tightGlyph.Visibility);
+            Assert.AreEqual(0d, GlyphSpace(tightGlyph), 0d, "an unsorted header reserves nothing");
         });
 
     [TestMethod]
@@ -199,43 +196,117 @@ public class ColumnFitTests
     // ------------------------------------------------------------------ the first fill
 
     /// <summary>
-    /// The table fills its width from its headers before any row arrives, and rows that
-    /// arrive afterwards resize nothing: a fit to them would move every column in front of the
-    /// person as the data came in.
+    /// A table shown before its rows fills from its headers, and its first rows fill again. Rows
+    /// that join the rows on screen resize nothing: a fit to them would move every column in
+    /// front of the person as the data came in. A different list fills after the frame that shows
+    /// it, because a host switches lists at every selection click and a fill in that frame slowed
+    /// each click.
     /// </summary>
     [TestMethod]
-    public Task ATableFillsItsWidthBeforeItsRowsAndKeepsItWhenTheyArrive() =>
+    public Task ListsThatReplaceTheScreenFillAndJoiningRowsDoNot() =>
         TestHost.RunAsync(async () =>
         {
-            Table table = Build(Column("a", 200), Column("b", 150));
-            foreach (var column in table.Columns)
+            // a cannot grow past its fit, so its width is the widest cell or header the last fill
+            // measured.
+            Column a = Column("a", 200);
+            a.CanGrow = false;
+            Column b = Column("b", 150);
+            b.CellTemplate = EmptyTemplate;
+            foreach (Column column in new[] { a, b })
                 column.Header = new Border { Width = 100, Height = 20 };
+            Table table = Build(a, b);
             Func<int> events = LayoutChanges(table);
             await TableHarness.LoadAsync(table);
             await SettleAsync(table);
 
-            Assert.AreEqual(
-                350d,
-                TableHarness.EffectiveWidth(table, "a"),
-                0d,
-                "equal headers share 700 equally"
-            );
-            Assert.AreEqual(350d, TableHarness.EffectiveWidth(table, "b"), 0d);
+            Assert.AreEqual(100 + Inset(table), TableHarness.EffectiveWidth(table, "a"), 0.001);
 
-            table.ItemsSource = Rows(20, 100);
+            List<FitRow> first = Rows(20, 300);
+            table.ItemsSource = first;
             await SettleAsync(table);
 
             Assert.AreEqual(
-                350d,
+                300 + Inset(table),
                 TableHarness.EffectiveWidth(table, "a"),
-                0d,
-                "the rows resized nothing"
+                0.001,
+                "the first rows fill"
             );
-            Assert.AreEqual(350d, TableHarness.EffectiveWidth(table, "b"), 0d);
+
+            List<FitRow> joined = Rows(1, 500);
+            joined.AddRange(first);
+            table.ItemsSource = joined;
+            await SettleAsync(table);
+
             Assert.AreEqual(
-                0,
-                events(),
-                "the fill is part of the initial layout, which reports nothing"
+                300 + Inset(table),
+                TableHarness.EffectiveWidth(table, "a"),
+                0.001,
+                "a row joining them resizes nothing"
+            );
+
+            table.ItemsSource = Rows(20, 100);
+            await table.ViewReady;
+            table.UpdateLayout();
+
+            Assert.AreEqual(
+                300 + Inset(table),
+                TableHarness.EffectiveWidth(table, "a"),
+                0.001,
+                "the layout that shows a different list does not fill"
+            );
+
+            await SettleAsync(table);
+
+            Assert.AreEqual(
+                100 + Inset(table),
+                TableHarness.EffectiveWidth(table, "a"),
+                0.001,
+                "a different list fills after its frame"
+            );
+            Assert.AreEqual(0, events(), "automatic fills report nothing");
+        });
+
+    /// <summary>
+    /// A sort command fills for the order it shows. A re-sort of live values under the same sort
+    /// does not: a fill at every update would move the columns every few seconds.
+    /// </summary>
+    [TestMethod]
+    public Task ASortFillsAndALiveReSortDoesNot() =>
+        TestHost.RunAsync(async () =>
+        {
+            Column a = Column("a", 200);
+            a.CanGrow = false;
+            Column b = Column("b", 150);
+            b.CellTemplate = EmptyTemplate;
+            Table table = Build(a, b);
+            table.Schema<FitRow>().SortKey(a, row => row.CellWidth);
+            table.SortInterval = TimeSpan.Zero;
+            List<FitRow> rows = Rows(20, 100);
+            rows[19].CellWidth = 400;
+            table.ItemsSource = rows;
+            await TableHarness.LoadAsync(table);
+            await SettleAsync(table);
+            Assert.AreEqual(100 + Inset(table), TableHarness.EffectiveWidth(table, "a"), 0.001);
+
+            table.Sort = new Sort(a, SortDirection.Descending);
+            await SettleAsync(table);
+
+            Assert.AreEqual(
+                400 + Inset(table),
+                TableHarness.EffectiveWidth(table, "a"),
+                0.001,
+                "the sort brought the wide row on screen and filled"
+            );
+
+            rows[19].CellWidth = 50;
+            table.RefreshView(new object[] { rows[19] });
+            await SettleAsync(table);
+
+            Assert.AreEqual(
+                400 + Inset(table),
+                TableHarness.EffectiveWidth(table, "a"),
+                0.001,
+                "the re-sort took the wide row away and resized nothing"
             );
         });
 
@@ -302,7 +373,8 @@ public class ColumnFitTests
             Column a = Column("a", 200);
             a.Header = new Border { Width = 400, Height = 20 };
             Table table = Build(a, Column("b", 200));
-            table.ItemsSource = Rows(20, 100);
+            List<FitRow> shown = Rows(20, 100);
+            table.ItemsSource = shown;
             await TableHarness.LoadAsync(table);
             await SettleAsync(table);
 
@@ -311,7 +383,11 @@ public class ColumnFitTests
             var timer = Proof.Field<Microsoft.UI.Dispatching.DispatcherQueueTimer>(table, "_resizeDue");
             await TableHarness.WaitUntilAsync(() => !timer.IsRunning, "the first resize to settle");
             double before = TableHarness.EffectiveWidth(table, "a");
-            table.ItemsSource = Rows(20, 600);
+
+            // They join the rows on screen; a different list would fill after its frame.
+            List<FitRow> arrived = Rows(20, 600);
+            arrived.AddRange(shown);
+            table.ItemsSource = arrived;
             await table.ViewReady;
             table.UpdateLayout();
             Assert.AreEqual(before, TableHarness.EffectiveWidth(table, "a"), 0d);

@@ -147,6 +147,12 @@ text, which shifts everything below it as the text, the language or the window
 width changes. A person scans a surface by its lines, and wrapped or empty lines
 break that scan.
 
+**Owner ruling: a tooltip never repeats the text its element shows.** A tooltip
+that carries the element's own text appears only while that text is trimmed,
+through `Trimming.ShowsToolTip` in the app; a tooltip that explains something
+the element does not show stays. A tooltip that repeats readable text tells the
+person nothing and covers what is around the pointer.
+
 Dialog bodies are the exception for prose: sentences supplied as plain strings
 wrap so consent and confirmation text remains readable. Lists of facts, labels,
 values and field errors keep one line per fact and expose their full text when
@@ -358,13 +364,14 @@ minimum usable window size. Essential actions remain reachable when content
 overflows. Do not introduce a second layout framework or a phone breakpoint into
 a desktop task.
 
-Use documented title-bar and backdrop APIs. The product window uses desktop
-acrylic as its base material, with the platform's fallback where acrylic is
-unavailable. Microsoft recommends Mica for a window's base, but the owner chose
-acrylic so that the window shows a blurred view of what is behind it.
-The caption and workspace share that same continuous acrylic surface and tint.
-The dark tint is neutral grey, with only a ten-percent overlay so the desktop
-acrylic remains visible. Neither has an independent
+Use documented title-bar and backdrop APIs. The product window uses Mica as its
+base material by default, as Microsoft recommends for a window's base, with the
+platform's fallback where Mica is unavailable. The person can choose Acrylic,
+which shows a blurred view of what is behind the window, or Solid in
+[Settings](ui/settings.md#appearance).
+The caption and workspace share that same continuous surface and tint.
+The dark tint is neutral grey, with only a ten-percent overlay so the backdrop
+remains visible. Neither has an independent
 opaque fill or a contrasting title-bar band. Native
 control states and transient surfaces keep their own necessary layering.
 Menus, flyouts, and other transient surfaces keep the platform's acrylic. A material

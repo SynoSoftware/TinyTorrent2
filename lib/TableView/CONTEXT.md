@@ -85,9 +85,11 @@ column with `CanShrink` disabled keeps at least its fitted width, and one with
 `CanGrow` disabled keeps at most its fitted width.
 _Avoid_: stretch.
 
-**Automatic fill**: the same fit and proportional scale performed after a table
-becomes visible or its available width changes. It does not publish a saved-layout
-change, because widths belong to the live table.
+**Automatic fill**: the same fit and proportional scale performed by the table
+itself after it becomes visible or its available width changes, after a sort
+command, when its first rows replace an empty screen, and after it shows a
+different list. A switch in the layout snapshot turns it off. It does not publish a
+saved-layout change, because widths belong to the live table.
 
 **Trailing space**: the part of the table to the right of the last visible
 column.
@@ -98,7 +100,7 @@ baseline after the user shows or hides a column, or after a restored layout.
 **Effective layout**: column order, visibility, widths, and sort resolved against
 the baseline and current overrides.
 
-**Layout snapshot**: a record of column and sort choices that a
+**Layout snapshot**: a record of column, sort and automatic fill choices that a
 host can retain and restore, separate from row content and selection.
 
 ### Interaction

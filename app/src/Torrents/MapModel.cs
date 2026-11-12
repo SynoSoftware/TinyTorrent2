@@ -303,7 +303,7 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
         private readonly List<int> _nextInCell = [];
         private readonly List<int> _nextMember = [];
         private readonly List<int> _lastMember = [];
-        private readonly Dictionary<(int Column, int Row), int> _cells = [];
+        private readonly Dictionary<(int Column, int Row, bool Connected), int> _cells = [];
         private readonly Dictionary<DestinationKey, Destination> _previous = [];
         internal Dictionary<string, Group> Countries { get; } = [];
         internal List<Destination> Destinations { get; } = [];
@@ -590,14 +590,16 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
             }
         }
 
-        // Shows the placements closer than Distance on the shown map as one destination. Each
-        // placement taken joins the nearest landing closer than Distance, or becomes a landing,
-        // so landings lie at least Distance apart and a line of close places cannot chain into
-        // one destination. It is measured straight on the map as drawn at the default view: the
-        // seam there is the map's left and right edges, and places on either side of it are
-        // drawn a map width apart. A grid of Distance-sized cells finds the near landings,
-        // because the places can number in the thousands. Called alone, it merges the
-        // placements of the last Arrange, so no fact, fitted scale or origin may have changed.
+        // Shows the placements closer than Distance on the shown map as one destination. The
+        // placements with connections and the others merge only among themselves, each by its
+        // own Distance. Each placement taken joins the nearest landing of its kind closer than
+        // Distance, or becomes a landing, so landings lie at least Distance apart and a line of
+        // close places cannot chain into one destination. It is measured straight on the map as
+        // drawn at the default view: the seam there is the map's left and right edges, and
+        // places on either side of it are drawn a map width apart. A grid of Distance-sized
+        // cells for each kind finds the near landings, because the places can number in the
+        // thousands. Called alone, it merges the placements of the last Arrange, so no fact,
+        // fitted scale or origin may have changed.
         internal void Merge(Vector2 shown, MapGrouping grouping)
         {
             var count = _placed.Count;
@@ -630,10 +632,16 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
                 _previous[destination.Key] = destination;
                 if (whole || !_indexes.TryGetValue(destination.Key, out var landing))
                     continue;
+                // A landing that gained or lost connections merges again by the other
+                // Distance, and so does a member that changed kind.
+                var connected = Connected(_placed[landing]);
+                if (Connected(destination.Members[0]) != connected)
+                    continue;
                 var members = destination.Members;
                 for (var position = 0; position < members.Count; position++)
                 {
-                    if (_indexes.TryGetValue(members[position].Key, out var index))
+                    if (_indexes.TryGetValue(members[position].Key, out var index)
+                        && Connected(_placed[index]) == connected)
                         _landing[index] = landing;
                 }
                 Land(landing);
@@ -651,7 +659,7 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
                     : _placed[first].Key.CompareTo(_placed[second].Key));
             foreach (var index in _order)
             {
-                var nearest = Nearest(_positions[index]);
+                var nearest = Nearest(_positions[index], Connected(_placed[index]));
                 if (nearest >= 0)
                     _landing[index] = nearest;
                 else
@@ -688,37 +696,44 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
             _previous.Clear();
         }
 
-        // How far apart destinations on the shown map may lie and still show as one. At None,
-        // only places whose points lie inside another place's dot do.
-        private float Distance => _merged.Grouping switch
+        // How far apart destinations of one kind on the shown map may lie and still show as
+        // one. Places with connections follow the place grouping, because each of their
+        // destinations draws an arc. Places whose peers are only known draw no arc, so each
+        // keeps its own dot and the map shows where the torrent is available.
+        private float Distance(bool connected) => !connected ? DotSpacing : _merged.Grouping switch
         {
-            MapGrouping.None => MapMotion.MarkerRadius,
-            MapGrouping.Small => Spacing / 2,
-            MapGrouping.Large => Spacing * 2,
-            _ => Spacing,
+            MapGrouping.None => DotSpacing,
+            MapGrouping.Small => GroupingSpacing / 2,
+            MapGrouping.Large => GroupingSpacing * 2,
+            _ => GroupingSpacing,
         };
 
-        private (int Column, int Row) Cell(Vector2 position) =>
-            ((int)MathF.Floor(position.X / Distance), (int)MathF.Floor(position.Y / Distance));
+        private static bool Connected(Placement placement) => placement.Group.Connections > 0;
+
+        private (int Column, int Row, bool Connected) Cell(Vector2 position, bool connected)
+        {
+            var distance = Distance(connected);
+            return ((int)MathF.Floor(position.X / distance), (int)MathF.Floor(position.Y / distance), connected);
+        }
 
         private void Land(int index)
         {
-            var cell = Cell(_positions[index]);
+            var cell = Cell(_positions[index], Connected(_placed[index]));
             _nextInCell[index] = _cells.GetValueOrDefault(cell, -1);
             _cells[cell] = index;
         }
 
-        // The landing closer than Distance to position, or -1 when none is.
-        private int Nearest(Vector2 position)
+        // The landing of the given kind closer than its Distance to position, or -1 when none is.
+        private int Nearest(Vector2 position, bool connected)
         {
-            var (column, row) = Cell(position);
+            var (column, row, _) = Cell(position, connected);
             var nearest = -1;
-            var distance = Distance;
+            var distance = Distance(connected);
             for (var across = -1; across <= 1; across++)
             {
                 for (var down = -1; down <= 1; down++)
                 {
-                    for (var landing = _cells.GetValueOrDefault((column + across, row + down), -1); landing >= 0; landing = _nextInCell[landing])
+                    for (var landing = _cells.GetValueOrDefault((column + across, row + down, connected), -1); landing >= 0; landing = _nextInCell[landing])
                     {
                         var apart = Vector2.Distance(position, _positions[landing]);
                         if (apart < distance)
@@ -777,10 +792,17 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
         private static GeoPoint? Locate(Location? location, IReadOnlyDictionary<string, Geography.Country> world) =>
             location?.Point ?? (location is null ? null : world.GetValueOrDefault(location.Code)?.Anchor);
 
-        // Places closer than this many DIPs are too close to tell apart: bundled places on the
-        // fitted map form one region, and destinations on the shown map show as one at Medium
-        // place grouping.
+        // Bundled places closer than this many DIPs on the fitted map are too close to tell
+        // apart, so they form one region.
         private const float Spacing = 25;
+
+        // Places closer than this many DIPs on the shown map show as one dot, because their
+        // dots would cover each other almost entirely.
+        private const float DotSpacing = 1;
+
+        // Destinations with connections closer than this many DIPs on the shown map show as
+        // one at Medium place grouping.
+        private const float GroupingSpacing = 8;
 
         /// <summary>
         /// A country's populated places, with places that would overlap on the

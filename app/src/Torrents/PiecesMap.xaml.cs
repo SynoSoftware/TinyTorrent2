@@ -183,7 +183,7 @@ public sealed partial class PiecesMap : UserControl
         {
             var entry = (Grid)Legend.Children[index];
             var label = (TextBlock)entry.Children[1];
-            ToolTipService.SetToolTip(label, ((Run)label.Inlines[0]).Text);
+            Trimming.SetShowsToolTip(label, true);
             entry.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
             Legend.ColumnDefinitions[index].MinWidth =
                 entry.Children[0].DesiredSize.Width

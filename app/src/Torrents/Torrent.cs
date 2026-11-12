@@ -319,6 +319,7 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
     // Each property with the facts it is computed from. An update raises a
     // property only when one of them changed, so a row's bindings re-read and
     // format only what moved; one notice per property is shared by every row.
+    // StatusTip and CompletedOnTip have none: their tooltips read them as they open.
     private static readonly (PropertyChangedEventArgs Notice, Fields Inputs)[] Notices =
     [
         (new(nameof(Name)), Fields.Name),
@@ -345,7 +346,6 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
         (new(nameof(AddedTip)), Fields.Added),
         (new(nameof(CompletedOn)), Fields.CompletedOn),
         (new(nameof(CompletedOnText)), Fields.CompletedOn | Fields.Time),
-        (new(nameof(CompletedOnTip)), Fields.CompletedOn),
         (new(nameof(Hashes)), Fields.Hashes),
         (new(nameof(Sequential)), Fields.Sequential),
         (new(nameof(FirstLast)), Fields.FirstLast),
@@ -374,8 +374,6 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
         (new(nameof(WaitingTorrentId)), Fields.WaitingTorrentId),
         (new(nameof(WaitingFiles)), Fields.WaitingFiles),
         (new(nameof(WaitingAnswer)), Fields.WaitingAnswer),
-        (new(nameof(StatusTip)),
-            Fields.State | Fields.WaitingAnswer | Fields.WaitingDrive | Fields.WaitingFiles | Fields.WaitingTorrentId),
         (new(nameof(DownloadRate)), Fields.DownloadRate),
         (new(nameof(UploadRate)), Fields.UploadRate),
         (new(nameof(DownloadText)), Fields.Connected | Fields.State | Fields.DownloadRate),

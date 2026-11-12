@@ -226,14 +226,6 @@ public sealed partial class SpeedGraph : UserControl
         UploadValue.Text = Rate(text, shown?.Upload);
         DownloadDetail.Text = at ?? text.Format("speed", "peak", Rate(text, downloadPeak));
         UploadDetail.Text = at ?? text.Format("speed", "peak", Rate(text, uploadPeak));
-        ToolTipService.SetToolTip(
-            DownloadLegend,
-            $"{DownloadLabel.Text} {DownloadValue.Text} · {DownloadDetail.Text}"
-        );
-        ToolTipService.SetToolTip(
-            UploadLegend,
-            $"{UploadLabel.Text} {UploadValue.Text} · {UploadDetail.Text}"
-        );
         _value = marked is null
             ? string.Empty
             : text.Format(

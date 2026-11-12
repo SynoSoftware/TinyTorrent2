@@ -15,10 +15,14 @@
     "fit": "调整“{0}”列以适应内容",
     "fit_columns": "调整列宽以适应内容",
     "fit_width": "适应宽度",
+    "auto_fit": "自动调整列宽",
+    "clear_sort": "清除排序",
     "move_left": "向左移动",
     "move_right": "向右移动",
     "shown": "已显示",
-    "hidden": "已隐藏"
+    "hidden": "已隐藏",
+    "on": "已开启",
+    "off": "已关闭"
   },
   "row_drag": {
     "before_row": "插入到 {0} 之前",

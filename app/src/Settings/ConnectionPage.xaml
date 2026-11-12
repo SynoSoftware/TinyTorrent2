@@ -23,7 +23,7 @@
           Text="{x:Bind Label}"
           VerticalAlignment="Center"
           TextTrimming="CharacterEllipsis"
-          ToolTipService.ToolTip="{x:Bind Label}"
+          controls:Trimming.ShowsToolTip="True"
         />
         <TextBlock
           Grid.Column="1"
@@ -31,7 +31,7 @@
           HorizontalAlignment="Right"
           VerticalAlignment="Center"
           TextTrimming="CharacterEllipsis"
-          ToolTipService.ToolTip="{x:Bind Current}"
+          controls:Trimming.ShowsToolTip="True"
           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
         />
         <TextBlock
@@ -40,7 +40,7 @@
           HorizontalAlignment="Right"
           VerticalAlignment="Center"
           TextTrimming="CharacterEllipsis"
-          ToolTipService.ToolTip="{x:Bind Proposed}"
+          controls:Trimming.ShowsToolTip="True"
           FontWeight="{x:Bind settings:ConnectionPage.Weight(IsChanged)}"
         />
       </Grid>
@@ -72,7 +72,7 @@
             Grid.Column="1"
             Text="{x:Bind Label}"
             TextTrimming="CharacterEllipsis"
-            ToolTipService.ToolTip="{x:Bind Label}"
+            controls:Trimming.ShowsToolTip="True"
           />
         </Grid>
         <TextBlock
@@ -81,7 +81,7 @@
           HorizontalAlignment="Right"
           VerticalAlignment="Center"
           TextTrimming="CharacterEllipsis"
-          ToolTipService.ToolTip="{x:Bind Current}"
+          controls:Trimming.ShowsToolTip="True"
           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
         />
         <TextBlock
@@ -90,19 +90,19 @@
           HorizontalAlignment="Right"
           VerticalAlignment="Center"
           TextTrimming="CharacterEllipsis"
-          ToolTipService.ToolTip="{x:Bind Proposed}"
+          controls:Trimming.ShowsToolTip="True"
           FontWeight="{x:Bind settings:ConnectionPage.Weight(IsChanged)}"
         />
       </Grid>
     </DataTemplate>
   </UserControl.Resources>
-  <Grid RowSpacing="24">
+  <Grid RowSpacing="16">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
     </Grid.RowDefinitions>
     <StackPanel
-      Spacing="16"
+      Spacing="8"
       Margin="24,16,24,0"
       MaxWidth="{StaticResource TinyTorrentSettingsWidth}"
     >
@@ -200,39 +200,103 @@
                     />
                     <Button.Flyout>
                       <Flyout Placement="Bottom">
-                        <StackPanel MaxWidth="560" Spacing="12">
+                        <!-- The flyout presenter is at most 456 DIPs wide and scrolls wider
+                             content sideways, so the content stays narrower and its values wrap. -->
+                        <StackPanel MaxWidth="400" Spacing="12">
                           <TextBlock
                             Text="{x:Bind Model.Text.Get('connection_setup', 'about_test'), Mode=OneWay}"
                             Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
-                            TextTrimming="CharacterEllipsis"
-                            ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'about_test'), Mode=OneWay}"
                           />
-                          <TextBlock
-                            Text="{x:Bind Model.Text.Get('connection_setup', 'test_data'), Mode=OneWay}"
-                            TextTrimming="CharacterEllipsis"
-                            ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'test_data'), Mode=OneWay}"
-                          />
-                          <TextBlock
-                            Text="{x:Bind Model.TestAllowance, Mode=OneWay}"
-                            TextTrimming="CharacterEllipsis"
-                            ToolTipService.ToolTip="{x:Bind Model.TestAllowance, Mode=OneWay}"
-                          />
-                          <TextBlock
-                            Text="{x:Bind Model.Text.Get('connection_setup', 'test_rule'), Mode=OneWay}"
-                            TextTrimming="CharacterEllipsis"
-                            ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'test_rule'), Mode=OneWay}"
-                          />
-                          <TextBlock
-                            Text="{x:Bind Model.Text.Get('connection_setup', 'test_data_use'), Mode=OneWay}"
-                            TextTrimming="CharacterEllipsis"
-                            ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'test_data_use'), Mode=OneWay}"
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                          />
-                          <TextBlock
-                            Text="{x:Bind Model.Text.Get('connection_setup', 'test_method'), Mode=OneWay}"
-                            TextTrimming="CharacterEllipsis"
-                            ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'test_method'), Mode=OneWay}"
-                          />
+                          <Grid ColumnSpacing="16" RowSpacing="8">
+                            <Grid.ColumnDefinitions>
+                              <ColumnDefinition Width="Auto" />
+                              <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                              <RowDefinition Height="Auto" />
+                              <RowDefinition Height="Auto" />
+                              <RowDefinition Height="Auto" />
+                              <RowDefinition Height="Auto" />
+                              <RowDefinition Height="Auto" />
+                              <RowDefinition Height="Auto" />
+                              <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock
+                              Text="{x:Bind Model.Text.Get('connection_setup', 'about_provider'), Mode=OneWay}"
+                              Style="{StaticResource BodyStrongTextBlockStyle}"
+                            />
+                            <TextBlock
+                              Grid.Column="1"
+                              Text="{x:Bind Model.Text.Get('connection_setup', 'about_provider_value'), Mode=OneWay}"
+                              TextWrapping="Wrap"
+                            />
+                            <TextBlock
+                              Grid.Row="1"
+                              Text="{x:Bind Model.Text.Get('connection_setup', 'about_quick'), Mode=OneWay}"
+                              Style="{StaticResource BodyStrongTextBlockStyle}"
+                            />
+                            <TextBlock
+                              Grid.Row="1"
+                              Grid.Column="1"
+                              Text="{x:Bind Model.Text.Get('connection_setup', 'about_quick_value'), Mode=OneWay}"
+                              TextWrapping="Wrap"
+                            />
+                            <TextBlock
+                              Grid.Row="2"
+                              Text="{x:Bind Model.Text.Get('connection_setup', 'about_longer'), Mode=OneWay}"
+                              Style="{StaticResource BodyStrongTextBlockStyle}"
+                            />
+                            <TextBlock
+                              Grid.Row="2"
+                              Grid.Column="1"
+                              Text="{x:Bind Model.Text.Get('connection_setup', 'about_longer_value'), Mode=OneWay}"
+                              TextWrapping="Wrap"
+                            />
+                            <TextBlock
+                              Grid.Row="3"
+                              Text="{x:Bind Model.Text.Get('connection_setup', 'about_data_use'), Mode=OneWay}"
+                              Style="{StaticResource BodyStrongTextBlockStyle}"
+                            />
+                            <TextBlock
+                              Grid.Row="3"
+                              Grid.Column="1"
+                              Text="{x:Bind Model.Text.Get('connection_setup', 'about_data_use_value'), Mode=OneWay}"
+                              TextWrapping="Wrap"
+                            />
+                            <TextBlock
+                              Grid.Row="4"
+                              Text="{x:Bind Model.Text.Get('connection_setup', 'about_method'), Mode=OneWay}"
+                              Style="{StaticResource BodyStrongTextBlockStyle}"
+                            />
+                            <TextBlock
+                              Grid.Row="4"
+                              Grid.Column="1"
+                              Text="{x:Bind Model.Text.Get('connection_setup', 'about_method_value'), Mode=OneWay}"
+                              TextWrapping="Wrap"
+                            />
+                            <TextBlock
+                              Grid.Row="5"
+                              Text="{x:Bind Model.Text.Get('connection_setup', 'about_result'), Mode=OneWay}"
+                              Style="{StaticResource BodyStrongTextBlockStyle}"
+                            />
+                            <TextBlock
+                              Grid.Row="5"
+                              Grid.Column="1"
+                              Text="{x:Bind Model.Text.Get('connection_setup', 'about_result_value'), Mode=OneWay}"
+                              TextWrapping="Wrap"
+                            />
+                            <TextBlock
+                              Grid.Row="6"
+                              Text="{x:Bind Model.Text.Get('connection_setup', 'about_privacy'), Mode=OneWay}"
+                              Style="{StaticResource BodyStrongTextBlockStyle}"
+                            />
+                            <TextBlock
+                              Grid.Row="6"
+                              Grid.Column="1"
+                              Text="{x:Bind Model.Text.Get('connection_setup', 'about_privacy_value'), Mode=OneWay}"
+                              TextWrapping="Wrap"
+                            />
+                          </Grid>
                           <HyperlinkButton
                             Content="{x:Bind Model.Text.Get('connection_setup', 'test_privacy'), Mode=OneWay}"
                             NavigateUri="https://www.cloudflare.com/privacypolicy/"
@@ -314,16 +378,16 @@
                         <ColumnDefinition Width="Auto" />
                       </Grid.ColumnDefinitions>
                       <TextBlock Text="{x:Bind Model.TestStatus, Mode=OneWay}" TextTrimming="CharacterEllipsis"
-                        ToolTipService.ToolTip="{x:Bind Model.TestStatus, Mode=OneWay}" />
+                        controls:Trimming.ShowsToolTip="True" />
                       <TextBlock Grid.Column="1" Text="{x:Bind Model.ProgressText, Mode=OneWay}" />
                     </Grid>
                     <ProgressBar Height="4" Value="{x:Bind Model.TestProgress, Mode=OneWay}"
                       AutomationProperties.Name="{x:Bind Model.TestStatus, Mode=OneWay}" />
                     <TextBlock Text="{x:Bind Model.TestDetail, Mode=OneWay}" TextTrimming="CharacterEllipsis"
-                      Foreground="{ThemeResource TextFillColorSecondaryBrush}" ToolTipService.ToolTip="{x:Bind Model.TestDetail, Mode=OneWay}" />
+                      Foreground="{ThemeResource TextFillColorSecondaryBrush}" controls:Trimming.ShowsToolTip="True" />
                     <TextBlock Text="{x:Bind Model.TransferStatus, Mode=OneWay}"
                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis"
-                      ToolTipService.ToolTip="{x:Bind Model.TransferStatus, Mode=OneWay}" />
+                      controls:Trimming.ShowsToolTip="True" />
                   </StackPanel>
                   <Grid Grid.Row="1" MinHeight="32" Margin="0,8,0,0">
                     <controls:ActionButton HorizontalAlignment="Right" Text="{x:Bind Model.Text.Get('connection_setup', 'resume'), Mode=OneWay}"
@@ -375,14 +439,14 @@
                       Text="{x:Bind Model.LinkTitle, Mode=OneWay}"
                       FontWeight="SemiBold"
                       TextTrimming="CharacterEllipsis"
-                      ToolTipService.ToolTip="{x:Bind Model.LinkTitle, Mode=OneWay}"
+                      controls:Trimming.ShowsToolTip="True"
                       AutomationProperties.LiveSetting="Polite"
                     />
                     <TextBlock
                       Text="{x:Bind Model.LinkDetail, Mode=OneWay}"
                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                       TextTrimming="CharacterEllipsis"
-                      ToolTipService.ToolTip="{x:Bind Model.LinkDetail, Mode=OneWay}"
+                      controls:Trimming.ShowsToolTip="True"
                       Visibility="{x:Bind Model.HasLinkWarning, Mode=OneWay}"
                     />
                   </StackPanel>
@@ -422,7 +486,7 @@
                   Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
                   MinHeight="32"
                   Margin="0,0,0,16"
-                  ToolTipService.ToolTip="{x:Bind Model.Text.Get('connection_setup', 'capacity'), Mode=OneWay}"
+                  controls:Trimming.ShowsToolTip="True"
                 />
                 <Grid ColumnSpacing="16">
                   <Grid.ColumnDefinitions>
@@ -691,7 +755,7 @@
             <TextBlock
               Text="{x:Bind Model.Message, Mode=OneWay}"
               TextTrimming="CharacterEllipsis"
-              ToolTipService.ToolTip="{x:Bind Model.Message, Mode=OneWay}"
+              controls:Trimming.ShowsToolTip="True"
               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
               VerticalAlignment="Center"
             />

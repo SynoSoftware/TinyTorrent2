@@ -9,7 +9,7 @@
   xmlns:table="using:Syno.TableView"
 >
   <Window.SystemBackdrop>
-    <DesktopAcrylicBackdrop />
+    <MicaBackdrop />
   </Window.SystemBackdrop>
   <Grid
     x:Name="Root"
@@ -39,6 +39,15 @@
       <RowDefinition Height="*" />
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
+    <!-- The Solid background choice has no backdrop, so this fills the window under the
+         translucent chrome. -->
+    <Border
+      x:Name="SolidBackground"
+      Grid.RowSpan="3"
+      Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
+      IsHitTestVisible="False"
+      Visibility="Collapsed"
+    />
     <Grid x:Name="Caption" Background="Transparent" FlowDirection="LeftToRight">
       <Grid.ColumnDefinitions>
         <ColumnDefinition x:Name="LeftInset" Width="0" />
@@ -657,7 +666,7 @@
                             TextTrimming="CharacterEllipsis"
                           >
                             <ToolTipService.ToolTip>
-                              <ToolTip Content="{x:Bind StatusTip, Mode=OneWay}" />
+                              <ToolTip Loading="OnStatusTip" />
                             </ToolTipService.ToolTip>
                           </TextBlock>
                         </Grid>
@@ -748,7 +757,7 @@
                           VerticalAlignment="Center"
                         >
                           <ToolTipService.ToolTip>
-                            <ToolTip Content="{x:Bind AddedTip, Mode=OneWay}" />
+                            <ToolTip Loading="OnAddedTip" />
                           </ToolTipService.ToolTip>
                         </TextBlock>
                       </DataTemplate>
@@ -762,7 +771,7 @@
                           VerticalAlignment="Center"
                         >
                           <ToolTipService.ToolTip>
-                            <ToolTip Content="{x:Bind CompletedOnTip, Mode=OneWay}" />
+                            <ToolTip Loading="OnCompletedOnTip" />
                           </ToolTipService.ToolTip>
                         </TextBlock>
                       </DataTemplate>
@@ -955,7 +964,7 @@
                 Style="{StaticResource BodyStrongTextBlockStyle}"
                 TextWrapping="NoWrap"
                 TextTrimming="CharacterEllipsis"
-                IsTextTrimmedChanged="OnToastTextTrimmed"
+                controls:Trimming.ShowsToolTip="True"
               />
               <TextBlock
                 Grid.Column="1"

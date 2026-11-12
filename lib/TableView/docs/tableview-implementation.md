@@ -111,6 +111,25 @@ still use the platform resources required by the contract.
 `Table.QueueFill` coalesces load, width and ancestor-visibility notifications into
 one fill after visible layout, then detaches its layout listener. It uses the
 same fit and scale as `FitWidth`, without raising a persistence notification.
+`PrepareView` calls `FillViewport` after it applies a sort command's first
+order (`Ordering.Changed`) or the first rows after a fill that found none
+(`_filledEmpty`). During a preparation that call only sets
+`_fillPending`; the preparation's end queues the fill, which runs from
+`LayoutUpdated` after the layout that realizes the new rows. WinUI raises
+`LayoutUpdated` inside that layout and lays out again what the handler changes
+before the frame renders (`CLayoutManager::UpdateLayout`), so the new rows and
+the new widths appear in one frame. After a different list, `PrepareView` calls
+`QueueListFill` instead: the layout that shows the list enqueues `RunListFill`
+at low priority, so the fill runs after that frame renders. `QueueListFill`
+also invalidates the table's measure, because `LayoutUpdated` comes only with
+a layout pass. A preparation in flight when `RunListFill` runs brings a newer
+view, so `RunListFill` returns and the preparation's end queues it again. A fit
+leaves out a row whose cells do not show the view's row at its index, because
+the rows below the screen show a different list's rows only after
+`QueueRebind`. It reads the cells' row (`CellsPanel.DataContext`), not the
+container's `Content`: the container can hold the new row while its cells still
+show the old one. `FillViewport` owns the automatic fill switch: it returns at once
+while `IsAutomaticFillEnabled` is off.
 `Table/Columns.cs` handles successive size changes with a one-shot 150-ms timer.
 The first change discards the fitted widths; following changes reuse them and
 the empty columns that measurement found, restarting the timer each time.
@@ -124,11 +143,12 @@ changes without window or host gesture tracking. It avoids repeated unbounded
 content fits, leaving WinUI's normal measure and arrange intact. Unloading stops
 the timer.
 Collapsed ancestors defer the fill until the table is shown. Visibility callbacks
-are registered while loaded and removed on unload; ordinary row updates and
-scrolling do not request a fill.
+are registered while loaded and removed on unload; ordinary row updates, the
+re-sorts of a sort already in force, and scrolling do not request a fill.
 Widths stay in the table's effective layout for its lifetime. `ColumnLayout`
-contains only order, visibility and sorting, so neither disk persistence nor a
-host's in-memory layout cache carries widths into another table instance.
+contains order, visibility, sorting and the automatic fill switch, never widths,
+so neither disk persistence nor a host's in-memory layout cache carries widths
+into another table instance.
 
 Keep virtualized work on realized rows. Fit and fill measure the header, visible
 rows, and one already-realized row above and below the viewport; column motion
@@ -139,9 +159,9 @@ formatting can stay lazy so invisible cells do not allocate display strings.
 
 `Header.Cell` owns generated full/short label selection. Its fit uses the short
 label when provided; normal layout uses the full label whenever it fits.
-`Header.Content` measures the label and glyph together and allocates a trailing
-glyph slot only when the chosen label leaves room. This keeps fitting independent of sorting while retaining an
-indicator wherever the actual column width permits one.
+`Header.Content` measures the label and the sorted column's glyph together and
+always arranges the glyph, so a fit includes it and the label takes the rest.
+The glyph is collapsed on every other column and takes no room.
 
 The native container paints selection and keyboard focus. The row template
 adds only drag opacity; it does not paint an additional selected-row stripe.
@@ -179,11 +199,27 @@ the fact it relies on or the measurement that shows the fact has changed.
   once. Going from all peers to one torrent's peers removes the 16 rows the
   list holds; where 10 of the 16 other containers were not spare, building
   them took about 85 ms of cell measure.
-- **The list drops containers it no longer needs.** In a 60-row test the list
-  dropped its containers below the screen in the layout after a sort and made
+- **The list recycles containers it no longer needs.** In a 60-row test the list
+  recycled its containers below the screen in the layout after a sort and filled
   them again, with the right rows and selection, within 1.5 s. Below the
   screen, `RebindRows` therefore matters only for containers the list keeps,
-  such as a focused row's.
+  such as a focused row's. The list keeps its recycled containers in a queue
+  until its items source changes (`ModernCollectionBasePanel_IICG2_Partial.cpp`,
+  `RefreshImpl`).
+- **A moved row does not keep its container while the list animates.** The list
+  has no move, so a moved row is one remove and one insert. The insert takes the
+  last container in the recycle queue with no look at the row it showed
+  (`GenerateContainerAtIndexImpl`), and binds and measures the row again: about
+  13 ms for a torrent row at the stress load, for each of the 10 to 30 rows a
+  new sort order moves. While the list plays its delete animation, which it
+  skips when the previous change came less than a second earlier, the removed
+  container reaches the recycle queue only when its leave transition ends
+  (`OnItemRemoved`), after the insert of the same update has taken another one.
+  Choosing the container in `ChoosingItemContainer` cannot change that. A store
+  of recycled containers that kept their rows was designed on 11 November 2026
+  and dropped before commit: it kept rows the list no longer shows bound and
+  measured at every update, and on the animated path it helped only rows that
+  came back later.
 - **A hit test runs any waiting layout first** (`CUIElement::HitTestEntry`
   calls `UpdateLayout`), and so does `TransformToVisual`. A click or a marquee
   step pays for a layout that is waiting, whatever dispatcher priority queued

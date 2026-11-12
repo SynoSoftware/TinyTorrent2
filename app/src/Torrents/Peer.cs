@@ -82,6 +82,9 @@ public sealed class Peer : INotifyPropertyChanged
                 _record.Values.Transport == PeerTransport.Http ? "web_client_unknown" : "client_unknown"
             )
             : Client;
+
+    /// <summary>Why no client is shown, or null when the peer named its client.</summary>
+    public string? UnknownClientHint => string.IsNullOrEmpty(Client) ? ClientHint : null;
     public string DirectionGlyph =>
         State == PeerState.Known ? string.Empty : Incoming ? Syno.Segoe.ArrowDown : Syno.Segoe.ArrowUp;
     public string EncryptionGlyph =>

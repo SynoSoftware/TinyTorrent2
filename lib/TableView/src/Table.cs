@@ -59,10 +59,11 @@ public sealed partial class Table : Control
     private bool _detached;
 
     /// <summary>
-    /// Raised once after each completed effective sort, column move, resize, fit, visibility, or
-    /// reset, carrying which of those it was. Never raised by initial setup, automatic fills, or restoring
-    /// <see cref="Layout"/>. In external sort mode it reports the requested criterion; publishing
-    /// its ordered rows belongs to the host. A host reads <see cref="Layout"/> for the snapshot.
+    /// Raised once after each completed effective sort, column move, resize, fit, visibility,
+    /// reset, or switch of automatic fill, carrying which of those it was. Never raised by initial
+    /// setup, automatic fills, or restoring <see cref="Layout"/>. In external sort mode it reports
+    /// the requested criterion; publishing its ordered rows belongs to the host. A host reads
+    /// <see cref="Layout"/> for the snapshot.
     /// </summary>
     public event EventHandler<LayoutChange>? LayoutChanged;
 
@@ -140,7 +141,8 @@ public sealed partial class Table : Control
                 order,
                 visibility,
                 sort?.Column.Id,
-                sort?.Direction ?? SortDirection.Ascending
+                sort?.Direction ?? SortDirection.Ascending,
+                IsAutomaticFillEnabled
             );
         }
         set
@@ -166,7 +168,8 @@ public sealed partial class Table : Control
                 ? new Dictionary<string, bool>()
                 : new Dictionary<string, bool>(value.VisibilityOverrides),
             value.SortColumnId,
-            value.SortDirection
+            value.SortDirection,
+            value.IsAutomaticFillEnabled
         );
 
     protected override void OnApplyTemplate()
@@ -205,6 +208,7 @@ public sealed partial class Table : Control
         DetachInput();
 
         LayoutUpdated -= OnFillLayout;
+        LayoutUpdated -= OnListLayout;
         if (_headerStrip is not null)
             _headerStrip.SizeChanged -= OnFillSizeChanged;
         if (_surface is not null)
@@ -240,6 +244,7 @@ public sealed partial class Table : Control
         _detached = true;
         QueueRealized();
         LayoutUpdated -= OnFillLayout;
+        LayoutUpdated -= OnListLayout;
         StopWatchingVisibility();
         _resizeDue?.Stop();
 
@@ -564,6 +569,7 @@ public sealed partial class Table : Control
         }
         _sortColumn = sortColumn;
         _sortDirection = direction;
+        IsAutomaticFillEnabled = state.IsAutomaticFillEnabled;
 
         // SetOrder republishes the layout, which re-applies each header cell's sort indicator.
         EffectiveLayout.SetOrder(ordered);

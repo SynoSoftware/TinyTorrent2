@@ -411,13 +411,20 @@ public sealed partial class MainWindow
     private static void ShowStatus(FrameworkElement control, bool visible) =>
         control.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
 
+    // A label without a description shows its own text in a tooltip only while
+    // it is trimmed. One label can be set both ways, so each call switches.
     private static void SetStatus(TextBlock label, string text, string? description = null, FrameworkElement? tip = null)
     {
         if (label.Text != text)
             label.Text = text;
-        description ??= text;
-        if (AutomationProperties.GetName(label) != description)
-            AutomationProperties.SetName(label, description);
+        var name = description ?? text;
+        if (AutomationProperties.GetName(label) != name)
+            AutomationProperties.SetName(label, name);
+        Syno.TinyTorrent.Controls.Trimming.SetShowsToolTip(label, description is null);
+        if (description is null)
+        {
+            return;
+        }
         tip ??= label;
         if (!Equals(ToolTipService.GetToolTip(tip), description))
             ToolTipService.SetToolTip(tip, description);

@@ -7,7 +7,7 @@
   HorizontalContentAlignment="Stretch"
   IsTabStop="False"
 >
-  <StackPanel Spacing="16">
+  <StackPanel Spacing="8">
     <VisualStateManager.VisualStateGroups>
       <VisualStateGroup>
         <VisualState x:Name="InlineFacts" />
@@ -57,7 +57,7 @@
       Style="{StaticResource TinyTorrentPageTitleTextStyle}"
       IsTextSelectionEnabled="True"
       Visibility="{x:Bind controls:Visibilities.HasText(PageTitle), Mode=OneWay}"
-      ToolTipService.ToolTip="{x:Bind PageTitle, Mode=OneWay}"
+      controls:Trimming.ShowsToolTip="True"
       AutomationProperties.HeadingLevel="Level1"
     />
     <Grid x:Name="Layout" ColumnSpacing="24">
@@ -78,7 +78,7 @@
           x:Name="ArtworkImage"
           Source="{x:Bind Artwork, Mode=OneWay}"
           Width="96"
-          Height="96"
+          Height="64"
           Stretch="Uniform"
           IsHitTestVisible="False"
           AutomationProperties.AccessibilityView="Raw"
@@ -94,7 +94,7 @@
             Style="{StaticResource TinyTorrentSurfaceTitleTextStyle}"
             IsTextSelectionEnabled="True"
             Visibility="{x:Bind controls:Visibilities.HasText(Title), Mode=OneWay}"
-            ToolTipService.ToolTip="{x:Bind Title, Mode=OneWay}"
+            controls:Trimming.ShowsToolTip="True"
             AutomationProperties.HeadingLevel="{x:Bind HeadingLevel, Mode=OneWay}"
           />
           <TextBlock
@@ -102,7 +102,7 @@
             Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
             TextTrimming="CharacterEllipsis"
             Visibility="{x:Bind controls:Visibilities.HasText(Subtitle), Mode=OneWay}"
-            ToolTipService.ToolTip="{x:Bind Subtitle, Mode=OneWay}"
+            controls:Trimming.ShowsToolTip="True"
           />
         </StackPanel>
       </Grid>

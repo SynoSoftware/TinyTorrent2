@@ -15,10 +15,14 @@
     "fit": "Ajuster la colonne « {0} »",
     "fit_columns": "Ajuster les colonnes",
     "fit_width": "Ajuster à la largeur",
+    "auto_fit": "Ajustement automatique",
+    "clear_sort": "Effacer le tri",
     "move_left": "Déplacer à gauche",
     "move_right": "Déplacer à droite",
     "shown": "Affichée",
-    "hidden": "Masquée"
+    "hidden": "Masquée",
+    "on": "Activé",
+    "off": "Désactivé"
   },
   "row_drag": {
     "before_row": "Insérer avant {0}",

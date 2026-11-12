@@ -72,7 +72,6 @@ public sealed partial class Scheduler : UserControl
             Schedule.Time(time.Hour * 60 + time.Minute)
         );
         Now.Text = Model.Text.Format("transfer_limits", "now", position);
-        ToolTipService.SetToolTip(Now, Now.Text);
     }
 
     private void FocusAdd()
@@ -161,8 +160,6 @@ public sealed partial class Scheduler : UserControl
             var header = (PeriodHeader)row.Header;
             header.When.Text = period.When;
             header.Behavior.Text = period.Behavior;
-            foreach (var label in new[] { header.When, header.Behavior })
-                ToolTipService.SetToolTip(label, label.Text);
             AutomationProperties.SetName(row, period.When + " · " + period.Behavior);
         }
     }
@@ -208,6 +205,8 @@ public sealed partial class Scheduler : UserControl
 
         internal PeriodHeader()
         {
+            Trimming.SetShowsToolTip(When, true);
+            Trimming.SetShowsToolTip(Behavior, true);
             MinHeight = 68;
             ColumnSpacing = 24;
             ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) });

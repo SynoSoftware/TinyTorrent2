@@ -69,7 +69,7 @@
                       Text="{TemplateBinding Header}"
                       Style="{StaticResource SubtitleTextBlockStyle}"
                       TextTrimming="CharacterEllipsis"
-                      ToolTipService.ToolTip="{TemplateBinding Header}"
+                      controls:Trimming.ShowsToolTip="True"
                       AutomationProperties.HeadingLevel="Level2"
                     />
                   </Border>
@@ -377,7 +377,7 @@
           </Grid.RowDefinitions>
           <local:Header
             x:Name="PageHeader"
-            Margin="24,0,24,24"
+            Margin="24,0,24,8"
             MaxWidth="{StaticResource TinyTorrentSettingsWidth}"
             PageTitle="{x:Bind Model.Overview.PageTitle, Mode=OneWay}"
             Title="{x:Bind Model.Overview.Title, Mode=OneWay}"
@@ -1119,7 +1119,7 @@
                           Text="{x:Bind Model.Text.Get('settings', 'queue_hint'), Mode=OneWay}"
                           Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
                           TextTrimming="CharacterEllipsis"
-                          ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'queue_hint'), Mode=OneWay}"
+                          controls:Trimming.ShowsToolTip="True"
                         />
                         <controls:SettingsRow
                           Setting="{x:Bind Model.ActiveDownloads}"
@@ -1222,7 +1222,7 @@
                           Text="{x:Bind Model.Text.Get('settings', 'seeding_hint'), Mode=OneWay}"
                           Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
                           TextTrimming="CharacterEllipsis"
-                          ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'seeding_hint'), Mode=OneWay}"
+                          controls:Trimming.ShowsToolTip="True"
                         />
                         <controls:SettingsRow
                           Setting="{x:Bind Model.Ratio}"
@@ -1591,7 +1591,7 @@
                                       Text="{x:Bind Model.Text.Get('settings', 'encryption_preferred_hint'), Mode=OneWay}"
                                       Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
                                       TextTrimming="CharacterEllipsis"
-                                      ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'encryption_preferred_hint'), Mode=OneWay}"
+                                      controls:Trimming.ShowsToolTip="True"
                                     />
                                   </StackPanel>
                                 </RadioButton>
@@ -1606,7 +1606,7 @@
                                       Text="{x:Bind Model.Text.Get('settings', 'encryption_required_hint'), Mode=OneWay}"
                                       Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
                                       TextTrimming="CharacterEllipsis"
-                                      ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'encryption_required_hint'), Mode=OneWay}"
+                                      controls:Trimming.ShowsToolTip="True"
                                     />
                                   </StackPanel>
                                 </RadioButton>
@@ -1621,7 +1621,7 @@
                                       Text="{x:Bind Model.Text.Get('settings', 'encryption_allowed_hint'), Mode=OneWay}"
                                       Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
                                       TextTrimming="CharacterEllipsis"
-                                      ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'encryption_allowed_hint'), Mode=OneWay}"
+                                      controls:Trimming.ShowsToolTip="True"
                                     />
                                   </StackPanel>
                                 </RadioButton>
@@ -1636,7 +1636,7 @@
                                       Text="{x:Bind Model.Text.Get('settings', 'encryption_disabled_hint'), Mode=OneWay}"
                                       Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
                                       TextTrimming="CharacterEllipsis"
-                                      ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'encryption_disabled_hint'), Mode=OneWay}"
+                                      controls:Trimming.ShowsToolTip="True"
                                     />
                                   </StackPanel>
                                 </RadioButton>
@@ -1645,7 +1645,7 @@
                                 Text="{x:Bind Model.Text.Get('settings', 'encryption_privacy'), Mode=OneWay}"
                                 Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
                                 TextTrimming="CharacterEllipsis"
-                                ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'encryption_privacy'), Mode=OneWay}"
+                                controls:Trimming.ShowsToolTip="True"
                               />
                             </StackPanel>
                           </controls:SettingsRow.Detail>
@@ -1665,7 +1665,7 @@
                           Text="{x:Bind Model.Text.Get('settings', 'connections_guide'), Mode=OneWay}"
                           Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
                           TextTrimming="CharacterEllipsis"
-                          ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'connections_guide'), Mode=OneWay}"
+                          controls:Trimming.ShowsToolTip="True"
                         />
                         <controls:SettingsRow
                           Description="{x:Bind Model.Text.Get('settings', 'connections_hint'), Mode=OneWay}"
@@ -1983,6 +1983,30 @@
                               HorizontalContentAlignment="Stretch"
                             />
                           </controls:SettingsRow.Detail>
+                        </controls:SettingsRow>
+                        <controls:SettingsRow
+                          Setting="{x:Bind Model.Backdrop}"
+                          Description="{x:Bind Model.Text.Get('settings', 'backdrop_hint'), Mode=OneWay}"
+                        >
+                          <ComboBox
+                            Width="260"
+                            SelectedValuePath="Tag"
+                            SelectedValue="{x:Bind Model.Backdrop.SelectedValue, Mode=OneWay}"
+                            AutomationProperties.AutomationId="Backdrop"
+                          >
+                            <ComboBoxItem
+                              Tag="acrylic"
+                              Content="{x:Bind Model.Text.Get('settings', 'backdrop_acrylic'), Mode=OneWay}"
+                            />
+                            <ComboBoxItem
+                              Tag="mica"
+                              Content="{x:Bind Model.Text.Get('settings', 'backdrop_mica'), Mode=OneWay}"
+                            />
+                            <ComboBoxItem
+                              Tag="solid"
+                              Content="{x:Bind Model.Text.Get('settings', 'backdrop_solid'), Mode=OneWay}"
+                            />
+                          </ComboBox>
                         </controls:SettingsRow>
                         <controls:SettingsRow
                           Header="{x:Bind Model.Text.Get('settings', 'language'), Mode=OneWay}"

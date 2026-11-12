@@ -116,7 +116,6 @@ internal sealed partial class Details : UserControl, IDisposable
                     library.Application.Length > 0 ? library.Application
                     : library.FileType.Length > 0 ? text.Get("library", "no_application")
                     : string.Empty;
-                ToolTipService.SetToolTip(name, name.Text);
                 application.Visibility =
                     name.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
                 icon.Source = library.ApplicationIcon;
@@ -237,7 +236,6 @@ internal sealed partial class Details : UserControl, IDisposable
                         var message = library.AutomaticWait ?? text.Get("library", "no_metadata");
                         SetValue(metadata, message);
                         metadata.Glyph = Segoe.ScanSearch;
-                        ToolTipService.SetToolTip(metadata, message);
                     });
                 }
                 first = null;
@@ -383,7 +381,7 @@ internal sealed partial class Details : UserControl, IDisposable
                 Style = (Style)Application.Current.Resources["InspectorValueStyle"],
                 TextTrimming = TextTrimming.CharacterEllipsis,
             };
-            ToolTipService.SetToolTip(block, value);
+            Trimming.SetShowsToolTip(block, true);
             return block;
         }
 
@@ -440,6 +438,7 @@ internal sealed partial class Details : UserControl, IDisposable
                         )
                     )
                 );
+                Trimming.SetShowsToolTip(block, false);
                 ToolTipService.SetToolTip(block, row.RatingTip(source));
                 ratings.Children.Add(block);
             }
@@ -624,7 +623,6 @@ internal sealed partial class Details : UserControl, IDisposable
     private static void SetValue(Field field, string value)
     {
         ((TextBlock)field.Content).Text = value;
-        ToolTipService.SetToolTip((TextBlock)field.Content, value);
         field.Visibility = value.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 

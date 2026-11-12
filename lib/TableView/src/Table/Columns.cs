@@ -327,9 +327,78 @@ public sealed partial class Table
 
     private bool _fillPending;
 
+    /// <summary>A different list is on screen and its fill has not run yet (section 10).</summary>
+    private bool _listFillDue;
+
+    /// <summary>
+    /// Section 10: fill for a different list after the frame that shows it. The fill is enqueued at
+    /// low priority from the layout that shows the list, so it runs after that frame renders.
+    /// </summary>
+    private void QueueListFill()
+    {
+        _listFillDue = true;
+        LayoutUpdated -= OnListLayout;
+        LayoutUpdated += OnListLayout;
+
+        // LayoutUpdated comes only with a layout pass, and the one that shows the list may already
+        // have run, so the table asks for one, as the preparation's own fill does.
+        InvalidateMeasure();
+    }
+
+    private void OnListLayout(object? sender, object args)
+    {
+        LayoutUpdated -= OnListLayout;
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, RunListFill);
+    }
+
+    private void RunListFill()
+    {
+        // A preparation in flight brings a newer view, and its end queues this fill again.
+        if (_listFillDue && !_preparingView)
+        {
+            FillViewport();
+        }
+    }
+
+    /// <summary>
+    /// The last automatic fill ran while the view had no rows, so it fitted the headers alone and
+    /// the first rows to arrive fill again (section 10).
+    /// </summary>
+    private bool _filledEmpty;
+
+    /// <summary>
+    /// Section 10: the table fills its width by itself at the times that section lists. It is
+    /// saved with the layout, and the header menu switches it.
+    /// </summary>
+    internal bool IsAutomaticFillEnabled { get; private set; } = true;
+
+    /// <summary>
+    /// Section 12's Auto fit. Switching it on fills at once, because the person who asked for
+    /// fitted columns is looking at them.
+    /// </summary>
+    internal void ToggleAutomaticFill()
+    {
+        IsAutomaticFillEnabled = !IsAutomaticFillEnabled;
+        if (IsAutomaticFillEnabled)
+        {
+            FillViewport();
+        }
+
+        RaiseLayoutChanged(LayoutChange.AutomaticFill);
+    }
+
     private void FillViewport()
     {
+        // Whatever this call does serves a different list too: it fills now, queues a fill for
+        // the layout after the preparation, or finds the table hidden, unloaded or switched off,
+        // where showing it or switching it on fills.
+        _listFillDue = false;
         LayoutUpdated -= OnFillLayout;
+        if (!IsAutomaticFillEnabled)
+        {
+            return;
+        }
+
         if (_preparingView)
         {
             _fillPending = true;
@@ -358,17 +427,20 @@ public sealed partial class Table
 
         // Automatic fills do not save layout: widths belong to this instance.
         FitWidth(notify: false);
+        _filledEmpty = View.Count == 0;
     }
 
     /// <summary>
     /// Sections 5 and 10: return to the captured baseline. Every width and visibility override is
     /// discarded, the effective order returns to the
     /// declared one, and because that baseline carries no sort criterion the local sort goes with
-    /// it. It fits nothing to the current data.
+    /// it. Automatic fill is switched back on. It fits nothing to the current data.
     /// </summary>
     public void ResetLayout()
     {
-        bool changed = !EffectiveLayout.Order.SequenceEqual(_baselineOrder);
+        bool changed =
+            !EffectiveLayout.Order.SequenceEqual(_baselineOrder) || !IsAutomaticFillEnabled;
+        IsAutomaticFillEnabled = true;
 
         foreach (EffectiveColumn column in _baselineOrder)
         {
@@ -655,7 +727,6 @@ public sealed partial class Table
         cell.Measure(Unbounded);
         return cell.DesiredSize.Width;
     }
-
     /// <summary>
     /// Fitting includes only visible rows and one cached row above and below,
     /// so longer values farther off-screen do not take space from visible values.
@@ -664,7 +735,11 @@ public sealed partial class Table
     /// <remarks>
     /// The panel's cache range, not its <c>Children</c>: a container left over from before a scroll
     /// stays in <c>Children</c>, still holding the content of the row it last showed. Measuring one
-    /// would fit the column to a row the current visual layout does not contain.
+    /// would fit the column to a row the current visual layout does not contain. For the same
+    /// reason a fit leaves out a row below the screen whose cells still show the old list's row
+    /// while it waits for a different list's (<see cref="QueueRebind"/>). The check reads the
+    /// cells' row, not the container's: the container can already hold the new row while its
+    /// cells still show the old one.
     /// </remarks>
     internal IEnumerable<CellsPanel> RealizedPanels(bool fitting = false)
     {
@@ -699,6 +774,10 @@ public sealed partial class Table
             if (
                 _surface.ContainerFromIndex(index) is DependencyObject container
                 && FindDescendant<CellsPanel>(container) is CellsPanel panel
+                && (
+                    !fitting
+                    || (index < View.Count && ReferenceEquals(panel.DataContext, View[index]))
+                )
             )
             {
                 yield return panel;

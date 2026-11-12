@@ -558,7 +558,7 @@
                       TextTrimming="CharacterEllipsis"
                       MaxLines="1"
                       IsTextSelectionEnabled="True"
-                      ToolTipService.ToolTip="{TemplateBinding Message}"
+                      controls:Trimming.ShowsToolTip="True"
                       FontWeight="{StaticResource InfoBarMessageFontWeight}"
                       FontSize="{StaticResource InfoBarMessageFontSize}"
                     />
@@ -1258,13 +1258,14 @@
                         Text="{TemplateBinding Header}"
                         Style="{StaticResource TinyTorrentBodyTextStyle}"
                         TextTrimming="CharacterEllipsis"
-                        ToolTipService.ToolTip="{TemplateBinding Header}"
+                        controls:Trimming.ShowsToolTip="True"
                         AutomationProperties.HeadingLevel="Level2"
                       />
                       <TextBlock
                         x:Name="SummaryLabel"
                         Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
                         TextTrimming="CharacterEllipsis"
+                        controls:Trimming.ShowsToolTip="True"
                       />
                     </StackPanel>
                   </Grid>
@@ -1295,7 +1296,7 @@
                     Text="{TemplateBinding Header}"
                     Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
                     TextTrimming="CharacterEllipsis"
-                    ToolTipService.ToolTip="{TemplateBinding Header}"
+                    controls:Trimming.ShowsToolTip="True"
                     AutomationProperties.HeadingLevel="Level2"
                   />
                   <TextBlock
@@ -1303,6 +1304,7 @@
                     Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
                     TextTrimming="CharacterEllipsis"
                     Visibility="Collapsed"
+                    controls:Trimming.ShowsToolTip="True"
                   />
                 </StackPanel>
                 <Border
@@ -1376,7 +1378,7 @@
                       Text="{TemplateBinding Description}"
                       Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
                       TextTrimming="CharacterEllipsis"
-                      ToolTipService.ToolTip="{TemplateBinding Description}"
+                      controls:Trimming.ShowsToolTip="True"
                     />
                   </StackPanel>
                 </Grid>
@@ -1475,7 +1477,7 @@
                       <TextBlock
                         Text="{TemplateBinding Header}"
                         Style="{TemplateBinding HeaderStyle}"
-                        ToolTipService.ToolTip="{TemplateBinding Header}"
+                        controls:Trimming.ShowsToolTip="True"
                         AutomationProperties.HeadingLevel="Level2"
                       />
                       <ContentControl
@@ -1583,7 +1585,7 @@
                     Text="{TemplateBinding Label}"
                     Style="{StaticResource TinyTorrentBodyTextStyle}"
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    ToolTipService.ToolTip="{TemplateBinding Label}"
+                    controls:Trimming.ShowsToolTip="True"
                   />
                 </Grid>
                 <Grid
@@ -1633,7 +1635,7 @@
                     Style="{StaticResource CaptionTextBlockStyle}"
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     TextWrapping="NoWrap"
-                    ToolTipService.ToolTip="{TemplateBinding Label}"
+                    controls:Trimming.ShowsToolTip="True"
                   />
                   <ContentPresenter Content="{TemplateBinding Content}" />
                 </StackPanel>
@@ -1731,7 +1733,7 @@
                     Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
                     TextWrapping="NoWrap"
                     TextTrimming="CharacterEllipsis"
-                    ToolTipService.ToolTip="{TemplateBinding Label}"
+                    controls:Trimming.ShowsToolTip="True"
                   />
                   <ContentPresenter Content="{TemplateBinding Content}" />
                 </StackPanel>

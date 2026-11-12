@@ -32,7 +32,6 @@ public sealed partial class SettingsLink : Button
         set
         {
             _header.Text = value;
-            ToolTipService.SetToolTip(_header, value);
             AutomationProperties.SetName(this, value);
         }
     }
@@ -44,7 +43,6 @@ public sealed partial class SettingsLink : Button
         {
             _description.Text = value;
             _description.Visibility = value.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
-            ToolTipService.SetToolTip(_description, value);
             AutomationProperties.SetHelpText(this, value);
         }
     }
@@ -64,6 +62,8 @@ public sealed partial class SettingsLink : Button
     public SettingsLink()
     {
         Style = (Style)Application.Current.Resources["TinyTorrentSettingsLinkStyle"];
+        Trimming.SetShowsToolTip(_header, true);
+        Trimming.SetShowsToolTip(_description, true);
         var content = new Grid { ColumnSpacing = 16 };
         content.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         content.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });

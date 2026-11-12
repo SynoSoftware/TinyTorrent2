@@ -15,10 +15,14 @@
     "fit": "Kolom ‘{0}’ passend maken",
     "fit_columns": "Kolommen passend maken",
     "fit_width": "Aan breedte aanpassen",
+    "auto_fit": "Automatisch passend maken",
+    "clear_sort": "Sortering wissen",
     "move_left": "Naar links verplaatsen",
     "move_right": "Naar rechts verplaatsen",
     "shown": "Zichtbaar",
-    "hidden": "Verborgen"
+    "hidden": "Verborgen",
+    "on": "Aan",
+    "off": "Uit"
   },
   "row_drag": {
     "before_row": "Invoegen vóór {0}",

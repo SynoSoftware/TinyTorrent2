@@ -220,8 +220,9 @@ public sealed partial class Table
             : null;
 
     /// <summary>
-    /// Section 9's cycle on header activation: unsorted becomes ascending, ascending becomes
-    /// descending, and descending returns to natural order. A non-sortable header has no action.
+    /// Section 9 on header activation: an unsorted column becomes ascending, and the sorted column
+    /// reverses. Only the header menu's Clear sort returns to natural order. A non-sortable header
+    /// has no action.
     /// </summary>
     internal void ActivateSort(Column column) => ActivateSort(RequireSortable(column));
 
@@ -234,10 +235,9 @@ public sealed partial class Table
 
         // Through the property, so the header and a host request apply a sort by one path.
         Sort =
-            !ReferenceEquals(_sortColumn, column) ? new Sort(column.Column)
-            : _sortDirection == SortDirection.Ascending
+            ReferenceEquals(_sortColumn, column) && _sortDirection == SortDirection.Ascending
                 ? new Sort(column.Column, SortDirection.Descending)
-            : null;
+                : new Sort(column.Column);
     }
 
     /// <summary>

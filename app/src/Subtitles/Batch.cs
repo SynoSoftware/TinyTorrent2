@@ -66,6 +66,7 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
         AutomationProperties.SetAutomationId(_scope, "SubtitleScope");
         AutomationProperties.SetAutomationId(_download, "SubtitleDownload");
         AutomationProperties.SetLiveSetting(_status, AutomationLiveSetting.Polite);
+        Trimming.SetShowsToolTip(_status, true);
         for (var index = 0; index < _counts.Length; index++)
             _scope.Items.Add(new ComboBoxItem());
         _scope.SelectedIndex = 0;
@@ -231,7 +232,6 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
             : _model is { Found: { } found } completed && _batchId == completed.BatchId
                 ? _text.Format("subtitles", "batch_found", found, completed.FindTotal)
             : _text.Format("subtitles", "to_search", Count);
-        ToolTipService.SetToolTip(_status, _status.Text);
         if (_scopeRow is not null)
             _scopeRow.Description = _status.Text;
         _refreshing = false;

@@ -33,7 +33,7 @@
             Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
             VerticalAlignment="Center"
             TextTrimming="CharacterEllipsis"
-            ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'weekly_schedule'), Mode=OneWay}"
+            local:Trimming.ShowsToolTip="True"
           />
           <ContentControl x:Name="Mode" Grid.Column="1" IsTabStop="False" />
         </Grid>
@@ -68,7 +68,7 @@
             <TextBlock
               Grid.Column="1"
               TextTrimming="CharacterEllipsis"
-              ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'speed'), Mode=OneWay}"
+              local:Trimming.ShowsToolTip="True"
               Text="{x:Bind Model.Text.Get('settings', 'speed'), Mode=OneWay}"
               Style="{StaticResource TinyTorrentStatusTextStyle}"
             />
@@ -86,7 +86,7 @@
             <TextBlock
               Grid.Column="1"
               TextTrimming="CharacterEllipsis"
-              ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'alternative'), Mode=OneWay}"
+              local:Trimming.ShowsToolTip="True"
               Text="{x:Bind Model.Text.Get('settings', 'alternative'), Mode=OneWay}"
               Style="{StaticResource TinyTorrentStatusTextStyle}"
             />
@@ -104,7 +104,7 @@
             <TextBlock
               Grid.Column="1"
               TextTrimming="CharacterEllipsis"
-              ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'paused'), Mode=OneWay}"
+              local:Trimming.ShowsToolTip="True"
               Text="{x:Bind Model.Text.Get('settings', 'paused'), Mode=OneWay}"
               Style="{StaticResource TinyTorrentStatusTextStyle}"
             />
@@ -115,13 +115,14 @@
             VerticalAlignment="Center"
             Style="{StaticResource TinyTorrentStatusTextStyle}"
             TextTrimming="CharacterEllipsis"
+            local:Trimming.ShowsToolTip="True"
           />
         </Grid>
         <TextBlock
           Text="{x:Bind Model.TimelineHint, Mode=OneWay}"
           Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
           TextTrimming="CharacterEllipsis"
-          ToolTipService.ToolTip="{x:Bind Model.TimelineHint, Mode=OneWay}"
+          local:Trimming.ShowsToolTip="True"
         />
       </StackPanel>
     </Border>
@@ -148,7 +149,7 @@
         Text="{x:Bind Model.Text.Get('settings', 'schedule_hint'), Mode=OneWay}"
         Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
         TextTrimming="CharacterEllipsis"
-        ToolTipService.ToolTip="{x:Bind Model.Text.Get('settings', 'schedule_hint'), Mode=OneWay}"
+        local:Trimming.ShowsToolTip="True"
       />
       <StackPanel x:Name="Periods" Spacing="8" />
     </StackPanel>

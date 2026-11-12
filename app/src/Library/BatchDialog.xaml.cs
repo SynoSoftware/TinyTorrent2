@@ -3,6 +3,7 @@ using System.Globalization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Network;
 
@@ -75,7 +76,7 @@ public sealed partial class BatchDialog : UserControl, IDraft
                     _ => "found",
                 }
             );
-            ToolTipService.SetToolTip(label, label.Text);
+            Trimming.SetShowsToolTip(label, true);
             var number = _entries.Count(entry => entry.Answer == answer);
             count.Text = number.ToString("N0", CultureInfo.CurrentCulture);
             // The count sits in its own column, so the check box's name
@@ -91,7 +92,6 @@ public sealed partial class BatchDialog : UserControl, IDraft
             _videos - _entries.Count,
             _source.Name
         );
-        ToolTipService.SetToolTip(OutsideText, OutsideText.Text);
         Waits.ItemsSource = _entries
             .Select(entry => entry.Wait)
             .OfType<RequestBlock>()

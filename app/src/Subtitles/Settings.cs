@@ -110,6 +110,8 @@ internal sealed class Settings : UserControl
         Text = text;
         _retry = retry;
         _report = report;
+        Trimming.SetShowsToolTip(_status, true);
+        Trimming.SetShowsToolTip(_selection, true);
         AutomationProperties.SetAutomationId(_extras, "SubtitleExtras");
         _batch = new Batch(text, report);
         AutomationProperties.SetAutomationId(_find, "SubtitleFind");
@@ -440,7 +442,6 @@ internal sealed class Settings : UserControl
                 ? F("retry_at", Text.Time(reset))
             : _model?.Checked == true ? T("connected")
             : T("not_checked");
-        ToolTipService.SetToolTip(_status, _status.Text);
         AutomationProperties.SetHelpText(_status, _status.Text);
         RefreshLanguages();
         _section.Summary = _model is { } model
@@ -463,7 +464,6 @@ internal sealed class Settings : UserControl
         _languageChoices.Visibility =
             _languageMode.SelectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
         _selection.Text = string.Join(", ", selected.Select(Text.LanguageName));
-        ToolTipService.SetToolTip(_wanted, _selection.Text);
         _selected.Text = F("selected", selected.Count);
         var tags = (_model?.Supplier?.Languages ?? [])
             .Concat(selected)
@@ -480,18 +480,15 @@ internal sealed class Settings : UserControl
                 var name = Text.LanguageName(tag);
                 if (_model?.Supplier?.Supports(tag) != true)
                     name += " · " + F("unsupported", _model?.SupplierId ?? default);
-                var choice = new ListViewItem
+                var label = new TextBlock
                 {
-                    Content = new TextBlock
-                    {
-                        Text = name,
-                        TextTrimming = TextTrimming.CharacterEllipsis,
-                    },
-                    Tag = tag,
+                    Text = name,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
                 };
+                Trimming.SetShowsToolTip(label, true);
+                var choice = new ListViewItem { Content = label, Tag = tag };
                 AutomationProperties.SetAutomationId(choice, "SubtitleLanguage-" + tag);
                 AutomationProperties.SetName(choice, name);
-                ToolTipService.SetToolTip(choice, name);
                 _languages.Items.Add(choice);
             }
         }

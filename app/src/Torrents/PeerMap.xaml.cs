@@ -49,7 +49,7 @@ public sealed partial class PeerMap : UserControl
     private MapAnimation _animation = MapAnimation.Normal;
     private MapDotTotal _dotTotal = MapDotTotal.Normal;
     private int _arcLimit = MapRenderer.DefaultLimit;
-    private MapGrouping _grouping = MapGrouping.Medium;
+    private MapGrouping _grouping = MapGrouping.Small;
 #if CAPTURE
     internal Action<double>? FrameMeasured { get; set; }
     internal Action<double>? PreparationMeasured { get; set; }
@@ -309,7 +309,6 @@ public sealed partial class PeerMap : UserControl
             var message = _model.Text?.Error(error) ?? error.Message;
             Failure.Text = message;
             Failure.Visibility = Visibility.Visible;
-            ToolTipService.SetToolTip(this, message);
             AutomationProperties.SetHelpText(this, message);
         }
     }

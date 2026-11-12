@@ -32,7 +32,7 @@
         Text="{x:Bind Value, Mode=OneWay}"
         Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
         TextTrimming="CharacterEllipsis"
-        ToolTipService.ToolTip="{x:Bind Value, Mode=OneWay}"
+        controls:Trimming.ShowsToolTip="True"
       />
       <controls:TransferPair
         x:Name="TransferValue"

@@ -219,7 +219,12 @@ internal sealed class MetadataDialog : UserControl, IDraft
                 .CreatePeerForElement(_state)
                 ?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
         }
-        ToolTipService.SetToolTip(_state, _broadened ? broadenedTip : state);
+        // A broadened search explains itself; otherwise the line shows its own text.
+        Trimming.SetShowsToolTip(_state, !_broadened);
+        if (_broadened)
+        {
+            ToolTipService.SetToolTip(_state, broadenedTip);
+        }
         AutomationProperties.SetHelpText(_state, _broadened ? broadenedTip : state);
         _fetch.Text =
             _block?.CanForce == true

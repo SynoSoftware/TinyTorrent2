@@ -86,7 +86,6 @@ public sealed partial class SettingsSection : ContentControl
                 label.Text.Length > 0 && (!IsExpanded || Description.Length > 0)
                     ? Visibility.Visible
                     : Visibility.Collapsed;
-            ToolTipService.SetToolTip(label, label.Text);
         }
     }
 
