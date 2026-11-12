@@ -11,7 +11,10 @@ The table starts with Name, Size, Progress, Status, Down speed, Up speed, Time
 left, Ratio, Seeds, Peers, Added, and Completed; the person can hide, show, and reorder them.
 Queue, Size, Progress, Status, Down speed, Up speed, Time left, Ratio, Seeds,
 Added and Completed keep at least their fitted widths during fills, because
-cutting these short values hides their meaning. Progress percentages stay on
+cutting these short values hides their meaning. Name gives way to them only
+down to the 150 DIPs that a [fill](../../../lib/TableView/docs/tableview-contract.md#10-column-widths-resizing-and-fit-commands)
+keeps for a column with content; in a narrower window the columns at the right
+are cut off instead, so each row still shows which torrent it is. Progress percentages stay on
 one line even when a person narrows the column directly.
 Time left reads in its two largest units, such as 3 d 4 h or 45 min, and 100
 days or more reads as ∞, because a raw count of minutes cannot

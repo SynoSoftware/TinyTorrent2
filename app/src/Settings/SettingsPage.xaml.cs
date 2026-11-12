@@ -581,26 +581,36 @@ public sealed partial class SettingsPage : UserControl
         {
             return;
         }
-        foreach (var section in Elements(panel, visible: true).OfType<SettingsSection>())
+        var sections = Elements(panel, visible: true)
+            .OfType<SettingsSection>()
+            .Select(section => Elements(section, visible: true).OfType<SettingsRow>().ToArray())
+            .ToArray();
+        // One unit width for the whole category, so boxes with units end at
+        // one edge in every card.
+        var width = 0d;
+        foreach (
+            var unit in sections
+                .SelectMany(rows => rows)
+                .Select(row => row.Unit)
+                .Where(unit => unit.Length > 0)
+                .Distinct()
+        )
         {
-            var rows = Elements(section, visible: true).OfType<SettingsRow>().ToArray();
-            var width = 0d;
-            foreach (
-                var unit in rows.Select(row => row.Unit).Where(unit => unit.Length > 0).Distinct()
-            )
+            var label = new TextBlock
             {
-                var label = new TextBlock
-                {
-                    Text = unit,
-                    Style = (Style)Application.Current.Resources["TinyTorrentBodyTextStyle"],
-                };
-                label.Measure(
-                    new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity)
-                );
-                width = Math.Max(width, label.DesiredSize.Width);
-            }
+                Text = unit,
+                Style = (Style)Application.Current.Resources["TinyTorrentBodyTextStyle"],
+            };
+            label.Measure(
+                new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity)
+            );
+            width = Math.Max(width, label.DesiredSize.Width);
+        }
+        foreach (var rows in sections)
+        {
+            var hasUnits = rows.Any(row => row.Unit.Length > 0);
             foreach (var row in rows)
-                row.Align(width);
+                row.Align(hasUnits ? width : 0);
         }
     }
 

@@ -154,7 +154,10 @@ setting's editor is its path and Browse; the path takes the row's accessible
 help, as every other editor does, and Browse's tooltip names the folder it
 chooses. Reserve an action column only where a group has related actions.
 Numeric inputs use native TextBox, including its clear button; optional limits
-use the Unlimited placeholder.
+use the Unlimited placeholder. Unit labels share one width across a category,
+and a box without a unit in a card with units leaves that column empty, so the
+boxes of every card with units end at one edge. A card without units keeps its
+boxes at the card's edge.
 
 Cards and expanders retain their native card strokes, fills and control
 rounding, so they remain quieter than the pane surfaces. Row dividers and
@@ -173,7 +176,9 @@ identify the hierarchy rather than competing with each preference.
 Home link hover and focus cover their full row with the content inset inside the
 button; the group heading is not part of the interactive row.
 Settings labels, values and feedback remain single-line, with ellipsis and the
-full text available through tooltips and accessibility.
+full text available through tooltips and accessibility. Descriptions and help
+text wrap, as in Windows Settings, because a trimmed explanation hides part of
+what the person came to read, even in a wide window.
 
 General begins with Windows integration, then Startup and closing,
 Notifications, Power, the Settings start-page preference, Dialogs and
@@ -470,9 +475,10 @@ applies, the week shows that choice on every day, all day, and hides the legend
 and the periods, because the map shows the limits that actually apply; the
 periods return when Weekly schedule is chosen. Periods are coloured, and
 the time between them is named Standard limits where the gap is wide enough to
-read. A legend names
-the three fills, and a Periods row with Add lists a fixed All other times row
-with Standard limits, then every period as an expander. One period is open
+read. Standard time has no fill, so an hour line gives way to its caption. A
+legend names the three fills, wrapping to a second line rather than trimming,
+and a Periods row with Add lists a fixed All other times row with Standard
+limits, then every period as an expander. One period is open
 at a time: opening a period closes the one open before, as one expander at a
 time stays open, so the page never holds two unfinished periods. Each period's
 header describes its days, times and mode. The native expander owns its arrow
@@ -519,6 +525,9 @@ period editor closes it and returns focus to the period's header.
 
 Opening a repeating period outlines every occurrence, including portions
 covered by Pause, so moving one occurrence cannot silently change other days.
+The outline is dashed where another mode applies instead, because the period is
+saved there but does not apply, and a solid outline there reads as a separate,
+empty item.
 An overnight period shows its following-day portion and handles at its actual
 endpoints. The fill still shows the effective mode, with Pause taking precedence.
 Reject exact duplicate submissions; preserve distinct overlapping rules so a

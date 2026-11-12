@@ -1063,9 +1063,7 @@
                         <TextBlock
                           Margin="0,16,0,4"
                           Text="{x:Bind Model.Text.Get('settings', 'queue_hint'), Mode=OneWay}"
-                          Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
-                          TextTrimming="CharacterEllipsis"
-                          controls:Trimming.ShowsToolTip="True"
+                          Style="{StaticResource TinyTorrentDescriptionTextStyle}"
                         />
                         <controls:SettingsRow
                           Setting="{x:Bind Model.ActiveDownloads}"
@@ -1165,9 +1163,7 @@
                         <TextBlock
                           Margin="0,12,0,4"
                           Text="{x:Bind Model.Text.Get('settings', 'seeding_hint'), Mode=OneWay}"
-                          Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
-                          TextTrimming="CharacterEllipsis"
-                          controls:Trimming.ShowsToolTip="True"
+                          Style="{StaticResource TinyTorrentDescriptionTextStyle}"
                         />
                         <controls:SettingsRow
                           Setting="{x:Bind Model.Ratio}"
@@ -1504,9 +1500,7 @@
                                     <TextBlock Text="{x:Bind Model.Text.Get('settings', 'encryption_recommended'), Mode=OneWay}" />
                                     <TextBlock
                                       Text="{x:Bind Model.Text.Get('settings', 'encryption_preferred_hint'), Mode=OneWay}"
-                                      Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
-                                      TextTrimming="CharacterEllipsis"
-                                      controls:Trimming.ShowsToolTip="True"
+                                      Style="{StaticResource TinyTorrentDescriptionTextStyle}"
                                     />
                                   </StackPanel>
                                 </RadioButton>
@@ -1519,9 +1513,7 @@
                                     <TextBlock Text="{x:Bind Model.Text.Get('settings', 'encryption_required'), Mode=OneWay}" />
                                     <TextBlock
                                       Text="{x:Bind Model.Text.Get('settings', 'encryption_required_hint'), Mode=OneWay}"
-                                      Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
-                                      TextTrimming="CharacterEllipsis"
-                                      controls:Trimming.ShowsToolTip="True"
+                                      Style="{StaticResource TinyTorrentDescriptionTextStyle}"
                                     />
                                   </StackPanel>
                                 </RadioButton>
@@ -1534,9 +1526,7 @@
                                     <TextBlock Text="{x:Bind Model.Text.Get('settings', 'encryption_allowed'), Mode=OneWay}" />
                                     <TextBlock
                                       Text="{x:Bind Model.Text.Get('settings', 'encryption_allowed_hint'), Mode=OneWay}"
-                                      Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
-                                      TextTrimming="CharacterEllipsis"
-                                      controls:Trimming.ShowsToolTip="True"
+                                      Style="{StaticResource TinyTorrentDescriptionTextStyle}"
                                     />
                                   </StackPanel>
                                 </RadioButton>
@@ -1549,18 +1539,14 @@
                                     <TextBlock Text="{x:Bind Model.Text.Get('settings', 'encryption_disabled'), Mode=OneWay}" />
                                     <TextBlock
                                       Text="{x:Bind Model.Text.Get('settings', 'encryption_disabled_hint'), Mode=OneWay}"
-                                      Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
-                                      TextTrimming="CharacterEllipsis"
-                                      controls:Trimming.ShowsToolTip="True"
+                                      Style="{StaticResource TinyTorrentDescriptionTextStyle}"
                                     />
                                   </StackPanel>
                                 </RadioButton>
                               </RadioButtons>
                               <TextBlock
                                 Text="{x:Bind Model.Text.Get('settings', 'encryption_privacy'), Mode=OneWay}"
-                                Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
-                                TextTrimming="CharacterEllipsis"
-                                controls:Trimming.ShowsToolTip="True"
+                                Style="{StaticResource TinyTorrentDescriptionTextStyle}"
                               />
                             </StackPanel>
                           </controls:SettingsRow.Detail>
@@ -1578,9 +1564,7 @@
                         <TextBlock
                           Margin="0,16,0,4"
                           Text="{x:Bind Model.Text.Get('settings', 'connections_guide'), Mode=OneWay}"
-                          Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
-                          TextTrimming="CharacterEllipsis"
-                          controls:Trimming.ShowsToolTip="True"
+                          Style="{StaticResource TinyTorrentDescriptionTextStyle}"
                         />
                         <controls:SettingsRow
                           Description="{x:Bind Model.Text.Get('settings', 'connections_hint'), Mode=OneWay}"

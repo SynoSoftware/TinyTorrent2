@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Shapes;
 using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Shared;
 using Windows.Foundation;
@@ -38,6 +39,9 @@ public sealed partial class Week : UserControl
     private int _minute;
     private int? _hoverDay;
     private int? _gridStep;
+    private Border[][] _lines = [];
+    private readonly List<ScheduleRange> _ranges = [];
+    private readonly List<(double Left, double Right)> _captions = [];
     private double TrackWidth => Math.Max(1, ActualWidth - Gutter);
 
     internal Week(Schedule model)
@@ -195,12 +199,16 @@ public sealed partial class Week : UserControl
         {
             Backdrop.Children.Clear();
             _gridStep = null;
+            _lines = [];
             return;
         }
         var step = TrackWidth >= 192 * _settings.TextScaleFactor ? 6 : 12;
         rebuild |= _gridStep != step;
         if (rebuild)
+        {
             Backdrop.Children.Clear();
+            _lines = new Border[7][];
+        }
         _gridStep = step;
         var index = 0;
         for (var hour = 0; hour <= 24; hour += step)
@@ -241,6 +249,8 @@ public sealed partial class Week : UserControl
             track.Width = TrackWidth;
             track.Height = RowHeight - 4;
             Place(track, Gutter, Y(day));
+            if (rebuild)
+                _lines[day] = new Border[24 / step - 1];
             for (var hour = step; hour < 24; hour += step)
             {
                 var line = rebuild
@@ -252,6 +262,7 @@ public sealed partial class Week : UserControl
                     }
                     : (Border)Backdrop.Children[index];
                 index++;
+                _lines[day][hour / step - 1] = line;
                 Place(line, X(hour * 60), Y(day));
             }
         }
@@ -278,6 +289,7 @@ public sealed partial class Week : UserControl
         if (ActualWidth <= Gutter + 24)
         {
             Trim(Blocks, 0);
+            Trim(Covered, 0);
             Trim(Outlines, 0);
             return;
         }
@@ -287,8 +299,14 @@ public sealed partial class Week : UserControl
         {
             var limits = _model.FormatFixedLimits(mode);
             for (var day = 0; day < 7; day++)
-                Block(day, day, new ScheduleRange(0, 1440, mode, null), limits);
+            {
+                _captions.Clear();
+                if (Block(day, day, new ScheduleRange(0, 1440, mode, null), limits) is { } caption)
+                    _captions.Add(caption);
+                ShowLines(day);
+            }
             Trim(Blocks, 7);
+            Trim(Covered, 0);
             Trim(Outlines, 0);
             var allDay = _model.Text.Get("settings", "time_all_day");
             AutomationProperties.SetName(
@@ -306,9 +324,30 @@ public sealed partial class Week : UserControl
         var selected = preview ?? _model.OpenPeriod;
         var blocks = 0;
         var outlines = 0;
+        var covers = 0;
+        // One part of the selected period's outline. A solid part leaves the
+        // side it shares with a dashed part to the dashed outline.
+        void Outline(int day, int from, int to, bool covered, bool first, bool last)
+        {
+            var left = X(from);
+            FrameworkElement part = covered
+                ? GetCover(covers++)
+                : GetBorder(Outlines, outlines++, "WeekOutlineStyle");
+            if (part is Border outline)
+            {
+                outline.BorderThickness = new(first ? 2 : 0, 2, last ? 2 : 0, 2);
+                outline.CornerRadius = new(0);
+            }
+            part.Width = X(to) - left;
+            part.Height = RowHeight - 8;
+            Position(part, left, Y(day) + 2);
+        }
         for (var day = 0; day < 7; day++)
         {
-            foreach (var range in _model.Ranges(day, original, preview))
+            _ranges.Clear();
+            _ranges.AddRange(_model.Ranges(day, original, preview));
+            _captions.Clear();
+            foreach (var range in _ranges)
             {
                 // Short standard time stays unlabelled, so the periods
                 // around it keep their room.
@@ -316,20 +355,35 @@ public sealed partial class Week : UserControl
                     range.Mode != ScheduleMode.Normal || range.End - range.Start >= 240
                         ? _model.FormatMode(range.Mode)
                         : null;
-                Block(blocks++, day, range, label);
+                if (Block(blocks++, day, range, label) is { } caption)
+                    _captions.Add(caption);
             }
+            ShowLines(day);
             if (selected is null)
                 continue;
             foreach (var span in selected.Occurrences(day))
             {
-                var left = X(Math.Max(0, span.Start));
-                var right = X(Math.Min(1440, span.End));
-                var outline = GetBorder(Outlines, outlines++, "WeekOutlineStyle");
-                outline.Width = right - left;
-                outline.Height = RowHeight - 8;
-                outline.BorderThickness = new(2);
-                outline.CornerRadius = new(0);
-                Position(outline, left, Y(day) + 2);
+                var start = Math.Max(0, span.Start);
+                var end = Math.Min(1440, span.End);
+                // Where another mode applies instead, such as Pause, the period
+                // is saved but does not apply, so its outline there is dashed.
+                var from = start;
+                bool? covered = null;
+                foreach (var range in _ranges)
+                {
+                    if (range.End <= start || range.Start >= end)
+                        continue;
+                    var hidden = range.Mode != selected.Mode;
+                    if (covered is { } previous && previous != hidden)
+                    {
+                        Outline(day, from, range.Start, previous, from == start, last: false);
+                        from = range.Start;
+                    }
+                    covered = hidden;
+                }
+                Outline(day, from, end, covered == true, from == start, last: true);
+                var left = X(start);
+                var right = X(end);
                 if (day != (_drag is null ? _hoverDay : _day))
                     continue;
                 if (span.Start >= 0)
@@ -387,11 +441,13 @@ public sealed partial class Week : UserControl
             );
         }
         Trim(Blocks, blocks);
+        Trim(Covered, covers);
         Trim(Outlines, outlines);
     }
 
-    // A null label leaves short standard gaps blank.
-    private void Block(int index, int day, ScheduleRange range, string? label)
+    // A null label leaves short standard gaps blank. Returns where the caption's
+    // text lies when standard time, which has no fill, shows one.
+    private (double Left, double Right)? Block(int index, int day, ScheduleRange range, string? label)
     {
         var block = GetBorder(
             Blocks,
@@ -424,6 +480,44 @@ public sealed partial class Week : UserControl
         block.Height = RowHeight - 12;
         block.Padding = new(4, 0, 4, 0);
         Position(block, X(range.Start), Y(day) + 4);
+        if (range.Mode != ScheduleMode.Normal || label is null)
+            return null;
+        caption.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        var half = Math.Min(caption.DesiredSize.Width, block.Width - 8) / 2;
+        var middle = X(range.Start) + block.Width / 2;
+        return (middle - half, middle + half);
+    }
+
+    // Standard time has no fill, so an hour line there would run through its
+    // caption; the line gives way to the caption's text.
+    private void ShowLines(int day)
+    {
+        if (_lines.Length == 0)
+            return;
+        foreach (var line in _lines[day])
+        {
+            var x = Canvas.GetLeft(line);
+            var hidden = false;
+            foreach (var (left, right) in _captions)
+                hidden |= x >= left - 4 && x <= right + 4;
+            line.Visibility = hidden ? Visibility.Collapsed : Visibility.Visible;
+        }
+    }
+
+    private Rectangle GetCover(int index)
+    {
+        if (index == Covered.Children.Count)
+        {
+            var cover = new Rectangle
+            {
+                Style = (Style)Resources["WeekCoveredStyle"],
+                StrokeThickness = 2,
+                StrokeDashArray = new DoubleCollection { 2, 2 },
+            };
+            AutomationProperties.SetAccessibilityView(cover, AccessibilityView.Raw);
+            Covered.Children.Add(cover);
+        }
+        return (Rectangle)Covered.Children[index];
     }
 
     private void ShowTip(string text, double x, int day)

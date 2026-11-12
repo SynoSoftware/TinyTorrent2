@@ -622,16 +622,16 @@ public class ColumnFitTests
             Column a = Column("a", 400);
             a.Header = new Border { Width = 1000, Height = 20 };
             Column c = Column("c", 300);
-            c.MinWidth = 300;
+            c.MinWidth = 200;
             Table table = await LoadAsync(Rows(20, 600), a, Column("b", 300), c);
             table.FitColumns();
 
             table.FitWidth();
 
             // Fitted, a is its 1000 header, b and c their 600 cells, each plus the inset. Shrinking c in
-            // proportion would take it below 300, so it stays there and a and b share what is left.
+            // proportion would take it below 200, so it stays there and a and b share what is left.
             double edge = Proof.Descendant<Header.Strip>(table)!.ActualWidth;
-            double shared = (edge - 300) / (1000 + 600 + 2 * Inset(table));
+            double shared = (edge - 200) / (1000 + 600 + 2 * Inset(table));
             Assert.AreEqual(
                 edge,
                 TableHarness.TotalWidth(table),
@@ -639,7 +639,7 @@ public class ColumnFitTests
                 "the columns end at the edge"
             );
             Assert.AreEqual(
-                300d,
+                200d,
                 TableHarness.EffectiveWidth(table, "c"),
                 0d,
                 "MinWidth stops the shrink"
@@ -711,7 +711,12 @@ public class ColumnFitTests
 
             Assert.AreEqual(100 + Inset(table), TableHarness.EffectiveWidth(table, "value"), 0.001);
             Assert.AreEqual(180 + Inset(table), TableHarness.EffectiveWidth(table, "empty"), 0.001);
-            Assert.AreEqual(10d, TableHarness.EffectiveWidth(table, "name"), 0.001);
+            Assert.AreEqual(
+                150d,
+                TableHarness.EffectiveWidth(table, "name"),
+                0.001,
+                "a name keeps the default width and the protected columns run past the edge"
+            );
         });
 
     [TestMethod]

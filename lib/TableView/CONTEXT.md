@@ -82,7 +82,8 @@ anything, so its fit is its header.
 makes them end at the table's right edge, wider or narrower. Spare width goes
 to the columns with content; a shortfall comes from empty columns first. A
 column with `CanShrink` disabled keeps at least its fitted width, and one with
-`CanGrow` disabled keeps at most its fitted width.
+`CanGrow` disabled keeps at most its fitted width. Any other column with
+content keeps the 150-DIP default width, or its fit when narrower.
 _Avoid_: stretch.
 
 **Automatic fill**: the same fit and proportional scale performed by the table

@@ -257,7 +257,10 @@ public sealed partial class SettingsRow : ContentControl
         Show("DescriptionLabel", Description.Length > 0);
         Show("IconPresenter", Icon is not null);
         Show("StateLabel", StateText.Length > 0);
-        Show("UnitLabel", Unit.Length > 0);
+        // A text box without a unit, in a card whose other boxes have one,
+        // keeps the unit column empty, so it ends where those boxes end.
+        var reservesUnit = Unit.Length == 0 && UnitSelector is null && _unitWidth > 0 && Content is TextBox;
+        Show("UnitLabel", Unit.Length > 0 || reservesUnit);
         Show("UnitSelectorHost", UnitSelector is not null);
         if (GetTemplateChild("UnitLabel") is TextBlock unit)
             unit.MinWidth = _unitWidth;

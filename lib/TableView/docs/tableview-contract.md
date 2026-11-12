@@ -909,7 +909,9 @@ Required invariants:
 - `CanHide == false` prevents hiding that column;
 - `CanShrink == false` keeps fills from reducing that column below its fitted
   width, so an essential value or embedded control stays whole; direct resizing
-  still stops at `MinWidth`;
+  still stops at `MinWidth`. A column that can shrink and shows content still
+  keeps the 150-DIP default width during fills, or its fitted width when that
+  is narrower (section 10);
 - `CanGrow == false` keeps fills from widening that column past its fitted
   width, so spare width goes to columns whose content can use it, such as a
   name, instead of padding a size or a date; direct resizing has no maximum;
@@ -1421,9 +1423,15 @@ missing. One factor keeps the fitted proportions, so the widest fitted columns
 keep the most room. Taking only the missing width keeps a window resize from
 making a column jump. A column the factor would take below its fill minimum,
 or above its fill maximum, stays there and the others in its step share what
-is left. That minimum is `MinWidth`, or the fitted width when `CanShrink` is
-false. That maximum is the fitted width when `CanGrow` is false, and there is
-none otherwise. The empty-column step
+is left. That minimum is the fitted width when `CanShrink` is false, and
+`MinWidth` for an empty column. A column with content keeps the 150-DIP default
+width, or its fitted width when that is narrower, raised to `MinWidth`. When
+every other column keeps its fitted width, as a name beside compact facts
+does, the one column that can shrink takes the whole shortfall; without this
+minimum a narrow window cut it to its first letter, and the person could no
+longer tell the rows apart. Past it the columns at the right run past the
+edge (section 8). That maximum is the fitted width when `CanGrow`
+is false, and there is none otherwise. The empty-column step
 uses the same minimum when counting the width it can give up, so a protected
 header never hides a shortfall that the other columns must absorb. When even
 the minimums do not fit, the columns run past the edge as section 8

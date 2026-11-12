@@ -225,9 +225,26 @@ public sealed partial class Table
         return changed;
     }
 
-    // Scaling starts from fitted widths, so a protected column keeps that width as its floor.
-    private static double FillMinimum(EffectiveColumn column) =>
-        column.Column.CanShrink ? column.Column.MinWidth : column.Width;
+    /// <summary>
+    /// Scaling starts from fitted widths, so a protected column keeps that width as its floor. A
+    /// column with content keeps the default width, or its fit when narrower: when every other
+    /// column is protected it takes the whole shortfall, and a name cut to its first letter no
+    /// longer tells the rows apart. The columns that then do not fit run past the edge.
+    /// </summary>
+    private double FillMinimum(EffectiveColumn column)
+    {
+        if (!column.Column.CanShrink)
+        {
+            return column.Width;
+        }
+
+        if (_emptyColumns.Contains(column))
+        {
+            return column.Column.MinWidth;
+        }
+
+        return column.Clamp(Math.Min(column.Width, Column.DefaultWidth));
+    }
 
     // Scaling starts from fitted widths, so a column that cannot grow keeps that width as its
     // ceiling.

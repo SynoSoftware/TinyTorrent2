@@ -43,18 +43,12 @@
           IsTabStop="False"
           AutomationProperties.Name="{x:Bind Model.Text.Get('settings', 'weekly_schedule'), Mode=OneWay}"
         />
-        <Grid
+        <local:WrapPanel
+          Orientation="Horizontal"
           ColumnSpacing="24"
-          MaxWidth="640"
-          HorizontalAlignment="Left"
+          RowSpacing="8"
           Visibility="{x:Bind Model.FollowsSchedule, Mode=OneWay}"
         >
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="*" />
-          </Grid.ColumnDefinitions>
           <Grid ColumnSpacing="8" VerticalAlignment="Center">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="Auto" />
@@ -73,7 +67,7 @@
               Style="{StaticResource TinyTorrentStatusTextStyle}"
             />
           </Grid>
-          <Grid Grid.Column="1" ColumnSpacing="8" VerticalAlignment="Center">
+          <Grid ColumnSpacing="8" VerticalAlignment="Center">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="Auto" />
               <ColumnDefinition Width="*" />
@@ -91,7 +85,7 @@
               Style="{StaticResource TinyTorrentStatusTextStyle}"
             />
           </Grid>
-          <Grid Grid.Column="2" ColumnSpacing="8" VerticalAlignment="Center">
+          <Grid ColumnSpacing="8" VerticalAlignment="Center">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="Auto" />
               <ColumnDefinition Width="*" />
@@ -109,20 +103,19 @@
               Style="{StaticResource TinyTorrentStatusTextStyle}"
             />
           </Grid>
-          <TextBlock
-            x:Name="Now"
-            Grid.Column="3"
-            VerticalAlignment="Center"
-            Style="{StaticResource TinyTorrentStatusTextStyle}"
-            TextTrimming="CharacterEllipsis"
-            local:Trimming.ShowsToolTip="True"
-          />
-        </Grid>
+        </local:WrapPanel>
+        <!-- Its own line: the time changes every minute, and in the wrapping
+             legend a wider text could move every row below it. -->
         <TextBlock
-          Text="{x:Bind Model.TimelineHint, Mode=OneWay}"
-          Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
+          x:Name="Now"
+          Visibility="{x:Bind Model.FollowsSchedule, Mode=OneWay}"
+          Style="{StaticResource TinyTorrentStatusTextStyle}"
           TextTrimming="CharacterEllipsis"
           local:Trimming.ShowsToolTip="True"
+        />
+        <TextBlock
+          Text="{x:Bind Model.TimelineHint, Mode=OneWay}"
+          Style="{StaticResource TinyTorrentDescriptionTextStyle}"
         />
       </StackPanel>
     </Border>
@@ -147,9 +140,7 @@
       </local:SettingsRow>
       <TextBlock
         Text="{x:Bind Model.Text.Get('settings', 'schedule_hint'), Mode=OneWay}"
-        Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
-        TextTrimming="CharacterEllipsis"
-        local:Trimming.ShowsToolTip="True"
+        Style="{StaticResource TinyTorrentDescriptionTextStyle}"
       />
       <StackPanel x:Name="Periods" Spacing="8" />
     </StackPanel>

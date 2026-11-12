@@ -13,9 +13,10 @@ public sealed partial class SettingsLink : Button
     private readonly TextBlock _description = new()
     {
         Style = (Style)Application.Current.Resources["TinyTorrentTitleDetailTextStyle"],
-        TextTrimming = TextTrimming.CharacterEllipsis,
         Visibility = Visibility.Collapsed,
     };
+    private string _descriptionText = string.Empty;
+    private string _summary = string.Empty;
     private readonly FontIcon _icon = new()
     {
         FontFamily = Segoe.Font,
@@ -39,15 +40,40 @@ public sealed partial class SettingsLink : Button
         }
     }
 
+    /// <summary>Help text under the header. It wraps, as every setting's description does.</summary>
     public string Description
     {
-        get => _description.Text;
+        get => _descriptionText;
         set
         {
-            _description.Text = value;
-            _description.Visibility = value.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
-            AutomationProperties.SetHelpText(this, value);
+            _descriptionText = value;
+            RefreshDescription();
         }
+    }
+
+    /// <summary>
+    /// A value under the header, shown when there is no description. It stays on one line,
+    /// because a value that changes must not change the link's height.
+    /// </summary>
+    public string Summary
+    {
+        get => _summary;
+        set
+        {
+            _summary = value;
+            RefreshDescription();
+        }
+    }
+
+    private void RefreshDescription()
+    {
+        var wraps = _descriptionText.Length > 0;
+        var text = wraps ? _descriptionText : _summary;
+        _description.Text = text;
+        _description.TextWrapping = wraps ? TextWrapping.Wrap : TextWrapping.NoWrap;
+        _description.TextTrimming = wraps ? TextTrimming.None : TextTrimming.CharacterEllipsis;
+        _description.Visibility = text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        AutomationProperties.SetHelpText(this, text);
     }
 
     public string Glyph

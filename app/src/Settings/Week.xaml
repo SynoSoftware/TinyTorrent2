@@ -67,6 +67,9 @@
       <Style x:Key="WeekOutlineStyle" TargetType="Border">
         <Setter Property="BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}" />
       </Style>
+      <Style x:Key="WeekCoveredStyle" TargetType="Rectangle">
+        <Setter Property="Stroke" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+      </Style>
       <Style x:Key="WeekHandleStyle" TargetType="Border">
         <Setter Property="Background" Value="{ThemeResource TextFillColorPrimaryBrush}" />
       </Style>
@@ -85,6 +88,7 @@
   <Grid Background="Transparent">
     <Canvas x:Name="Backdrop" IsHitTestVisible="False" />
     <Canvas x:Name="Blocks" IsHitTestVisible="False" />
+    <Canvas x:Name="Covered" IsHitTestVisible="False" />
     <Canvas x:Name="Outlines" IsHitTestVisible="False" />
     <Canvas x:Name="NowMarker" IsHitTestVisible="False">
       <Border

@@ -170,7 +170,7 @@ public sealed partial class SettingsPage
             )
                 continue;
             button.Header = Model.Text.Get("settings", key);
-            button.Description = value();
+            button.Summary = value();
         }
     }
 }

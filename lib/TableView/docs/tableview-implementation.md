@@ -138,8 +138,10 @@ while `IsAutomaticFillEnabled` is off.
 `Table/Columns.cs` handles successive size changes with a one-shot 150-ms timer.
 The first change discards the fitted widths; following changes reuse them and
 the empty columns that measurement found, restarting the timer each time.
-The scale uses one fill minimum for both empty-column slack and width clamping:
-the declared minimum, or the unscaled fitted width when `CanShrink` is false.
+The scale uses one fill minimum for both empty-column slack and width clamping
+(`FillMinimum`): the unscaled fitted width when `CanShrink` is false, the
+declared minimum for an empty column, and otherwise `Column.DefaultWidth` or
+the unscaled fitted width when narrower.
 Width clamping also uses a fill maximum: the unscaled fitted width when `CanGrow`
 is false, and none otherwise.
 When the size settles, the timer performs a fresh fit at the final bounds. Explicit

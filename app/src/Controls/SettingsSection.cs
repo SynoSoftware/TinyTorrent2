@@ -82,6 +82,9 @@ public sealed partial class SettingsSection : ContentControl
         if (GetTemplateChild("SummaryLabel") is TextBlock label)
         {
             label.Text = Description.Length > 0 ? Description : Summary;
+            // A description wraps like every setting's description; a summary
+            // is a value and stays on one line.
+            label.TextWrapping = Description.Length > 0 ? TextWrapping.Wrap : TextWrapping.NoWrap;
             label.Visibility =
                 label.Text.Length > 0 && (!IsExpanded || Description.Length > 0)
                     ? Visibility.Visible

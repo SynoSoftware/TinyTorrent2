@@ -84,8 +84,14 @@ public sealed partial class Column : DependencyObject
     /// <summary>Cell content template. It receives the row item as its content.</summary>
     public DataTemplate? CellTemplate { get; set; }
 
+    /// <summary>
+    /// The width of a column whose host declares none, and the narrowest a fill makes a column
+    /// that shows content, unless its fit is narrower.
+    /// </summary>
+    internal const double DefaultWidth = 150;
+
     /// <summary>Baseline width in DIPs. Finite and greater than zero.</summary>
-    public double Width { get; set; } = 150;
+    public double Width { get; set; } = DefaultWidth;
 
     /// <summary>Lower width bound in DIPs. Finite and non-negative.</summary>
     public double MinWidth { get; set; }
@@ -98,7 +104,9 @@ public sealed partial class Column : DependencyObject
     public bool CanResize { get; set; } = true;
 
     /// <summary>
-    /// Whether fills may shrink below the fitted width. Direct resizing still uses MinWidth.
+    /// Whether fills may shrink below the fitted width. A column that may, and shows content, still
+    /// keeps the default width of 150 DIPs, or its fitted width when that is narrower. Direct
+    /// resizing still uses MinWidth.
     /// </summary>
     public bool CanShrink { get; set; } = true;
 

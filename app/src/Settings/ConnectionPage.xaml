@@ -391,8 +391,8 @@
                     </Grid>
                     <ProgressBar Height="4" Value="{x:Bind Model.TestProgress, Mode=OneWay}"
                       AutomationProperties.Name="{x:Bind Model.TestStatus, Mode=OneWay}" />
-                    <TextBlock Text="{x:Bind Model.TestDetail, Mode=OneWay}" TextTrimming="CharacterEllipsis"
-                      Foreground="{ThemeResource TextFillColorSecondaryBrush}" controls:Trimming.ShowsToolTip="True" />
+                    <TextBlock Text="{x:Bind Model.TestDetail, Mode=OneWay}" TextWrapping="Wrap"
+                      Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <TextBlock Text="{x:Bind Model.TransferStatus, Mode=OneWay}"
                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis"
                       controls:Trimming.ShowsToolTip="True" />

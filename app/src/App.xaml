@@ -748,6 +748,18 @@
         <Setter Property="TextWrapping" Value="NoWrap" />
         <Setter Property="VerticalAlignment" Value="Center" />
       </Style>
+      <!-- A setting's description and other help text wrap, as in Windows
+           Settings, so their whole text stays on screen at every width. Tight
+           bounds trim every line, so wrapped lines would touch; full bounds
+           also keep the descenders inside a parent that clips. -->
+      <Style
+        x:Key="TinyTorrentDescriptionTextStyle"
+        TargetType="TextBlock"
+        BasedOn="{StaticResource TinyTorrentTitleDetailTextStyle}"
+      >
+        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="TextLineBounds" Value="Full" />
+      </Style>
       <Style
         x:Key="TinyTorrentProgressStyle"
         TargetType="ProgressBar"
@@ -1238,9 +1250,7 @@
                     <TextBlock
                       x:Name="DescriptionLabel"
                       Text="{TemplateBinding Description}"
-                      Style="{StaticResource TinyTorrentTitleDetailTextStyle}"
-                      TextTrimming="CharacterEllipsis"
-                      controls:Trimming.ShowsToolTip="True"
+                      Style="{StaticResource TinyTorrentDescriptionTextStyle}"
                     />
                   </StackPanel>
                 </Grid>

@@ -20,6 +20,7 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
     };
     private readonly TextBlock _status = new() { TextTrimming = TextTrimming.CharacterEllipsis };
     private string? _language;
+    private string[] _scopeLabels = [];
     private bool _busy;
     private bool _refreshing;
     private long? _batchId;
@@ -65,9 +66,6 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
         AutomationProperties.SetAutomationId(_download, "SubtitleDownload");
         AutomationProperties.SetLiveSetting(_status, AutomationLiveSetting.Polite);
         Trimming.SetShowsToolTip(_status, true);
-        for (var index = 0; index < _counts.Length; index++)
-            _scope.Items.Add(new ComboBoxItem());
-        _scope.SelectedIndex = 0;
         var choices = new Grid { ColumnSpacing = 12 };
         choices.ColumnDefinitions.Add(new ColumnDefinition());
         choices.ColumnDefinitions.Add(new ColumnDefinition());
@@ -110,9 +108,12 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
         _scopeRow = new SettingsRow { Content = _scope };
         _downloadRow = new SettingsRow { Content = choices, BorderThickness = new Thickness(0) };
         _coverage = new SettingsRow { BorderThickness = new Thickness(0) };
+        // The status is feedback, so it keeps its own single line: in a row's
+        // description it would wrap and move the Find button while it runs.
+        _status.Margin = new Thickness(0, 0, 0, 10);
         Content = new StackPanel
         {
-            Children = { _coverage, _scopeRow, _downloadRow },
+            Children = { _coverage, _scopeRow, _downloadRow, _status },
         };
         Present();
     }
@@ -188,14 +189,21 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
             _download.ItemsSource = new[] { T("exact_only"), T("best_match") }.Concat(upTo).ToArray();
             _download.SelectedIndex = download;
         }
+        // Plain strings, so a closed box shows its selected text as the
+        // source gives it; a ComboBoxItem whose Content changes does not.
         var keys = new[] { "new", "missing_data", "all" };
-        for (var index = 0; index < keys.Length; index++)
-            ((ComboBoxItem)_scope.Items[index]).Content = _text.Format(
-                "filters",
-                "count",
-                _text.Get("request_protection", keys[index]),
-                _counts[index]
-            );
+        var labels = keys.Select(
+                (key, index) =>
+                    _text.Format("filters", "count", _text.Get("request_protection", key), _counts[index])
+            )
+            .ToArray();
+        if (!labels.SequenceEqual(_scopeLabels))
+        {
+            _scopeLabels = labels;
+            var scope = Math.Max(0, _scope.SelectedIndex);
+            _scope.ItemsSource = labels;
+            _scope.SelectedIndex = scope;
+        }
         AutomationProperties.SetName(_scope, T("movies_to_search"));
         AutomationProperties.SetName(_download, T("matches_to_download"));
         _scope.IsEnabled = _download.IsEnabled = !_busy && _bridge.Model?.Finding != true;
@@ -204,8 +212,6 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
             : _bridge.Model is { Found: { } found } completed && _batchId == completed.BatchId
                 ? _text.Format("subtitles", "batch_found", found, completed.FindTotal)
             : _text.Format("subtitles", "to_search", Count);
-        if (_scopeRow is not null)
-            _scopeRow.Description = _status.Text;
         _refreshing = false;
         PropertyChanged?.Invoke(this, new(nameof(CanAct)));
     }
