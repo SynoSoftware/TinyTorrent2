@@ -179,11 +179,13 @@ public sealed partial class MainWindow
                         .Single(control => control.Name == "Categories")
                         .SelectedItem as FrameworkElement
                 )?.Tag?.ToString() == "Limits";
-            var editor = CaptureElements(page)
-                .OfType<ComboBox>()
-                .SingleOrDefault(control => control.Name == "LimitsChoice");
+            // Settings focuses the row it reveals and outlines its card; the
+            // limit mode's row holds the limit selector.
             var focus = FocusManager.GetFocusedElement(Root.XamlRoot) as DependencyObject;
-            return (shown, editor is not null && Controls.VisualTree.Contains(editor, focus));
+            var focused = CaptureElements(page)
+                .OfType<Controls.SettingsRow>()
+                .Any(row => row.Name == "ModeRow" && Controls.VisualTree.Contains(row, focus));
+            return (shown, focused);
         }
         var limits = Model.Text.Get("commands", "limits");
         list = await Open(limits, "search-limits-before");
@@ -260,15 +262,14 @@ public sealed partial class MainWindow
         choice = await Choose(list, port.Label);
         await CaptureLayout();
         await CaptureUi("search-named-setting-after");
-        var editor = _settingsPage is null
+        var row = _settingsPage is null
             ? null
             : CaptureElements(_settingsPage)
                 .OfType<Controls.SettingsRow>()
-                .SingleOrDefault(row => ReferenceEquals(row.Setting, port))
-                ?.Content as TextBox;
+                .SingleOrDefault(candidate => ReferenceEquals(candidate.Setting, port));
         var focus = FocusManager.GetFocusedElement(Root.XamlRoot) as DependencyObject;
-        var focused = editor is not null
-            && Controls.VisualTree.Contains(editor, focus)
+        var focused = row is not null
+            && Controls.VisualTree.Contains(row, focus)
             && Model.Page == WindowPage.Settings;
         var retained = port.Input == input && !port.HasDraft && !port.IsPending;
         outcomes.Add(
@@ -283,7 +284,7 @@ public sealed partial class MainWindow
             }
         );
         if (!choice.Submitted || !focused || !retained)
-            failures.Add("The named setting does not focus its editor without changing the value.");
+            failures.Add("The named setting does not focus its row without changing the value.");
         Search.IsSuggestionListOpen = false;
         Search.Text = string.Empty;
         completed.Add("search-named-setting");

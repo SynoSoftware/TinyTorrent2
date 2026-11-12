@@ -445,9 +445,11 @@ public sealed partial class MainWindow
             Model.Library.Rows.ToArray(),
             Model.Library.Rows[0]
         );
+        // The table publishes a selection set while it prepares its view once
+        // the view is ready, so the model receives it later.
+        await CaptureReady(Model.Library, () => Model.Library.Selection.Items.Count == 2);
         if (
-            Model.Library.Selection.Items.Count != 2
-            || Model.Library.Selected is not null
+            Model.Library.Selected is not null
             || Model.Library.Properties.CanExecute(null)
         )
             throw new InvalidOperationException("Library reduced multiple selection to one movie.");

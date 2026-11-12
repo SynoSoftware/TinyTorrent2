@@ -419,14 +419,17 @@ try {
         $ui = & (Join-Path $PSScriptRoot 'Performance.ps1') -WindowPath $window -Directory $captures -PresentMonPath $PresentMonPath -ElevatedRecorder:$ElevatedRecorder -InputOnly:$InputOnly -Replay:$Replay -Hold:$Hold
     }
     else { $ui = Start-Process -FilePath $window -WindowStyle Hidden -PassThru }
-    $deadline = [DateTime]::UtcNow.AddMinutes(10)
+    # add-layout visits about 27 pages in each of its 12 language, theme and
+    # size cells, which takes about 11 minutes on the owner's laptop.
+    $minutes = if ($Review -eq 'add-layout') { 15 } else { 10 }
+    $deadline = [DateTime]::UtcNow.AddMinutes($minutes)
     # The desktop journey writes 'restart' to this file to have its engine
     # stopped, then 'disconnected' once it shows that state, to have the engine
     # started again.
     $signal = Join-Path $captures 'restart.txt'
     $restarted = $false
     while (-not $ui.WaitForExit(100)) {
-        Assert ([DateTime]::UtcNow -lt $deadline) "The $Review review did not close within ten minutes"
+        Assert ([DateTime]::UtcNow -lt $deadline) "The $Review review did not close within $minutes minutes"
         Assert (-not ($script:process -and $script:process.HasExited)) 'The review engine exited during the journey'
         Assert (-not ($peer -and $peer.HasExited)) 'The loopback seed exited during the journey'
         $state = if (Test-Path -LiteralPath $signal) { Get-Content -LiteralPath $signal -Raw }
