@@ -1,6 +1,6 @@
 param(
     [ValidateSet('1', 'smoke', 'shell', 'menus', 'menu-choices', 'update-check', 'location-warning', 'schedule', 'desktop', 'dialogs', 'recovery', 'details', 'details-files', 'file-controls', 'files', 'files-layout',
-        'search', 'library', 'library-files', 'traffic', 'peers', 'peer-switch', 'peer-preferences', 'map', 'map-performance', 'map-geography', 'map-arcs', 'map-composition', 'map-handoff', 'selection', 'selection-frame', 'performance', 'performance-map', 'performance-selection', 'connections', 'edits', 'add-layout', 'settings-layout', 'settings-prototype', 'subtitle-tasks', 'memory', 'footer', 'workspace')]
+        'search', 'library', 'library-files', 'traffic', 'peers', 'peer-switch', 'peer-preferences', 'map', 'map-performance', 'map-geography', 'map-arcs', 'map-composition', 'map-handoff', 'selection', 'selection-frame', 'performance', 'performance-map', 'performance-selection', 'connections', 'edits', 'add-layout', 'settings-layout', 'settings-prototype', 'subtitle-tasks', 'memory', 'footer', 'workspace', 'discovery')]
     [string] $Review = '1',
     [ValidateSet('en', 'es')]
     [string] $Language,
@@ -160,7 +160,7 @@ function Test-Idle($torrents) {
     return -not ($torrents | Where-Object { -not $_.paused -or $_.peer_count -or $_.download_rate -or $_.upload_rate })
 }
 
-if ($Review -in 'files', 'files-layout', 'library', 'library-files', 'traffic', 'workspace', 'selection', 'selection-frame', 'performance', 'performance-map', 'performance-selection', 'dialogs', 'recovery') {
+if ($Review -in 'files', 'files-layout', 'library', 'library-files', 'traffic', 'workspace', 'selection', 'selection-frame', 'performance', 'performance-map', 'performance-selection', 'dialogs', 'recovery', 'discovery') {
     $document = @{ format = 1; torrents = @(); settings = @{ language = 'en'; theme = 'light'; port_mapping = $false;
         check_for_updates = $false; show_splash = $false; notifications_enabled = $false; prevent_sleep = $false } }
 } else {

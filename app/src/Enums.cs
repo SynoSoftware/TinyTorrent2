@@ -984,5 +984,6 @@ internal enum CaptureMode
     Memory,
     Footer,
     Workspace,
+    Discovery,
 }
 #endif
