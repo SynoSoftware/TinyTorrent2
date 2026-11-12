@@ -45,12 +45,22 @@ and storage rules for Library and subtitle requests. Its change index selects
 the retry/reset and IMDb local-data references.
 
 The [plan for using gozler](plans/13-using-gozler.md) defines how Library finds
-video, music and subtitles, and how the engine finds moved torrent files, by running
-the person's own gozler (`gozler.exe --json`) instead of a TinyTorrent file index:
-the two opt-ins, what the person sees when gozler is missing, stopped, still indexing
-or too old, the install prompt, current-file visibility and the
-engine's recovery hold. TinyTorrent never replaces an installed gozler and never
-runs a second service. It is a draft, to be reviewed before implementation.
+the video, music and subtitle files on the person's drives by running the
+person's own gozler (`gozler.exe --json`) instead of a TinyTorrent file index:
+the opt-in, the one addition to gozler, the query, what the person sees when
+gozler is missing, stopped, still indexing or too old, the install prompt, and
+how disk files join the catalogue. TinyTorrent never replaces an installed
+gozler and never runs a second service. It was reviewed on 11 November 2026
+and is not implemented.
+
+The [missing torrent files plan](plans/21-missing-torrent-files.md) holds the
+engine's part of that work: torrent files that were deleted or moved outside
+TinyTorrent. The engine does not download such a file again by itself: it
+asks the person once for all torrents, to download the files again or to skip
+them, and the rest of each torrent keeps running. A payload that the person
+moved on its drive is followed with no check and without gozler; a payload on
+another fixed drive is found with gozler. It was reviewed in four rounds on
+12 November 2026, no decision is open, and it is not implemented.
 
 [IMDb datasets](contracts/imdb-datasets.md) owns the Library provider that reads IMDb's
 downloadable datasets from a local SQLite file and shows their ratings for
