@@ -257,10 +257,6 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $repository '3rdParty/complete'))) {
         throw '3rdParty is incomplete. The repository owner must supply the compiled dependencies before generating an installer.'
     }
-    $upx = Join-Path $env:ProgramFiles 'upx/upx.exe'
-    if (-not (Test-Path -LiteralPath $upx)) {
-        throw "UPX is missing. Install it at $upx before generating an installer."
-    }
     $inno = Get-Download 'https://github.com/jrsoftware/issrc/releases/download/is-7_1_0/innosetup-7.1.0-x64.exe' 'innosetup-7.1.0-x64.exe' 'Pyrsys B.V.'
     $compilerDir = Join-Path $cache 'inno-7.1.0'
     $target = (Get-Item -LiteralPath $artifacts).Target
@@ -328,12 +324,6 @@ try {
         }
     }
     $expected = [version] $releaseVersion
-    $engineFile = Join-Path $publish "$engine.exe"
-    $engineSize = (Get-Item -LiteralPath $engineFile).Length
-    Write-Host 'Compressing the published engine...'
-    Invoke-Tool $upx @('--best', '--lzma', '--compress-resources=0', $engineFile) (Join-Path $session 'upx.log')
-    Invoke-Tool $upx @('--test', $engineFile) (Join-Path $session 'upx-test.log')
-    Write-Host "Engine size: $engineSize -> $((Get-Item -LiteralPath $engineFile).Length) bytes"
     foreach ($name in $engine, $window) {
         $file = Join-Path $publish "$name.exe"
         Check-Executable $file $expected $metadata.Company 'TinyTorrent'

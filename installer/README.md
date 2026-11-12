@@ -5,7 +5,6 @@ then opens `artifacts/release/`. There are no setup questions. The first run
 downloads and verifies a portable Inno Setup compiler and Microsoft runtime
 installers; later runs reuse that cache. Visual Studio, the .NET SDK, and the
 owner's compiled `3rdParty/` dependencies must already be available.
-UPX must be installed at `C:\Program Files\upx\upx.exe`.
 
 From PowerShell, run:
 
@@ -49,9 +48,9 @@ the release command rejects missing application or library resource indexes,
 the flag font and the DB-IP country data, so published
 installations keep their icons and peer flags. The app build fetches the month's
 country data, as [peer location](../docs/contracts/peer-location.md) describes.
-The command compresses the staged engine with UPX, preserves its resources
-(including properties and icons), and verifies the compressed data before
-signing and packaging. Build outputs stay uncompressed.
+The command does not compress the executables with a packer such as UPX,
+because antivirus heuristics often flag packed programs, and a flagged
+installer stops people from installing it.
 
 To move to another product version:
 
