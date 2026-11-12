@@ -37,6 +37,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     private bool _pacing;
     private bool _available;
     private bool _canShowTorrent;
+    private bool _canDiscover;
     private bool _hasCatalogue;
     private string _emptyText = string.Empty;
     private bool _visible;
@@ -299,12 +300,34 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
     public ICommand RefreshMetadata { get; }
     public ICommand ClearFilters { get; }
     public ICommand ShowTorrents { get; }
+
+    /// <summary>Switches disk discovery on, from the empty state.</summary>
+    public ICommand DiscoverMedia { get; }
+
+    /// <summary>
+    /// Whether the empty state offers <see cref="DiscoverMedia"/>: discovery
+    /// is off and the Library database is open. MainViewModel sets it from
+    /// the disk source's state.
+    /// </summary>
+    internal bool CanDiscover
+    {
+        get => _canDiscover;
+        set
+        {
+            if (_canDiscover == value)
+                return;
+            _canDiscover = value;
+            ((RelayCommand)DiscoverMedia).Refresh();
+            Changed(nameof(CanDiscover));
+        }
+    }
     internal event EventHandler<LibraryRow>? OpenRequested;
     internal event EventHandler<string>? FolderRequested;
     internal event EventHandler<Origin>? TorrentRequested;
     internal event EventHandler<ProviderOption>? FetchMetadataRequested;
     internal event EventHandler? SettingsRequested;
     internal event EventHandler? TorrentsRequested;
+    internal event EventHandler? DiscoveryRequested;
     internal event EventHandler? RetryRequested;
     internal event EventHandler? FiltersRequested;
     internal event EventHandler? PropertiesRequested;
@@ -330,6 +353,10 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
                 return Task.CompletedTask;
             },
             () => true
+        );
+        DiscoverMedia = new RelayCommand(
+            () => DiscoveryRequested?.Invoke(this, EventArgs.Empty),
+            () => CanDiscover
         );
         Open = new RelayCommand(
             () =>

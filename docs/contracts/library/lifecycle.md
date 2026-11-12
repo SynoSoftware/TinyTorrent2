@@ -77,7 +77,10 @@ the inputs; total disk capacity and unrelated folders do not affect the work.
   projection and rows. Do not keep a hidden process or wait for network timeout.
   The next window reconstructs current membership before resuming saved work.
 - With no source changes or pending work, Library has no periodic folder checks
-  or cache refresh loop. Provider-required expiry is handled off the query path.
+  or cache refresh loop. Disk discovery asks gozler again every 5 minutes, and
+  only while Library is shown and the window is active
+  ([when Library asks](disk.md#when-library-asks)). Provider-required expiry is
+  handled off the query path.
 
 Use a managed SQLite binding in the existing C# application. SQLite's native
 runtime dependency belongs to that process alone. The engine project removes

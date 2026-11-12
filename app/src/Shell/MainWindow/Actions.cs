@@ -220,7 +220,7 @@ public sealed partial class MainWindow
                 or nameof(MainViewModel.IsToolbarOpen):
                 QueueMenus();
                 break;
-            case nameof(MainViewModel.Selected):
+            case nameof(MainViewModel.Selected) or nameof(MainViewModel.Disk):
                 QueueTorrentMenu();
                 break;
         }
@@ -366,7 +366,7 @@ public sealed partial class MainWindow
         MenuItems.Fill(
             TorrentMenu.Items,
             library
-                ? [.. LibraryMenu()]
+                ? [.. LibraryMenu(), .. DiscoveryMenu()]
                 :
                 [
                     .. torrent,

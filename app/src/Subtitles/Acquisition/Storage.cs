@@ -130,7 +130,13 @@ internal sealed partial class Acquisition
         WHERE r.complete=1 AND r.settled=1 AND r.collected=1
         """;
 
-    private Task<Target[]> Targets(CancellationToken cancellation) =>
+    // Every torrent's movies, and the disk movies of entries and of subtitle
+    // work the person started. Disk movies get no automatic work, so work over
+    // every target is not sized by every movie on the PC.
+    private Task<Target[]> Targets(
+        CancellationToken cancellation,
+        IReadOnlySet<long>? entries = null
+    ) =>
         Run(
             connection =>
             {
@@ -156,9 +162,19 @@ internal sealed partial class Acquisition
                             SubtitleFile.Rank(reader.GetString(0), reader.GetString(1))
                         );
                     }
-                command.CommandText =
-                    $"SELECT {Video.Columns} FROM {Video.Tables} WHERE f.kind=$kind;";
+                command.CommandText = $"""
+                    SELECT {Video.Columns} FROM {Video.Tables}
+                    WHERE f.kind=$kind AND (o.data_source='torrent'
+                        OR f.entry_id IN (SELECT value FROM json_each($entries))
+                        OR (f.origin,f.file_index) IN (SELECT origin,file_index FROM subtitle_job_sources
+                            UNION SELECT s.origin,s.file_index FROM subtitle_output_sources s
+                            JOIN subtitle_outputs p USING(path,language) WHERE p.created=1));
+                    """;
                 command.Parameters.AddWithValue("$kind", (int)FileKind.Video);
+                command.Parameters.AddWithValue(
+                    "$entries",
+                    entries is null ? DBNull.Value : JsonSerializer.Serialize(entries)
+                );
                 using (var reader = command.ExecuteReader())
                     while (reader.Read())
                         files.Add(Video.Read(reader));
@@ -661,7 +677,9 @@ internal sealed partial class Acquisition
         return history;
     }
 
-    // The finished movies Find searches, which Count also counts.
+    // The finished movies Find searches, which Count also counts. Over the
+    // whole collection they are the torrents' movies: the person expects the
+    // movies TinyTorrent downloaded, not a search for every movie on the PC.
     private IEnumerable<Target> Searchable(
         SqliteConnection connection,
         IEnumerable<Target> targets,
@@ -673,7 +691,11 @@ internal sealed partial class Acquisition
         return targets.Where(target =>
             target.Rank == 1
             && target.Complete
-            && (entries is null || target.Videos.Any(video => entries.Contains(video.EntryId)))
+            && (
+                entries is null
+                    ? target.Videos.Any(video => !video.Disk)
+                    : target.Videos.Any(video => entries.Contains(video.EntryId))
+            )
             && Includes(history, target, scope)
             && (scope != SubtitleScope.New || CanLookup(connection, target))
         );
@@ -842,6 +864,7 @@ internal sealed partial class Acquisition
             StringComparer.Ordinal
         );
         private readonly HashSet<string> _paths = new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _kept = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<Target, int> _order = [];
 
         internal TargetIndex(Target[] targets)
@@ -850,6 +873,8 @@ internal sealed partial class Acquisition
             {
                 _order.Add(target, _order.Count);
                 _paths.Add(target.Path);
+                if (target.Videos.Any(video => !video.Disk))
+                    _kept.Add(target.Path);
                 if (!_languages.TryGetValue(target.Language, out var paths))
                     _languages.Add(target.Language, paths = new(StringComparer.OrdinalIgnoreCase));
                 paths.TryAdd(target.Path, target);
@@ -869,6 +894,12 @@ internal sealed partial class Acquisition
 
         internal bool Contains(string path) => _paths.Contains(path);
 
+        // Whether a torrent's movie still uses a created subtitle at the path,
+        // so it stays in place. A disk movie keeps none: at the old location
+        // of a torrent that moved or deleted its files, it is that torrent's
+        // file, listed until the next refresh.
+        internal bool Keeps(string path) => _kept.Contains(path);
+
         internal Target[] Order(IEnumerable<Target> targets) =>
             targets.Distinct().OrderBy(target => _order[target]).ToArray();
     }
@@ -877,9 +908,16 @@ internal sealed partial class Acquisition
     {
         // The columns Read takes, in its order, from Tables.
         internal const string Columns =
-            $"f.origin,f.file_index,f.path,l.path,f.size,f.complete,c.readable,f.entry_id,f.wanted,f.origin IN ({Finished})";
-        internal const string Tables =
-            "collected_files f JOIN locations l USING(entry_id) JOIN current_files c USING(entry_id)";
+            $"f.origin,f.file_index,f.path,l.path,f.size,f.complete,c.readable,f.entry_id,f.wanted,f.origin IN ({Finished}),o.data_source='disk'";
+        // o is the file's contribution. A location that a torrent lists
+        // follows the torrent, as in current_files, so the disk file there is
+        // no second movie.
+        internal const string Tables = """
+            collected_files f JOIN locations l USING(entry_id) JOIN current_files c USING(entry_id)
+            JOIN contributions o ON o.origin=f.origin AND (o.data_source='torrent' OR NOT EXISTS(
+                SELECT 1 FROM source_files t JOIN contributions u ON u.origin=t.origin
+                WHERE t.entry_id=l.entry_id AND u.data_source='torrent'))
+            """;
 
         internal static Video Read(SqliteDataReader reader) =>
             new(reader.GetString(0), reader.GetInt32(1), reader.GetString(3))
@@ -891,6 +929,7 @@ internal sealed partial class Acquisition
                 EntryId = reader.GetInt64(7),
                 Wanted = reader.GetBoolean(8),
                 JustFinished = reader.GetBoolean(9),
+                Disk = reader.GetBoolean(10),
             };
 
         private bool IsExtra { get; } = FileName.Interpret(FinalPath).IsExtra;
@@ -902,6 +941,8 @@ internal sealed partial class Acquisition
         internal bool Wanted { get; init; }
         // Its torrent has finished, and its completion search is not decided yet.
         internal bool JustFinished { get; init; }
+        // Disk discovery found it, at a location that no torrent lists.
+        internal bool Disk { get; init; }
         internal bool Eligible => Wanted && !IsExtra;
         internal bool CanHash =>
             Eligible && Complete && Readable && Size >= SubtitleFile.HashMinimum;

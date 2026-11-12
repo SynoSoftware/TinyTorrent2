@@ -165,6 +165,7 @@ public sealed class Strings
                 WorkDescription.Update update => "update_"
                     + update.Phase.ToString().ToLowerInvariant(),
                 WorkDescription.Sources => "sources",
+                WorkDescription.Discovery => "discovery",
                 WorkDescription.Maintenance maintenance => "maintenance_"
                     + maintenance.Work.ToString().ToLowerInvariant(),
                 _ => throw new InvalidOperationException(),
@@ -200,6 +201,7 @@ public sealed class Strings
             WorkDescription.FileProperties => "file_properties",
             WorkDescription.Update update => "update_" + update.Phase.ToString().ToLowerInvariant(),
             WorkDescription.Sources => "sources",
+            WorkDescription.Discovery => "discovery",
             WorkDescription.Maintenance maintenance => "maintenance_" + maintenance.Work.ToString().ToLowerInvariant(),
             _ => throw new InvalidOperationException(),
         };

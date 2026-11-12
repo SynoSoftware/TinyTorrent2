@@ -21,7 +21,7 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT DISTINCT c.origin,c.name,f.file_index FROM source_files f
-            JOIN contributions c USING(origin) WHERE f.entry_id=$entry;
+            JOIN contributions c USING(origin) WHERE f.entry_id=$entry AND c.data_source='torrent';
             """;
         command.Parameters.AddWithValue("$entry", entryId);
         var origins = new List<Origin>();

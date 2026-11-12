@@ -83,7 +83,7 @@ internal sealed partial class Acquisition(
             return 0;
         try
         {
-            var targets = (await Targets(_lifetime.Token).ConfigureAwait(false))
+            var targets = (await Targets(_lifetime.Token, entries).ConfigureAwait(false))
                 .Where(Eligible)
                 .ToArray();
             return await Run(

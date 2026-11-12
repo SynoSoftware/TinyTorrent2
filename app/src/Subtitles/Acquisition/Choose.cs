@@ -96,7 +96,8 @@ internal sealed partial class Acquisition
         {
             throw new SubtitleException(SubtitleFailure.Unconfigured);
         }
-        var targets = await Targets(cancellation).ConfigureAwait(false);
+        var targets = await Targets(cancellation, new HashSet<long> { entryId })
+            .ConfigureAwait(false);
         return targets.FirstOrDefault(target =>
                 target.Language == language
                 && Eligible(target)

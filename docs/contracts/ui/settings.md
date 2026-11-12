@@ -187,9 +187,12 @@ Transfers contains Download locations, Adding torrents, Queue, Seeding limits,
 Watched folder, and Skip files. Skip files
 hides its pattern editor while off, retaining the saved patterns. Network begins with adapter
 and proxy cards; advanced groups contain encryption, peer connections,
-discovery and incoming connections. Library settings use collapsed Video
-information, Subtitles and Search protection expanders to keep their controls
-out of the overview until needed. Video information includes the IMDb data row.
+discovery and incoming connections. Library settings use collapsed Media
+discovery, Video information, Subtitles and Search protection expanders to keep
+their controls out of the overview until needed. Media discovery holds the
+[disk discovery](../library/disk.md#the-option) option, gozler's
+state with Install or Retry where they apply, and the hidden folders, each with
+Remove. Video information includes the IMDb data row.
 Subtitles uses native task tabs: Preferences holds supplier access, wanted
 languages, automatic subtitles and additional matches. Wanted languages expands
 the language-selection controls; additional matches is a direct setting row.

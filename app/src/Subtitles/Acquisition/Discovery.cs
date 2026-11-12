@@ -14,9 +14,9 @@ internal sealed partial class Acquisition
     private Rerun? _inspection;
 
     /// <summary>
-    /// Sets the Library entries on screen. Their folders are checked for
-    /// subtitle files once per path and torrent stamp, in the background, as
-    /// the Library contract's no-scan ruling allows.
+    /// Sets the Library entries on screen. Their subtitle files are looked for
+    /// once per path and file list stamp, in the background, as the Library
+    /// contract's no-scan ruling allows.
     /// </summary>
     internal void SetDisplayed(IReadOnlySet<long> entries)
     {
@@ -57,19 +57,12 @@ internal sealed partial class Acquisition
             }
             if (displayed.Count == 0)
                 return;
-            bool Pending(Discovery movie) =>
-                displayed.Contains(movie.Video.EntryId) && Unscanned(movie);
-            // The displayed movies are usually scanned already, so only one that
-            // is not reads the whole library, whose other movies in the same
-            // folder decide which movie a subtitle file belongs to.
-            var shown = await Movies(cancellation, displayed).ConfigureAwait(false);
-            lock (_requestSync)
-                if (!shown.Any(Pending))
-                    return;
-            var movies = await Movies(cancellation).ConfigureAwait(false);
-            HashSet<Discovery> accepted;
-            lock (_requestSync)
-                accepted = movies.Where(Pending).ToHashSet();
+            var (movies, accepted) = await Pending(
+                    displayed,
+                    movie => displayed.Contains(movie.Video.EntryId) && Unscanned(movie),
+                    cancellation
+                )
+                .ConfigureAwait(false);
             if (accepted.Count == 0)
                 return;
             await Scan(null, movies, accepted, cancellation).ConfigureAwait(false);
@@ -170,9 +163,13 @@ internal sealed partial class Acquisition
                             .ConfigureAwait(false);
                         LanguagesChanged?.Invoke(this, EventArgs.Empty);
                     }
+                    // The command scans torrent folders; disk movies are checked
+                    // when they are displayed.
                     var movies = await Movies(cancellation).ConfigureAwait(false);
                     var accepted = movies
-                        .Where(movie => movie.Video.Eligible && movie.Video.Readable)
+                        .Where(movie =>
+                            movie.Video.Eligible && movie.Video.Readable && !movie.Video.Disk
+                        )
                         .ToHashSet();
                     var result = await Scan(run, movies, accepted, cancellation)
                         .ConfigureAwait(false);
@@ -192,10 +189,32 @@ internal sealed partial class Acquisition
     // the work list only when it has movies to scan.
     private async Task Discover(CancellationToken cancellation)
     {
-        var movies = await Movies(cancellation).ConfigureAwait(false);
-        HashSet<Discovery> accepted;
-        lock (_requestSync)
-            accepted = movies.Where(movie => movie.Video.JustFinished && Unscanned(movie)).ToHashSet();
+        var finished = await Run<IReadOnlySet<long>>(
+                connection =>
+                {
+                    using var command = connection.CreateCommand();
+                    command.CommandText = $"""
+                        SELECT entry_id FROM collected_files
+                        WHERE kind=$kind AND origin IN ({Finished});
+                        """;
+                    command.Parameters.AddWithValue("$kind", (int)FileKind.Video);
+                    using var reader = command.ExecuteReader();
+                    var entries = new HashSet<long>();
+                    while (reader.Read())
+                        entries.Add(reader.GetInt64(0));
+                    return entries;
+                },
+                cancellation
+            )
+            .ConfigureAwait(false);
+        if (finished.Count == 0)
+            return;
+        var (movies, accepted) = await Pending(
+                finished,
+                movie => movie.Video.JustFinished && Unscanned(movie),
+                cancellation
+            )
+            .ConfigureAwait(false);
         if (accepted.Count == 0)
             return;
         await ShowScan(cancellation, (run, token) => Scan(run, movies, accepted, token))
@@ -238,6 +257,31 @@ internal sealed partial class Acquisition
         }
     }
 
+    // Reads the movies of the entries that are due, and the other movies in
+    // their folders, which decide which movie a subtitle file belongs to.
+    // Callers hold no lock; due runs under _requestSync.
+    private async Task<(List<Discovery> Movies, HashSet<Discovery> Accepted)> Pending(
+        IReadOnlySet<long> entries,
+        Func<Discovery, bool> due,
+        CancellationToken cancellation
+    )
+    {
+        var candidates = await Movies(cancellation, entries).ConfigureAwait(false);
+        (string Folder, bool Recursive)[] folders;
+        lock (_requestSync)
+            folders = candidates
+                .Where(due)
+                .Select(movie => (movie.Folder, movie.Recursive))
+                .Distinct()
+                .ToArray();
+        if (folders.Length == 0)
+            return ([], []);
+        var near = await Entries(folders, cancellation).ConfigureAwait(false);
+        var movies = await Movies(cancellation, near).ConfigureAwait(false);
+        lock (_requestSync)
+            return (movies, movies.Where(due).ToHashSet());
+    }
+
     // Reads every movie, or with entries only those Library entries.
     private async Task<List<Discovery>> Movies(
         CancellationToken cancellation,
@@ -248,10 +292,15 @@ internal sealed partial class Acquisition
                 connection =>
                 {
                     using var command = connection.CreateCommand();
+                    // A torrent's own folder is the common folder of its files.
+                    // The disk contribution has none, because its files are
+                    // anywhere on the PC.
                     command.CommandText = """
                         SELECT f.origin,l.path FROM collected_files f JOIN locations l USING(entry_id)
-                        WHERE $entries IS NULL OR f.origin IN (SELECT origin FROM collected_files
-                            WHERE entry_id IN (SELECT value FROM json_each($entries)));
+                        JOIN contributions c ON c.origin=f.origin
+                        WHERE c.data_source='torrent' AND ($entries IS NULL OR f.origin IN (
+                            SELECT origin FROM collected_files
+                            WHERE entry_id IN (SELECT value FROM json_each($entries))));
                         """;
                     command.Parameters.AddWithValue(
                         "$entries",
@@ -277,9 +326,9 @@ internal sealed partial class Acquisition
                         }
                     command.CommandText = $"""
                         SELECT {Video.Columns},
-                            r.save_path,r.stamp,EXISTS(SELECT 1 FROM subtitle_scans a WHERE a.origin=f.origin
-                                AND a.file_index=f.file_index AND a.path=l.path COLLATE PATH AND a.stamp=r.stamp)
-                        FROM {Video.Tables} JOIN file_reads r USING(origin)
+                            COALESCE(r.save_path,''),o.stamp,EXISTS(SELECT 1 FROM subtitle_scans a WHERE a.origin=f.origin
+                                AND a.file_index=f.file_index AND a.path=l.path COLLATE PATH AND a.stamp=o.stamp)
+                        FROM {Video.Tables} LEFT JOIN file_reads r ON r.origin=f.origin
                         WHERE f.kind=$kind AND ($entries IS NULL
                             OR f.entry_id IN (SELECT value FROM json_each($entries)));
                         """;
@@ -289,8 +338,8 @@ internal sealed partial class Acquisition
                         while (reader.Read())
                         {
                             var video = Video.Read(reader);
-                            var folder = folders[video.Origin];
-                            var savePath = reader.GetString(10);
+                            var folder = video.Disk ? null : folders[video.Origin];
+                            var savePath = reader.GetString(11);
                             var recursive =
                                 folder is not null
                                 && savePath.Length > 0
@@ -300,8 +349,8 @@ internal sealed partial class Acquisition
                                     video,
                                     recursive ? folder! : Path.GetDirectoryName(video.FinalPath)!,
                                     recursive,
-                                    reader.GetString(11),
-                                    reader.GetBoolean(12)
+                                    reader.GetString(12),
+                                    reader.GetBoolean(13)
                                 )
                             );
                         }
@@ -344,23 +393,33 @@ internal sealed partial class Acquisition
                 .GroupBy(movie => (movie.Folder, movie.Recursive))
                 .Where(folder => folder.Any(accepted.Contains))
                 .ToArray();
-            var entries = folders
-                .Select(folder => folder.Key.Folder)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(
-                    folder => folder,
-                    _ => new HashSet<long>(),
-                    StringComparer.OrdinalIgnoreCase
-                );
+            // The movies each folder holds, up to two: at any depth for a
+            // folder listed with its subfolders, otherwise directly in it, as
+            // Entries reads them.
+            Dictionary<string, HashSet<long>> Contents(bool recursive) =>
+                folders
+                    .Where(folder => folder.Key.Recursive == recursive)
+                    .Select(folder => folder.Key.Folder)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(
+                        folder => folder,
+                        _ => new HashSet<long>(),
+                        StringComparer.OrdinalIgnoreCase
+                    );
+            var direct = Contents(recursive: false);
+            var nested = Contents(recursive: true);
             foreach (var movie in movies.Where(movie => movie.Video.Eligible))
             {
                 cancellation.ThrowIfCancellationRequested();
-                for (
-                    var parent = Path.GetDirectoryName(movie.Video.FinalPath);
-                    parent is not null;
-                    parent = Path.GetDirectoryName(parent)
+                var parent = Path.GetDirectoryName(movie.Video.FinalPath);
+                if (
+                    parent is not null
+                    && direct.TryGetValue(parent, out var contained)
+                    && contained.Count < 2
                 )
-                    if (entries.TryGetValue(parent, out var contained) && contained.Count < 2)
+                    contained.Add(movie.Video.EntryId);
+                for (; parent is not null; parent = Path.GetDirectoryName(parent))
+                    if (nested.TryGetValue(parent, out contained) && contained.Count < 2)
                         contained.Add(movie.Video.EntryId);
             }
             var done = 0;
@@ -374,7 +433,7 @@ internal sealed partial class Acquisition
                 var pending = folder.Where(accepted.Contains).ToArray();
                 // Samples and unselected files are not movies, so a Sample folder
                 // leaves Subs/English.srt to the one movie beside it.
-                var sole = entries[folder.Key.Folder].Count == 1;
+                var sole = (folder.Key.Recursive ? nested : direct)[folder.Key.Folder].Count == 1;
                 List<(Discovery Movie, string Path, string Language)> records;
                 try
                 {
@@ -382,12 +441,9 @@ internal sealed partial class Acquisition
                             async () =>
                             {
                                 var result = new List<(Discovery, string, string)>();
-                                foreach (
-                                    var file in SubtitleFiles(
-                                        folder.Key.Folder,
-                                        folder.Key.Recursive
-                                    )
-                                )
+                                var files = await SubtitleFiles(folder.Key, pending, cancellation)
+                                    .ConfigureAwait(false);
+                                foreach (var file in files)
                                 {
                                     cancellation.ThrowIfCancellationRequested();
                                     var matches = folder
@@ -454,7 +510,7 @@ internal sealed partial class Acquisition
                                 var video = movie.Video;
                                 using var stamp = connection.CreateCommand();
                                 stamp.CommandText =
-                                    "SELECT stamp FROM file_reads WHERE origin=$origin;";
+                                    "SELECT stamp FROM contributions WHERE origin=$origin;";
                                 stamp.Parameters.AddWithValue("$origin", video.Origin);
                                 if (
                                     !Current(connection, [video], readable: true)
@@ -526,7 +582,62 @@ internal sealed partial class Acquisition
         }
     }
 
-    private static IEnumerable<string> SubtitleFiles(string folder, bool recursive)
+    // The locations in the folder that $low and $high bound: at any depth when
+    // $recursive, otherwise directly in it, the way a folder is listed.
+    private const string Inside = """
+        l.path>=$low AND l.path<$high
+            AND ($recursive OR instr(substr(l.path,length($low)+1),'\')=0)
+        """;
+
+    // The folders in a movie's folder that hold its subtitles.
+    private static readonly string[] Subfolders = ["Subs", "Subtitles"];
+
+    // The subtitle files near the pending movies of a folder. The folder is
+    // listed when a movie that a torrent lists waits for it. Otherwise every
+    // pending movie is a disk movie, and the files come from the catalogue:
+    // gozler already reported them, and disk discovery never lists a folder.
+    private async Task<IEnumerable<string>> SubtitleFiles(
+        (string Folder, bool Recursive) folder,
+        IEnumerable<Discovery> pending,
+        CancellationToken cancellation
+    )
+    {
+        if (pending.Any(movie => !movie.Video.Disk))
+            return Listing(folder.Folder, folder.Recursive);
+        // The folder's own files, and its subtitle folders at any depth.
+        var places = Subfolders
+            .Select(name => (Folder: Path.Combine(folder.Folder, name), Recursive: true))
+            .Prepend((Folder: folder.Folder, Recursive: false));
+        return await Run(
+                connection =>
+                {
+                    using var command = connection.CreateCommand();
+                    command.CommandText = $"""
+                        SELECT l.path FROM locations l WHERE {Inside}
+                            AND EXISTS(SELECT 1 FROM source_files f JOIN contributions c ON c.origin=f.origin
+                                WHERE f.entry_id=l.entry_id AND c.data_source='disk');
+                        """;
+                    var low = command.Parameters.AddWithValue("$low", string.Empty);
+                    var high = command.Parameters.AddWithValue("$high", string.Empty);
+                    var recursive = command.Parameters.AddWithValue("$recursive", false);
+                    var files = new List<string>();
+                    foreach (var place in places)
+                    {
+                        (low.Value, high.Value) = FileSources.PathRange(place.Folder);
+                        recursive.Value = place.Recursive;
+                        using var reader = command.ExecuteReader();
+                        while (reader.Read())
+                            if (FileName.IsSubtitle(reader.GetString(0)))
+                                files.Add(reader.GetString(0));
+                    }
+                    return files;
+                },
+                cancellation
+            )
+            .ConfigureAwait(false);
+    }
+
+    private static IEnumerable<string> Listing(string folder, bool recursive)
     {
         var options = new EnumerationOptions
         {
@@ -538,18 +649,53 @@ internal sealed partial class Acquisition
             if (FileName.IsSubtitle(path))
                 yield return path;
         if (!recursive)
-            foreach (var name in new[] { "Subs", "Subtitles" })
+            foreach (var name in Subfolders)
             {
                 var path = Path.Combine(folder, name);
                 if (
                     Directory.Exists(path)
                     && (File.GetAttributes(path) & FileAttributes.ReparsePoint) == 0
                 )
-                    foreach (var subtitle in SubtitleFiles(path, recursive: true))
+                    foreach (var subtitle in Listing(path, recursive: true))
                         yield return subtitle;
             }
     }
 
+    // The Library entries of the movies in the folders: at any depth for a
+    // folder listed with its subfolders, otherwise directly in it.
+    private Task<IReadOnlySet<long>> Entries(
+        IEnumerable<(string Folder, bool Recursive)> folders,
+        CancellationToken cancellation
+    ) =>
+        Run<IReadOnlySet<long>>(
+            connection =>
+            {
+                using var command = connection.CreateCommand();
+                command.CommandText = $"""
+                    SELECT l.entry_id FROM locations l WHERE {Inside}
+                        AND EXISTS(SELECT 1 FROM source_files f WHERE f.entry_id=l.entry_id AND f.kind=$kind);
+                    """;
+                var low = command.Parameters.AddWithValue("$low", string.Empty);
+                var high = command.Parameters.AddWithValue("$high", string.Empty);
+                var recursive = command.Parameters.AddWithValue("$recursive", false);
+                command.Parameters.AddWithValue("$kind", (int)FileKind.Video);
+                var entries = new HashSet<long>();
+                foreach (var folder in folders)
+                {
+                    (low.Value, high.Value) = FileSources.PathRange(folder.Folder);
+                    recursive.Value = folder.Recursive;
+                    using var reader = command.ExecuteReader();
+                    while (reader.Read())
+                        entries.Add(reader.GetInt64(0));
+                }
+                return entries;
+            },
+            cancellation
+        );
+
+    // Stamp is the stamp of the movie's accepted file list. The disk
+    // contribution's changes only when a refresh adds, removes or moves a
+    // subtitle file, so a disk movie is checked again only then.
     private sealed record Discovery(
         Video Video,
         string Folder,

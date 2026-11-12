@@ -115,6 +115,7 @@ public sealed partial class MainWindow
             },
             Model.ShowLibrary
         );
+        ConfigureDiscovery();
     }
 
     private WindowPage NavigationPage => Model.Navigation.Workspace;
@@ -123,6 +124,7 @@ public sealed partial class MainWindow
     // file's association only while Library shows.
     private void UpdateLibraryPage()
     {
+        ObserveLibraryShown();
         if (Model.Page != WindowPage.Library)
         {
             _associationRead?.Cancel();
@@ -225,6 +227,7 @@ public sealed partial class MainWindow
             Command("properties", Model.Library.Properties, Syno.Segoe.Info),
             OriginActions.Create(Model.Library),
             .. MetadataActions.Menu(Model.Library, Model.DownloadSubtitles),
+            .. (Discovers ? [HideFolderMenu()] : Array.Empty<MenuEntry>()),
         ];
 
     private IEnumerable<MenuEntry> LibraryViewMenu()

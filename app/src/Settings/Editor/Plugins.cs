@@ -18,6 +18,25 @@ public sealed partial class Editor
     private bool _sizePending;
     private bool _pluginsVisible;
     private bool _databaseVisible;
+    private DiskState _gozler = new(DiskStatus.Off);
+    private IReadOnlyList<string> _hidden = [];
+    private DiskSource? _hiddenSource;
+
+    public bool DiscoversMedia => _owner.Disk is { State.Status: not DiskStatus.Off };
+
+    // The option is saved in the Library database.
+    public bool CanDiscoverMedia => _owner.Disk is not null;
+    public string GozlerState => _gozler.Describe(Text);
+    public string MediaSummary =>
+        DiscoversMedia ? Text.Format("discovery", "summary", OnText, GozlerState) : OffText;
+    public bool ShowsGozlerInstall => MainViewModel.Recovery(_gozler) == DiskRecovery.Install;
+    public bool ShowsMediaRetry =>
+        DiscoversMedia && MainViewModel.Recovery(_gozler) == DiskRecovery.Retry;
+    public IReadOnlyList<string> HiddenFolders => _hidden;
+    public string HiddenSummary =>
+        _hidden.Count == 0
+            ? Text.Get("discovery", "hidden_none")
+            : Text.FormatCount("discovery", "hidden_count", _hidden.Count);
 
     public string VideoProvider => _owner.Library.Option?.Name ?? Strings.NoValue;
     public string VideoSummary => Text.Format(
@@ -90,6 +109,83 @@ public sealed partial class Editor
         }
         if (args.PropertyName is nameof(MainViewModel.Subtitles) or "")
             Changed(nameof(SubtitleCoverage));
+        if (args.PropertyName is nameof(MainViewModel.Disk) or "" && _pluginsVisible)
+        {
+            ShowMedia();
+            if (!ReferenceEquals(_hiddenSource, _owner.Disk))
+                _ = ReadHidden();
+        }
+    }
+
+    // While discovery is off, Settings shows whether gozler is installed, so
+    // the person sees what switching it on needs.
+    private void ShowMedia()
+    {
+        _gozler =
+            _owner.Disk?.State is { Status: not DiskStatus.Off } state ? state
+            : Gozler.Locate() switch
+            {
+                GozlerProgram.NotInstalled => new(DiskStatus.NotInstalled),
+                GozlerProgram.ProgramMissing => new(DiskStatus.ProgramMissing),
+                _ => new(DiskStatus.Current),
+            };
+        Changed(
+            nameof(DiscoversMedia),
+            nameof(CanDiscoverMedia),
+            nameof(GozlerState),
+            nameof(MediaSummary),
+            nameof(ShowsGozlerInstall),
+            nameof(ShowsMediaRetry)
+        );
+    }
+
+    /// <summary>
+    /// The switch shows the saved choice again afterwards, because the
+    /// install prompt leaves the option off until gozler is installed.
+    /// </summary>
+    internal async Task DiscoverMedia(bool on)
+    {
+        await _owner.SwitchDiscovery(on);
+        ShowMedia();
+    }
+
+    // Its files return as new entries at the next refresh.
+    internal async Task Unhide(string folder)
+    {
+        if (_owner.Disk is not { } disk)
+            return;
+        try
+        {
+            await disk.Unhide(folder);
+        }
+        catch (Exception error)
+        {
+            _owner.Notifications.Report(error, "failed_settings", () => folder, null);
+        }
+        await ReadHidden();
+    }
+
+    private async Task ReadHidden()
+    {
+        var disk = _owner.Disk;
+        _hiddenSource = disk;
+        IReadOnlyList<string> hidden = [];
+        if (disk is not null)
+        {
+            try
+            {
+                hidden = [.. (await disk.ReadHiddenFolders()).Order(StringComparer.CurrentCultureIgnoreCase)];
+            }
+            catch (Exception error)
+            {
+                System.Diagnostics.Debug.WriteLine($"Hidden folders not read: {error.Message}");
+                return;
+            }
+        }
+        if (!ReferenceEquals(disk, _owner.Disk))
+            return;
+        _hidden = hidden;
+        Changed(nameof(HiddenFolders), nameof(HiddenSummary));
     }
 
     /// <summary>
@@ -100,6 +196,8 @@ public sealed partial class Editor
     {
         _pluginsVisible = true;
         _databaseVisible = database;
+        ShowMedia();
+        _ = ReadHidden();
         return RefreshCoverage();
     }
 

@@ -34,7 +34,9 @@ matching, file handling or supplier details.
 
 For Library work, read the [Library contract](contracts/library.md) for shared
 ownership, membership and SQLite rules, then follow its change index for file
-search, providers, presentation or lifecycle. Its
+search, providers, presentation, lifecycle or
+[disk discovery](contracts/library/disk.md), which finds the media files on the
+person's drives through the person's own gozler. Its
 [prototype implementation review](contracts/library/presentation.md#prototype-implementation-review)
 tracks the pending Inspector and navigation choices. Library and subtitles
 share one window-lifetime SQLite owner; the [database contract](contracts/database.md)
@@ -44,17 +46,8 @@ for durable and reconstructed state.
 and storage rules for Library and subtitle requests. Its change index selects
 the retry/reset and IMDb local-data references.
 
-The [plan for using gozler](plans/13-using-gozler.md) defines how Library finds
-the video, music and subtitle files on the person's drives by running the
-person's own gozler (`gozler.exe --json`) instead of a TinyTorrent file index:
-the opt-in, the one addition to gozler, the query, what the person sees when
-gozler is missing, stopped, still indexing or too old, the install prompt, and
-how disk files join the catalogue. TinyTorrent never replaces an installed
-gozler and never runs a second service. It was reviewed on 11 November 2026
-and is not implemented.
-
 The [missing torrent files plan](plans/21-missing-torrent-files.md) holds the
-engine's part of that work: torrent files that were deleted or moved outside
+engine's part of [disk discovery](contracts/library/disk.md): torrent files that were deleted or moved outside
 TinyTorrent. The engine does not download such a file again by itself: it
 asks the person once for all torrents, to download the files again or to skip
 them, and the rest of each torrent keeps running. A payload that the person

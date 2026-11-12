@@ -291,6 +291,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 return LocationStatus();
             if (Features.Failure is { } featureFailure)
                 return FeatureStatus(featureFailure);
+            if (DiscoveryStatus() is { } discovery)
+                return discovery;
             if (
                 Subtitles is { Failure: var failure } subtitles
                 && (subtitles.Enabled || subtitles.Finding)
@@ -462,6 +464,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             Features.Repair,
             () => _connected && Features.Failure is not null
         );
+        GozlerSetup = new GozlerSetup(this, _providerHttp);
+        DiscoverMedia = new RelayCommand(() => SwitchDiscovery(true), () => Disk is not null);
+        RefreshDiscovery = new RelayCommand(
+            () => Disk?.Refresh(),
+            () => Disk is { State.Status: not DiskStatus.Off }
+        );
+        Features.DiskChanged += (_, _) => OnDiskChanged();
+        Library.DiscoveryRequested += (_, _) => DiscoverMedia.Execute(null);
         Add = new RelayCommand(
             () =>
             {

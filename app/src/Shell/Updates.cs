@@ -2,7 +2,6 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Http;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Windows.Input;
@@ -249,18 +248,13 @@ internal sealed class Updates
             catch (DirectoryNotFoundException) { }
             Directory.CreateDirectory(folder);
             var path = Path.Combine(folder, name);
-            using (
-                var request = new HttpRequestMessage(
-                    HttpMethod.Get,
-                    await Locate(installer, cancellation)
-                )
-            )
-                await _http.Download(
-                    request,
-                    path,
-                    progress => work.Report(work.Observation with { Progress = progress }),
-                    cancellation
-                );
+            await Release.Download(
+                _http,
+                installer,
+                path,
+                progress => work.Report(work.Observation with { Progress = progress }),
+                cancellation
+            );
             await CheckInstaller(release.RootElement, name, path, cancellation);
             // Setup cannot be cancelled, so a Cancel until now stops it starting.
             cancellation.ThrowIfCancellationRequested();
@@ -339,15 +333,13 @@ internal sealed class Updates
             Asset(release, name + ".sha256") ?? throw new UpdateException(UpdateFailure.Missing);
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
-            await Locate(checksum, cancellation)
+            await Release.Locate(_http, checksum, cancellation)
         );
         var reply = await _http.Send(request, ProviderHttp.JsonLimit, cancellation);
         if (reply.Status != HttpStatusCode.OK)
             throw new HttpRequestException("The checksum was refused.", null, reply.Status);
         var expected = Encoding.ASCII.GetString(reply.Bytes).Split(' ', 2)[0].Trim();
-        await using var file = File.OpenRead(path);
-        var actual = Convert.ToHexString(await SHA256.HashDataAsync(file, cancellation));
-        if (!string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase))
+        if (!await Release.Matches(path, expected, cancellation))
             throw new UpdateException(UpdateFailure.Checksum);
     }
 
@@ -386,24 +378,6 @@ internal sealed class Updates
             )
                 return location;
         return null;
-    }
-
-    // GitHub answers a release download with a redirect to the file's
-    // storage location, which serves the file.
-    private async Task<Uri> Locate(Uri asset, CancellationToken cancellation)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Get, asset);
-        var reply = await _http.Send(request, ProviderHttp.JsonLimit, cancellation);
-        if (
-            reply.Status
-                is HttpStatusCode.Found
-                    or HttpStatusCode.MovedPermanently
-                    or HttpStatusCode.TemporaryRedirect
-                    or HttpStatusCode.PermanentRedirect
-            && Uri.TryCreate(reply.Header("Location"), UriKind.Absolute, out var location)
-        )
-            return location;
-        throw new HttpRequestException("The release download did not redirect.", null, reply.Status);
     }
 
     private async Task SaveCheck(ReleaseCheck check)

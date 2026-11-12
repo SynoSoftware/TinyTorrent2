@@ -32,6 +32,8 @@ internal abstract record WorkDescription
 
     internal sealed record Sources : WorkDescription;
 
+    internal sealed record Discovery : WorkDescription;
+
     internal sealed record Maintenance(MaintenanceWork Work) : WorkDescription;
 }
 

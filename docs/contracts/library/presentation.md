@@ -198,7 +198,7 @@ Library, the menus are:
 | Menu | Items |
 | --- | --- |
 | File | Unchanged. |
-| Library | Open, Open folder, Properties, Show in Torrents; Fetch metadata, Refresh metadata, Download Subtitle; Erase metadata. The row context menu has the same groups and a selection heading. The metadata groups show only while the selection holds a video, because only videos have provider metadata and subtitles. Download Subtitle is a direct action; multiple selections use Download subtitles. Single and multiple selections use the same command owners and Segoe icons. |
+| Library | Open, Open folder, Properties, Show in Torrents; Fetch metadata, Refresh metadata, Download Subtitle; Erase metadata. While [disk discovery](disk.md) is on, Refresh files (F5) and Hide folder from Library, whose submenu offers the file's folder and each folder above it, nearest first, for a file no torrent lists. The row context menu has the same groups and a selection heading. The metadata groups show only while the selection holds a video, because only videos have provider metadata and subtitles. Download Subtitle is a direct action; multiple selections use Download subtitles. Single and multiple selections use the same command owners and Segoe icons. |
 | View | Filters, Inspector and Toolbar, as on every page; then Videos, Music, Files as choices. |
 | Help | Unchanged. |
 
@@ -419,7 +419,7 @@ The page has no loading state; see the owner ruling under
 
 | State | Presentation |
 | --- | --- |
-| No files | "No files yet", with a button that opens Torrents. |
+| No files | "No files yet", with a button that opens Torrents, and Discover, which switches [disk discovery](disk.md#the-option) on, while it is off. |
 | No matches | "No videos match" and the query (or music, or files), with one button for each other configuration that has matches, and its count, plus Clear search. The action buttons share the widest button's natural width through the shared ActionButton alignment. |
 | Engine disconnected | The window's [message bar](../ui/feedback.md#message-bar). Cached search, filters, saved Inspector details, Properties, Open and Open folder remain available. Metadata changes and engine commands are disabled; automatic file reads and subtitle work pause. A database failure still makes the last view non-actionable. |
 | Database unavailable | The window's [message bar](../ui/feedback.md#message-bar) reports the failure and offers Retry. Any last view stays non-actionable; normal torrent work remains available. |

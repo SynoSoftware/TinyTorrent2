@@ -451,16 +451,23 @@ internal sealed partial class Store
             connection =>
             {
                 using var command = TargetCommand(connection, target);
+                // The siblings are the files of the same origin in the same
+                // folder. They are found through the location index, because
+                // the disk contribution's origin holds every disk file.
                 command.CommandText = """
                     SELECT f.name,f.path,current.path,v.series_id,v.series_type,v.series_title,v.series_year
                     FROM collected_files current
-                    JOIN source_files f ON f.origin=current.origin
+                    JOIN locations l ON l.path>=$folder AND l.path<$beyond
+                    JOIN source_files f ON f.entry_id=l.entry_id AND f.origin=current.origin
                     JOIN entry_identifications i ON i.entry_id=f.entry_id
                     JOIN video_information v ON v.catalog_id=i.catalog_id AND v.video_id=i.video_id
                     WHERE current.entry_id=$entry AND current.name=$name AND current.path=$path COLLATE PATH
                         AND i.explicit=0
                         AND v.catalog_id=$catalog AND v.series_catalog=$catalog AND v.series_id IS NOT NULL;
                     """;
+                var (folder, beyond) = FileSources.PathRange(Path.GetDirectoryName(target.Entry.Path)!);
+                command.Parameters.AddWithValue("$folder", folder);
+                command.Parameters.AddWithValue("$beyond", beyond);
                 using var reader = command.ExecuteReader();
                 VideoChoice? series = null;
                 while (reader.Read())

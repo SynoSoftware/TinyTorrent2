@@ -185,7 +185,11 @@ internal sealed partial class Database : IAsyncDisposable
                 isDeterministic: true
             );
             using var command = connection.CreateCommand();
-            command.CommandText = "PRAGMA foreign_keys = ON; PRAGMA temp_store = MEMORY;";
+            // A migration that rebuilds a table drops the old one, and with
+            // foreign keys on that drop deletes the saved child rows. They
+            // are switched on once the schema is current; the pragma has no
+            // effect inside a transaction.
+            command.CommandText = "PRAGMA foreign_keys = OFF; PRAGMA temp_store = MEMORY;";
             command.ExecuteNonQuery();
             Transact(
                 connection,
@@ -215,6 +219,12 @@ internal sealed partial class Database : IAsyncDisposable
                             string.Concat(Migrations[(version - Baseline)..])
                             + $"PRAGMA user_version={Version};";
                         command.ExecuteNonQuery();
+                        command.CommandText = "PRAGMA foreign_key_check;";
+                        using var broken = command.ExecuteReader();
+                        if (broken.Read())
+                            throw new InvalidOperationException(
+                                $"A migration to revision {Version} broke a reference in {broken.GetString(0)}."
+                            );
                     }
                     command.CommandText = Projection + Triggers;
                     command.ExecuteNonQuery();
@@ -222,6 +232,8 @@ internal sealed partial class Database : IAsyncDisposable
                 },
                 CancellationToken.None
             );
+            command.CommandText = "PRAGMA foreign_keys = ON;";
+            command.ExecuteNonQuery();
             _connection = connection;
             return connection;
         }

@@ -44,6 +44,12 @@
       AutomationProperties.AutomationId="LibraryShowTorrents"
     />
     <controls:ActionButton
+      x:Name="Discover"
+      Glyph="{x:Bind icons:Segoe.FolderSearch}"
+      HorizontalAlignment="Center"
+      AutomationProperties.AutomationId="LibraryDiscoverMedia"
+    />
+    <controls:ActionButton
       x:Name="ClearSearch"
       Glyph="{x:Bind icons:Segoe.X}"
       HorizontalAlignment="Center"
