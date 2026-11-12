@@ -191,8 +191,6 @@ internal sealed class Projection
         }
     }
 
-    private object KeyOf(object item) => _identity.KeySelector?.Invoke(item) ?? item;
-
     private bool InSource(object row) => _slots.SlotOf(row) is var slot && slot >= 0 && _slots.InSource(slot);
 
     private bool HasChildren(ReadOnlySpan<int> order)
@@ -589,10 +587,9 @@ internal sealed class Projection
 
     private void AcceptHold(List<int> held, List<object> released)
     {
-        _held = new HashSet<object>(held.Count,
-            _identity.KeySelector is null ? ReferenceEqualityComparer.Instance : _identity.KeyComparer);
+        _held = new HashSet<object>(held.Count, _identity.KeyComparer);
         foreach (int slot in held)
-            _held.Add(KeyOf(_slots.Row(slot)));
+            _held.Add(_identity.KeyOf(_slots.Row(slot)));
         foreach (object row in released)
             _released.Remove(row);
     }

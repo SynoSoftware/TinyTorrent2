@@ -193,7 +193,7 @@ public sealed partial class Strip : Control
         bool navigationKey =
             e.Key is VirtualKey.Left or VirtualKey.Right or VirtualKey.Home or VirtualKey.End;
 
-        if (count == 0 || !navigationKey)
+        if (_owner is null || count == 0 || !navigationKey)
         {
             base.OnKeyDown(e);
             return;
@@ -202,8 +202,8 @@ public sealed partial class Strip : Control
         int current = _activeIndex < 0 ? 0 : Math.Min(_activeIndex, count - 1);
         int target = e.Key switch
         {
-            VirtualKey.Left => current + (FlowDirection == FlowDirection.RightToLeft ? 1 : -1),
-            VirtualKey.Right => current + (FlowDirection == FlowDirection.RightToLeft ? -1 : 1),
+            VirtualKey.Left => current + _owner.LeftStep,
+            VirtualKey.Right => current - _owner.LeftStep,
             VirtualKey.Home => 0,
             _ => count - 1,
         };
@@ -234,7 +234,7 @@ public sealed partial class Strip : Control
         PointerPoint point = e.GetCurrentPoint(this);
         if (
             _owner is null
-            || !IsMouseOrPen(e.Pointer.PointerDeviceType)
+            || !Table.IsMouseOrPen(e.Pointer.PointerDeviceType)
             || !point.Properties.IsLeftButtonPressed
         )
         {
@@ -374,7 +374,7 @@ public sealed partial class Strip : Control
         if (
             _dragged
             || (
-                IsMouseOrPen(e.PointerDeviceType)
+                Table.IsMouseOrPen(e.PointerDeviceType)
                 && SeparatorNear(e.GetPosition(this).X) is not null
             )
         )
@@ -393,7 +393,7 @@ public sealed partial class Strip : Control
         base.OnDoubleTapped(e);
 
         if (
-            !IsMouseOrPen(e.PointerDeviceType)
+            !Table.IsMouseOrPen(e.PointerDeviceType)
             || SeparatorNear(e.GetPosition(this).X) is not EffectiveColumn column
         )
         {
@@ -755,9 +755,6 @@ public sealed partial class Strip : Control
         cell.ActivateSort();
         return true;
     }
-
-    private static bool IsMouseOrPen(PointerDeviceType type) =>
-        type is PointerDeviceType.Mouse or PointerDeviceType.Pen;
 
     /// <summary>The effective column this header cell shows, or null when it shows none.</summary>
     private EffectiveColumn? ColumnOf(Cell? cell) =>

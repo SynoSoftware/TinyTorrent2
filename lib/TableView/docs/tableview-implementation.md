@@ -24,6 +24,7 @@ for this documentation review.
 | Shared header and row arrangement | [CellsPanel](../src/CellsPanel.cs). |
 | Hierarchy cell indentation and disclosure | [Body.HierarchyCell](../src/Body/HierarchyCell.cs), created only for the hierarchy column, with a `SubtleButton` as its expander. |
 | Selection, current item, anchor, and logical focus | [SelectionState](../src/SelectionState.cs). |
+| Item identity: each item's key and how keys compare, for selection, slots, holds and hierarchy capture | `ItemIdentity` in [SelectionState.cs](../src/SelectionState.cs). |
 | Row pointer arbitration | [Table input](../src/Table/Input.cs). |
 | Pointer and release input | [Table holding](../src/Table/Holding.cs); [Body.Projection](../src/Body/Projection.cs) prepares holds and the pointed row's frozen place. |
 | Marquee geometry | [Body.Marquee](../src/Body/Marquee.cs), driven by the arbiter. |
@@ -286,7 +287,9 @@ Broader virtualization, Narrator and RTL scenarios remain unverified.
   unrelated rows or controls. The implementation remains incomplete against the
   keyboard contract until that correction has relevant runtime evidence.
 - **RTL header navigation:** [Header.Strip](../src/Header/Strip.cs)
-  maps Left/Right according to `FlowDirection`, following mirrored visual order.
+  maps Left/Right, and [Header.Menu](../src/Header/Menu.cs) its Move left and
+  Move right, through `Table.LeftStep`, which follows `FlowDirection` and the
+  mirrored visual order.
   Include them in the existing
   live-language exercise. [XAML already mirrors the coordinate frame](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.frameworkelement.flowdirection);
   do not add a second panel-mirroring path based only on this input defect.

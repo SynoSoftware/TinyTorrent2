@@ -1,8 +1,6 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
-using Microsoft.UI;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Media;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Windows.Foundation;
 using Windows.System;
@@ -146,27 +144,10 @@ internal sealed class DragHarness
         TestData.ApplyDeclaredWidths(table);
         table.UpdateLayout();
 
-        IntPtr window = Win32Interop.GetWindowFromWindowId(
-            table.XamlRoot.ContentIslandEnvironment.AppWindowId
-        );
+        InputInjector injector = await Proof.TakeForegroundAsync(table);
+        Header.Strip strip = Proof.Descendant<Header.Strip>(table)!;
 
-        SetForegroundWindow(window);
-        await Task.Delay(250);
-
-        if (GetForegroundWindow() != window)
-        {
-            Assert.Inconclusive(
-                "The test window could not take the foreground, so real mouse messages could not "
-                    + "be injected without sending them to another application."
-            );
-        }
-
-        Header.Strip strip = Descendants<Header.Strip>(table).First();
-        InputInjector injector =
-            InputInjector.TryCreate()
-            ?? throw new AssertFailedException("InputInjector.TryCreate() returned null.");
-
-        DragHarness harness = new(table, strip, injector, window);
+        DragHarness harness = new(table, strip, injector, Proof.WindowHandle(table));
         harness.RefuseIfTheWindowIsNotUnderThePointer(100);
         return harness;
     }
@@ -181,18 +162,7 @@ internal sealed class DragHarness
 
     internal async Task KeyAsync(VirtualKey key)
     {
-        Injector.InjectKeyboardInput(
-            new[]
-            {
-                new InjectedInputKeyboardInfo { VirtualKey = (ushort)key },
-                new InjectedInputKeyboardInfo
-                {
-                    VirtualKey = (ushort)key,
-                    KeyOptions = InjectedInputKeyOptions.KeyUp,
-                },
-            }
-        );
-
+        Proof.Press(Injector, key);
         await Task.Delay(120);
     }
 
@@ -256,25 +226,6 @@ internal sealed class DragHarness
         }
     }
 
-    private static IEnumerable<T> Descendants<T>(DependencyObject root)
-        where T : DependencyObject
-    {
-        int count = VisualTreeHelper.GetChildrenCount(root);
-        for (int i = 0; i < count; i++)
-        {
-            DependencyObject child = VisualTreeHelper.GetChild(root, i);
-            if (child is T match)
-            {
-                yield return match;
-            }
-
-            foreach (T deeper in Descendants<T>(child))
-            {
-                yield return deeper;
-            }
-        }
-    }
-
     private static object? Field(object target, string name) =>
         target
             .GetType()
@@ -287,12 +238,6 @@ internal sealed class DragHarness
         internal int X;
         internal int Y;
     }
-
-    [DllImport("user32.dll")]
-    private static extern bool SetForegroundWindow(IntPtr window);
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr GetForegroundWindow();
 
     [DllImport("user32.dll")]
     private static extern bool ClientToScreen(IntPtr window, ref POINT point);

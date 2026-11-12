@@ -51,7 +51,7 @@ public class HierarchyTests
             table.SelectionChanged += (_, _) => changes++;
 
             table.UpdateLayout();
-            var list = SelectionHarness.Descendant<ListView>(table)!;
+            var list = Proof.Descendant<ListView>(table)!;
             var peer = FrameworkElementAutomationPeer.CreatePeerForElement(list);
             var branch = peer.GetChildren().Single(child => child.GetName() == "folder");
             var expansion = (IExpandCollapseProvider)
@@ -98,7 +98,7 @@ public class HierarchyTests
             table.ItemsSource = new[] { folder, leaf };
             await TableHarness.LoadAsync(table);
             table.UpdateLayout();
-            var list = SelectionHarness.Descendant<ListView>(table)!;
+            var list = Proof.Descendant<ListView>(table)!;
             var peer = FrameworkElementAutomationPeer.CreatePeerForElement(list);
             var rows = peer.GetChildren();
             var branch = (IExpandCollapseProvider)
@@ -246,7 +246,7 @@ public class HierarchyTests
         });
 
     private static string[] Names(Table table) =>
-        ((IEnumerable)SelectionHarness.Descendant<ListView>(table)!.ItemsSource)
+        ((IEnumerable)Proof.Descendant<ListView>(table)!.ItemsSource)
             .Cast<Node>()
             .Select(row => row.Name)
             .ToArray();

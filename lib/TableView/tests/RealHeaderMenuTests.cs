@@ -1,6 +1,4 @@
 using System.Reflection;
-using System.Runtime.InteropServices;
-using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -45,7 +43,7 @@ public class RealHeaderMenuTests
             await TableHarness.LoadAsync(table);
             table.UpdateLayout();
 
-            InputInjector injector = await FocusWindowAndCreateInjectorAsync(table);
+            InputInjector injector = await Proof.TakeForegroundAsync(table);
 
             Control header = HeaderCell(table, 1);
             Assert.IsTrue(header.Focus(FocusState.Keyboard), "the second header takes focus");
@@ -74,7 +72,7 @@ public class RealHeaderMenuTests
 
     private static Control HeaderCell(Table table, int visibleIndex)
     {
-        Header.Strip strip = Descendants<Header.Strip>(table).First();
+        Header.Strip strip = Proof.Descendant<Header.Strip>(table)!;
         Panel panel = (Panel)
             strip
                 .GetType()
@@ -84,85 +82,13 @@ public class RealHeaderMenuTests
         return (Control)panel.Children[visibleIndex];
     }
 
-    private static IEnumerable<T> Descendants<T>(DependencyObject root)
-        where T : DependencyObject
-    {
-        int count = VisualTreeHelper.GetChildrenCount(root);
-        for (int i = 0; i < count; i++)
-        {
-            DependencyObject child = VisualTreeHelper.GetChild(root, i);
-            if (child is T match)
-            {
-                yield return match;
-            }
-
-            foreach (T deeper in Descendants<T>(child))
-            {
-                yield return deeper;
-            }
-        }
-    }
-
-    /// <summary>
-    /// Injected keys go to the foreground window, so the test refuses to inject anything until the
-    /// test window actually holds it.
-    /// </summary>
-    private static async Task<InputInjector> FocusWindowAndCreateInjectorAsync(
-        FrameworkElement element
-    )
-    {
-        IntPtr hwnd = Win32Interop.GetWindowFromWindowId(
-            element.XamlRoot.ContentIslandEnvironment.AppWindowId
-        );
-
-        SetForegroundWindow(hwnd);
-        await Task.Delay(250);
-
-        if (GetForegroundWindow() != hwnd)
-        {
-            Assert.Inconclusive(
-                "The test window could not take the foreground, so real key messages could not be "
-                    + "injected without sending them to another application."
-            );
-        }
-
-        return InputInjector.TryCreate()
-            ?? throw new AssertFailedException("InputInjector.TryCreate() returned null.");
-    }
-
     private static async Task PressAsync(
         InputInjector injector,
         VirtualKey key,
         VirtualKey? modifier
     )
     {
-        List<InjectedInputKeyboardInfo> keys = new();
-        if (modifier is VirtualKey held)
-        {
-            keys.Add(Info(held, up: false));
-        }
-
-        keys.Add(Info(key, up: false));
-        keys.Add(Info(key, up: true));
-        if (modifier is VirtualKey release)
-        {
-            keys.Add(Info(release, up: true));
-        }
-
-        injector.InjectKeyboardInput(keys);
+        Proof.Press(injector, key, modifier);
         await Task.Delay(250);
     }
-
-    private static InjectedInputKeyboardInfo Info(VirtualKey key, bool up) =>
-        new()
-        {
-            VirtualKey = (ushort)key,
-            KeyOptions = up ? InjectedInputKeyOptions.KeyUp : InjectedInputKeyOptions.None,
-        };
-
-    [DllImport("user32.dll")]
-    private static extern bool SetForegroundWindow(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr GetForegroundWindow();
 }

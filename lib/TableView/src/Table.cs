@@ -355,8 +355,7 @@ public sealed partial class Table : Control
         Columns.CollectionChanged += OnColumnsMutatedAfterCapture;
 
         // Install identity before resolving the pending initial selection.
-        _identity.KeySelector = ItemKey;
-        _identity.KeyComparer = KeyComparer;
+        _identity.Install(ItemKey, KeyComparer);
         _slots = new Body.Slots(_identity, _view.Rows);
         _selection.RehashIdentity();
 

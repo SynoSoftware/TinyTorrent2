@@ -14,7 +14,7 @@ public sealed partial class CellsPanel : Panel
     // Children's cells in their order, each with the column it shows. SyncChildren is the only
     // writer of Children and keeps this list equal to it, so layout and cell fill read their
     // cells here instead of fetching each one back from WinUI and looking up its wrapper.
-    private readonly List<(Column Column, UIElement Cell)> _cells = [];
+    private readonly List<(EffectiveColumn Column, UIElement Cell)> _cells = [];
 
     // Row cells whose template is not built yet, with their columns; see WatchCuts.
     private readonly Dictionary<ContentPresenter, Column> _unwatched = [];
@@ -73,7 +73,7 @@ public sealed partial class CellsPanel : Panel
             return;
         }
 
-        Table? owner = FindOwner();
+        Table? owner = Body.Row.FindOwner(this);
         if (owner is not null)
         {
             Attach(owner);
@@ -95,22 +95,6 @@ public sealed partial class CellsPanel : Panel
 
         _layout.Invalidated -= OnLayoutInvalidated;
         _layout = null;
-    }
-
-    private Table? FindOwner()
-    {
-        DependencyObject? node = VisualTreeHelper.GetParent(this);
-        while (node is not null)
-        {
-            if (node is Table table)
-            {
-                return table;
-            }
-
-            node = VisualTreeHelper.GetParent(node);
-        }
-
-        return null;
     }
 
     private void OnLayoutInvalidated(object? sender, LayoutInvalidationReason reason)
@@ -136,14 +120,21 @@ public sealed partial class CellsPanel : Panel
             return;
         }
 
-        foreach (var (_, child) in _cells)
+        foreach (var (_, cell) in _cells)
         {
-            if (child is ContentPresenter presenter)
-            {
-                presenter.Content = item;
-            }
-            else if (child is Body.HierarchyCell hierarchyCell)
-                hierarchyCell.Item = item;
+            ShowItem(cell, item);
+        }
+    }
+
+    private static void ShowItem(UIElement cell, object? item)
+    {
+        if (cell is ContentPresenter presenter)
+        {
+            presenter.Content = item;
+        }
+        else if (cell is Body.HierarchyCell hierarchyCell)
+        {
+            hierarchyCell.Item = item;
         }
     }
 
@@ -164,7 +155,7 @@ public sealed partial class CellsPanel : Panel
 
         for (int i = _cells.Count - 1; i >= 0; i--)
         {
-            if (VisibleIndexOf(visible, _cells[i].Column) < 0)
+            if (_layout.IndexOfVisible(_cells[i].Column) < 0)
             {
                 if (_cells[i].Cell is ContentPresenter removed)
                 {
@@ -178,12 +169,12 @@ public sealed partial class CellsPanel : Panel
 
         for (int i = 0; i < visible.Count; i++)
         {
-            Column column = visible[i].Column.Column;
+            EffectiveColumn column = visible[i].Column;
             int at = CellIndexOf(column, i);
 
             if (at < 0)
             {
-                UIElement cell = CreateChild(column);
+                UIElement cell = CreateChild(column.Column);
                 _cells.Insert(i, (column, cell));
                 Children.Insert(i, cell);
             }
@@ -214,20 +205,7 @@ public sealed partial class CellsPanel : Panel
         }
     }
 
-    private static int VisibleIndexOf(IReadOnlyList<VisibleColumn> visible, Column column)
-    {
-        for (int i = 0; i < visible.Count; i++)
-        {
-            if (ReferenceEquals(visible[i].Column.Column, column))
-            {
-                return i;
-            }
-        }
-
-        return -1;
-    }
-
-    private int CellIndexOf(Column column, int start)
+    private int CellIndexOf(EffectiveColumn column, int start)
     {
         for (int i = start; i < _cells.Count; i++)
         {
@@ -339,12 +317,7 @@ public sealed partial class CellsPanel : Panel
             return;
         }
 
-        if (child is ContentPresenter presenter)
-        {
-            presenter.Content = DataContext;
-        }
-        else if (child is Body.HierarchyCell hierarchyCell)
-            hierarchyCell.Item = DataContext;
+        ShowItem(child, DataContext);
     }
 
     /// <summary>

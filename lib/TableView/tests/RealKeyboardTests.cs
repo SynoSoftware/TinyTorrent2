@@ -1,5 +1,3 @@
-using System.Runtime.InteropServices;
-using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Markup;
@@ -31,7 +29,7 @@ public class RealKeyboardTests
         TestHost.RunAsync(async () =>
         {
             SelectionHarness h = await SelectionHarness.LoadAsync(8);
-            InputInjector injector = await FocusWindowAndCreateInjectorAsync(h.Table);
+            InputInjector injector = await Proof.TakeForegroundAsync(h.Table);
 
             FocusRow(h, 0);
 
@@ -61,7 +59,7 @@ public class RealKeyboardTests
         TestHost.RunAsync(async () =>
         {
             SelectionHarness h = await SelectionHarness.LoadAsync(8);
-            InputInjector injector = await FocusWindowAndCreateInjectorAsync(h.Table);
+            InputInjector injector = await Proof.TakeForegroundAsync(h.Table);
 
             FocusRow(h, 0);
             await PressAsync(injector, VirtualKey.Down);
@@ -76,7 +74,7 @@ public class RealKeyboardTests
         TestHost.RunAsync(async () =>
         {
             SelectionHarness h = await SelectionHarness.LoadAsync(8);
-            InputInjector injector = await FocusWindowAndCreateInjectorAsync(h.Table);
+            InputInjector injector = await Proof.TakeForegroundAsync(h.Table);
             h.Click(h[1]);
             FocusRow(h, 1);
 
@@ -103,7 +101,7 @@ public class RealKeyboardTests
             );
             await KeyboardAndGestureTests.WaitForCellControlAsync<TextBox>(h, row: 3);
 
-            InputInjector injector = await FocusWindowAndCreateInjectorAsync(h.Table);
+            InputInjector injector = await Proof.TakeForegroundAsync(h.Table);
 
             FocusRow(h, 0);
             await PressAsync(injector, VirtualKey.Down);
@@ -112,7 +110,7 @@ public class RealKeyboardTests
 
             ListViewItem container = (ListViewItem)h.Surface().ContainerFromItem(h[3]);
             TextBox editor =
-                SelectionHarness.Descendant<TextBox>(container)
+                Proof.Descendant<TextBox>(container)
                 ?? throw new AssertFailedException("The cell editor was not realized.");
             Assert.IsTrue(editor.Focus(FocusState.Programmatic));
 
@@ -138,66 +136,13 @@ public class RealKeyboardTests
         Assert.IsTrue(container.Focus(FocusState.Keyboard));
     }
 
-    /// <summary>
-    /// Injected keys go to the foreground window, so the test refuses to inject anything until the
-    /// test window actually holds it.
-    /// </summary>
-    private static async Task<InputInjector> FocusWindowAndCreateInjectorAsync(
-        FrameworkElement element
-    )
-    {
-        IntPtr hwnd = Win32Interop.GetWindowFromWindowId(
-            element.XamlRoot.ContentIslandEnvironment.AppWindowId
-        );
-
-        SetForegroundWindow(hwnd);
-        await Task.Delay(250);
-
-        if (GetForegroundWindow() != hwnd)
-        {
-            Assert.Inconclusive(
-                "The test window could not take the foreground, so real key messages could not be "
-                    + "injected without sending them to another application."
-            );
-        }
-
-        return InputInjector.TryCreate()
-            ?? throw new AssertFailedException("InputInjector.TryCreate() returned null.");
-    }
-
     private static async Task PressAsync(
         InputInjector injector,
         VirtualKey key,
         VirtualKey? modifier = null
     )
     {
-        List<InjectedInputKeyboardInfo> down = new();
-        if (modifier is VirtualKey held)
-        {
-            down.Add(Info(held, up: false));
-        }
-
-        down.Add(Info(key, up: false));
-        down.Add(Info(key, up: true));
-        if (modifier is VirtualKey release)
-        {
-            down.Add(Info(release, up: true));
-        }
-
-        injector.InjectKeyboardInput(down);
+        Proof.Press(injector, key, modifier);
         await Task.Delay(120);
     }
-
-    private static InjectedInputKeyboardInfo Info(VirtualKey key, bool up) =>
-        new()
-        {
-            VirtualKey = (ushort)key,
-            KeyOptions = up ? InjectedInputKeyOptions.KeyUp : InjectedInputKeyOptions.None,
-        };
-
-    [DllImport("user32.dll")]
-    private static extern bool SetForegroundWindow(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr GetForegroundWindow();
 }

@@ -69,7 +69,7 @@ internal sealed class Hierarchy(
                 throw new InvalidOperationException(
                     $"The source contains a row outside {rowType}."
                 );
-            if (identity.KeySelector is not null && identity.KeySelector(next.Item) is null)
+            if (identity.KeyOf(next.Item) is null)
                 throw new InvalidOperationException("The schema key selector returned null.");
             if (nodes.ContainsKey(next.Item))
                 throw new InvalidOperationException(

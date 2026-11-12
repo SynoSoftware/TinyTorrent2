@@ -646,8 +646,6 @@ public sealed partial class Table
             new Body.Changes.Screen(RealizedIndices(), Reach()));
     }
 
-    private object KeyOf(object item) => ItemKey?.Invoke(item) ?? item;
-
     private void ApplyProjection(Body.Projection.Prepared prepared, Body.Projection.Input input)
     {
         var settles = prepared.Settles;

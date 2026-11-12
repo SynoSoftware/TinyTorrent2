@@ -181,7 +181,7 @@ public class KeyboardAndGestureTests
             ListView surface = h.Surface();
             ((ListViewItem)surface.ContainerFromIndex(0)).Height = 96;
             h.Table.UpdateLayout();
-            ScrollViewer scroller = SelectionHarness.Descendant<ScrollViewer>(surface)!;
+            ScrollViewer scroller = Proof.Descendant<ScrollViewer>(surface)!;
             int boundary = -1;
             for (int index = 0; index < h.Rows.Count; index++)
             {
@@ -240,7 +240,7 @@ public class KeyboardAndGestureTests
         {
             SelectionHarness h = await SelectionHarness.LoadAsync(200);
 
-            ScrollViewer viewer = SelectionHarness.Descendant<ScrollViewer>(h.Surface())!;
+            ScrollViewer viewer = Proof.Descendant<ScrollViewer>(h.Surface())!;
             Assert.AreEqual(0d, viewer.VerticalOffset, 0.5);
 
             h.MoveToEdge(first: false, extend: false);
@@ -304,7 +304,7 @@ public class KeyboardAndGestureTests
                 "A focused row container is the passive row surface."
             );
 
-            TextBox editor = SelectionHarness.Descendant<TextBox>(container)!;
+            TextBox editor = Proof.Descendant<TextBox>(container)!;
             Assert.IsTrue(editor.Focus(FocusState.Programmatic));
             Assert.IsFalse(
                 h.RowSurfaceHasFocus(),
@@ -320,15 +320,15 @@ public class KeyboardAndGestureTests
             SelectionHarness h = await LoadWithRichCellsAsync();
             ListViewItem container = RealizedContainer(h);
 
-            TextBlock passive = SelectionHarness.Descendant<TextBlock>(container)!;
+            TextBlock passive = Proof.Descendant<TextBlock>(container)!;
             Assert.AreEqual("Row", h.HitTest(passive));
-            ProgressBar progress = SelectionHarness.Descendant<ProgressBar>(container)!;
+            ProgressBar progress = Proof.Descendant<ProgressBar>(container)!;
             Assert.AreEqual("Row", h.HitTest(progress));
 
-            Button button = SelectionHarness.Descendant<Button>(container)!;
+            Button button = Proof.Descendant<Button>(container)!;
             Assert.AreEqual("Suppressed", h.HitTest(button));
 
-            TextBox editor = SelectionHarness.Descendant<TextBox>(container)!;
+            TextBox editor = Proof.Descendant<TextBox>(container)!;
             Assert.AreEqual("Suppressed", h.HitTest(editor));
             Assert.IsFalse(h.Tap(editor), "A touch tap belongs to the cell editor.");
             Assert.IsFalse(h.Tap(button), "A touch tap belongs to the cell button.");
@@ -343,8 +343,8 @@ public class KeyboardAndGestureTests
             ListViewItem container = RealizedContainer(h);
 
             Microsoft.UI.Xaml.Shapes.Rectangle inside =
-                SelectionHarness.Descendant<Microsoft.UI.Xaml.Shapes.Rectangle>(
-                    SelectionHarness.Descendant<Border>(container)!
+                Proof.Descendant<Microsoft.UI.Xaml.Shapes.Rectangle>(
+                    Proof.Descendant<Border>(container)!
                 )!;
 
             Assert.AreEqual("Suppressed", h.HitTest(inside));
@@ -374,7 +374,7 @@ public class KeyboardAndGestureTests
             {
                 h.Table.UpdateLayout();
                 return h.Surface().ContainerFromItem(h[row]) is DependencyObject container
-                    && SelectionHarness.Descendant<T>(container) is not null;
+                    && Proof.Descendant<T>(container) is not null;
             },
             $"row {row} to realize a {typeof(T).Name} cell control"
         );

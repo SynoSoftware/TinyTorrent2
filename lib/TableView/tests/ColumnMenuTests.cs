@@ -398,7 +398,7 @@ public class ColumnMenuTests
         return () => count;
     }
 
-    private static Header.Strip Strip(Table table) => Descendants<Header.Strip>(table).First();
+    private static Header.Strip Strip(Table table) => Proof.Descendant<Header.Strip>(table)!;
 
     private static Control HeaderCell(Header.Strip strip, int visibleIndex) =>
         (Control)((Panel)Field(strip, "_panel")!).Children[visibleIndex];
@@ -416,7 +416,7 @@ public class ColumnMenuTests
                 continue;
             }
 
-            MenuFlyoutItem? item = Descendants<MenuFlyoutItem>(child)
+            MenuFlyoutItem? item = Proof.Descendants<MenuFlyoutItem>(child)
                 .FirstOrDefault(candidate => candidate.Text == text);
             if (item is not null)
             {
@@ -425,25 +425,6 @@ public class ColumnMenuTests
         }
 
         throw new AssertFailedException($"No open flyout shows a '{text}' item.");
-    }
-
-    private static IEnumerable<T> Descendants<T>(DependencyObject root)
-        where T : DependencyObject
-    {
-        int count = VisualTreeHelper.GetChildrenCount(root);
-        for (int i = 0; i < count; i++)
-        {
-            DependencyObject child = VisualTreeHelper.GetChild(root, i);
-            if (child is T match)
-            {
-                yield return match;
-            }
-
-            foreach (T deeper in Descendants<T>(child))
-            {
-                yield return deeper;
-            }
-        }
     }
 
     // The menu, the effective columns it acts on and the strip's show are all internal to TableView,

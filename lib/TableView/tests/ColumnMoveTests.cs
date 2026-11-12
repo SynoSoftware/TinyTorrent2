@@ -5,10 +5,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Windows.Foundation;
-using Windows.Storage.Streams;
 using Windows.UI;
 using Windows.UI.ViewManagement;
 
@@ -240,11 +238,11 @@ public class ColumnMoveTests
             double middle = origin.Y + (strip.ActualHeight / 2);
             double cap = origin.Y + 2;
             uint background = shot.At(shot.X(origin.X + 40), shot.Y(middle));
+            double contrast = shot.Contrast(background, new Rect(origin.X, middle, 9, 0));
 
             Assert.IsTrue(
-                shot.Contrast(background, origin.X, origin.X + 9, middle) >= 3.0,
-                $"{theme}: the marker measured "
-                    + $"{shot.Contrast(background, origin.X, origin.X + 9, middle):0.00}:1 against the "
+                contrast >= 3.0,
+                $"{theme}: the marker measured {contrast:0.00}:1 against the "
                     + $"header background #{background:X6}; section 19 requires 3:1."
             );
 
@@ -378,14 +376,14 @@ public class ColumnMoveTests
     private static string[] HeaderLabels(Header.Strip strip) =>
         ((Panel)Field(strip, "_panel")!)
             .Children.Cast<DependencyObject>()
-            .Select(cell => SelectionHarness.Descendant<TextBlock>(cell)?.Text ?? "(none)")
+            .Select(cell => Proof.Descendant<TextBlock>(cell)?.Text ?? "(none)")
             .ToArray();
 
     /// <summary>How many cells each realized row panel holds.</summary>
     private static int[] RowCellCounts(Table table)
     {
         object header = Field(Strip(table), "_panel")!;
-        int[] counts = Descendants<CellsPanel>(table)
+        int[] counts = Proof.Descendants<CellsPanel>(table)
             .Where(panel => !ReferenceEquals(panel, header))
             .Select(panel => panel.Children.Count)
             .ToArray();
@@ -413,7 +411,7 @@ public class ColumnMoveTests
     private static CellsPanel RowPanel(Table table)
     {
         object header = Field(Strip(table), "_panel")!;
-        return Descendants<CellsPanel>(table)
+        return Proof.Descendants<CellsPanel>(table)
             .First(panel => !ReferenceEquals(panel, header) && panel.Children.Count > 0);
     }
 
@@ -445,26 +443,7 @@ public class ColumnMoveTests
         return () => count;
     }
 
-    private static Header.Strip Strip(Table table) => Descendants<Header.Strip>(table).First();
-
-    private static IEnumerable<T> Descendants<T>(DependencyObject root)
-        where T : DependencyObject
-    {
-        int count = VisualTreeHelper.GetChildrenCount(root);
-        for (int i = 0; i < count; i++)
-        {
-            DependencyObject child = VisualTreeHelper.GetChild(root, i);
-            if (child is T match)
-            {
-                yield return match;
-            }
-
-            foreach (T deeper in Descendants<T>(child))
-            {
-                yield return deeper;
-            }
-        }
-    }
+    private static Header.Strip Strip(Table table) => Proof.Descendant<Header.Strip>(table)!;
 
     // The move operations, the effective columns they act on, and the strip's drop arithmetic are
     // all internal to TableView, which grants no InternalsVisibleTo. Reflection is the only way to
@@ -512,96 +491,4 @@ public class ColumnMoveTests
             .GetType()
             .GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(target);
-
-    /// <summary>One rendered frame of the header, addressed in device-independent pixels.</summary>
-    private sealed class Shot
-    {
-        private byte[] _pixels = Array.Empty<byte>();
-
-        private int Width { get; set; }
-
-        private int Height { get; set; }
-
-        private double Scale { get; set; } = 1;
-
-        internal static async Task<Shot> TakeAsync(FrameworkElement element)
-        {
-            RenderTargetBitmap bitmap = new();
-            await bitmap.RenderAsync(element);
-            IBuffer buffer = await bitmap.GetPixelsAsync();
-            byte[] pixels = new byte[buffer.Length];
-            DataReader.FromBuffer(buffer).ReadBytes(pixels);
-
-            Shot shot = new()
-            {
-                _pixels = pixels,
-                Width = bitmap.PixelWidth,
-                Height = bitmap.PixelHeight,
-                Scale = element.XamlRoot?.RasterizationScale ?? 1,
-            };
-
-            Assert.IsTrue(
-                shot.Width > 0 && shot.Height > 0,
-                "The header rendered an empty bitmap."
-            );
-            return shot;
-        }
-
-        internal int X(double dips) => Math.Clamp((int)Math.Round(dips * Scale), 0, Width - 1);
-
-        internal int Y(double dips) => Math.Clamp((int)Math.Round(dips * Scale), 0, Height - 1);
-
-        internal uint At(int x, int y)
-        {
-            int i = ((y * Width) + x) * 4;
-            return (uint)(_pixels[i] | (_pixels[i + 1] << 8) | (_pixels[i + 2] << 16));
-        }
-
-        /// <summary>The strongest contrast against <paramref name="reference"/> across one scan.</summary>
-        internal double Contrast(uint reference, double fromDips, double toDips, double atDips)
-        {
-            double best = 0;
-            int y = Y(atDips);
-            for (int x = X(fromDips); x <= X(toDips); x++)
-            {
-                best = Math.Max(best, Ratio(At(x, y), reference));
-            }
-
-            return best;
-        }
-
-        /// <summary>How many pixels of one scan are painted with something other than the background.</summary>
-        internal int DrawnWidth(uint background, double fromDips, double toDips, double atDips)
-        {
-            int drawn = 0;
-            int y = Y(atDips);
-            for (int x = X(fromDips); x <= X(toDips); x++)
-            {
-                if (Ratio(At(x, y), background) > 1.1)
-                {
-                    drawn++;
-                }
-            }
-
-            return drawn;
-        }
-
-        private static double Ratio(uint a, uint b)
-        {
-            double first = Luminance(a);
-            double second = Luminance(b);
-            return (Math.Max(first, second) + 0.05) / (Math.Min(first, second) + 0.05);
-        }
-
-        private static double Luminance(uint rgb) =>
-            (0.2126 * Linear((rgb >> 16) & 0xFF))
-            + (0.7152 * Linear((rgb >> 8) & 0xFF))
-            + (0.0722 * Linear(rgb & 0xFF));
-
-        private static double Linear(uint channel)
-        {
-            double value = channel / 255.0;
-            return value <= 0.03928 ? value / 12.92 : Math.Pow((value + 0.055) / 1.055, 2.4);
-        }
-    }
 }

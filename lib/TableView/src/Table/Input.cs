@@ -258,9 +258,7 @@ public sealed partial class Table
         }
 
         PointerPoint point = e.GetCurrentPoint(_surface);
-        bool mouseOrPen =
-            e.Pointer.PointerDeviceType is PointerDeviceType.Mouse or PointerDeviceType.Pen;
-        if (!mouseOrPen || !point.Properties.IsLeftButtonPressed)
+        if (!IsMouseOrPen(e.Pointer.PointerDeviceType) || !point.Properties.IsLeftButtonPressed)
         {
             return;
         }
@@ -501,7 +499,7 @@ public sealed partial class Table
             return;
         }
 
-        ApplyPressSelection();
+        ApplyPressSelection(_gestureItem, _gestureCtrl, _gestureShift);
     }
 
     /// <summary>Release with no gesture running: the click a press held back, if it held one.</summary>
@@ -509,20 +507,20 @@ public sealed partial class Table
     {
         if (_gestureDeferred)
         {
-            ApplyPressSelection();
+            ApplyPressSelection(_gestureItem, _gestureCtrl, _gestureShift);
         }
     }
 
     /// <summary>
-    /// The selection change the press stands for: section 13's rules over a row, and the clear for
-    /// the surface beside the rows. One implementation, whether the press applies it or the release
-    /// does, so the two can never disagree about what a click means.
+    /// The selection change a press stands for: section 13's rules over a row, and the clear for
+    /// the surface beside the rows. One implementation, whether the press applies it, the release
+    /// does or a touch tap does, so they can never disagree about what a click means.
     /// </summary>
-    private void ApplyPressSelection()
+    private void ApplyPressSelection(object? item, bool ctrl, bool shift)
     {
-        if (_gestureItem is object item)
+        if (item is not null)
         {
-            SelectItem(item, _gestureCtrl, _gestureShift);
+            SelectItem(item, ctrl, shift);
             return;
         }
 
@@ -566,17 +564,7 @@ public sealed partial class Table
         }
 
         CancelGesture();
-        if (item is not null)
-        {
-            SelectItem(item, ctrl, shift);
-        }
-        else
-        {
-            SyncSelectionPolicy();
-            _selection.Clear();
-            CommitSelection();
-        }
-
+        ApplyPressSelection(item, ctrl, shift);
         return true;
     }
 
@@ -932,6 +920,13 @@ public sealed partial class Table
             or ToggleSwitch or NumberBox or AutoSuggestBox or CalendarDatePicker or DatePicker
             or TimePicker or RatingControl
         || node is Control { IsTabStop: true };
+
+    /// <summary>
+    /// Section 19: resizing, column and row drags and the marquee are mouse and pen gestures, and
+    /// touch keeps the platform's own scrolling, selection and press-and-hold.
+    /// </summary>
+    internal static bool IsMouseOrPen(PointerDeviceType type) =>
+        type is PointerDeviceType.Mouse or PointerDeviceType.Pen;
 
     // ------------------------------------------------------------------ keyboard
 

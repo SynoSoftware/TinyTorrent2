@@ -1,4 +1,3 @@
-using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 
@@ -108,21 +107,20 @@ internal static class Menu
                 )
             );
 
-            int LeftStep() => owner.FlowDirection == FlowDirection.RightToLeft ? 1 : -1;
             menu.Items.Add(
                 Item(
                     () => owner.Strings.MoveLeft,
                     Icons.MoveLeft,
-                    () => owner.CanMoveColumnBy(active, LeftStep()),
-                    () => owner.MoveColumnBy(active, LeftStep())
+                    () => owner.CanMoveColumnBy(active, owner.LeftStep),
+                    () => owner.MoveColumnBy(active, owner.LeftStep)
                 )
             );
             menu.Items.Add(
                 Item(
                     () => owner.Strings.MoveRight,
                     Icons.MoveRight,
-                    () => owner.CanMoveColumnBy(active, -LeftStep()),
-                    () => owner.MoveColumnBy(active, -LeftStep())
+                    () => owner.CanMoveColumnBy(active, -owner.LeftStep),
+                    () => owner.MoveColumnBy(active, -owner.LeftStep)
                 )
             );
 

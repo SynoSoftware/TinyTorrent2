@@ -138,7 +138,7 @@ public class RealSortTests
     }
 
     private static string[] ViewKeys(Table table) =>
-        ((IEnumerable)SelectionHarness.Descendant<ListView>(table)!.ItemsSource)
+        ((IEnumerable)Proof.Descendant<ListView>(table)!.ItemsSource)
             .Cast<SortRow>()
             .Select(r => r.Key)
             .ToArray();

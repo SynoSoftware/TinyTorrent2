@@ -50,7 +50,7 @@ public sealed partial class Table
     private bool IsPointed => _pointerOver || _menuRow is not null;
 
     /// <summary>A row shown although it left the source.</summary>
-    private bool IsHeld(object? item) => item is not null && _held.Contains(KeyOf(item));
+    private bool IsHeld(object? item) => item is not null && _held.Contains(_identity.KeyOf(item));
 
     /// <summary>
     /// A held row shows the held look only while the pointer holds the rows. A row that waits for

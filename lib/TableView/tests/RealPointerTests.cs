@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -256,27 +255,10 @@ public class RealPointerTests
 
         internal static async Task<Mouse> CreateAsync(SelectionHarness h)
         {
-            IntPtr hwnd = Win32Interop.GetWindowFromWindowId(
-                h.Table.XamlRoot.ContentIslandEnvironment.AppWindowId
-            );
-
-            SetForegroundWindow(hwnd);
-            await Task.Delay(250);
-
-            if (GetForegroundWindow() != hwnd)
-            {
-                Assert.Inconclusive(
-                    "The test window could not take the foreground, so mouse messages could not be "
-                        + "injected without sending them to another application."
-                );
-            }
-
             Mouse mouse = new()
             {
-                _injector =
-                    InputInjector.TryCreate()
-                    ?? throw new AssertFailedException("InputInjector.TryCreate() returned null."),
-                _hwnd = hwnd,
+                _injector = await Proof.TakeForegroundAsync(h.Table),
+                _hwnd = Proof.WindowHandle(h.Table),
                 _scale = h.Table.XamlRoot.RasterizationScale,
                 _table = h.Table,
             };
@@ -461,18 +443,7 @@ public class RealPointerTests
             );
 
         private void Key(Windows.System.VirtualKey key, bool up) =>
-            _injector.InjectKeyboardInput(
-                new[]
-                {
-                    new InjectedInputKeyboardInfo
-                    {
-                        VirtualKey = (ushort)key,
-                        KeyOptions = up
-                            ? InjectedInputKeyOptions.KeyUp
-                            : InjectedInputKeyOptions.None,
-                    },
-                }
-            );
+            _injector.InjectKeyboardInput(new[] { Proof.Key(key, up) });
 
         private const int SM_XVIRTUALSCREEN = 76;
         private const int SM_YVIRTUALSCREEN = 77;
@@ -485,12 +456,6 @@ public class RealPointerTests
             public int X;
             public int Y;
         }
-
-        [DllImport("user32.dll")]
-        private static extern bool SetForegroundWindow(IntPtr hWnd);
-
-        [DllImport("user32.dll")]
-        private static extern IntPtr GetForegroundWindow();
 
         [DllImport("user32.dll")]
         private static extern bool ClientToScreen(IntPtr hWnd, ref POINT point);

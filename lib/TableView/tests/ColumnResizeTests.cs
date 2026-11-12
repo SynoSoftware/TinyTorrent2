@@ -279,7 +279,7 @@ public class ColumnResizeTests
     }
 
     private static Header.Strip Strip(Table table) =>
-        SelectionHarness.Descendant<Header.Strip>(table)
+        Proof.Descendant<Header.Strip>(table)
         ?? throw new AssertFailedException("The table realized no header strip.");
 
     // The gesture steps are private to the strip and TableView grants no InternalsVisibleTo.

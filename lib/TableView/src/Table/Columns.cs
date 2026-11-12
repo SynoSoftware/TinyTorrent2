@@ -595,6 +595,12 @@ public sealed partial class Table
     }
 
     /// <summary>
+    /// The step in visible order toward the screen's left. XAML mirrors a right-to-left table, so
+    /// there the screen's left is the next column.
+    /// </summary>
+    internal int LeftStep => FlowDirection == FlowDirection.RightToLeft ? 1 : -1;
+
+    /// <summary>
     /// Section 11: the moved header keeps focus, with the state the move arrived in. Null is a move
     /// that leaves focus where it is, which is what a menu command wants: the menu holds focus for
     /// as long as it is open and restores it itself.

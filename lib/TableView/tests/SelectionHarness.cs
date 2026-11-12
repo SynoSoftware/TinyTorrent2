@@ -121,7 +121,7 @@ internal sealed class SelectionHarness
     }
 
     internal ListView Surface() =>
-        Descendant<ListView>(Table) ?? throw new InvalidOperationException("No row surface.");
+        Proof.Descendant<ListView>(Table) ?? throw new InvalidOperationException("No row surface.");
 
     // ------------------------------------------------------------------ private entry points
 
@@ -171,26 +171,5 @@ internal sealed class SelectionHarness
             typeof(Table).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)
             ?? throw new MissingMethodException("Table", name);
         return method.Invoke(Table, args);
-    }
-
-    internal static T? Descendant<T>(DependencyObject root)
-        where T : DependencyObject
-    {
-        int count = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(root);
-        for (int i = 0; i < count; i++)
-        {
-            DependencyObject child = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(root, i);
-            if (child is T match)
-            {
-                return match;
-            }
-
-            if (Descendant<T>(child) is T deeper)
-            {
-                return deeper;
-            }
-        }
-
-        return null;
     }
 }

@@ -141,7 +141,9 @@ public class ColumnFitTests
 
             table.Sort = new Sort(tight);
             await SettleAsync(table);
-            var tightGlyph = Descendants<FontIcon>(Descendants<Header.Cell>(table).First()).Single();
+            var tightGlyph = Proof
+                .Descendants<FontIcon>(Proof.Descendant<Header.Cell>(table)!)
+                .Single();
             Assert.AreEqual(124d, TableHarness.EffectiveWidth(table, "tight"), 0d, "no width changed");
             Assert.AreEqual(
                 tightGlyph.DesiredSize.Width,
@@ -577,7 +579,7 @@ public class ColumnFitTests
 
             table.FitWidth();
 
-            double edge = Descendants<Header.Strip>(table).First().ActualWidth;
+            double edge = Proof.Descendant<Header.Strip>(table)!.ActualWidth;
             Assert.AreEqual(
                 edge,
                 TableHarness.TotalWidth(table),
@@ -628,7 +630,7 @@ public class ColumnFitTests
 
             // Fitted, a is its 1000 header, b and c their 600 cells, each plus the inset. Shrinking c in
             // proportion would take it below 300, so it stays there and a and b share what is left.
-            double edge = Descendants<Header.Strip>(table).First().ActualWidth;
+            double edge = Proof.Descendant<Header.Strip>(table)!.ActualWidth;
             double shared = (edge - 300) / (1000 + 600 + 2 * Inset(table));
             Assert.AreEqual(
                 edge,
@@ -673,7 +675,7 @@ public class ColumnFitTests
 
             table.FitWidth();
 
-            double width = Descendants<Header.Strip>(table).First().ActualWidth / 2;
+            double width = Proof.Descendant<Header.Strip>(table)!.ActualWidth / 2;
             Assert.IsTrue(width > 0);
             Assert.AreEqual(width, TableHarness.EffectiveWidth(table, "a"), .001);
             Assert.AreEqual(width, TableHarness.EffectiveWidth(table, "b"), .001);
@@ -695,7 +697,7 @@ public class ColumnFitTests
 
             table.FitWidth();
 
-            double edge = Descendants<Header.Strip>(table).First().ActualWidth;
+            double edge = Proof.Descendant<Header.Strip>(table)!.ActualWidth;
             Assert.AreEqual(100 + Inset(table), TableHarness.EffectiveWidth(table, "value"), 0.001);
             Assert.AreEqual(180 + Inset(table), TableHarness.EffectiveWidth(table, "empty"), 0.001);
             Assert.AreEqual(
@@ -723,7 +725,7 @@ public class ColumnFitTests
 
             table.FitWidth();
 
-            double edge = Descendants<Header.Strip>(table).First().ActualWidth;
+            double edge = Proof.Descendant<Header.Strip>(table)!.ActualWidth;
             Assert.AreEqual(
                 100 + Inset(table),
                 TableHarness.EffectiveWidth(table, "empty"),
@@ -747,7 +749,7 @@ public class ColumnFitTests
 
             table.FitWidth();
 
-            double edge = Descendants<Header.Strip>(table).First().ActualWidth;
+            double edge = Proof.Descendant<Header.Strip>(table)!.ActualWidth;
             Assert.AreEqual(
                 100 + Inset(table),
                 TableHarness.EffectiveWidth(table, "value"),
@@ -776,7 +778,7 @@ public class ColumnFitTests
 
             table.FitWidth();
 
-            double edge = Descendants<Header.Strip>(table).First().ActualWidth;
+            double edge = Proof.Descendant<Header.Strip>(table)!.ActualWidth;
             Assert.AreEqual(400 + Inset(table), TableHarness.EffectiveWidth(table, "a"), 0.001);
             Assert.AreEqual(
                 edge - 400 - Inset(table),
@@ -817,7 +819,7 @@ public class ColumnFitTests
         {
             Table table = await LoadAsync(Rows(4, 100), Column("a", 200), Column("b", 150));
 
-            Header.Strip strip = Descendants<Header.Strip>(table).First();
+            Header.Strip strip = Proof.Descendant<Header.Strip>(table)!;
             Panel panel = (Panel)
                 strip
                     .GetType()
@@ -901,31 +903,12 @@ public class ColumnFitTests
         return () => count;
     }
 
-    private static ListView Surface(Table table) => Descendants<ListView>(table).First();
+    private static ListView Surface(Table table) => Proof.Descendant<ListView>(table)!;
 
     private static double GlyphSpace(FontIcon glyph)
     {
         var panel = (Panel)Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(glyph);
         var label = (FrameworkElement)panel.Children[0];
         return panel.ActualWidth - Microsoft.UI.Xaml.Controls.Primitives.LayoutInformation.GetLayoutSlot(label).Width;
-    }
-
-    private static IEnumerable<T> Descendants<T>(DependencyObject root)
-        where T : DependencyObject
-    {
-        int count = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(root);
-        for (int i = 0; i < count; i++)
-        {
-            DependencyObject child = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(root, i);
-            if (child is T match)
-            {
-                yield return match;
-            }
-
-            foreach (T deeper in Descendants<T>(child))
-            {
-                yield return deeper;
-            }
-        }
     }
 }

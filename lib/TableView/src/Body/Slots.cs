@@ -91,24 +91,21 @@ internal sealed class Slots
     {
         _identity = identity;
         _view = view;
-        IEqualityComparer<object> keys = identity.KeySelector is null
-            ? ReferenceEqualityComparer.Instance
-            : identity.KeyComparer;
-        _map = new(keys);
-        _joined = new(keys);
+        _map = new(identity.KeyComparer);
+        _joined = new(identity.KeyComparer);
     }
 
     // ------------------------------------------------------------------ UI thread
 
     /// <summary>The index of <paramref name="item"/>'s row in the committed view, or -1.</summary>
     internal int IndexOf(object item) =>
-        KeyOf(item) is { } key && _map.TryGetValue(key, out int slot) && slot < _index.Length
+        _identity.KeyOf(item) is { } key && _map.TryGetValue(key, out int slot) && slot < _index.Length
             ? _index[slot]
             : -1;
 
     /// <summary>The place of a shown hierarchy row among its siblings, from 1; 0 for a row not shown.</summary>
     internal int SiblingOf(object item) =>
-        KeyOf(item) is { } key && _map.TryGetValue(key, out int slot) && InView(slot) && slot < _sibling.Length
+        _identity.KeyOf(item) is { } key && _map.TryGetValue(key, out int slot) && InView(slot) && slot < _sibling.Length
             ? _sibling[slot]
             : 0;
 
@@ -117,7 +114,7 @@ internal sealed class Slots
     /// worker's numbering, so it is asked only while no preparation runs.
     /// </summary>
     internal bool IsWaiting(object item) =>
-        KeyOf(item) is { } key && _map.TryGetValue(key, out int slot) && _sourceAt[slot] >= 0 && !InView(slot);
+        _identity.KeyOf(item) is { } key && _map.TryGetValue(key, out int slot) && _sourceAt[slot] >= 0 && !InView(slot);
 
     /// <summary>
     /// Make the preparation's state the committed one. The table calls it on the UI thread right
@@ -224,7 +221,8 @@ internal sealed class Slots
     /// <summary>The committed view shows <paramref name="source"/>, the same rows in the same instances.</summary>
     internal bool Shows(IReadOnlyList<object> source) => ReferenceEquals(_committed, source);
 
-    internal int SlotOf(object? row) => row is not null && KeyOf(row) is { } key ? Find(key) : -1;
+    internal int SlotOf(object? row) =>
+        row is not null && _identity.KeyOf(row) is { } key ? Find(key) : -1;
 
     /// <summary>Start a preparation, forgetting what a discarded one prepared.</summary>
     internal void Begin()
@@ -305,7 +303,7 @@ internal sealed class Slots
                 object row = source[position];
                 if (rowType is not null && !rowType.IsInstanceOfType(row))
                     throw new InvalidOperationException($"The source contains a row outside {rowType}.");
-                object key = KeyOf(row)
+                object key = _identity.KeyOf(row)
                     ?? throw new InvalidOperationException("The schema key selector returned null.");
                 int slot = Find(key);
                 if (slot < 0)
@@ -349,7 +347,7 @@ internal sealed class Slots
             int before = _sourceAt[slot];
             if (before >= 0 && _next[slot] < 0)
             {
-                object key = KeyOf(previous[before])!;
+                object key = _identity.KeyOf(previous[before]);
                 if (_joined.Remove(key))
                 {
                     // Numbered by a preparation the table discarded, so never committed.
@@ -488,8 +486,6 @@ internal sealed class Slots
 
         Array.Fill(_next, -1);
     }
-
-    private object? KeyOf(object row) => _identity.KeySelector is { } key ? key(row) : row;
 
     private int Find(object key) =>
         _map.TryGetValue(key, out int slot) || _joined.TryGetValue(key, out slot) ? slot : -1;

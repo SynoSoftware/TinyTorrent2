@@ -1,38 +1,37 @@
-using System.Runtime.CompilerServices;
 using Microsoft.UI.Xaml.Controls;
 
 namespace Syno.TableView;
 
 /// <summary>
-/// Section 5's identity rule. Without a key selector identity is object reference; with one it is
-/// the configured key using its default equality comparer. The selector is captured once, so the
-/// instance is created empty and filled at schema capture.
+/// Section 5's identity rule: two items are one row when their keys are equal. Without a key
+/// selector an item is its own key and keys compare by reference; with one the key is the
+/// selector's, compared by the schema's comparer. The selector is installed once, so the instance
+/// is created empty and filled at schema capture.
 /// </summary>
 internal sealed class ItemIdentity : IEqualityComparer<object>
 {
-    internal Func<object, object>? KeySelector { get; set; }
+    private Func<object, object>? _key;
 
-    internal IEqualityComparer<object> KeyComparer { get; set; } = EqualityComparer<object>.Default;
+    internal IEqualityComparer<object> KeyComparer { get; private set; } =
+        ReferenceEqualityComparer.Instance;
 
-    public new bool Equals(object? x, object? y)
+    internal void Install(Func<object, object>? key, IEqualityComparer<object> comparer)
     {
-        if (ReferenceEquals(x, y))
-        {
-            return true;
-        }
-
-        if (x is null || y is null)
-        {
-            return false;
-        }
-
-        return KeySelector is not null && KeyComparer.Equals(KeySelector(x), KeySelector(y));
+        _key = key;
+        KeyComparer = key is null ? ReferenceEqualityComparer.Instance : comparer;
     }
 
-    public int GetHashCode(object obj) =>
-        KeySelector is null
-            ? RuntimeHelpers.GetHashCode(obj)
-            : KeyComparer.GetHashCode(KeySelector(obj));
+    /// <remarks>
+    /// Null only from a selector that breaks section 5. Where rows enter, the table refuses such a
+    /// row: <see cref="Body.Slots.Number"/> and <see cref="Hierarchy.Capture"/>.
+    /// </remarks>
+    internal object KeyOf(object item) => _key is { } key ? key(item) : item;
+
+    public new bool Equals(object? x, object? y) =>
+        ReferenceEquals(x, y)
+        || (x is not null && y is not null && KeyComparer.Equals(KeyOf(x), KeyOf(y)));
+
+    public int GetHashCode(object obj) => KeyComparer.GetHashCode(KeyOf(obj));
 }
 
 /// <summary>
