@@ -41,6 +41,7 @@ char const* ToString(Status status)
     case Status::Queued: return "queued";
     case Status::Seeding: return "seeding";
     case Status::Completed: return "completed";
+    case Status::FilesMissing: return "files_missing";
     case Status::Downloading: return "downloading";
     }
     return "";
@@ -294,6 +295,88 @@ PieceRange Pieces(lt::torrent_info const& metadata, lt::file_index_t index)
     return {start / length, size == 0 ? start / length : (start + size + length - 1) / length};
 }
 
+bool Complete(lt::torrent_info const& metadata, lt::file_index_t index,
+    lt::typed_bitfield<lt::piece_index_t> const& pieces)
+{
+    auto range = Pieces(metadata, index);
+    if (range.first == range.end || range.end > pieces.size())
+        return false;
+    for (auto piece = range.first; piece < range.end; ++piece)
+    {
+        if (!pieces.get_bit(lt::piece_index_t(static_cast<int>(piece))))
+            return false;
+    }
+    return true;
+}
+
+void Request(PassPhase& pass)
+{
+    if (pass == PassPhase::Idle)
+        pass = PassPhase::Wanted;
+    else if (pass == PassPhase::Running)
+        pass = PassPhase::Again;
+}
+
+std::int64_t HeldData(lt::file_storage const& layout, lt::file_index_t index,
+    lt::typed_bitfield<lt::piece_index_t> const& pieces, bool skipped)
+{
+    auto const pieceLength = std::int64_t(layout.piece_length());
+    auto const start = layout.file_offset(index);
+    auto const end = start + layout.file_size(index);
+    auto have = [&pieces](std::int64_t piece)
+    {
+        return piece < pieces.size() && pieces.get_bit(lt::piece_index_t(static_cast<int>(piece)));
+    };
+    if (skipped)
+    {
+        // From the file's start to the end of the last piece wholly inside it.
+        auto first = (start + pieceLength - 1) / pieceLength;
+        // The torrent's last piece is shorter, so it ends inside the last file.
+        auto last = end == layout.total_size() ? std::int64_t(layout.num_pieces()) : end / pieceLength;
+        for (auto piece = last - 1; piece >= first; --piece)
+        {
+            if (have(piece))
+                return std::min(end, (piece + 1) * pieceLength) - start;
+        }
+        return 0;
+    }
+    // The bytes the pieces cover, as libtorrent's file progress at piece
+    // granularity counts them.
+    std::int64_t covered = 0;
+    for (auto piece = start / pieceLength; piece * pieceLength < end; ++piece)
+    {
+        if (have(piece))
+            covered += std::min(end, (piece + 1) * pieceLength) - std::max(start, piece * pieceLength);
+    }
+    return covered;
+}
+
+lt::typed_bitfield<lt::piece_index_t> Counted(lt::torrent_info const& metadata,
+    std::set<lt::file_index_t> const& proven)
+{
+    auto const& layout = metadata.layout();
+    lt::typed_bitfield<lt::piece_index_t> counted(metadata.num_pieces(), false);
+    auto mark = [&metadata, &counted](lt::file_index_t index, bool proof)
+    {
+        auto range = Pieces(metadata, index);
+        for (auto piece = range.first; piece < range.end; ++piece)
+        {
+            if (proof)
+                counted.set_bit(lt::piece_index_t(static_cast<int>(piece)));
+            else
+                counted.clear_bit(lt::piece_index_t(static_cast<int>(piece)));
+        }
+    };
+    for (auto index : proven)
+        mark(index, true);
+    for (auto index : layout.file_range())
+    {
+        if (!layout.pad_file_at(index) && layout.file_size(index) > 0 && !proven.contains(index))
+            mark(index, false);
+    }
+    return counted;
+}
+
 
 void Torrent::VisitPaths(bool logical, std::function<void(std::string)> const& visit) const
 {
@@ -340,10 +423,86 @@ std::vector<std::string> Urls(std::vector<lt::announce_entry> const& trackers)
     return urls;
 }
 
+void Facts::Revise(Change const& change)
+{
+    if (auto const* lost = std::get_if<Lost>(&change))
+    {
+        bool joined = false;
+        for (auto file : lost->files)
+        {
+            auto item = static_cast<std::size_t>(static_cast<int>(file));
+            // A lost file that the person skipped stays as it is: nothing
+            // would download it.
+            if (item >= lost->chosen.size() || lost->chosen[item] == lt::dont_download ||
+                question_.files.contains(file))
+                continue;
+            if (priorities_.empty())
+                priorities_ = lost->chosen;
+            if (item >= priorities_.size())
+                continue;
+            question_.files.emplace(file, priorities_[item]);
+            priorities_[item] = lt::dont_download;
+            joined = true;
+        }
+        if (joined)
+        {
+            ++question_.number;
+            repairs_ = repairs_ || lost->finished;
+        }
+    }
+    else if (auto const* chosen = std::get_if<Chosen>(&change))
+    {
+        auto previous = std::exchange(priorities_, chosen->priorities);
+        bool left = false;
+        for (auto entry = question_.files.begin(); entry != question_.files.end();)
+        {
+            auto item = static_cast<std::size_t>(static_cast<int>(entry->first));
+            if (chosen->named.contains(entry->first) || item >= priorities_.size())
+            {
+                entry = question_.files.erase(entry);
+                left = true;
+                continue;
+            }
+            priorities_[item] = lt::dont_download;
+            ++entry;
+        }
+        if (left)
+            ++question_.number;
+        // A file that the person makes wanted downloads, and its finish is
+        // no repair.
+        for (std::size_t item = 0; item < priorities_.size() && item < previous.size(); ++item)
+        {
+            if (previous[item] == lt::dont_download && priorities_[item] != lt::dont_download)
+                repairs_ = false;
+        }
+    }
+    else if (auto const* found = std::get_if<Found>(&change))
+    {
+        bool left = false;
+        for (auto file : found->files)
+        {
+            auto entry = question_.files.find(file);
+            auto item = static_cast<std::size_t>(static_cast<int>(file));
+            if (entry == question_.files.end())
+                continue;
+            if (item < priorities_.size())
+                priorities_[item] = entry->second;
+            question_.files.erase(entry);
+            left = true;
+        }
+        if (left)
+            ++question_.number;
+    }
+    else
+    {
+        repairs_ = false;
+    }
+}
+
 Json Facts::ToJson() const
 {
     Json chosen = Json::array();
-    for (auto priority : priorities)
+    for (auto priority : priorities_)
     {
         chosen.push_back(static_cast<std::uint8_t>(priority));
     }
@@ -372,7 +531,17 @@ Json Facts::ToJson() const
         {"sequential", sequential},
         {"first_last", firstLast},
         {"download_limit", downloadLimit},
-        {"upload_limit", uploadLimit}};
+        {"upload_limit", uploadLimit},
+        {"repairs", repairs_}};
+    if (question_.number != 0)
+    {
+        Json files = Json::array();
+        for (auto const& [file, priority] : question_.files)
+        {
+            files.push_back({{"index", static_cast<int>(file)}, {"priority", static_cast<std::uint8_t>(priority)}});
+        }
+        saved["question"] = {{"number", question_.number}, {"files", std::move(files)}};
+    }
     if (trackers)
     {
         saved["trackers"] = Json::array();
@@ -442,9 +611,32 @@ Facts Facts::Read(Json const& saved)
         for (auto const& value : *found)
         {
             auto saved = Whole<std::uint8_t>(value);
-            facts.priorities.push_back(saved ? NearestChoice(*saved) : lt::default_priority);
+            facts.priorities_.push_back(saved ? NearestChoice(*saved) : lt::default_priority);
         }
     }
+    if (auto found = saved.find("question"); found != saved.end() && found->is_object())
+    {
+        facts.question_.number = ReadSaved(*found, "number", std::uint64_t(0));
+        if (auto files = found->find("files"); files != found->end() && files->is_array())
+        {
+            for (auto const& entry : *files)
+            {
+                if (!entry.is_object())
+                    continue;
+                auto index = ReadSaved(entry, "index", -1);
+                auto value = entry.find("priority");
+                auto saved = value != entry.end() ? Whole<std::uint8_t>(*value) : std::nullopt;
+                auto priority = saved ? NearestChoice(*saved) : lt::dont_download;
+                // The question holds only files that the saved priorities
+                // skip, each with a priority that downloads.
+                if (index < 0 || static_cast<std::size_t>(index) >= facts.priorities_.size() ||
+                    facts.priorities_[index] != lt::dont_download || priority == lt::dont_download)
+                    continue;
+                facts.question_.files.emplace(lt::file_index_t(index), priority);
+            }
+        }
+    }
+    facts.repairs_ = ReadSaved(saved, "repairs", false);
     if (auto found = saved.find("hashes"); found != saved.end() && found->is_array())
     {
         for (auto const& value : *found)
@@ -642,7 +834,7 @@ bool Torrent::FilesBusy() const
 
 bool Torrent::WorkWaits() const
 {
-    return waiting || control.Recovers() || FileWork();
+    return waiting || control.Recovers() || FileWork() || look == LookPhase::Wanted || look == LookPhase::Running;
 }
 
 bool Torrent::IsHeld(bool hasMetadata) const
@@ -650,7 +842,7 @@ bool Torrent::IsHeld(bool hasMetadata) const
     // A stopped torrent that stayed auto-managed would leave upload mode by
     // itself every few minutes and fail its writes again.
     return control.Holds() || !conflict.empty() || PathWork() || facts.marker || cacheWrite == CacheWrite::Flushing ||
-        CheckWaits() || unfinished == TaskKind::Check || (hasMetadata && namePhase != NamePhase::Ready);
+        CheckWaits() || unfinished == TaskKind::Check || (hasMetadata && namePhase != NamePhase::Ready) || kept;
 }
 
 bool Torrent::CheckWaits() const
@@ -710,6 +902,11 @@ bool Torrent::SeedLimited() const
     return status.is_finished && facts.intent != Intent::Paused && !facts.ignoresSeedLimits;
 }
 
+bool Torrent::Done() const
+{
+    return status.has_metadata && status.is_finished && facts.Asked().files.empty();
+}
+
 bool Torrent::MoveBlocked() const
 {
     return moveError.has_value();
@@ -765,6 +962,10 @@ Status Torrent::ClassifyTransfer(bool sessionPaused) const
     if (completion.IsDownloading())
     {
         return Status::Downloading;
+    }
+    if (status.is_finished && !Done())
+    {
+        return Status::FilesMissing;
     }
     if (status.is_seeding)
     {
@@ -923,9 +1124,9 @@ bool Completion::Finish()
     return true;
 }
 
-bool Completion::IsReached(lt::torrent_status const& status) const
+bool Completion::IsReached(bool done) const
 {
-    return status.has_metadata && status.is_finished && !IsWorking();
+    return done && !IsWorking();
 }
 
 bool Completion::IsWorking() const
@@ -947,8 +1148,11 @@ Json Torrent::Describe(Detail const& detail, std::shared_ptr<lt::torrent_info co
 {
     auto data = facts.ToJson();
     // One number per file would make the reply grow with the torrent; file
-    // pages carry each file's choice.
+    // pages carry each file's choice. The question and the repair mark are
+    // the engine's own.
     data.erase("priorities");
+    data.erase("question");
+    data.erase("repairs");
     data.update(Describe(TorrentView::General, detail, metadata));
     if (facts.trackers)
     {
@@ -1381,13 +1585,23 @@ Json Torrent::DescribeFilePage(std::shared_ptr<lt::torrent_info const> const& me
     auto masks = ChoiceMasks();
     auto& files = data["files"];
     std::size_t names = 0;
+    // A file's data is on disk when it is neither lost nor in the question,
+    // and every piece of it is verified or it has its record: the reload
+    // drops the pieces that a lost file shares with its neighbours, whose own
+    // bytes stay.
+    auto have = kept ? *kept : waiting ? waiting->params.have_pieces : handle.status(lt::torrent_handle::query_pieces).pieces;
+    std::set<lt::file_index_t> lost(control.Lost().begin(), control.Lost().end());
+    auto const& asked = facts.Asked().files;
     for (int item = offset; item < storage.num_files() && files.size() < filePage && names < filePageNames; ++item)
     {
         lt::file_index_t index(item);
         auto pieces = Pieces(*metadata, index);
+        bool missing = asked.contains(index);
         Json file = {{"index", item}, {"size", storage.file_size(index)}, {"padding", storage.pad_file_at(index)},
             {"first_piece", pieces.first}, {"end_piece", pieces.end},
-            {"priority", static_cast<std::uint8_t>(ChosenPriority(storage, index, masks))}};
+            {"priority", static_cast<std::uint8_t>(ChosenPriority(storage, index, masks))}, {"missing", missing},
+            {"on_disk", !missing && !lost.contains(index) &&
+                (records.contains(index) || Complete(*metadata, index, have))}};
         if (paths)
         {
             auto path = storage.file_path(index);
@@ -1446,9 +1660,17 @@ Json Torrent::Row(Status shown, int queue, std::optional<double> moveProgress, D
     bool retry) const
 {
     auto problem = Diagnose();
-    auto complete = completion.IsReached(status);
+    auto complete = completion.IsReached(Done());
     auto saved = status.state == lt::torrent_status::checking_resume_data ? savedProgress : std::nullopt;
     auto hashes = Hashes();
+    auto const& asked = facts.Asked();
+    auto metadata = waiting ? waiting->params.ti : names ? names->metadata : nullptr;
+    std::int64_t missingSize = 0;
+    for (auto const& [file, priority] : asked.files)
+    {
+        if (metadata && file < metadata->layout().end_file())
+            missingSize += metadata->layout().file_size(file);
+    }
     return {{"torrent_id", torrentId}, {"save_path", facts.savePath}, {"final_folder", facts.finalFolder},
         {"moving", ShowsPathWork()}, {"move_destination", facts.marker ? facts.marker->destination : std::string()},
         {"paused", facts.intent == Intent::Paused}, {"forced", facts.intent == Intent::Forced},
@@ -1470,6 +1692,7 @@ Json Torrent::Row(Status shown, int queue, std::optional<double> moveProgress, D
         {"swarm_leecher_count", status.num_incomplete >= 0 ? status.num_incomplete : status.list_peers - status.list_seeds},
         {"downloaded", status.all_time_download}, {"uploaded", status.all_time_upload},
         {"queue", queue},
+        {"missing_files", asked.files.size()}, {"missing_size", missingSize}, {"question", asked.number},
         {"complete", complete}, {"completed_on", complete ? status.completed_time : 0},
         {"incoming", status.has_incoming}, {"hashes", std::move(hashes)}};
 }
@@ -1479,7 +1702,7 @@ Json Torrent::Row(Status shown, int queue, std::optional<double> moveProgress, D
 std::optional<std::vector<lt::download_priority_t>> Torrent::ShownPriorities(Detail const& detail) const
 {
     if (prioritiesPending)
-        return facts.priorities;
+        return facts.Priorities();
     if (detail.Has(DetailKind::Priorities))
         return detail.priorities;
     return std::nullopt;
@@ -1487,7 +1710,7 @@ std::optional<std::vector<lt::download_priority_t>> Torrent::ShownPriorities(Det
 
 std::vector<std::wstring> Torrent::ChoiceMasks() const
 {
-    return facts.priorities.empty() ? SkipMasks(facts.skipPatterns) : std::vector<std::wstring>();
+    return facts.Priorities().empty() ? SkipMasks(facts.skipPatterns) : std::vector<std::wstring>();
 }
 
 std::vector<lt::download_priority_t> Torrent::ChosenPriorities(
@@ -1495,7 +1718,7 @@ std::vector<lt::download_priority_t> Torrent::ChosenPriorities(
 {
     if (!metadata)
     {
-        return std::vector<lt::download_priority_t>(facts.priorities.size(), lt::dont_download);
+        return std::vector<lt::download_priority_t>(facts.Priorities().size(), lt::dont_download);
     }
     auto masks = ChoiceMasks();
     std::vector<lt::download_priority_t> priorities;
@@ -1509,14 +1732,15 @@ std::vector<lt::download_priority_t> Torrent::ChosenPriorities(
 lt::download_priority_t Torrent::ChosenPriority(lt::file_storage const& files, lt::file_index_t index,
     std::vector<std::wstring> const& masks) const
 {
-    if (facts.priorities.empty())
+    auto const& priorities = facts.Priorities();
+    if (priorities.empty())
     {
         return DefaultPriority(files, index, masks);
     }
     // Only a damaged store saves a list of another length; a file it misses
     // takes the priority libtorrent gives a file without one.
     auto item = static_cast<std::size_t>(static_cast<int>(index));
-    return item < facts.priorities.size() ? facts.priorities[item] : DefaultPriority(files, index, {});
+    return item < priorities.size() ? priorities[item] : DefaultPriority(files, index, {});
 }
 
 void Torrent::ApplyIntent()
@@ -1539,7 +1763,7 @@ void Torrent::ApplyIntent()
     }
     auto priorities = ChosenPriorities(metadata);
     handle.prioritize_files(priorities);
-    if (facts.intent == Intent::Paused || (metadata && facts.priorities.empty() &&
+    if (facts.intent == Intent::Paused || (metadata && facts.Priorities().empty() &&
         std::none_of(priorities.begin(), priorities.end(),
         [](auto priority) { return priority != lt::dont_download; })))
     {

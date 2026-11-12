@@ -305,6 +305,7 @@ char const* ToString(ToastKind kind)
     case ToastKind::MissingProgram: return "missing_program";
     case ToastKind::Aggregate: return "aggregate";
     case ToastKind::Unfinished: return "unfinished";
+    case ToastKind::Followed: return "followed";
     }
     return "";
 }

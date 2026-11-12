@@ -9,9 +9,20 @@ public sealed partial class MainWindow
     private const uint SEE_MASK_NOASYNC = 0x00000100;
     private const int SW_SHOWNORMAL = 1;
 
+    // A torrent's file or folder that is not there may have moved on its
+    // drive. Open is then the person's first contact with the moved files, so
+    // the engine looks for them and Open goes to their new path. The test
+    // comes first, because the shell shows its own "cannot find" box.
     private async void Open(OpenRequestedEventArgs args)
     {
-        if (await OpenPath(args.Path, args.Extension) is { } failure)
+        var path = args.Path;
+        if (
+            args.Look is { } look
+            && !await Task.Run(() => Path.Exists(path))
+            && await look() is { } moved
+        )
+            path = moved;
+        if (await OpenPath(path, args.Extension) is { } failure)
             Model.Notifications.Report(failure);
     }
 

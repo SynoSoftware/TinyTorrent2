@@ -93,7 +93,7 @@ void Engine::State::Add(Preview& preview, Addition::Choices choices, std::functi
     addition.facts.sequential = choices.sequential;
     addition.facts.firstLast = choices.firstLast;
     addition.facts.added = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-    addition.facts.priorities = std::move(*chosen);
+    addition.facts.Revise(Facts::Chosen{std::move(*chosen)});
     addition.facts.hashes = Hashes(preview.InfoHashes());
     addition.queueTop = choices.queueTop;
     addition.watch = std::move(choices.watch);

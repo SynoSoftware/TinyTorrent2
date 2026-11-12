@@ -2,6 +2,7 @@
 
 #include "Engine.h"
 #include "Enums.h"
+#include "Record.h"
 #include "SpeedHistory.h"
 #include <libtorrent/add_torrent_params.hpp>
 #include <libtorrent/announce_entry.hpp>
@@ -88,6 +89,48 @@ struct Facts
         }
     };
 
+    // The lost files that the person wanted and has not answered for, each
+    // with the priority the person gave it. Its saved priority is "do not
+    // download" meanwhile, so every reader of the priorities reads the truth
+    // without knowing the question.
+    struct Question
+    {
+        // Rises at each change, so an answer acts only on the question that
+        // the person saw.
+        std::uint64_t number = 0;
+        std::map<lt::file_index_t, lt::download_priority_t> files;
+
+        bool operator==(Question const&) const = default;
+    };
+    // A look found `files` without their data. `chosen` is every file's
+    // priority as the torrent downloads it, and `finished` whether
+    // libtorrent calls the torrent finished.
+    struct Lost
+    {
+        std::vector<lt::file_index_t> files;
+        std::vector<lt::download_priority_t> chosen;
+        bool finished = false;
+    };
+    // The person chose `priorities` for every file. The files that the
+    // choice `named` leave the question with their new priority; the others
+    // stay in it.
+    struct Chosen
+    {
+        std::vector<lt::download_priority_t> priorities;
+        std::set<lt::file_index_t> named;
+    };
+    // The files hold their data again, as a check or a move verified, so
+    // they leave the question with the priority the person gave them.
+    struct Found
+    {
+        std::vector<lt::file_index_t> files;
+    };
+    // libtorrent called the torrent finished again, so the repair ended.
+    struct Repaired
+    {
+    };
+    using Change = std::variant<Lost, Chosen, Found, Repaired>;
+
     std::string savePath;
     std::string finalFolder;
     bool appendsSuffix = true;
@@ -102,8 +145,6 @@ struct Facts
     bool ignoresSeedLimits = false;
     // When it was added, in seconds since 1970.
     std::int64_t added = 0;
-    // Empty means the default priorities, once the metadata is known.
-    std::vector<lt::download_priority_t> priorities;
     std::vector<std::string> hashes;
     // No choice retains the resume trackers; an empty choice removes them.
     std::optional<std::vector<lt::announce_entry>> trackers;
@@ -113,8 +154,25 @@ struct Facts
     int downloadLimit = 0;
     int uploadLimit = 0;
 
+    // Empty means the default priorities, once the metadata is known.
+    std::vector<lt::download_priority_t> const& Priorities() const { return priorities_; }
+    Question const& Asked() const { return question_; }
+    // Files joined the question while libtorrent called the torrent
+    // finished, so the download of the pieces they shared with their
+    // neighbours is a repair, which Completion passes over.
+    bool Repairs() const { return repairs_; }
+    // The one writer of the question, of the saved priorities and of the
+    // repair mark, which change together, so the question holds only skipped
+    // files.
+    void Revise(Change const& change);
+
     Json ToJson() const;
     static Facts Read(Json const& saved);
+
+private:
+    std::vector<lt::download_priority_t> priorities_;
+    Question question_;
+    bool repairs_ = false;
 };
 
 // libtorrent's latest answers to the detail queries for one torrent.
@@ -145,8 +203,8 @@ struct FileNames
 };
 
 // A move that waits for busy files or its drives: one the person asked for,
-// or the move to the final folder. The torrents of one request share its turn,
-// their place among the jobs that wait for drives.
+// the move to the final folder, or a follow. The torrents of one request
+// share its turn, their place among the jobs that wait for drives.
 struct WaitingMove
 {
     std::string destination;
@@ -156,9 +214,12 @@ struct WaitingMove
     // the give-back of the torrent's cut move, which the move waits for,
     // failed.
     std::optional<Problem> refusal;
-    // The engine's own move of a finished torrent to its final folder, whose
-    // failure waits for the minute check instead of the person.
-    bool final = false;
+    // The failure of the engine's own move to the final folder waits for the
+    // minute check instead of the person.
+    MoveCause cause = MoveCause::Person;
+    // A follow to a folder that gozler found on another drive, which the
+    // engine chose by itself, so a notice names it once the follow is saved.
+    bool announced = false;
     MoveMode mode = MoveMode::Files;
 };
 
@@ -240,9 +301,9 @@ public:
     bool Finish();
 
     bool NeedsSample() const { return requested_; }
-    // The torrent is complete and no download, write or recheck is still
+    // The torrent is `done` and no download, write or recheck is still
     // working on it.
-    bool IsReached(lt::torrent_status const& status) const;
+    bool IsReached(bool done) const;
     bool IsWorking() const;
     // Downloading, or writing what it downloaded.
     bool IsDownloading() const;
@@ -424,6 +485,14 @@ public:
     {
         bool minute = false;
     };
+    // A look ended without a failure: the files whose data is gone, and
+    // whether files of the question are back and proven, so a reload gives
+    // their pieces back.
+    struct Looked
+    {
+        std::vector<lt::file_index_t> lost;
+        bool back = false;
+    };
     // `final`: the move is the engine's own move to the final folder. Any
     // other move ends the failed move to the final folder.
     struct MoveStarted
@@ -438,7 +507,7 @@ public:
         bool final = false;
     };
     using Event = std::variant<Failed, Released, Probed, Checked, Reloaded, Answered, Cleared, Replaced, Dropped,
-        Due, MoveStarted, MoveEnded>;
+        Due, Looked, MoveStarted, MoveEnded>;
 
     struct Effects
     {
@@ -470,13 +539,14 @@ public:
     // The job is one of the torrent's current jobs, so its result counts.
     bool Owns(std::shared_ptr<Job const> const& job) const;
     // The torrent stays paused: a storage failure that is not Continued, a
-    // release or reload that uses its files, or lost files that wait for
-    // their reload. A held torrent reports no new status error, so a reload
-    // that fails while no failure holds the torrent starts one.
+    // release or reload that uses its files, or a reload that is wanted. A
+    // held torrent reports no new status error, so a reload that fails while
+    // no failure holds the torrent starts one.
     bool Holds() const;
-    // Files that lost their data wait for their reload, which waits for the
-    // torrent's file work to end. Until then the torrent stays paused and
-    // does not finish; other file work may run.
+    // A reload is wanted: files that lost their data, or files of the
+    // question that are back, wait for it, and it waits for the torrent's
+    // file work to end. Until then the torrent stays paused and does not
+    // finish; other file work may run.
     bool AwaitsReload() const;
     // A release or reload uses the torrent's files.
     bool Busy() const;
@@ -514,6 +584,7 @@ private:
     void On(Replaced const& replaced, Reality const& reality, Effects& effects);
     void On(Dropped const& dropped, Reality const& reality, Effects& effects);
     void On(Due const& due, Reality const& reality, Effects& effects);
+    void On(Looked const& looked, Reality const& reality, Effects& effects);
     void On(MoveStarted const& started, Reality const& reality, Effects& effects);
     void On(MoveEnded const& ended, Reality const& reality, Effects& effects);
     // Ends the job in `slot` when `job` is its record of `kind`; false for a
@@ -535,6 +606,9 @@ private:
     std::shared_ptr<Job> job_;
     std::shared_ptr<Job> checkJob_;
     std::vector<lt::file_index_t> lost_;
+    // Files of the question are back and proven, so a reload gives their
+    // pieces back.
+    bool restores_ = false;
 };
 
 // A torrent in the list: its libtorrent handle, the facts the document saves
@@ -614,6 +688,50 @@ struct Torrent
     // Verification and file choices that wait until the files are not busy.
     bool needsRecheck = false;
     bool prioritiesPending = false;
+    // The pieces that its last add claimed, kept while the engine holds the
+    // torrent until libtorrent has judged them, and after a rejection until
+    // the look and the reload. libtorrent discards rejected pieces, so these
+    // show which files held data. A checkpoint saves them and a reload
+    // builds from them meanwhile. The restore of a torrent marked for
+    // verification keeps the pieces it clears, which its add does not claim.
+    std::optional<lt::typed_bitfield<lt::piece_index_t>> kept;
+    LookPhase look = LookPhase::Idle;
+    // The person's answer that ends a storage failure, while it waits for a
+    // look: libtorrent's check after the error clears must find the lost
+    // files in the question.
+    std::optional<FailureAnswer> answering;
+    // The records of its finished files. The records pass takes those that
+    // are missing, and SaveRecords writes the records file after a change.
+    Records records;
+    PassPhase recording = PassPhase::Idle;
+    bool recordsUnsaved = false;
+    std::chrono::steady_clock::time_point recordsSaved{};
+    // The search for the files of its question, which runs after files
+    // join it and at each start. It ends in a follow, in files that are back
+    // in their place, or in nothing. A search that waits for gozler's index
+    // starts again at `searchAt`.
+    PassPhase search = PassPhase::Idle;
+    std::chrono::steady_clock::time_point searchAt{};
+    // The number of the question that a search last settled. A search of the
+    // same question again, as a look asks for, keeps its notice.
+    std::optional<std::uint64_t> searched;
+    // Files of the question that the last search found back in their place
+    // and proven. The reload gives their pieces back and saves them as found.
+    std::set<lt::file_index_t> returned;
+    // The person's answer for the question's files, while it waits for the
+    // search that runs before it applies: a file that is back is used, not
+    // downloaded again. It applies to `files`, the question when the engine
+    // accepted it, as far as they are still in it.
+    struct Answer
+    {
+        MissingAnswer choice = MissingAnswer::Redownload;
+        std::set<lt::file_index_t> files;
+    };
+    std::optional<Answer> answer;
+    // The folder of a follow that failed or was refused. The search does not
+    // follow there again while the engine runs, so the person's answer
+    // applies instead of the same follow failing again.
+    std::optional<std::string> failedFollow;
     std::optional<WaitingMove> waitingMove;
     // The kind of its work that the last end left unfinished, while that work
     // waits for the person to continue or abandon it: a move, which leaves
@@ -695,7 +813,8 @@ struct Torrent
     // File work, or a storage release or reload, uses the torrent's files.
     bool FilesBusy() const;
     // New work on the torrent's files waits: the torrent waits for its add,
-    // storage recovery owns its files, or other work uses them. Renames
+    // storage recovery owns its files, other work uses them, or a look is
+    // wanted or runs, so a check waits for it. Renames
     // also wait while a stop holds the torrent, because a stop keeps the
     // torrent off its folder; name preparation does not, because names
     // chosen at last end a stop they caused.
@@ -715,8 +834,9 @@ struct Torrent
     void WaitForAdd(lt::add_torrent_params params);
     // The engine keeps it paused for its own work, whatever the person chose:
     // a conflict, a move, the write before a rename, a check that waits for
-    // its drive or for the person's answer, its storage control, or names
-    // that wait for preparation once it has `hasMetadata`.
+    // its drive or for the person's answer, its storage control, names
+    // that wait for preparation once it has `hasMetadata`, or the hold at an
+    // add while the engine keeps its pieces.
     bool IsHeld(bool hasMetadata) const;
     // The engine holds its check, because another job uses its drive.
     bool CheckWaits() const;
@@ -741,6 +861,11 @@ struct Torrent
     // The seeding limits can stop it: it has finished, it is not stopped, and
     // the person did not start it again after it finished.
     bool SeedLimited() const;
+    // libtorrent calls it finished and it has no question. The final move,
+    // the Completed toast and status, the check of a finished download and
+    // the row's `complete` read this one answer; the seed limits and the
+    // storage control keep libtorrent's, which measures transfer.
+    bool Done() const;
     Status Classify(bool sessionPaused) const;
     // The status without a move that runs or waits.
     Status ClassifyTransfer(bool sessionPaused) const;
@@ -793,6 +918,8 @@ private:
 
 // libtorrent checks the torrent's files in this state.
 bool Checks(lt::torrent_status::state_t state);
+// Asks for a records pass or a search; see PassPhase.
+void Request(PassPhase& pass);
 
 // Rules about torrent content that previews share with torrents.
 // The hashes as hexadecimal text, v1 first.
@@ -852,5 +979,18 @@ struct PieceRange
     std::int64_t end = 0;
 };
 PieceRange Pieces(lt::torrent_info const& metadata, lt::file_index_t index);
+// `pieces` holds every piece of the file, which holds data.
+bool Complete(lt::torrent_info const& metadata, lt::file_index_t index,
+    lt::typed_bitfield<lt::piece_index_t> const& pieces);
+// The bytes the file must hold for `pieces`. A `skipped` file counts only the
+// pieces wholly inside it: libtorrent keeps a skipped file's part of a piece
+// it shares in the part file, and a piece wholly inside it was written while
+// the file was wanted, because libtorrent keeps writing to a file that exists.
+std::int64_t HeldData(lt::file_storage const& layout, lt::file_index_t index,
+    lt::typed_bitfield<lt::piece_index_t> const& pieces, bool skipped);
+// The pieces that count without a check: those whose every file that is not
+// padding is proven.
+lt::typed_bitfield<lt::piece_index_t> Counted(lt::torrent_info const& metadata,
+    std::set<lt::file_index_t> const& proven);
 std::vector<std::string> Urls(std::vector<lt::announce_entry> const& trackers);
 }

@@ -789,6 +789,53 @@ the file scope arrives, which the engine answers from memory, and Remove is
 always available, following [the deletion ruling](../engine/files.md#removal-and-moves).
 Its default follows [Buttons](../ui.md#buttons).
 
+<a id="missing-files"></a>**Missing files.** When files of a torrent were
+deleted or moved outside TinyTorrent and the engine could not find them, they
+wait for the person's [answer](../engine.md#lost-files). One dialog, built
+from Remove torrents and sharing its file dialog, answers for every torrent at
+once; it adds no visual element of its own, because the person has a task to
+finish.
+
+- **Title:** Redownload or skip missing files?, with the Files glyph. It names
+  both answers, as File Explorer's Replace or Skip Files does, because the
+  person must choose and neither answer is expected; the glyph names the
+  subject, because the title has two acts.
+- **List:** as Remove's, grouped by folder, each torrent's name trimmed with its
+  name and folder in a tooltip, and at the right the count and size of its
+  missing files. The count's tooltip names the missing files, ten at most and
+  then how many more, within the width a tooltip fits, because the person
+  decides by which files are gone; the check box's accessible help text carries
+  the same list. The list scrolls in Remove's height, so the parts below it stay
+  in view.
+- **Check boxes:** one in front of each torrent, checked when the dialog opens,
+  when the dialog lists two or more. A dialog for one torrent shows none,
+  because unchecking its only torrent would be Cancel. A torrent whose question
+  ends while the dialog is open keeps its row, so rows never move under the
+  person: its check box turns off and is disabled, and its count reads Found.
+- **Footer:** one fact, the count of checked torrents, of their missing files
+  and their size, such as 2 torrents · 4 files · 6.0 GiB: what Redownload will
+  fetch. With no torrent checked, the fact hides and both answers are disabled.
+- **Buttons:** Redownload, with the Download glyph, Skip, with the glyph the
+  Files tab shows for a skipped file, and Cancel. Their tooltips say what the
+  word leaves out: Redownload downloads the missing files of the checked
+  torrents again into their folders; Skip unchecks them, and the person can
+  check them in Files later; Cancel decides later, and the message bar keeps
+  the question. Cancel is the default, by the
+  [Buttons](../ui.md#buttons) exception for an act the person did not choose,
+  so Enter decides nothing. There is no Don't show again: a remembered answer
+  would download or skip files without asking.
+- **Answers:** the dialog sends each checked torrent with the question number
+  that its row showed and closes at once. The engine looks before it applies
+  the answer, so a file that is back is used and not downloaded twice.
+  Redownload gives the files back the priority the person gave them, and a
+  stopped torrent stays stopped. Skip makes them ordinary skipped files.
+- **Files tab:** a missing file shows as Missing, and checking it there is
+  Redownload for that file.
+- **Keyboard:** Tab reaches the check boxes and the three buttons, Space checks
+  a box and Escape is Cancel; each check box's accessible name is the
+  torrent's name. With the engine gone, the file dialog's Restart bar shows and
+  the answers are disabled, as for Move and Remove.
+
 Include shared torrents is an explicit choice; the engine rechecks the scope
 when the command executes. The engine detects files already at the destination
 and verifies them, following [engine moves](../engine/files.md#removal-and-moves), so the

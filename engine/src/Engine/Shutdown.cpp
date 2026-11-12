@@ -281,6 +281,7 @@ void Engine::State::ContinueShutdown()
     if (shutdownPhase == ShutdownPhase::Saving)
     {
         CheckpointUnsaved();
+        SaveRecords(true);
         bool pending = std::any_of(torrents.begin(), torrents.end(), [](auto const& entry)
             { return entry.second.checkpointPhase != CheckpointPhase::Idle || entry.second.unsaved; });
         if (pending || !store.IsIdle())

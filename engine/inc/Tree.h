@@ -4,6 +4,7 @@
 #include <libtorrent/download_priority.hpp>
 #include <libtorrent/torrent_info.hpp>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -57,6 +58,8 @@ struct Listing
     // file's path in the torrent, which then counts toward `filePageNames`
     // with its name.
     bool torrent = false;
+    // A torrent's files in its question; always none for a preview.
+    std::set<lt::file_index_t> missing;
 };
 
 // A preview's or a torrent's folders and files, built from a Listing for one

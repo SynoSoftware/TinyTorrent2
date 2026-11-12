@@ -37,7 +37,16 @@ enum class Command
     CheckProxy,
     ConnectionTest,
     TurnOff,
-    UnfinishedTasks
+    UnfinishedTasks,
+    AnswerMissing,
+    Look
+};
+
+// The person's answer for the files of a torrent's question.
+enum class MissingAnswer
+{
+    Redownload,
+    Skip
 };
 
 // Who publishes the snapshot after a command succeeds.
@@ -192,6 +201,16 @@ enum class MoveMode
 {
     Files,
     Download
+};
+
+// Why a move runs: the person asked for it, or the engine moves a finished
+// torrent to its final folder, or it follows a payload that the person moved
+// outside TinyTorrent.
+enum class MoveCause
+{
+    Person,
+    Final,
+    Follow
 };
 
 // How far a saved move got, which decides what continuing or abandoning it
@@ -495,6 +514,30 @@ enum class CheckReads
     Stalled
 };
 
+// Where a torrent's look is: one run of LostData on its drive's worker.
+enum class LookPhase
+{
+    Idle,
+    // A check, an answer or the hold at an add waits for a look, which the
+    // driver starts once the torrent's files are free.
+    Wanted,
+    Running,
+    // A look has run since a check was wanted, so the check can start.
+    Looked
+};
+
+// Where a torrent's records pass or the search for the files of its question
+// stands. The driver starts a wanted one once the torrent's files are free. A
+// request while one runs makes it run again, because the running one may have
+// read the files before the change that the request is about.
+enum class PassPhase
+{
+    Idle,
+    Wanted,
+    Running,
+    Again
+};
+
 // Where a torrent's checkpoint is: waiting for libtorrent's resume data, or
 // writing that data to the resume file.
 enum class CheckpointPhase
@@ -577,6 +620,9 @@ enum class Status
     Queued,
     Seeding,
     Completed,
+    // Finished but for files of its question, also while it uploads its
+    // other files.
+    FilesMissing,
     Downloading
 };
 
@@ -776,7 +822,10 @@ enum class ToastKind
     Aggregate,
     // Work that the last end left unfinished waits for the person's answer,
     // which the window asks for.
-    Unfinished
+    Unfinished,
+    // A torrent follows its files to a folder on another drive that the
+    // engine chose by itself.
+    Followed
 };
 
 // Boolean settings that an opt-out menu may turn off.

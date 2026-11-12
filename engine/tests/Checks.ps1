@@ -1,10 +1,10 @@
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'Conflict', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'MoveRecovery', 'DriveTurns', 'UnfinishedTasks', 'StorageStop', 'StoppedLocation', 'AbsentLink', 'LinkedNotice', 'KilledCheck', 'StoppedHeld', 'MagnetAbsent', 'FileWindow')]
+    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'Conflict', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'MoveRecovery', 'DriveTurns', 'UnfinishedTasks', 'StorageStop', 'StoppedLocation', 'AbsentLink', 'LinkedNotice', 'KilledCheck', 'StoppedHeld', 'MagnetAbsent', 'FileWindow', 'MissingFiles')]
     [string] $Check,
     # Every check but Conflict, FilesSafety, WaitingMove, RemoveDuringMove, MoveAndVerify,
     # MoveExisting, MoveRecovery, DriveTurns, UnfinishedTasks, StorageStop, StoppedLocation,
-    # AbsentLink, LinkedNotice, KilledCheck, FileWindow and SelectedTransfer,
+    # AbsentLink, LinkedNotice, KilledCheck, FileWindow, SelectedTransfer and MissingFiles,
     # which make their own torrents.
     [string] $TorrentFile,
     [string] $EnginePath,
@@ -31,7 +31,7 @@ $transferChecks = 'MagnetDownload', 'SelectedTransfer', 'DiskError', 'PreviewGua
 # These checks each guard one defect that was already fixed, so a run of every
 # check skips them; the owner asks for them when that code changes.
 $optInChecks = 'WaitingMove', 'RemoveDuringMove'
-if (-not $TorrentFile -and $Check -notin 'Conflict', 'FilesSafety', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'MoveRecovery', 'DriveTurns', 'UnfinishedTasks', 'StorageStop', 'StoppedLocation', 'AbsentLink', 'LinkedNotice', 'KilledCheck', 'FileWindow', 'SelectedTransfer') {
+if (-not $TorrentFile -and $Check -notin 'Conflict', 'FilesSafety', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'MoveRecovery', 'DriveTurns', 'UnfinishedTasks', 'StorageStop', 'StoppedLocation', 'AbsentLink', 'LinkedNotice', 'KilledCheck', 'FileWindow', 'SelectedTransfer', 'MissingFiles') {
     throw "$Check needs -TorrentFile."
 }
 if ($Check -in $transferChecks -and -not $Transfer) {
@@ -2496,6 +2496,150 @@ try {
             $snapshot = Start-Engine
             Assert (@($snapshot.torrents).Count -eq 1 -and $snapshot.torrents[0].torrent_id -eq $torrentId) `
                 'A damaged resume file lost its torrent'
+        }
+        'MissingFiles' {
+            # A finished torrent's file deleted while the engine was closed
+            # waits for the person as a skipped file instead of downloading
+            # again, and the torrent's other file stays complete.
+            $folder = Join-Path $payload 'missing'
+            $null = New-Item -ItemType Directory -Path $folder
+            $piece = [byte[]]::new(16384)
+            [Array]::Fill($piece, [byte]0x61)
+            foreach ($name in 'a.bin', 'b.bin') { [IO.File]::WriteAllBytes((Join-Path $folder $name), $piece) }
+            $fixture = Join-Path $directory 'missing.torrent'
+            Write-Torrent $fixture 'missing' 'd6:lengthi16384e4:pathl5:a.bineed6:lengthi16384e4:pathl5:b.binee' 32768
+            $preview = Send-Command @{ command = 'preview'; source = $fixture; destination = $payload }
+            Assert $preview.ok 'The two-file fixture did not preview'
+            $reply = Send-Command @{ command = 'add'; preview_id = $preview.data.preview_id; destination = $payload }
+            Assert $reply.ok 'The two-file fixture could not be added'
+            $torrentId = $reply.data.torrent_id
+            $null = Wait-Torrent $torrentId { param($row) $row.status -eq 'seeding' } 60 'The complete fixture did not seed'
+            # The records pass runs within the next maintenance passes, once a
+            # second, and Exit writes the records of the finished files, each
+            # with its ID on this NTFS volume.
+            Start-Sleep -Seconds 3
+            Stop-Engine
+            $records = Join-Path $directory "$torrentId.records"
+            Assert (Test-Path -LiteralPath $records) 'The finished files have no records file'
+            $recorded = @((Get-Content -LiteralPath $records -Raw | ConvertFrom-Json).files)
+            Assert ($recorded.Count -eq 2 -and @($recorded | Where-Object { $_.id }).Count -eq 2) `
+                'A finished file has no record with its ID'
+            # Moved aside on its volume, as the Recycle Bin does, so the same
+            # file can come back later.
+            $aside = Join-Path $payload 'aside.bin'
+            Move-Item -LiteralPath (Join-Path $folder 'b.bin') -Destination $aside
+            $null = Start-Engine
+            $missing = { param($row) $row.status -eq 'files_missing' }
+            $null = Wait-Torrent $torrentId $missing 30 'The deleted file did not wait for the person'
+            $files = Get-Files $torrentId
+            Assert ($files[1].priority -eq 0 -and $files[0].priority -ne 0 -and $files[0].downloaded -eq 16384) `
+                'The deleted file was not skipped, or the kept file lost its data'
+            Assert (-not (Test-Path -LiteralPath (Join-Path $folder 'b.bin')) -and
+                -not (Test-Path -LiteralPath (Join-Path $folder 'b.bin.!tt'))) 'The deleted file was created again'
+            $saved = (Get-Content -LiteralPath (Join-Path $directory 'settings.json') -Raw | ConvertFrom-Json).torrents |
+                Where-Object torrent_id -eq $torrentId
+            Assert (@($saved.question.files).Count -eq 1 -and $saved.question.files[0].index -eq 1 -and
+                $saved.question.files[0].priority -ne 0) 'The question was not saved with the priority the person gave'
+            Stop-Engine
+            $null = Start-Engine
+            $restarted = [DateTime]::UtcNow
+            $null = Wait-Torrent $torrentId $missing 30 'The question did not survive a restart'
+            Assert ((Get-Files $torrentId)[1].priority -eq 0) 'A restart made the deleted file wanted again'
+            # With no window, the started torrent's question becomes one
+            # notice once it has lasted two minutes, as every condition does.
+            $log = Join-Path $directory 'engine.log'
+            $until = [DateTime]::UtcNow.AddSeconds(150)
+            do {
+                Start-Sleep -Seconds 2
+                $notices = @(Get-Content -LiteralPath $log | Where-Object { $_ -like "*notification $torrentId error" })
+            } while (-not $notices.Count -and [DateTime]::UtcNow -lt $until)
+            $waited = ([DateTime]::UtcNow - $restarted).TotalSeconds
+            Assert ($waited -ge 100) "The question's notice came after $([int]$waited) s, before the two minutes every condition waits"
+            Start-Sleep -Seconds 4
+            $notices = @(Get-Content -LiteralPath $log | Where-Object { $_ -like "*notification $torrentId error" })
+            Assert ($notices.Count -eq 1) "The question sent $($notices.Count) notices instead of one"
+            # The same file put back in its place is used again with no check:
+            # the look command's search proves it by its record.
+            Move-Item -LiteralPath $aside -Destination (Join-Path $folder 'b.bin')
+            $looked = Send-Command @{ command = 'look'; torrent_ids = @($torrentId) }
+            Assert $looked.ok 'The look command failed'
+            $seeds = { param($row) $row.status -eq 'seeding' -and $row.missing_files -eq 0 }
+            $null = Wait-Torrent $torrentId $seeds 30 'The file put back did not leave the question'
+            $files = Get-Files $torrentId
+            Assert ($files[1].priority -ne 0 -and $files[1].downloaded -eq 16384) 'The file put back was not used again'
+            $facts = { ((Get-Content -LiteralPath (Join-Path $directory 'settings.json') -Raw | ConvertFrom-Json).torrents |
+                Where-Object torrent_id -eq $torrentId) }
+            # A payload moved under another folder on its drive is followed by
+            # its files' IDs, and download mode proves them with no check.
+            $moved = Join-Path $payload 'moved'
+            $null = New-Item -ItemType Directory -Path $moved
+            Move-Item -LiteralPath $folder -Destination $moved
+            # The engine names the folder where it really is, past the
+            # artifacts junction.
+            $looked = Send-Command @{ command = 'look'; torrent_ids = @($torrentId) }
+            $target = $looked.data.torrents[0].folder
+            Assert ($looked.ok -and $target -and (Split-Path $target -Leaf) -eq 'moved' -and
+                (Test-Path -LiteralPath (Join-Path $target 'missing\a.bin'))) `
+                "The look did not name the folder the payload moved to: $($looked | ConvertTo-Json -Depth 5 -Compress)"
+            $followed = { param($row) $row.status -eq 'seeding' -and $row.missing_files -eq 0 -and $row.save_path -ieq $target }
+            $null = Wait-Torrent $torrentId $followed 30 'The torrent did not follow its moved payload'
+            Assert (-not (& $facts).verify_files) 'The follow marked the moved payload for a check'
+            # A payload copied to another drive with its times kept, and gone
+            # from its old place, is found with gozler and followed with no
+            # check. It needs gozler's service and an index of a second drive.
+            $other = [IO.Path]::GetPathRoot([IO.Path]::GetTempPath())
+            $service = Get-Service -Name gozler -ErrorAction SilentlyContinue
+            if ($service -and $service.Status -eq 'Running' -and
+                $other -ine (Path-Volume $payload)) {
+                $copy = Join-Path ([IO.Path]::GetTempPath()) ('tinytorrent-follow-' + [guid]::NewGuid())
+                $second = Join-Path ([IO.Path]::GetTempPath()) ('tinytorrent-follow-' + [guid]::NewGuid())
+                $null = New-Item -ItemType Directory -Path $copy, $second
+                try {
+                    Copy-Item -LiteralPath (Join-Path $moved 'missing') -Destination $copy -Recurse
+                    Copy-Item -LiteralPath (Join-Path $moved 'missing') -Destination $second -Recurse
+                    Remove-Item -LiteralPath (Join-Path $moved 'missing') -Recurse
+                    # gozler indexes new files from the volume's journal.
+                    $gozler = Join-Path (Split-Path -Parent ((Get-CimInstance Win32_Service -Filter "Name='gozler'").PathName.Trim('"'))) 'gozler.exe'
+                    $until = [DateTime]::UtcNow.AddSeconds(15)
+                    do {
+                        $paths = @((& $gozler --json -n 1000 'wfn:a.bin' 'size:16384' | ConvertFrom-Json).items.path)
+                        $indexed = @($copy, $second | Where-Object { $root = $_; $paths | Where-Object { $_.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) } })
+                        if ($indexed.Count -eq 2) { break }
+                        Start-Sleep -Milliseconds 200
+                    } while ([DateTime]::UtcNow -lt $until)
+                    Assert ($indexed.Count -eq 2) 'gozler did not index the copied payloads'
+                    $asked = { param($failure)
+                        $looked = Send-Command @{ command = 'look'; torrent_ids = @($torrentId) }
+                        Assert ($looked.ok -and -not $looked.data.torrents[0].folder -and (Get-Row $torrentId).status -eq 'files_missing') `
+                            "$failure`: $($looked | ConvertTo-Json -Depth 5 -Compress)"
+                    }
+                    # Two folders that hold the payload leave the choice to the person.
+                    & $asked 'The engine chose one of two copies'
+                    # A file with another time may have changed, so it is asked about too.
+                    Remove-Item -LiteralPath $second -Recurse
+                    $changed = Get-Item -LiteralPath (Join-Path $copy 'missing\a.bin')
+                    $written = $changed.LastWriteTimeUtc
+                    $changed.LastWriteTimeUtc = $written.AddHours(-1)
+                    & $asked 'The engine followed a copy with a file of another time'
+                    $changed.LastWriteTimeUtc = $written
+                    $looked = Send-Command @{ command = 'look'; torrent_ids = @($torrentId) }
+                    $target = $looked.data.torrents[0].folder
+                    Assert ($looked.ok -and $target -and (Test-Path -LiteralPath (Join-Path $target 'missing\a.bin')) -and
+                        [IO.Path]::GetFullPath($target).TrimEnd('\') -ieq [IO.Path]::GetFullPath($copy).TrimEnd('\')) `
+                        "gozler's follow did not name the copy: $($looked | ConvertTo-Json -Depth 5 -Compress)"
+                    $across = { param($row) $row.status -eq 'seeding' -and $row.missing_files -eq 0 -and $row.save_path -ieq $target }
+                    $null = Wait-Torrent $torrentId $across 60 'The torrent did not follow its payload to another drive'
+                    Assert (-not (& $facts).verify_files) 'The follow to another drive marked the payload for a check'
+                    $reply = Send-Command @{ command = 'remove'; torrent_ids = @($torrentId) }
+                    Assert $reply.ok 'The followed torrent could not be removed'
+                }
+                finally {
+                    Remove-Item -LiteralPath $copy, $second -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            }
+            else {
+                Write-Host 'MissingFiles: the follow to another drive was not checked, because gozler or a second drive is missing.'
+            }
         }
         'DiskError' {
             function Wait-Transfer([scriptblock] $condition, [string] $failure, [int] $seconds = 20) {

@@ -1,7 +1,9 @@
 using System.ComponentModel;
+using System.Reflection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Syno.TinyTorrent.Shared.Engine;
 
 namespace Syno.TinyTorrent.Shell;
 
@@ -90,6 +92,56 @@ public sealed partial class MainWindow
         add.Hide();
         await adding;
 
+        // Both fixtures' files go aside, the engine looks, and the question
+        // opens for both; the files come back unchanged. Only a checked file
+        // held data, and only a started torrent shows Files missing, so the
+        // session and the fixtures run until the dialog closes.
+        var asked = Model.Torrents.ToArray();
+        var client = (PipeClient)typeof(MainViewModel)
+            .GetField("_client", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(Model)!;
+        var ids = asked.Select(torrent => torrent.TorrentId).ToArray();
+        await client.Send("resume", new { torrent_ids = ids }, Requester.Window);
+        await client.Send("session_pause", new { paused = false }, Requester.Window);
+        foreach (var torrent in asked)
+            await CaptureReady(torrent, () => torrent.Progress >= 1);
+        var files = asked.Select(torrent => Path.Combine(torrent.SavePath, torrent.Name)).ToArray();
+        foreach (var file in files)
+            File.Move(file, file + ".aside");
+        try
+        {
+            await client.Send("look", new { torrent_ids = ids }, Requester.Window);
+            foreach (var torrent in asked)
+                await CaptureReady(torrent, () => torrent.State == TorrentState.FilesMissing);
+            // The engine reports the condition after two minutes, so the
+            // capture gives the bar its condition directly.
+            Model.ObserveMissing(new MainViewModel.MissingCondition(asked.Length, asked[0].Name));
+            await SelectTorrent(new Syno.TableView.Selection([asked[0]], asked[0]));
+            Model.OpenInspector();
+            Model.Inspector.Select(InspectorSection.General);
+            await CaptureReady(Model.Inspector, () => !Model.Inspector.IsLoading);
+            await CapturePage("missing-bar-details");
+            Model.ObserveMissing(null);
+            var reviewing = ShowMissing(asked);
+            await CaptureLayout();
+            var missing = _interaction?.Dialog ?? throw new InvalidOperationException("Missing files did not open.");
+            await CaptureReady(Model.MissingDraft, () => Model.MissingDraft.CanSubmit);
+            await CapturePage("missing-files");
+            var first = FocusManager.GetFocusedElement(Root.XamlRoot) as Control;
+            if (first?.Name != "CloseButton")
+                throw new InvalidOperationException($"Missing files started with focus on {first?.GetType().Name}:{first?.Name}.");
+            missing.Hide();
+            await reviewing;
+            outcomes.Add(new { journey = "missing files", torrents = asked.Length, initialFocus = first.Name });
+        }
+        finally
+        {
+            foreach (var file in files)
+                File.Move(file + ".aside", file);
+        }
+        await client.Send("session_pause", new { paused = true }, Requester.Window);
+        await client.Send("pause", new { torrent_ids = ids }, Requester.Window);
+
         var target = Model.Torrents.First();
         var count = Model.Torrents.Count;
         Torrents.Selection = new Syno.TableView.Selection([target], target);
@@ -130,5 +182,7 @@ public sealed partial class MainWindow
             removedAfterClose = true, closes, focusReturnedToTable = true });
         completed.Add("unavailable-folder");
         completed.Add("removal-focus");
+        completed.Add("missing-bar-details");
+        completed.Add("missing-files");
     }
 }

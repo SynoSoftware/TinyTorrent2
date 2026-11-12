@@ -60,15 +60,12 @@ internal sealed partial class PipeClient
     }
 
     // Null when the pipe could not carry a read: the connection closed, or too
-    // many commands waited. The caller asks again with the next snapshot. The
-    // pieces are read only when the torrent has wanted
-    // bytes present (`completed`), because only then can a file be verified.
+    // many commands waited. The caller asks again with the next snapshot.
     // A torrent without metadata gives an empty list, which is complete and
     // does not hold back cleanup that waits for unread lists. The engine
     // answers these reads beside the inspector's, so they wait for no view.
-    internal async Task<FileDetail?> ReadFiles(
+    internal async Task<IReadOnlyList<DetailFile>?> ReadFiles(
         string torrentId,
-        bool completed,
         CancellationToken cancellation
     )
     {
@@ -84,19 +81,7 @@ internal sealed partial class PipeClient
             );
             await foreach (var file in payload.ConfigureAwait(false))
                 files.Add(file);
-            bool[]? verified = null;
-            if (completed && files.Count > 0)
-            {
-                // A read without a context is answered once its facts are complete.
-                var pieces = await Read("torrent", new { torrent_id = torrentId, view = "pieces" })
-                    .WaitAsync(cancellation)
-                    .ConfigureAwait(false);
-                verified =
-                [
-                    .. pieces.GetProperty("verified").EnumerateArray().Select(bit => bit.GetBoolean()),
-                ];
-            }
-            return new FileDetail(files, verified);
+            return files;
         }
         // The connection's own reads are cancelled before it reports itself
         // closed, so a cancellation the caller did not ask for is a closed pipe.
@@ -110,13 +95,10 @@ internal sealed partial class PipeClient
     }
 }
 
-// The payload files of a torrent as the engine's file pages describe them.
-// Verified holds the torrent's verified pieces; it is null when the torrent had
-// no wanted bytes present, so the pieces were not read.
-internal sealed record FileDetail(IReadOnlyList<DetailFile> Files, bool[]? Verified);
-
-// DiskPath is the file's current name on disk, or null until the engine has
-// read the names.
+// A payload file as the engine's file pages describe it. DiskPath is the
+// file's current name on disk, or null until the engine has read the names.
+// Missing says that the file is in the torrent's question; OnDisk is the
+// engine's answer that the file's data is on disk.
 internal sealed record DetailFile(
     int Index,
     string Path,
@@ -126,6 +108,9 @@ internal sealed record DetailFile(
     int Priority
 )
 {
+    internal bool Missing { get; init; }
+    internal bool OnDisk { get; init; }
+
     internal static DetailFile Read(JsonElement file) =>
         new(
             file.GetProperty("index").GetInt32(),
@@ -134,7 +119,11 @@ internal sealed record DetailFile(
             file.GetProperty("size").GetInt64(),
             PieceRange.Read(file),
             file.GetProperty("priority").GetInt32()
-        );
+        )
+        {
+            Missing = file.GetProperty("missing").GetBoolean(),
+            OnDisk = file.GetProperty("on_disk").GetBoolean(),
+        };
 }
 
 // A file's pieces, End exclusive.

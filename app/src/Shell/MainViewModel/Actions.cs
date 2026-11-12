@@ -159,6 +159,11 @@ public sealed partial class MainViewModel
     public ICommand SetFolder { get; }
     public MoveDraft MoveDraft { get; }
     public RemovalDraft RemovalDraft { get; }
+    public MissingDraft MissingDraft { get; }
+
+    // Opens the question about lost files for the selected torrents that
+    // have one, stopped ones included.
+    public ICommand ReviewMissing { get; }
     public ICommand Up { get; }
     public ICommand Down { get; }
     public ICommand Top { get; }
@@ -176,6 +181,7 @@ public sealed partial class MainViewModel
     public event EventHandler? MergeRequested;
     public event EventHandler<Torrent[]>? MoveRequested;
     internal event EventHandler<Torrent[]>? DownloadRequested;
+    public event EventHandler<Torrent[]>? MissingRequested;
     public event EventHandler<Torrent[]>? SpeedLimitRequested;
     public event EventHandler<OpenRequestedEventArgs>? OpenRequested;
     public event EventHandler<string>? CopyRequested;
@@ -228,6 +234,24 @@ public sealed partial class MainViewModel
         CanEdit
         && torrents.Length > 0
         && torrents.All(torrent => Contains(torrent) && !torrent.IsMoving);
+
+    internal ICommand MissingCommand(Func<Torrent[]> targets) =>
+        new RelayCommand(
+            () =>
+            {
+                RequestMissing(targets());
+                return Task.CompletedTask;
+            },
+            () => CanEdit && targets().Any(torrent => torrent.Question is not null && Contains(torrent))
+        );
+
+    // The dialog lists only the torrents that have a question.
+    private void RequestMissing(Torrent[] torrents)
+    {
+        var asked = torrents.Where(torrent => torrent.Question is not null && Contains(torrent)).ToArray();
+        if (asked.Length > 0)
+            MissingRequested?.Invoke(this, asked);
+    }
 
     internal Torrent? Find(IEnumerable<string> hashes) =>
         Torrents.FirstOrDefault(torrent =>
@@ -465,12 +489,41 @@ public sealed partial class MainViewModel
                 if (only.Path != disk)
                     extension = Path.GetExtension(only.Path);
             }
-            OpenRequested?.Invoke(this, new(path, extension));
+            OpenRequested?.Invoke(this, new(path, extension, () => Look(torrent, destination, path)));
         }
         catch (Exception error)
         {
             Notifications.Report(error);
         }
+    }
+
+    // Where a path in the torrent's save folder is after the engine looked
+    // for the torrent's files: the same path in the folder that the torrent
+    // followed them to, or null when it did not follow them. The look waits
+    // at most 2 seconds, so a drive that does not answer cannot hold Open. A
+    // failed look gives null too, because Open then reports the path that
+    // was not found, which is the person's problem.
+    private async Task<string?> Look(Torrent torrent, string saved, string path)
+    {
+        try
+        {
+            var reply = await _client
+                .Send("look", new { torrent_ids = new[] { torrent.TorrentId } }, Requester.Window)
+                .WaitAsync(TimeSpan.FromSeconds(2));
+            foreach (var looked in reply.GetProperty("torrents").EnumerateArray())
+            {
+                if (
+                    looked.GetProperty("torrent_id").GetString() == torrent.TorrentId
+                    && looked.GetProperty("folder").GetString() is { } folder
+                )
+                    return Path.GetFullPath(Path.Combine(folder, Path.GetRelativePath(saved, path)));
+            }
+        }
+        catch (Exception error)
+        {
+            System.Diagnostics.Debug.WriteLine(error);
+        }
+        return null;
     }
 
     // The torrent's only payload file, or null when it has none or several.
@@ -665,8 +718,15 @@ public sealed record ProtectionScope(string? ProviderId, string Name)
     public override string ToString() => Name;
 }
 
-public sealed class OpenRequestedEventArgs(string path, string? extension = null) : EventArgs
+// Look gives the path again after the engine looked for a torrent's moved
+// files, or null when they did not move; null for a path outside a torrent.
+public sealed class OpenRequestedEventArgs(
+    string path,
+    string? extension = null,
+    Func<Task<string?>>? look = null
+) : EventArgs
 {
     public string Path { get; } = path;
     public string? Extension { get; } = extension;
+    public Func<Task<string?>>? Look { get; } = look;
 }

@@ -52,6 +52,16 @@ int AlertType(DetailKind kind)
     }
     return 0;
 }
+
+std::set<lt::file_index_t> QuestionFiles(Torrent const& torrent)
+{
+    std::set<lt::file_index_t> files;
+    for (auto const& [file, priority] : torrent.facts.Asked().files)
+    {
+        files.insert(file);
+    }
+    return files;
+}
 }
 
 std::chrono::steady_clock::time_point Engine::State::Reader::Since() const
@@ -213,7 +223,8 @@ void Engine::State::Respond(Torrent const& torrent, Reader const& read, Detail c
     if (metadata && priorities)
     {
         listing = Listing{metadata, Layout::Keep, std::move(*priorities),
-            detail.Has(DetailKind::Progress) ? std::optional(detail.progress) : std::nullopt, true};
+            detail.Has(DetailKind::Progress) ? std::optional(detail.progress) : std::nullopt, true,
+            QuestionFiles(torrent)};
     }
     trees.Run([listing = std::move(listing), loaded = *read.loaded]() mutable
     {
@@ -231,7 +242,7 @@ void Engine::State::Respond(Torrent const& torrent, Reader const& read, Detail c
                 values["files"].push_back({{"index", item},
                     {"priority", static_cast<std::uint8_t>(listing->priorities[item])},
                     {"downloaded", progress && item < static_cast<int>(progress->size()) ? Json((*progress)[item]) :
-                        Json()}});
+                        Json()}, {"missing", listing->missing.contains(file)}});
             }
         }
         Tree tree(std::move(*listing));
@@ -265,7 +276,8 @@ std::expected<Listing, Outcome> Engine::State::Listed(Torrent const& torrent) co
     {
         progress = collection->second.detail.progress;
     }
-    return Listing{metadata, Layout::Keep, torrent.ChosenPriorities(metadata), std::move(progress), true};
+    return Listing{metadata, Layout::Keep, torrent.ChosenPriorities(metadata), std::move(progress), true,
+        QuestionFiles(torrent)};
 }
 
 void Engine::State::ReadTree(Listing listing, Tree::Target target,

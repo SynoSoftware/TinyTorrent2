@@ -86,6 +86,10 @@ struct Toast
         // The key of the condition that counts every torrent that waits for
         // the person's Retry.
         static constexpr char const* stopped = "stopped";
+        // The key of the condition that counts every started torrent whose
+        // files were deleted or moved outside TinyTorrent, once the search
+        // for them ended, while it waits for the person's answer.
+        static constexpr char const* missing = "missing";
 
         std::string key;
         ProblemChange change;

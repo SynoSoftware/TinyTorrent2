@@ -134,7 +134,7 @@ function Stop-Engine {
     }
     if ($script:process) {
         Assert ($script:process.WaitForExit(15000)) 'Coordinated Exit did not stop the engine'
-        Assert ($script:process.ExitCode -eq 0) 'Final storage commit failed'
+        Assert ($script:process.ExitCode -eq 0) "Final storage commit failed: exit code $('0x{0:X8}' -f $script:process.ExitCode)"
         $script:process.Dispose()
         $script:process = $null
     }

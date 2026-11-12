@@ -46,14 +46,15 @@ for durable and reconstructed state.
 and storage rules for Library and subtitle requests. Its change index selects
 the retry/reset and IMDb local-data references.
 
-The [missing torrent files plan](plans/21-missing-torrent-files.md) holds the
-engine's part of [disk discovery](contracts/library/disk.md): torrent files that were deleted or moved outside
-TinyTorrent. The engine does not download such a file again by itself: it
-asks the person once for all torrents, to download the files again or to skip
-them, and the rest of each torrent keeps running. A payload that the person
-moved on its drive is followed with no check and without gozler; a payload on
-another fixed drive is found with gozler. It was reviewed in four rounds on
-12 November 2026, no decision is open, and it is not implemented.
+Torrent files that were deleted or moved outside TinyTorrent are the engine's
+part of [disk discovery](contracts/library/disk.md). The engine contract's
+[lost files](contracts/engine.md#lost-files) and
+[records and the follow](contracts/engine/files.md#records-and-the-follow) own
+it. The engine does not download such a file again by itself: it asks the
+person once for all torrents, to download the files again or to skip them, and
+the rest of each torrent keeps running. A payload that the person moved on its
+drive is followed with no check and without gozler; a payload on another fixed
+drive is found with gozler.
 
 [IMDb datasets](contracts/imdb-datasets.md) owns the Library provider that reads IMDb's
 downloadable datasets from a local SQLite file and shows their ratings for

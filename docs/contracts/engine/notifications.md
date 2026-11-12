@@ -62,6 +62,17 @@ window:
   folder; a combined one opens the application.
 - **Added.** A direct addition, such as a double-click on a torrent file, added
   the torrent.
+- **Files missing.** Started torrents whose files were deleted or moved outside
+  TinyTorrent, and whose [question](../engine.md#lost-files) waits for the
+  person once the search for the files ended, share one notice under Notify
+  about problems: it names one torrent or counts several, and its Review button
+  opens the window, whose message bar asks. It appears after two minutes, as
+  the storage notices do, and ends without a toast when the questions end.
+- **Moved files found.** A torrent that follows its payload to a folder on
+  another drive, which the engine chose by itself through gozler, gets one
+  notice under Notify about problems that names the torrent and the folder,
+  with Open folder, once the torrent uses that folder. A follow on the same drive gets none, because the files are
+  the same files.
 - **Problems.** Torrents that wait for the person share one notice, so one
   Retry continues them all: torrents whose storage error the engine stopped
   retrying by itself, and torrents whose move to the final folder failed. With

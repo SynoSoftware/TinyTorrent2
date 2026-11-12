@@ -46,7 +46,13 @@ constexpr CommandEntry commands[] = {
     {"check_proxy", Command::CheckProxy, Publication::Execute},
     {"connection_test", Command::ConnectionTest, Publication::Execute},
     {"turn_off", Command::TurnOff, Publication::Operation},
-    {"unfinished_tasks", Command::UnfinishedTasks, Publication::Execute}};
+    {"unfinished_tasks", Command::UnfinishedTasks, Publication::Execute},
+    {"answer_missing", Command::AnswerMissing, Publication::Execute},
+    {"look", Command::Look, Publication::None}};
+
+constexpr std::pair<std::string_view, MissingAnswer> missingAnswers[] = {
+    {"redownload", MissingAnswer::Redownload},
+    {"skip", MissingAnswer::Skip}};
 
 constexpr std::pair<std::string_view, QueueMove> queueMoves[] = {
     {"up", QueueMove::Up},
@@ -253,6 +259,69 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
             break;
         }
         Answer(action == "continue" ? TaskAnswer::Continue : TaskAnswer::Abandon, Acknowledge(reply));
+        break;
+    }
+    case Command::AnswerMissing:
+    {
+        auto answer = Parse(missingAnswers, request.at("answer").get<std::string>());
+        auto const& listed = request.at("torrents");
+        if (!answer || !listed.is_array() || listed.size() > torrentLimit)
+        {
+            reply(Failure(ErrorCode::InvalidRequest));
+            break;
+        }
+        // Each torrent carries the number of the question its dialog showed,
+        // so the answer acts only on what the person saw; a count is no
+        // identity. A torrent removed since then has nothing to answer.
+        for (auto const& entry : listed)
+        {
+            auto found = torrents.find(entry.at("torrent_id").get<std::string>());
+            if (found == torrents.end())
+                continue;
+            auto& torrent = found->second;
+            auto const& asked = torrent.facts.Asked();
+            if (asked.files.empty() || asked.number != entry.at("question").get<std::uint64_t>())
+                continue;
+            Torrent::Answer pending{*answer};
+            for (auto const& [file, priority] : asked.files)
+                pending.files.insert(file);
+            torrent.answer = std::move(pending);
+            // The person's answer does not wait for the minute that a search
+            // waits for gozler's index.
+            torrent.searchAt = {};
+            Request(torrent.search);
+            Invalidate(torrent.torrentId);
+        }
+        reply(Success());
+        break;
+    }
+    case Command::Look:
+    {
+        auto ids = TorrentIds(request);
+        if (ids.empty() || ids.size() > torrentLimit)
+        {
+            reply(Failure(ErrorCode::InvalidTorrents));
+            break;
+        }
+        // The reply waits for each torrent's look and the search after it,
+        // and names the folder of each torrent that follows its files.
+        auto lookout = std::make_shared<Lookout>(Lookout{.reply = reply});
+        for (auto const& id : ids)
+        {
+            lookout->folders.emplace(id, std::nullopt);
+            auto found = torrents.find(id);
+            if (found == torrents.end())
+                continue;
+            auto& torrent = found->second;
+            if (torrent.look == LookPhase::Idle || torrent.look == LookPhase::Looked)
+                torrent.look = LookPhase::Wanted;
+            torrent.searchAt = {};
+            Request(torrent.search);
+            lookouts[id].push_back(lookout);
+            ++lookout->pending;
+        }
+        if (lookout->pending == 0)
+            lookout->Answer();
         break;
     }
     case Command::TurnOff:
@@ -972,6 +1041,20 @@ void Engine::State::Answer(Torrent& torrent, FailureAnswer answer)
         torrent.moveError.reset();
     else
         torrent.AnswerMoveProblem();
+    // The end of a storage failure clears libtorrent's error, and the fork
+    // then checks every file of a seed whose write failed, so the answer
+    // waits for a look that puts the lost files in the question first. A
+    // wanted reload saves the question before anything can check, and the
+    // look would wait for that reload, which waits for this answer.
+    if ((answer == FailureAnswer::Retry || answer == FailureAnswer::Verify) && torrent.control.Storage() &&
+        !torrent.waiting && torrent.handle.torrent_file() && !torrent.control.AwaitsReload())
+    {
+        torrent.answering = answer;
+        if (torrent.look != LookPhase::Running)
+            torrent.look = LookPhase::Wanted;
+        torrent.ApplyIntent();
+        return;
+    }
     Steer(torrent, Control::Answered{answer});
     torrent.ApplyIntent();
 }
@@ -985,6 +1068,16 @@ void Engine::State::Recheck(Torrent& torrent)
         torrent.needsRecheck = true;
         return;
     }
+    // The check discards the pieces that show which files held data, so a
+    // look comes first, and the reload of what it found.
+    if (torrent.look != LookPhase::Looked || torrent.control.AwaitsReload())
+    {
+        torrent.needsRecheck = true;
+        if (torrent.look == LookPhase::Idle)
+            torrent.look = LookPhase::Wanted;
+        return;
+    }
+    torrent.look = LookPhase::Idle;
     // libtorrent restarts a recheck from its start, so a recheck that waited
     // ends with the one sent now.
     torrent.needsRecheck = false;
@@ -1001,7 +1094,7 @@ void Engine::State::ApplyWaiting(Torrent& torrent)
     if (torrent.prioritiesPending)
     {
         torrent.prioritiesPending = false;
-        torrent.handle.prioritize_files(torrent.facts.priorities);
+        torrent.handle.prioritize_files(torrent.facts.Priorities());
         Invalidate(torrent.torrentId);
     }
     if (torrent.needsRecheck && torrent.checkReads == CheckReads::None)

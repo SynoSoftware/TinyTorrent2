@@ -231,6 +231,7 @@ void Engine::State::RemoveHandles(std::vector<std::string> const& ids, std::list
         }
         removed.erase(id);
         files.push_back(ResumeFile(id));
+        files.push_back(RecordsFile(id));
     }
     deletion->phase = DeletionPhase::Waiting;
     ContinueDeletion();

@@ -36,6 +36,95 @@
         />
       </Grid>
     </DataTemplate>
+    <!-- Remove's row with a check box before the name and, at the right, the
+         count and size of the missing files. A check box without content
+         keeps its label gap, so the name sits where a label would. -->
+    <DataTemplate x:Key="FileDialogQuestionTemplate" x:DataType="torrents:ShownQuestion">
+      <Grid ColumnSpacing="16" MinHeight="32">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <CheckBox
+            MinWidth="0"
+            VerticalAlignment="Center"
+            Visibility="{x:Bind ShowsCheck}"
+            IsChecked="{x:Bind IsChecked, Mode=TwoWay}"
+            IsEnabled="{x:Bind CanCheck, Mode=OneWay}"
+            AutomationProperties.Name="{x:Bind Torrent.Name, Mode=OneWay}"
+            AutomationProperties.HelpText="{x:Bind Names, Mode=OneWay}"
+          />
+          <TextBlock
+            Grid.Column="1"
+            Text="{x:Bind Torrent.Name, Mode=OneWay}"
+            Style="{StaticResource TinyTorrentIdentityTextStyle}"
+            TextWrapping="NoWrap"
+            TextTrimming="CharacterEllipsis"
+            IsTextSelectionEnabled="True"
+            VerticalAlignment="Center"
+          >
+            <ToolTipService.ToolTip>
+              <StackPanel>
+                <TextBlock Text="{x:Bind Torrent.Name, Mode=OneWay}" />
+                <TextBlock Text="{x:Bind Torrent.SavePath, Mode=OneWay}" FlowDirection="LeftToRight" />
+              </StackPanel>
+            </ToolTipService.ToolTip>
+          </TextBlock>
+        </Grid>
+        <!-- The person decides by which files are gone, so the count lists
+             them; a tooltip is at most 456 DIPs wide. -->
+        <TextBlock
+          Grid.Column="1"
+          Text="{x:Bind CountText, Mode=OneWay}"
+          Style="{StaticResource TinyTorrentBodyTextStyle}"
+          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+          VerticalAlignment="Center"
+          AutomationProperties.HelpText="{x:Bind Names, Mode=OneWay}"
+        >
+          <ToolTipService.ToolTip>
+            <ToolTip Visibility="{x:Bind HasNames, Mode=OneWay}">
+              <TextBlock
+                Text="{x:Bind Names, Mode=OneWay}"
+                MaxWidth="456"
+                TextWrapping="NoWrap"
+                TextTrimming="CharacterEllipsis"
+              />
+            </ToolTip>
+          </ToolTipService.ToolTip>
+        </TextBlock>
+      </Grid>
+    </DataTemplate>
+    <!-- The folder heading above each group of torrents. -->
+    <DataTemplate x:Key="FileDialogFolderTemplate" x:DataType="x:String">
+      <Grid ColumnSpacing="8" MinHeight="24">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="16" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <FontIcon
+          FontFamily="{x:Bind icons:Segoe.Font}"
+          Glyph="{x:Bind icons:Segoe.Folder}"
+          FontSize="{StaticResource TinyTorrentInlineIconSize}"
+          VerticalAlignment="Center"
+        />
+        <TextBlock
+          Grid.Column="1"
+          Text="{x:Bind}"
+          controls:Trimming.ShowsToolTip="True"
+          Style="{StaticResource TinyTorrentBodyTextStyle}"
+          FontWeight="SemiBold"
+          TextWrapping="NoWrap"
+          TextTrimming="CharacterEllipsis"
+          FlowDirection="LeftToRight"
+          VerticalAlignment="Center"
+        />
+      </Grid>
+    </DataTemplate>
   </UserControl.Resources>
   <Grid>
     <VisualStateManager.VisualStateGroups>
@@ -106,34 +195,44 @@
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="torrents:FolderGroup">
               <StackPanel>
-                <Grid ColumnSpacing="8" MinHeight="24">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="16" />
-                    <ColumnDefinition Width="*" />
-                  </Grid.ColumnDefinitions>
-                  <FontIcon
-                    FontFamily="{x:Bind icons:Segoe.Font}"
-                    Glyph="{x:Bind icons:Segoe.Folder}"
-                    FontSize="{StaticResource TinyTorrentInlineIconSize}"
-                    VerticalAlignment="Center"
-                  />
-                  <TextBlock
-                    Grid.Column="1"
-                    Text="{x:Bind Folder}"
-                    controls:Trimming.ShowsToolTip="True"
-                    Style="{StaticResource TinyTorrentBodyTextStyle}"
-                    FontWeight="SemiBold"
-                    TextWrapping="NoWrap"
-                    TextTrimming="CharacterEllipsis"
-                    FlowDirection="LeftToRight"
-                    VerticalAlignment="Center"
-                  />
-                </Grid>
+                <ContentPresenter
+                  Content="{x:Bind Folder}"
+                  ContentTemplate="{StaticResource FileDialogFolderTemplate}"
+                  HorizontalContentAlignment="Stretch"
+                />
                 <ItemsControl
                   ItemsSource="{x:Bind Torrents}"
                   IsTabStop="False"
                   Margin="24,0,0,0"
                   ItemTemplate="{StaticResource FileDialogTorrentTemplate}"
+                />
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <ItemsControl
+          ItemsSource="{x:Bind Missing.Folders, Mode=OneWay}"
+          Visibility="{x:Bind ShowsMissing}"
+          IsTabStop="False"
+        >
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Spacing="12" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="torrents:QuestionFolder">
+              <StackPanel>
+                <ContentPresenter
+                  Content="{x:Bind Folder}"
+                  ContentTemplate="{StaticResource FileDialogFolderTemplate}"
+                  HorizontalContentAlignment="Stretch"
+                />
+                <ItemsControl
+                  ItemsSource="{x:Bind Questions}"
+                  IsTabStop="False"
+                  Margin="24,0,0,0"
+                  ItemTemplate="{StaticResource FileDialogQuestionTemplate}"
                 />
               </StackPanel>
             </DataTemplate>

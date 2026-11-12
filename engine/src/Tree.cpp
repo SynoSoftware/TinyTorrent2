@@ -528,6 +528,7 @@ Json Tree::DescribeFile(lt::file_index_t file, bool match) const
     {
         value["downloaded"] = listing_.progress ? Json((*listing_.progress)[item]) : Json();
         value["disk_path"] = nullptr;
+        value["missing"] = listing_.missing.contains(file);
     }
     return value;
 }

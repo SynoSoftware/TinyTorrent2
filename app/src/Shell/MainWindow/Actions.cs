@@ -4,6 +4,7 @@ using DispatcherQueuePriority = Microsoft.UI.Dispatching.DispatcherQueuePriority
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Syno.TinyTorrent.Controls;
@@ -138,7 +139,7 @@ public sealed partial class MainWindow
             ],
             Model.Text
         );
-        _torrentCommands = Selection(properties: true, includeRetry: true).ToArray();
+        _torrentCommands = Selection(properties: true, all: true).ToArray();
         QueueMenus();
         ClearFiltersButton.Text = Model.Text.Get("window", "clear_filters");
         ToolTipService.SetToolTip(
@@ -316,11 +317,18 @@ public sealed partial class MainWindow
         var firstLast = MainViewModel.Shared(selection.Rows, row => row.FirstLast, cancellation);
         var limited = MainViewModel.Shared(selection.Rows, row => row.IsLimited, cancellation);
         var retry = selection.CanEdit && selection.Rows.Any(row => row.CanRetry);
+        var missing = selection.CanEdit && selection.Rows.Any(row => row.Question is not null);
         List<MenuEntry> entries = [new MenuHeading(text.Format("window", "selected", selection.Rows.Length), Segoe.ListChecks)];
         foreach (var command in commands)
         {
             cancellation.ThrowIfCancellationRequested();
-            if (command is MenuCommand action && action.Command == Model.Retry && !retry)
+            if (
+                command is MenuCommand action
+                && (
+                    (action.Command == Model.Retry && !retry)
+                    || (action.Command == Model.ReviewMissing && !missing)
+                )
+            )
                 continue;
             entries.Add(command switch
             {
@@ -443,13 +451,18 @@ public sealed partial class MainWindow
             _selectionMenu.ShowAt(target);
     }
 
-    private IEnumerable<MenuEntry> Selection(bool properties, bool includeRetry = false)
+    // Retry and Review missing files show only for a selection they can act
+    // on. With all, both are listed, and PrepareTorrentMenu drops them for
+    // the selection when it fills the menu.
+    private IEnumerable<MenuEntry> Selection(bool properties, bool all = false)
     {
         yield return Command("pause", Model.Pause, Syno.Segoe.Square);
         yield return Command("resume", Model.Resume, Syno.Segoe.Play);
         yield return Command("force", Model.Force, Syno.Segoe.Zap);
-        if (includeRetry || Model.Retry.CanExecute(null))
+        if (all || Model.Retry.CanExecute(null))
             yield return Command("retry", Model.Retry, Syno.Segoe.RotateCcw);
+        if (all || Model.ReviewMissing.CanExecute(null))
+            yield return Command("review_missing", Model.ReviewMissing, Syno.Segoe.Files);
         yield return new MenuSeparator();
         yield return Command("open", Model.Open, Syno.Segoe.File);
         yield return Command("open_folder", Model.OpenFolder, Syno.Segoe.FolderOpen);
@@ -631,13 +644,69 @@ public sealed partial class MainWindow
         });
     }
 
-    // What Move and Remove share: the dialog's size, its title and button
-    // from the draft, and the scope read before it opens.
+    // The question about lost files. Neither answer is the act the person
+    // chose, so Cancel is the default and Enter decides nothing. ShowEditor
+    // connects Redownload, the primary button; Skip is connected here as
+    // AskUnfinished connects its second answer, and is enabled with
+    // Redownload.
+    private async Task ShowMissing(Torrent[] torrents)
+    {
+        await Interact(async interaction =>
+        {
+            var draft = Model.MissingDraft;
+            draft.Begin(torrents);
+            var dialog = new Dialog
+            {
+                Content = new FileDialog(Model, draft),
+                DefaultButton = ContentDialogButton.Close,
+                SecondaryGlyph = Syno.Segoe.CircleSlash,
+            };
+            dialog.SetBinding(
+                ContentDialog.IsSecondaryButtonEnabledProperty,
+                new Binding
+                {
+                    Source = dialog,
+                    Path = new PropertyPath(nameof(ContentDialog.IsPrimaryButtonEnabled)),
+                    Mode = BindingMode.OneWay,
+                }
+            );
+            dialog.SecondaryButtonClick += async (_, args) =>
+                await Submit(interaction, args, draft.Skip);
+            // The fact follows the check boxes. It stays as an empty footer
+            // while none is checked, so the buttons do not move.
+            void ShowAnswers()
+            {
+                dialog.SecondaryButtonText = draft.SkipText;
+                dialog.SecondaryToolTip = draft.SkipToolTip;
+                dialog.CloseToolTip = draft.CancelToolTip;
+                if (draft.ShowsChecks)
+                    dialog.Footer = new DialogFooter.Detail(draft.Total);
+            }
+            void FollowChecks(object? sender, PropertyChangedEventArgs args) => ShowAnswers();
+            draft.PropertyChanged += FollowChecks;
+            try
+            {
+                // The rows come from the snapshot, so the dialog reads no
+                // file scope before it opens.
+                await ShowFileDialog(interaction, dialog, initialize: false, ShowAnswers, draft.Submit);
+            }
+            finally
+            {
+                draft.PropertyChanged -= FollowChecks;
+            }
+            return true;
+        });
+    }
+
+    // What Move, Remove and the question about lost files share: the
+    // dialog's size, its title and button from the draft, and the scope read
+    // before it opens. showOwn shows what the dialog adds to them, such as
+    // its footer.
     private async Task ShowFileDialog(
         DialogInteraction interaction,
         Dialog dialog,
         bool initialize,
-        Action? refreshFooter,
+        Action? showOwn,
         Func<Task<bool>> submit
     )
     {
@@ -659,7 +728,7 @@ public sealed partial class MainWindow
         void RefreshText()
         {
             ShowLabels(dialog, draft);
-            refreshFooter?.Invoke();
+            showOwn?.Invoke();
             content.RefreshText();
         }
         try

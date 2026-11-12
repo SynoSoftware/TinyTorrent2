@@ -95,6 +95,12 @@ struct Subject
     {
         Send(Control::Due{minute});
     }
+    // A look that the driver started found files without their data, or
+    // files of the question back.
+    void Look(std::vector<lt::file_index_t> lost = lostFiles, bool back = false)
+    {
+        Send(Control::Looked{std::move(lost), back});
+    }
     // The engine's own move to the final folder fails with its files
     // complete where they were.
     void MoveFails()
@@ -668,6 +674,97 @@ std::vector<Case> const cases{
         torrent.Send(Control::Checked{final, Control::Usable{}});
         Expect(torrent.last.retryMove && !torrent.control.Checking(), "the final folder's check still counts");
     }},
+    {"a look without a failure reloads at the next Due", []
+    {
+        Subject torrent;
+        torrent.Look();
+        Expect(!torrent.Stage() && torrent.control.Lost() == lostFiles && torrent.control.Holds() &&
+            torrent.control.Failing() && torrent.last.jobs.empty(), "no failure, held for the reload");
+        torrent.Due();
+        Expect(torrent.Started(JobKind::Reload), "the next second reloads");
+        torrent.Reload(true);
+        Expect(torrent.last.clear && torrent.control.Lost().empty() && !torrent.control.Holds() && !torrent.Stage(),
+            "then the torrent runs");
+    }},
+    {"files of the question that are back reload to give their pieces back", []
+    {
+        Subject torrent;
+        torrent.Look({}, true);
+        Expect(torrent.control.AwaitsReload() && torrent.control.Holds() && torrent.control.Lost().empty(),
+            "held for the reload");
+        torrent.Due();
+        Expect(torrent.Started(JobKind::Reload), "the next second reloads");
+        torrent.Reload(true);
+        Expect(!torrent.control.AwaitsReload() && !torrent.control.Holds(), "then the torrent runs");
+        Subject moved;
+        moved.Look({}, true);
+        moved.Send(Control::Replaced{});
+        Expect(!moved.control.AwaitsReload() && !moved.control.Holds(), "a new folder ends the wish");
+    }},
+    {"a look during a recovering failure leaves its files to the failure's continue", []
+    {
+        Subject torrent;
+        torrent.Fail();
+        torrent.Release();
+        torrent.Look();
+        Expect(torrent.Stage() == FailureStage::Recovering && torrent.Runs(JobKind::Probe) &&
+            torrent.control.Lost() == lostFiles && torrent.last.jobs.empty(), "the probe runs, the files are kept");
+        torrent.Probe();
+        Expect(torrent.Runs(JobKind::Reload), "the continue reloads without them");
+        torrent.Reload(true);
+        Expect(torrent.Stage() == FailureStage::Continued && torrent.control.Lost().empty() && torrent.last.clear,
+            "Continued, without lost files");
+        Subject absent;
+        absent.Fail();
+        absent.Release();
+        absent.ProbeAbsent();
+        absent.Look();
+        absent.Due();
+        Expect(absent.Stage() == FailureStage::Absent && absent.Started(JobKind::Probe) &&
+            absent.control.Lost() == lostFiles, "an absent location probes again first");
+        Subject stopped;
+        Stopped(stopped);
+        stopped.Look();
+        stopped.Due();
+        Expect(stopped.Stage() == FailureStage::Stopped && !stopped.Job() && stopped.control.Lost() == lostFiles,
+            "a stop waits for its minute check");
+    }},
+    {"a look while a failure waits for the person leaves the reload to the answer", []
+    {
+        Subject torrent;
+        torrent.Fail(names, false);
+        torrent.Release();
+        torrent.Probe();
+        torrent.Look();
+        torrent.Due();
+        Expect(torrent.Stage() == FailureStage::Person && !torrent.Job() && torrent.control.Lost() == lostFiles,
+            "no reload before the answer");
+        torrent.Answer();
+        torrent.Due();
+        Expect(torrent.Started(JobKind::Reload), "the answer's reload");
+    }},
+    {"a look in Continued reloads at the next Due and leaves the ladder", []
+    {
+        Subject torrent;
+        Retried(torrent);
+        torrent.Look();
+        Expect(torrent.control.Holds(), "the lost files hold the torrent");
+        torrent.Due();
+        Expect(torrent.Started(JobKind::Reload), "Due reloads in Continued");
+        torrent.Reload(true);
+        Expect(torrent.Stage() == FailureStage::Continued && torrent.Level() == StorageRetry::Retried &&
+            !torrent.control.Storage()->progress && torrent.last.clear && torrent.control.Lost().empty(),
+            "the ladder stays, the progress resets");
+        Subject failed;
+        Retried(failed);
+        failed.Look();
+        failed.Due();
+        failed.Reload(false);
+        Expect(failed.Stage() == FailureStage::Recovering && failed.Level() == StorageRetry::Retried &&
+            failed.control.Cause() == disk && !failed.last.clear, "a failed reload is the failure returning");
+        failed.Due();
+        Expect(failed.Started(JobKind::Probe), "which probes its location");
+    }},
     {"a final folder whose share hangs leaves the folder's minute check", []
     {
         Subject torrent;
@@ -735,6 +832,7 @@ std::vector<Variant> const variants{
     [](State&) { return Control::Event{Control::Dropped{}}; },
     [](State&) { return Control::Event{Control::Due{false}}; },
     [](State&) { return Control::Event{Control::Due{true}}; },
+    [](State&) { return Control::Event{Control::Looked{lostFiles, true}}; },
     [](State&) { return Control::Event{Control::MoveEnded{Problem{ProblemKind::MoveFailed}, true}}; },
     [](State&) { return Control::Event{Control::MoveStarted{false}}; },
     // Late results of the job before the current one.
@@ -828,8 +926,10 @@ void Verify(State const& before, State& after, Control::Event const& event, Cont
     {
         after.continues = 0;
     }
+    // A reload that Due starts in Continued is for lost files, not a retry.
     bool reloads = std::any_of(effects.jobs.begin(), effects.jobs.end(),
-        [](auto const& job) { return job->kind == JobKind::Reload; });
+        [](auto const& job) { return job->kind == JobKind::Reload; }) &&
+        !(was && was->ladder.stage == FailureStage::Continued);
     bool continues = effects.clear && is && is->ladder.stage == FailureStage::Continued && was &&
         was->ladder.stage != FailureStage::Continued && !std::holds_alternative<Control::Reloaded>(event);
     if (is && (reloads || continues))
@@ -865,6 +965,14 @@ void Verify(State const& before, State& after, Control::Event const& event, Cont
             Expect(std::find(lost.begin(), lost.end(), file) != lost.end(), "an owned result records its lost files");
         }
     }
+    if (auto looked = std::get_if<Control::Looked>(&event))
+    {
+        for (auto file : looked->lost)
+        {
+            Expect(std::find(lost.begin(), lost.end(), file) != lost.end(), "a look records its lost files");
+        }
+        Expect(!looked->back || after.control.AwaitsReload(), "files that are back want a reload");
+    }
     auto reloaded = std::get_if<Control::Reloaded>(&event);
     auto answered = std::get_if<Control::Answered>(&event);
     auto replaced = std::get_if<Control::Replaced>(&event);
@@ -878,10 +986,10 @@ void Verify(State const& before, State& after, Control::Event const& event, Cont
     }
     // A failure that waits for the engine has its job, or Due starts one once
     // the torrent's files are free, whatever the other failure's job does.
-    // So do lost files that no failure holds.
+    // So does a wanted reload that no failure holds, also in Continued.
     bool storageWaits = (is && (is->ladder.stage == FailureStage::Recovering ||
         is->ladder.stage == FailureStage::Absent || is->ladder.stage == FailureStage::Stopped)) ||
-        (!is && !lost.empty());
+        ((!is || is->ladder.stage == FailureStage::Continued) && after.control.AwaitsReload());
     bool moveWaits = after.control.FinalMove() && after.control.FinalMove()->stage == FailureStage::Stopped;
     if ((storageWaits && !running) || (moveWaits && !checking))
     {

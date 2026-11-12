@@ -86,7 +86,14 @@
     "show_torrent_tip": "在种子列表中显示此种子",
     "download_folder": "下载文件夹",
     "torrent_stopped": "种子已停止",
-    "torrents_stopped": "{0} 个种子需要处理"
+    "torrents_stopped": "{0} 个种子需要处理",
+    "files_missing": "缺少文件",
+    "files_missing_one": "{0} 的部分文件已在 TinyTorrent 之外被删除或移动。",
+    "files_missing_other": "{0} 个种子的部分文件已在 TinyTorrent 之外被删除或移动。",
+    "review": "查看",
+    "review_tip": "打开 TinyTorrent，重新下载或跳过缺少的文件",
+    "followed": "已找到移动的文件",
+    "followed_body": "{0} 现在使用此文件夹中的文件。"
   },
   "power": {
     "transfers": "微种下载器正在传输文件。"

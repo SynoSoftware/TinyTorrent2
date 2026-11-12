@@ -54,7 +54,7 @@ lt::info_hash_t SavedHashes(std::vector<std::string> const& hashes)
 }
 
 Engine::State::State(std::filesystem::path path, std::function<void()> wake) :
-    directory(std::move(path)), store(wake), sources(wake), checks(wake), trees(wake), watching(wake),
+    directory(std::move(path)), store(wake), sources(wake), checks(wake), trees(wake), watching(wake), finder(wake),
     wake(std::move(wake)), language(settings.language)
 {
     // Without a saved document the engine starts from the default settings.
@@ -89,9 +89,14 @@ Engine::State::State(std::filesystem::path path, std::function<void()> wake) :
         // Queued only now, so the settings completion drains alone and the
         // desktop shows the splash before Start loads the transfers on the
         // same thread.
-        store.Run([this, ids = std::move(ids)]
+        struct Loaded
         {
             Resumes resumes;
+            std::map<std::string, SavedRecords> records;
+        };
+        store.Run([this, ids = std::move(ids)]
+        {
+            Loaded loaded;
             for (auto const& id : ids)
             {
                 try
@@ -99,25 +104,35 @@ Engine::State::State(std::filesystem::path path, std::function<void()> wake) :
                     auto bytes = Store::Read(ResumeFile(id), resumeLimit);
                     lt::load_torrent_limits limits;
                     limits.max_decode_tokens = 2 * metadataTokens;
-                    resumes[id] = lt::read_resume_data(lt::span<char const>(bytes.data(), bytes.size()), limits);
+                    loaded.resumes[id] = lt::read_resume_data(lt::span<char const>(bytes.data(), bytes.size()), limits);
                 }
                 catch (std::exception const&)
                 {
                     // Start adds this torrent again from its saved hashes.
                 }
+                try
+                {
+                    if (std::filesystem::exists(RecordsFile(id)))
+                        loaded.records[id] = ReadRecords(Json::parse(Store::Read(RecordsFile(id), resumeLimit)));
+                }
+                catch (std::exception const&)
+                {
+                    // The records pass takes the finished files' records
+                    // again; until then those files are checked, not proven.
+                }
             }
-            return resumes;
-        }, [this, document = std::move(*saved)](std::expected<Resumes, StorageOutcome> resumes)
+            return loaded;
+        }, [this, document = std::move(*saved)](std::expected<Loaded, StorageOutcome> loaded)
         {
-            if (!resumes)
+            if (!loaded)
             {
-                startupError = resumes.error().detail;
+                startupError = loaded.error().detail;
                 startup = Startup::Failed;
                 log.Write("startup", "", "storage_failed");
                 PublishSnapshot();
                 return;
             }
-            Start(document, *resumes);
+            Start(document, loaded->resumes, loaded->records);
         });
     });
 }
@@ -142,7 +157,7 @@ bool Engine::State::Contains(std::vector<std::string> const& values, std::string
     return std::find(values.begin(), values.end(), value) != values.end();
 }
 
-void Engine::State::Start(Document const& saved, Resumes& resumes)
+void Engine::State::Start(Document const& saved, Resumes& resumes, std::map<std::string, SavedRecords>& records)
 {
     launchPaused = settings.startsPaused;
     watchedSources = saved.watchedSources;
@@ -178,6 +193,7 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
     for (auto [id, facts] : saved.torrents)
     {
         lt::add_torrent_params params;
+        std::optional<lt::typed_bitfield<lt::piece_index_t>> kept;
         auto found = resumes.find(id);
         // A record that lost its folder takes the one its resume file holds.
         if (facts.savePath.empty())
@@ -188,8 +204,13 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
         if (found != resumes.end())
         {
             params = std::move(found->second);
-            if (facts.verifyFiles || !SameFolder(params.save_path, facts.savePath))
+            bool here = SameFolder(params.save_path, facts.savePath);
+            if (facts.verifyFiles || !here)
             {
+                // The look before the check judges by the pieces it clears,
+                // which belong to this folder only.
+                if (here)
+                    kept = Claimed(params);
                 params.have_pieces.clear();
                 params.verified_pieces.clear();
                 params.unfinished_pieces.clear();
@@ -209,9 +230,9 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
             }
         }
         params.save_path = facts.savePath;
-        if (!facts.priorities.empty())
+        if (!facts.Priorities().empty())
         {
-            params.file_priorities = facts.priorities;
+            params.file_priorities = facts.Priorities();
         }
         // Piece priorities follow from the saved file priorities and
         // firstLast, so a resume file older than those choices cannot keep
@@ -224,6 +245,20 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
         if (!params.ti)
             std::fill(params.file_priorities.begin(), params.file_priorities.end(), lt::dont_download);
         Restore(id, facts, std::move(params));
+        auto& torrent = torrents.at(id);
+        torrent.kept = std::move(kept);
+        // A torrent without a records file gets one pass for the files that
+        // finished before the engine kept records, and so does one whose
+        // pass was due at its last save; a pass opens every file without a
+        // record, so the others skip it. The search looks for the question's
+        // files.
+        auto known = records.find(id);
+        if (known != records.end())
+            torrent.records = std::move(known->second.records);
+        if (known == records.end() || known->second.pass)
+            torrent.recording = PassPhase::Wanted;
+        if (!torrent.facts.Asked().files.empty())
+            torrent.search = PassPhase::Wanted;
     }
     // Sends the lookups of the folders that Restore asked for, once for all.
     ContinueLookups();
@@ -318,6 +353,10 @@ void Engine::State::AddRestored(std::string const& id, Torrent& torrent)
         return;
     }
     auto added = std::move(params);
+    // The engine keeps the pieces the add claims and holds the torrent until
+    // libtorrent has judged them; a restore that cleared them keeps those.
+    if (auto claimed = Claimed(added))
+        torrent.kept = std::move(claimed);
     Install(id, handle, torrent.facts, added);
     if (torrent.facts.trackers)
     {
@@ -594,6 +633,7 @@ tt::Activity Engine::State::Activity() const
             break;
         case Status::Seeding:
         case Status::Completed:
+        case Status::FilesMissing:
             activity.seeding = true;
             ++activity.activeCount;
             break;
@@ -894,6 +934,7 @@ Engine::State::~State()
     checks.Abandon();
     trees.Abandon();
     watching.Abandon();
+    finder.Abandon();
 }
 
 void Engine::State::Tick()
@@ -920,6 +961,7 @@ void Engine::State::Tick()
     checks.Drain(failed);
     trees.Drain(failed);
     watching.Drain(failed);
+    finder.Drain(failed);
     if (session)
     {
         std::vector<lt::alert*> alerts;
@@ -950,6 +992,7 @@ void Engine::State::Tick()
         }
         QueryCompletions();
         QueryFiles();
+        SaveQuestions();
         UpdateProblems();
         if (queuePending)
             ApplyQueue();
@@ -1011,6 +1054,9 @@ void Engine::State::Maintain()
         WatchFolder();
         RefreshPolicy();
         RetryStorage();
+        ContinueLooks();
+        ContinueSearches();
+        ContinueRecords();
         ProbeRoots();
         LimitSeeds();
         auto time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -1027,6 +1073,7 @@ void Engine::State::Maintain()
             Isolate(id, [this, &torrent]
             {
                 QueryPriorities(torrent);
+                JudgeAdd(torrent);
                 ApplyWaiting(torrent);
                 FinishFiles(torrent);
                 FinishDownload(torrent);
@@ -1040,6 +1087,7 @@ void Engine::State::Maintain()
     {
         checkpointAt = now;
         SaveTransfers();
+        SaveRecords(false);
         for (auto& [id, torrent] : torrents)
         {
             torrent.unsaved |= torrent.IsChanged();

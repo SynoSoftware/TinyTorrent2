@@ -520,6 +520,9 @@ public enum TorrentState
     Downloading,
     Seeding,
     Completed,
+    // Finished but for files deleted or moved outside TinyTorrent, which wait
+    // for the person's answer, also while the other files upload.
+    FilesMissing,
     Paused,
     AllPaused,
     Checking,
@@ -666,6 +669,14 @@ internal enum OemKey
     Plus = 0xBB,
     Comma = 0xBC,
     Minus = 0xBD,
+}
+
+// The person's answer for the lost files of the checked torrents. The
+// engine's words are these names in lower case.
+internal enum MissingAnswer
+{
+    Redownload,
+    Skip,
 }
 
 // What started the window's close.
