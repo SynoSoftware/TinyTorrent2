@@ -523,6 +523,25 @@ issues own actionable work and its status.
   `VideoLookup.Reload`, because `Imdb.Dataset` is created before the
   lookup and cannot reach it. A base class for datasets was rejected:
   `Geolocation` is more than a dataset.
+- Some code looks like a second copy of a rule but is not one, so it stays:
+  - Subtitle matching (`Supplier.Matches` and `Within`) requires a
+    listing's title words to equal the file's, while Library
+    identification (`VideoLookup.Confidence`) scores how similar two titles
+    are and accepts a score above 0.8. They are different rules over the
+    same title words, which `FileName.TitleForms` owns.
+  - The engine keeps three retry rules: `Retryable` decides which storage
+    failures it tries again later, and the store's file writes
+    (`Store.cpp`, `Retried`) and a payload deletion (`Payload.cpp`) each
+    wait out a file another program holds for a moment. Each protects a
+    different operation, so each keeps its own Windows errors and duration.
+  - The engine checks every setting that crosses the pipe, and the app
+    states the same ranges for its input controls. A check repeated where
+    data crosses a process boundary is not a second owner.
+  - Two differences between the processes reach no person: the engine's
+    stored proxy port also accepts 0 for none, and the tray's speed text
+    stops at GiB per second while the window's goes to TiB.
+  - A fact every reader knows, such as the port range 1 to 65535, or "the
+    person's own key, else the built-in one", is written where it is used.
 - [Bridge](../../app/src/Subtitles/Bridge.cs) connects each view of
   subtitle work to its `Acquisition`. It listens only while the view is
   shown, refreshes the view once for a burst of changes, and runs the
