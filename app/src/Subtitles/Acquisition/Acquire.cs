@@ -838,19 +838,22 @@ internal sealed partial class Acquisition
             return;
         await TakeForPerson(_lifetime.Token).ConfigureAwait(false);
         var requests = CancellationToken.None;
-        CancellationTokenSource? finding = null;
+        CancellationTokenSource? stop = null;
+        CancellationTokenSource? work = null;
         try
         {
             if (!CanFind)
                 return;
             // Stop ends Find's own work too, so a batch the person stopped is
-            // never accepted.
+            // never accepted. The stop is its own source, so a configuration
+            // change that also arrives never hides it.
             lock (_requestSync)
             {
                 requests = _requests.Token;
-                finding = _finding = CancellationTokenSource.CreateLinkedTokenSource(requests);
+                stop = _finding = new CancellationTokenSource();
             }
-            var cancellation = finding.Token;
+            work = CancellationTokenSource.CreateLinkedTokenSource(requests, stop.Token);
+            var cancellation = work.Token;
             var targets = (await Targets(cancellation).ConfigureAwait(false))
                 .Where(Eligible)
                 .ToArray();
@@ -893,9 +896,24 @@ internal sealed partial class Acquisition
             Found = 0;
             FindTotal = _batch.Values.Distinct().Count();
             await RefreshCounts().ConfigureAwait(false);
+            // A Stop after the batch was accepted found no run to stop.
+            // RefreshCounts has started the run, so it stops now. The stop
+            // saves once Find releases the operation gate, so it is not
+            // awaited here; the run keeps it as Stopped.
+            if (stop.IsCancellationRequested)
+            {
+                lock (_requestSync)
+                {
+                    _ = _manualWork?.Stop();
+                }
+            }
         }
         catch (OperationCanceledException)
-            when (requests.IsCancellationRequested && !_lifetime.IsCancellationRequested)
+            when (
+                requests.IsCancellationRequested
+                && stop?.IsCancellationRequested != true
+                && !_lifetime.IsCancellationRequested
+            )
         {
             // A configuration, engine or network change cancelled the request
             // token. Finishing on the old configuration could download for
@@ -906,9 +924,14 @@ internal sealed partial class Acquisition
         finally
         {
             lock (_requestSync)
-                if (_finding == finding)
+            {
+                if (_finding == stop)
+                {
                     _finding = null;
-            finding?.Dispose();
+                }
+            }
+            work?.Dispose();
+            stop?.Dispose();
             ReleaseForPerson();
         }
     }

@@ -630,6 +630,47 @@ try {
         Require ((Invoke-Value $batch 'Count' @($newScope, $selected)) -eq 1 -and
             (Invoke-Value $batch 'Count' @($allScope, $selected)) -eq 2) 'All movies excluded selected movies with earlier subtitle searches.'
         Invoke-Value $batch 'SetConnected' @($true) | Out-Null
+        # Find waits for the held database, so Stop and a disconnect reach it
+        # before it accepts the batch: Stop ends it silently, a disconnect
+        # tells the person.
+        Add-Type @'
+using System;
+using System.Threading;
+public static class DatabaseHold {
+    public static Func<T, bool> Until<T>(ManualResetEventSlim held, ManualResetEventSlim release) =>
+        _ => { held.Set(); release.Wait(); return true; };
+}
+'@
+        $run = $database.GetType().GetMethods($flags) | Where-Object { $_.Name -eq 'Run' -and $_.IsGenericMethodDefinition -and $_.GetParameters()[0].ParameterType.Name -eq 'Func`2' } | Select-Object -First 1
+        $connectionType = $run.GetParameters()[0].ParameterType.GetGenericArguments()[0]
+        $findMethod = $batch.GetType().GetMethod('Find', $flags)
+        foreach ($interrupt in @('Stop', 'Disconnect')) {
+            $held = [Threading.ManualResetEventSlim]::new()
+            $release = [Threading.ManualResetEventSlim]::new()
+            $hold = $run.MakeGenericMethod([bool]).Invoke($database, @(
+                [DatabaseHold].GetMethod('Until').MakeGenericMethod($connectionType).Invoke($null, @($held, $release)), $cancel))
+            try {
+                Require ($held.Wait([TimeSpan]::FromSeconds(5))) 'The database hold did not start.'
+                $finding = $findMethod.Invoke($batch, (Unwrap @($noExact, 3, $selected)))
+                $started = $batch.GetType().GetField('_finding', $flags)
+                $until = [DateTime]::UtcNow.AddSeconds(5)
+                while ($null -eq $started.GetValue($batch) -and [DateTime]::UtcNow -lt $until) { Start-Sleep -Milliseconds 10 }
+                Require ($null -ne $started.GetValue($batch)) 'Find did not reach its database wait.'
+                if ($interrupt -eq 'Stop') { Invoke-Value $batch 'StopFinding' @() | Out-Null }
+                else { Invoke-Value $batch 'SetConnected' @($false) | Out-Null }
+            }
+            finally { $release.Set() }
+            $hold.GetAwaiter().GetResult() | Out-Null
+            try { $finding.Wait([TimeSpan]::FromSeconds(10)) | Out-Null } catch { }
+            if ($interrupt -eq 'Stop') {
+                Require $finding.IsCanceled "Stop during Find did not end it silently: $($finding.Status) $($finding.Exception)"
+            }
+            else {
+                Require ($finding.IsFaulted -and $finding.Exception.InnerException.GetType().Name -eq 'FindInterruptedException') "A disconnect during Find did not report that Find stopped: $($finding.Status)"
+                Invoke-Value $batch 'SetConnected' @($true) | Out-Null
+            }
+            Require ((Sql 'SELECT COUNT(*) FROM subtitle_jobs WHERE manual=1;') -eq 0) "Find accepted its batch after $interrupt."
+        }
         Invoke-Value $batch 'Find' @($noExact, 3, $selected) | Out-Null
         Require ((Sql 'SELECT COUNT(*) FROM subtitle_jobs WHERE manual=1 AND guesses=3;') -eq 1 -and
             (Sql 'SELECT enabled FROM subtitle_settings;') -eq 0) 'Manual batch required automatic downloads or changed its preference.'
