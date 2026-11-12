@@ -749,7 +749,7 @@ internal sealed partial class Acquisition
         var release = FileName.Interpret(path);
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"{FileName.Normalize(release.Title)} {release.Year} {release.Season} {string.Join(' ', release.Episodes)}"
+            $"{FileName.TitleKey(release.Title)} {release.Year} {release.Season} {string.Join(' ', release.Episodes)}"
         );
     }
 

@@ -184,11 +184,18 @@ try {
     Require ($matches.Entries.Count -eq 1 -and $matches.Entries[0].Title -eq 'Chosen title') 'Removing one contributor lost the shared identification.'
     Require ($matches.Entries[0].Created -eq 1700000000) 'Removing the original contributor lost shared file properties.'
 
+    # Revision 9 saved the lower-case title as the key; the upgrade rewrites it.
+    Sql "INSERT INTO video_choices VALUES('tmdb','161','movie','Ocean''s Eleven',NULL,2001,'ocean''s eleven',NULL),
+        ('tmdb','163','movie','La gran estafa 2','Ocean''s Twelve',2004,'la gran estafa 2','ocean''s twelve');
+        PRAGMA user_version=9;" | Out-Null
     $database.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null
     $database = New-Value 'Shared.Storage.Database' @($directory)
     $sources = New-Value 'Shared.FileSources' @($database)
     $store = New-Value 'Library.Store' @($database, $imdb)
     Invoke-Value $sources 'Reconcile' @((New-Values 'Shared.Contribution' @($second)), $cancel) | Out-Null
+    $saved = @(Invoke-Value $store 'Choices' @('tmdb', 'Oceans Eleven', $cancel))
+    $original = @(Invoke-Value $store 'Choices' @('tmdb', 'Oceans Twelve', $cancel))
+    Require ($saved.Count -eq 1 -and $saved[0].VideoId -eq '161' -and $original.Count -eq 1 -and $original[0].VideoId -eq '163') 'A choice saved at revision 9 was not found by its title or original title after the upgrade.'
     Require ((Sql 'SELECT group_concat(origin) FROM new_origins;') -eq 'second') 'Reopening forgot a finished torrent whose completion search was not decided.'
     $matches = Invoke-Value $store 'Search' @($query, $cancel)
     Require ($matches.Entries.Count -eq 1 -and $matches.Entries[0].EntryId -eq $entry.EntryId) 'Reopening lost the cached list or changed its row identity before engine file replies.'

@@ -18,8 +18,9 @@ internal sealed partial class Store
     )
     {
         using var command = connection.CreateCommand();
-        // The name columns hold normalized titles, so Choices finds a title
-        // through an index.
+        // The name columns hold the titles' FileName.TitleKey, so Choices finds
+        // a title through an index. A change to TitleKey needs a migration that
+        // rewrites them, or saved choices are no longer found.
         command.CommandText = """
             INSERT INTO video_choices(catalog_id,video_id,type,title,original,year,name,original_name)
             VALUES ($catalog,$video,$type,$title,$original,$year,$name,$original_name)
@@ -47,17 +48,20 @@ internal sealed partial class Store
             command.Parameters["$video"].Value = choice.VideoId;
             command.Parameters["$type"].Value = Stored(choice.Kind);
             command.Parameters["$title"].Value = choice.Title;
-            command.Parameters["$name"].Value = FileName.Normalize(choice.Title);
+            command.Parameters["$name"].Value = FileName.TitleKey(choice.Title);
             command.Parameters["$original"].Value = (object?)choice.Original ?? DBNull.Value;
             command.Parameters["$original_name"].Value = choice.Original is { } original
-                ? FileName.Normalize(original)
+                ? FileName.TitleKey(original)
                 : DBNull.Value;
             command.Parameters["$year"].Value = (object?)choice.Year ?? DBNull.Value;
             command.ExecuteNonQuery();
         }
     }
 
-    /// <summary>The saved choices of one catalogue whose title or original title is <paramref name="title"/>.</summary>
+    /// <summary>
+    /// The saved choices of one catalogue whose title or original title has the
+    /// <see cref="FileName.TitleKey"/> of <paramref name="title"/>.
+    /// </summary>
     internal Task<IReadOnlyList<VideoChoice>> Choices(
         string catalogId,
         string title,
@@ -74,7 +78,7 @@ internal sealed partial class Store
                     WHERE catalog_id=$catalog AND original_name=$name AND name<>$name;
                     """;
                 command.Parameters.AddWithValue("$catalog", catalogId);
-                command.Parameters.AddWithValue("$name", FileName.Normalize(title));
+                command.Parameters.AddWithValue("$name", FileName.TitleKey(title));
                 var choices = new List<VideoChoice>();
                 using var reader = command.ExecuteReader();
                 while (reader.Read())
@@ -161,13 +165,13 @@ internal sealed partial class Store
                 command.Parameters.AddWithValue("$catalog", target.CatalogId);
                 command.Parameters.AddWithValue("$year", release.Year.Value);
                 command.Parameters.AddWithValue("$language", language);
-                var title = FileName.Normalize(release.Title);
+                var keys = FileName.TitleKeys(release.Title);
                 VideoInformation? saved = null;
                 using (var reader = command.ExecuteReader())
                     while (reader.Read())
                     {
                         cancellation.ThrowIfCancellationRequested();
-                        if (FileName.Normalize(reader.GetString(1)) != title)
+                        if (!FileName.TitleAgrees(reader.GetString(1), keys))
                             continue;
                         if (saved is not null)
                             return null;

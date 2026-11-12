@@ -462,14 +462,15 @@ internal sealed class Supplier(ISupplier supplier, RequestPolicy policy)
     // Whether the listing is the file's title, by its kind, season, year and
     // title words. A file name spells "U.N.C.L.E." as "U N C L E", so titles
     // compare by their words alone, in either form.
-    private static bool Matches(Release release, Listing listing) =>
-        Agrees(release, listing)
-        && listing.Titles.Any(title =>
-            FileName
-                .TitleKeys(title)
-                .Zip(FileName.TitleKeys(release.Title))
-                .Any(pair => string.Equals(pair.First, pair.Second, StringComparison.Ordinal))
-        );
+    private static bool Matches(Release release, Listing listing)
+    {
+        if (!Agrees(release, listing))
+        {
+            return false;
+        }
+        var keys = FileName.TitleKeys(release.Title);
+        return listing.Titles.Any(title => FileName.TitleAgrees(title, keys));
+    }
 
     private static bool Agrees(Release release, Listing listing) =>
         listing.Kind == release.Kind

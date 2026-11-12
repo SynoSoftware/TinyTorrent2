@@ -182,6 +182,11 @@ internal sealed partial class Database : IAsyncDisposable
                 Shared.FileName.StartsWord,
                 isDeterministic: true
             );
+            connection.CreateFunction<string, string>(
+                "title_key",
+                Shared.FileName.TitleKey,
+                isDeterministic: true
+            );
             using var command = connection.CreateCommand();
             command.CommandText = "PRAGMA foreign_keys = ON; PRAGMA temp_store = MEMORY;";
             command.ExecuteNonQuery();
@@ -191,7 +196,7 @@ internal sealed partial class Database : IAsyncDisposable
                 {
                     command.CommandText = "PRAGMA user_version;";
                     var version = Convert.ToInt32(command.ExecuteScalar());
-                    _incompatible = version is not (0 or Version);
+                    _incompatible = version != 0 && (version < Baseline || version > Version);
                     if (_incompatible)
                         throw new DatabaseVersionException();
                     if (version == 0)
@@ -201,7 +206,15 @@ internal sealed partial class Database : IAsyncDisposable
                         _incompatible = Convert.ToInt64(command.ExecuteScalar()) != 0;
                         if (_incompatible)
                             throw new DatabaseVersionException();
-                        command.CommandText = Schema + $"PRAGMA user_version={Version};";
+                        command.CommandText = Schema;
+                        command.ExecuteNonQuery();
+                        version = Baseline;
+                    }
+                    if (version < Version)
+                    {
+                        command.CommandText =
+                            string.Concat(Migrations[(version - Baseline)..])
+                            + $"PRAGMA user_version={Version};";
                         command.ExecuteNonQuery();
                     }
                     command.CommandText = Projection;

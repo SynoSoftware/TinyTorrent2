@@ -90,8 +90,8 @@ file name writes an apostrophe in one of two ways, so a title agrees when its
 words agree in either form (`FileName.TitleForms`): with the apostrophe
 joining its word, as Oceans.Eleven matches "Ocean's Eleven", or separating
 it, as L.Auberge.Espagnole matches "L'Auberge espagnole". The second search,
-the per-title limit and the IMDb data's title keys use the joining form
-(`FileName.TitleKey`).
+the per-title limit, the saved choices and the IMDb data's title keys use the
+joining form (`FileName.TitleKey`).
 
 Associate automatically only when the available evidence supports an
 unambiguous match with title similarity greater than 80%, consistent sequel
@@ -250,8 +250,9 @@ and removing IMDb changes them too.
 #### Identification order
 
 Library owns automatic identification, and SQLite answers before the provider.
-It first reads the saved choices of the provider's catalogue whose normalized
-title or original title equals the release's title, through an index on each.
+It first reads the saved choices of the provider's catalogue whose title or
+original title has the release title's key (`FileName.TitleKey`), through an
+index on each.
 One saved choice of the release's kind and year is described without a search.
 Otherwise it searches the provider for the release's title, keeps choices of
 the release's kind whose title or original title and year agree, and describes

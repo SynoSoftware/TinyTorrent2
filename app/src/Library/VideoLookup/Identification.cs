@@ -177,7 +177,7 @@ internal sealed partial class VideoLookup
         var video = await Describe(context, match, request).ConfigureAwait(false);
         var year = kind == VideoKind.Movie ? video.Year ?? match.Year : match.Year ?? video.Year;
         if (
-            FileName.Normalize(video.Title) == FileName.Normalize(match.Title)
+            FileName.TitleAgrees(video.Title, FileName.TitleKeys(match.Title))
             && (release.Year is null || year == release.Year)
         )
             return video;

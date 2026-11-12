@@ -2,7 +2,22 @@ namespace Syno.TinyTorrent.Shared.Storage;
 
 internal sealed partial class Database
 {
-    private const int Version = 9;
+    // Schema is revision 9, the oldest revision a saved database holds. A new
+    // database runs Schema and then every migration, so one implementation of
+    // each change serves new and saved databases.
+    private const int Baseline = 9;
+
+    // Migrations[n] upgrades a database at revision Baseline + n to the next.
+    private static readonly string[] Migrations =
+    [
+        // 10: saved choices are keyed by FileName.TitleKey.
+        """
+        UPDATE video_choices SET name=title_key(title);
+        UPDATE video_choices SET original_name=title_key(original) WHERE original IS NOT NULL;
+        """,
+    ];
+
+    private static int Version => Baseline + Migrations.Length;
 
     private const string Schema = """
             -- The person's own API key, protected by Credentials, replaces

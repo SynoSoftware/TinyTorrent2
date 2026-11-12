@@ -145,6 +145,18 @@ internal static partial class FileName
         [.. TitleForms(title).Select(words => string.Join(' ', words))];
 
     /// <summary>
+    /// Whether <paramref name="title"/> agrees with the title whose
+    /// <see cref="TitleKeys"/> are <paramref name="keys"/>: their words agree
+    /// in either form. A caller that compares many titles with one passes that
+    /// one's keys, so they are worked out once.
+    /// </summary>
+    internal static bool TitleAgrees(string title, string[] keys)
+    {
+        var own = TitleKeys(title);
+        return own[0] == keys[0] || own[1] == keys[1];
+    }
+
+    /// <summary>
     /// What follows <paramref name="title"/> at the start of
     /// <paramref name="name"/>, or the whole name when it does not start with
     /// the title. Only letters and digits are compared, without case, and the

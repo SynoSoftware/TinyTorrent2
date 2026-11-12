@@ -463,6 +463,7 @@ internal sealed partial class Store
                         AND v.catalog_id=$catalog AND v.series_catalog=$catalog AND v.series_id IS NOT NULL;
                     """;
                 using var reader = command.ExecuteReader();
+                var keys = FileName.TitleKeys(release.Title);
                 VideoChoice? series = null;
                 while (reader.Read())
                 {
@@ -477,7 +478,7 @@ internal sealed partial class Store
                     if (
                         previous.Season != release.Season
                         || previous.Year != release.Year
-                        || FileName.Normalize(previous.Title) != FileName.Normalize(release.Title)
+                        || !FileName.TitleAgrees(previous.Title, keys)
                     )
                         continue;
                     var videoId = reader.GetString(3);

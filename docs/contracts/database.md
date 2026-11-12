@@ -9,14 +9,18 @@ this database.
 
 ## Ownership and initialization
 
-`Shared/Storage/Database/Schema.cs` is the authoritative initial schema, including
-tables, indexes, views, defaults and temporary working tables. `Database.Open`
-registers path comparison and the `starts_word` search test, enables foreign keys, reads `PRAGMA user_version`,
-and initializes the schema transactionally before exposing the connection to
-any feature. A new database receives the current schema revision in the same
-transaction as its schema. Version 0 initializes only an empty schema; existing unversioned storage
-is incompatible. The temporary projection is recreated for every connection.
-Unsupported versions fail without changing their data.
+`Shared/Storage/Database/Schema.cs` is the authoritative schema: the revision 9
+tables, indexes, views and defaults, the migrations after it, and the temporary
+working tables. `Database.Open` registers path comparison, the `starts_word`
+search test and the `title_key` function (`FileName.TitleKey`), enables foreign
+keys, reads `PRAGMA user_version`, and initializes the schema transactionally
+before exposing the connection to any feature. A new database runs the revision
+9 schema and then every migration, and receives the current revision in the
+same transaction, so each change has one implementation for new and saved
+databases. Version 0 initializes only an empty schema; existing unversioned
+storage is incompatible. The temporary projection is recreated for every
+connection. A version below 9 or above the current revision fails without
+changing its data.
 
 **Owner ruling: the schema at revision 9 is the baseline that saved databases
 hold. Never change it destructively.** A schema change that only edits the
@@ -28,6 +32,19 @@ data. Database owns their execution and `PRAGMA user_version`; domain owners
 define their required schema changes. Migrations run transactionally during
 this same initialization path, before Library or Subtitles can access the
 database. There is no second upgrade mechanism in a domain or in startup wiring.
+
+`Schema.cs` lists the migrations in order: the first upgrades revision 9 to
+10, and each next one upgrades its predecessor's result. A saved database runs
+only the migrations after its revision, all in one transaction with the new
+`PRAGMA user_version`, so a failure leaves it at its old revision. The current
+revision is 10:
+
+| Revision | Change |
+| --- | --- |
+| 10 | `video_choices.name` and `original_name` hold `FileName.TitleKey` of the title and original title instead of the title in lower case without accents. A choice saved for "Ocean's Eleven" is then found for a file named Oceans.Eleven. The migration rewrites both keys of every saved row. Rows stay keyed by catalogue and video, so two saved videos whose titles now share a key both remain, and a search of that title offers both, as the provider would. |
+
+A change to `FileName.TitleKey` changes these saved keys, so it needs a
+migration that rewrites them again; otherwise the saved choices are not found.
 
 Schema revision is independent of the application version. Development
 databases before revision 9 remain intact until the owner resets them; that
