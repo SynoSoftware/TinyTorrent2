@@ -119,8 +119,13 @@ order (`Ordering.Changed`) or the first rows after a fill that found none
 `LayoutUpdated` inside that layout and lays out again what the handler changes
 before the frame renders (`CLayoutManager::UpdateLayout`), so the new rows and
 the new widths appear in one frame. After a different list, `PrepareView` calls
-`QueueListFill` instead, which restarts the one-shot 300-ms `_listFillDue`
-timer; its tick calls `FillViewport`. A tick during a preparation takes the
+`DelayFill` instead, which restarts the one-shot 300-ms `_fillDelay` timer; its
+tick calls `FillViewport`. A row panel watches the text blocks of each cell's
+template, which it finds once, in the first measure that builds that template
+(`CellsPanel.WatchCuts`); until then the cell waits in `_unwatched`. A text
+block that starts to cut its text off calls `Table.FillAfterCut`, which
+restarts the same timer while automatic fill is on and the column is at least
+as wide as its last fit (`_fittedWidths`). A tick during a preparation takes the
 `_fillPending` path above, and every `FillViewport` call stops the timer,
 because any fill serves the list on screen. A fit
 leaves out a row whose cells do not show the view's row at its index, because

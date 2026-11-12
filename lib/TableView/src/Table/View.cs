@@ -531,7 +531,7 @@ public sealed partial class Table
                 }
                 else if (prepared.Changes.IsDifferentList)
                 {
-                    QueueListFill();
+                    DelayFill();
                 }
 
                 if (version != _viewVersion)

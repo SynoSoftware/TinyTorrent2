@@ -12,6 +12,24 @@ public sealed class FitRow
     public double CellWidth { get; set; }
 }
 
+/// <summary>A row whose text changes, as a speed does.</summary>
+public sealed class TextRow : System.ComponentModel.INotifyPropertyChanged
+{
+    private string _text = string.Empty;
+
+    public string Text
+    {
+        get => _text;
+        set
+        {
+            _text = value;
+            PropertyChanged?.Invoke(this, new(nameof(Text)));
+        }
+    }
+
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+}
+
 /// <summary>
 /// Section 10's fit commands, the first fill, and the geometry the resize separator grabs. The
 /// point of the section is what a fit may not do: it measures the header and the cells the current visual layout has
@@ -24,6 +42,12 @@ public class ColumnFitTests
         <DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
             <Border Width="{Binding CellWidth}" Height="24" />
+        </DataTemplate>
+        """;
+
+    private const string TextXaml = """
+        <DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
+            <TextBlock Text="{Binding Text}" TextTrimming="CharacterEllipsis" />
         </DataTemplate>
         """;
 
@@ -255,7 +279,10 @@ public class ColumnFitTests
                 "the layout that shows a different list does not fill"
             );
 
-            var due = Proof.Field<Microsoft.UI.Dispatching.DispatcherQueueTimer>(table, "_listFillDue");
+            var due = Proof.Field<Microsoft.UI.Dispatching.DispatcherQueueTimer>(
+                table,
+                "_fillDelay"
+            );
             await TableHarness.WaitUntilAsync(() => !due.IsRunning, "the list to stay on screen");
             table.UpdateLayout();
 
@@ -266,6 +293,54 @@ public class ColumnFitTests
                 "a different list fills once it has stayed on screen"
             );
             Assert.AreEqual(0, events(), "automatic fills report nothing");
+        });
+
+    /// <summary>
+    /// A value that grows past its fitted column, as a speed does, refits after a pause, because
+    /// its text block reports the cut. A column the person narrowed below its fit stays, because
+    /// a refit would undo the person's width.
+    /// </summary>
+    [TestMethod]
+    public Task ALongerValueRefitsItsColumnAndANarrowedColumnStays() =>
+        TestHost.RunAsync(async () =>
+        {
+            Column a = TestData.Column("a", 200);
+            a.MinWidth = 10;
+            a.CanGrow = false;
+            a.CellTemplate = TextTemplate;
+            Column b = Column("b", 150);
+            b.CellTemplate = EmptyTemplate;
+            Table table = Build(a, b);
+            List<TextRow> rows = Enumerable
+                .Range(0, 5)
+                .Select(_ => new TextRow { Text = "7 B/s" })
+                .ToList();
+            table.ItemsSource = rows;
+            await TableHarness.LoadAsync(table);
+            await SettleAsync(table);
+            double fitted = TableHarness.EffectiveWidth(table, "a");
+
+            // A text block reports its cut after the layout pass, so wait for the wider column.
+            rows[0].Text = "144.5 KB/s and a much longer tail";
+            await TableHarness.WaitUntilAsync(
+                () =>
+                {
+                    table.UpdateLayout();
+                    return TableHarness.EffectiveWidth(table, "a") > fitted + 50;
+                },
+                "the longer value to refit its column"
+            );
+
+            TableHarness.SetWidth(table, "a", 30);
+            table.UpdateLayout();
+            await Task.Delay(400);
+            table.UpdateLayout();
+            Assert.AreEqual(
+                30d,
+                TableHarness.EffectiveWidth(table, "a"),
+                0d,
+                "the narrowed column stays"
+            );
         });
 
     /// <summary>
@@ -769,6 +844,7 @@ public class ColumnFitTests
 
     private static readonly DataTemplate CellTemplate = (DataTemplate)XamlReader.Load(CellXaml);
     private static readonly DataTemplate EmptyTemplate = (DataTemplate)XamlReader.Load(EmptyXaml);
+    private static readonly DataTemplate TextTemplate = (DataTemplate)XamlReader.Load(TextXaml);
 
     private static Column Column(string id, double defaultWidth)
     {

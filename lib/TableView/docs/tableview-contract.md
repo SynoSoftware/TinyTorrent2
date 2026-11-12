@@ -1302,17 +1302,27 @@ at these times:
   ms at 160,000 peers on 11 November 2026. Right after that layout it still
   landed on the next click, and 2 of 21 clicks took over 100 ms instead of
   none. The person sees the new rows at once with the old widths, and the new
-  widths 300 ms later.
+  widths 300 ms later;
+- when a longer value makes a row cell's text block start to cut its text off,
+  as a speed that grows from "7 B/s" to "5.9 MiB/s" does. The text block reports
+  the cut, so the table measures nothing to notice it. This fill waits for the
+  same 300 ms pause, and each cut restarts it, so a burst of updates fills once.
+  A cut in a column narrower than its last fit asks for nothing: a fill or the
+  person made that column narrower, and a fill would only narrow it again or
+  undo the person's width.
 
 A sort command, such rows and a different list replace what the screen shows,
 so a fill then moves nothing the person did not already change. Without it, a
 table fitted before its rows arrived, or to the rows another order or list
 showed, keeps widths that are wrong for what is on screen: values cut off beside
-wide, empty columns. Row inserts and removals, value updates, the re-sorts of a
-sort already in force, scrolling, filtering and assigning `Layout` do not fill,
-because a fill then moves the columns while the person reads them or aims at a
-header. A fit leaves out a container that still shows the old list's row while
-it waits for its new one.
+wide, empty columns. A value cut off is the same failure on a smaller scale, so
+it fills too: the person reads the whole value, at the cost of a column that
+moves. Row inserts
+and removals, value updates that cut nothing off, the re-sorts of a sort already
+in force, scrolling, filtering and assigning `Layout` do not fill, because a
+fill then moves the columns while the person reads them or aims at a header. A
+fit leaves out a container that still shows the old list's row while it waits
+for its new one.
 
 The table owns these triggers; hosts do not duplicate the calls. It waits for
 a completed visible layout, including visible ancestors, then runs the same
@@ -2088,9 +2098,9 @@ throughput target.
 - Column layout changes affect only headers and realized rows.
 - Source updates, property updates, the re-sorts of a sort already in force,
   and scrolling MUST NOT measure content or change widths. While automatic fill
-  is on, showing a table, changing its available width, a sort command and rows
-  that replace the screen schedule one bounded fill after layout (section 10),
-  without realizing rows for measurement.
+  is on, showing a table, changing its available width, a sort command, rows
+  that replace the screen and a cell that starts to cut its text off schedule
+  one bounded fill (section 10), without realizing rows for measurement.
 - Active sorting is `O(n log n)` and occurs only on source, sort, or explicit
   `RefreshView()` changes.
 - Explicit fit commands measure only the header, visible rows, and one
@@ -2125,7 +2135,8 @@ host integration, with validation scope set by [testing](../../../docs/agents/te
    eligibility and never leaves zero visible columns.
 6. Widths remain stable across row updates, live re-sorts and scrolling; while
    automatic fill is on, showing the table, changing its available width, a sort
-   command and rows that replace the screen fill it after visible layout.
+   command, rows that replace the screen and a value that starts to be cut off
+   fill it after visible layout.
    Direct resize, bounded fit, hide/show, reset, and save/reload preserve their
    specified baseline/override behavior without off-screen measurement.
 7. `None`, `Single`, `Multiple`, and `Extended` selection limits work with

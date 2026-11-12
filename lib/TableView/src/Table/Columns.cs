@@ -328,23 +328,44 @@ public sealed partial class Table
     private bool _fillPending;
 
     /// <summary>
-    /// Runs while a different list waits for its fill (section 10). Each newer list restarts it,
-    /// so the lists a person passes through while clicking or arrowing quickly never fill.
+    /// Runs while a fill waits for the content to settle, after a different list or a cut
+    /// (section 10). Each one restarts it, so the lists a person passes through quickly and a
+    /// burst of updates fill once.
     /// </summary>
-    private DispatcherQueueTimer? _listFillDue;
+    private DispatcherQueueTimer? _fillDelay;
 
-    private void QueueListFill()
+    private void DelayFill()
     {
-        if (_listFillDue is null)
+        if (_fillDelay is null)
         {
-            _listFillDue = DispatcherQueue.CreateTimer();
-            _listFillDue.IsRepeating = false;
-            _listFillDue.Interval = TimeSpan.FromMilliseconds(300);
-            _listFillDue.Tick += (_, _) => FillViewport();
+            _fillDelay = DispatcherQueue.CreateTimer();
+            _fillDelay.IsRepeating = false;
+            _fillDelay.Interval = TimeSpan.FromMilliseconds(300);
+            _fillDelay.Tick += (_, _) => FillViewport();
         }
 
-        _listFillDue.Stop();
-        _listFillDue.Start();
+        _fillDelay.Stop();
+        _fillDelay.Start();
+    }
+
+    /// <summary>
+    /// Section 10: a row cell of this column started to cut its text off. A column at least as
+    /// wide as its last fit was cut by a longer value, so it fills after the delay. A column that
+    /// a fill or the person made narrower than its fit stays, because a fill would only narrow it
+    /// again or undo the person's width.
+    /// </summary>
+    internal void FillAfterCut(Column column)
+    {
+        if (
+            IsAutomaticFillEnabled
+            && EffectiveLayout.Find(column) is EffectiveColumn effective
+            && _fittedWidths.TryGetValue(effective, out double fitted)
+            // Half a DIP absorbs the floating-point error of the fill's scaling.
+            && effective.Width + 0.5 >= fitted
+        )
+        {
+            DelayFill();
+        }
     }
 
     /// <summary>
@@ -379,7 +400,7 @@ public sealed partial class Table
         // Whatever this call does serves a different list too: it fills now, queues a fill for
         // the layout after the preparation, or finds the table hidden, unloaded or switched off,
         // where showing it or switching it on fills.
-        _listFillDue?.Stop();
+        _fillDelay?.Stop();
         LayoutUpdated -= OnFillLayout;
         if (!IsAutomaticFillEnabled)
         {

@@ -245,7 +245,7 @@ public sealed partial class Table : Control
         LayoutUpdated -= OnFillLayout;
         StopWatchingVisibility();
         _resizeDue?.Stop();
-        _listFillDue?.Stop();
+        _fillDelay?.Stop();
 
         // A table taken out of the tree sees no exit, and nothing points at rows it no longer shows.
         _pointerOver = false;

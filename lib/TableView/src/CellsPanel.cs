@@ -16,6 +16,9 @@ public sealed partial class CellsPanel : Panel
     // cells here instead of fetching each one back from WinUI and looking up its wrapper.
     private readonly List<(Column Column, UIElement Cell)> _cells = [];
 
+    // Row cells whose template is not built yet, with their columns; see WatchCuts.
+    private readonly Dictionary<ContentPresenter, Column> _unwatched = [];
+
     private Table? _owner;
     private EffectiveLayout? _layout;
     private bool _isHeader;
@@ -163,6 +166,11 @@ public sealed partial class CellsPanel : Panel
         {
             if (VisibleIndexOf(visible, _cells[i].Column) < 0)
             {
+                if (_cells[i].Cell is ContentPresenter removed)
+                {
+                    _unwatched.Remove(removed);
+                }
+
                 _cells.RemoveAt(i);
                 Children.RemoveAt(i);
             }
@@ -264,9 +272,54 @@ public sealed partial class CellsPanel : Panel
             Padding = padding,
             Content = DataContext,
         };
+        _unwatched[presenter] = column;
         return _owner?.IsHierarchyColumn(column) == true
             ? new Body.HierarchyCell(_owner, presenter)
             : presenter;
+    }
+
+    /// <summary>
+    /// Section 10: a text block in a row cell that starts to cut its text off asks the table for a
+    /// fill. A cell's template is built by the first measure that gives it a row, and it stays
+    /// with the cell when the row changes, so each cell's text blocks are watched once.
+    /// </summary>
+    private void WatchCuts()
+    {
+        List<ContentPresenter>? built = null;
+        foreach (var (presenter, column) in _unwatched)
+        {
+            if (VisualTreeHelper.GetChildrenCount(presenter) != 0)
+            {
+                (built ??= []).Add(presenter);
+                WatchCuts(presenter, column);
+            }
+        }
+
+        foreach (ContentPresenter presenter in built ?? [])
+        {
+            _unwatched.Remove(presenter);
+        }
+    }
+
+    private void WatchCuts(DependencyObject node, Column column)
+    {
+        int count = VisualTreeHelper.GetChildrenCount(node);
+        for (int i = 0; i < count; i++)
+        {
+            DependencyObject child = VisualTreeHelper.GetChild(node, i);
+            if (child is TextBlock text)
+            {
+                text.IsTextTrimmedChanged += (_, _) =>
+                {
+                    if (text.IsTextTrimmed)
+                    {
+                        _owner?.FillAfterCut(column);
+                    }
+                };
+            }
+
+            WatchCuts(child, column);
+        }
     }
 
     /// <summary>
@@ -349,6 +402,11 @@ public sealed partial class CellsPanel : Panel
             UIElement child = _cells[i].Cell;
             child.Measure(new Size(visible[i].Width, double.PositiveInfinity));
             height = Math.Max(height, child.DesiredSize.Height);
+        }
+
+        if (_unwatched.Count != 0)
+        {
+            WatchCuts();
         }
 
         return new Size(_layout.TotalWidth, height);
