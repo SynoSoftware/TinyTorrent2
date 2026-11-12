@@ -317,6 +317,21 @@ INSERT INTO identifications SELECT origin,file_index,'tmdb','movie/9',1,17000000
         Require ([long](Sql 'SELECT entry_id FROM locations WHERE path=$path;' @{ '$path' = $movie } $diskConnection) -eq $movieEntry) 'A renamed folder gave its movie a new entry.'
         Require ((Sql 'SELECT title FROM library_rows WHERE entry_id=$entry;' @{ '$entry' = $movieEntry } $diskConnection) -eq 'Matched title') 'A renamed folder lost the match the person chose.'
 
+        # A displayed disk movie takes its subtitle files from what gozler
+        # reported and lists no folder, which could wake a sleeping drive.
+        $diskSubtitles = New-Value 'Subtitles.Acquisition' @($diskDatabase, $null, $policy) @{ Work = $work }
+        try {
+            $unreported = Join-Path $media 'Renamed\Movie.2020.en.srt'
+            [IO.File]::WriteAllBytes($unreported, [byte[]]::new(100))
+            $shownMovie = [Collections.Generic.HashSet[long]]::new()
+            $shownMovie.Add($movieEntry) | Out-Null
+            $discoveries = @(Invoke-Value $diskSubtitles 'Movies' @($cancel, $shownMovie))
+            $place = [ValueTuple[string, bool]]::new((Split-Path $movie), $false)
+            $found = @(Invoke-Value $diskSubtitles 'SubtitleFiles' @($place, (New-Values 'Subtitles.Acquisition+Discovery' $discoveries), $cancel))
+            Require ($discoveries.Count -eq 1 -and $found -contains $subtitle -and $found -notcontains $unreported) 'A displayed disk movie listed its folder instead of the files gozler reported.'
+        }
+        finally { $diskSubtitles.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null }
+
         # The torrent source neither withdraws nor schedules the disk contribution.
         Invoke-Value $diskSources 'Reconcile' @((New-Values 'Shared.Contribution' @()), $cancel) | Out-Null
         Require ((Listed $movie) -eq 1) 'The torrent reconcile withdrew the disk contribution.'
@@ -369,6 +384,17 @@ INSERT INTO identifications SELECT origin,file_index,'tmdb','movie/9',1,17000000
         Invoke-Value $diskSources 'Replace' @($torrent, $listedFiles, $cancel) | Out-Null
         $diskConnection = $diskDatabase.GetType().GetField('_connection', $flags).GetValue($diskDatabase)
         Require ((Listed $shared) -eq 0) 'A deleted file that a torrent lists returned when the window opened again.'
+
+        # gozler has not answered since the window opened, and that holds no
+        # subtitle move or deletion for torrents.
+        Require ([long](Sql "SELECT COUNT(*) FROM pending_origins WHERE origin IN (SELECT origin FROM contributions WHERE data_source='disk');" @{} $diskConnection) -eq 1) 'The disk source was confirmed before gozler answered.'
+        $diskSubtitles = New-Value 'Subtitles.Acquisition' @($diskDatabase, $null, $policy) @{ Work = $work }
+        try {
+            # Set directly, because SetConnected also starts the search worker.
+            $diskSubtitles.GetType().GetField('_connected', $flags).SetValue($diskSubtitles, $true)
+            Require ((Invoke-Value $diskSubtitles 'PathAccess' @($shared, $cancel)).ToString() -ne 'Pending') 'A gozler that has not answered held subtitle work for torrents.'
+        }
+        finally { $diskSubtitles.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null }
 
         # A hidden folder's files leave at once, and every later query leaves
         # the folder out.
