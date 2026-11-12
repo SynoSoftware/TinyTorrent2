@@ -1,11 +1,13 @@
 # One owner for each rule
 
-**Proposed on 12 November 2026. Not reviewed, not approved, and nothing is
-implemented.** It comes from an audit of the whole source tree on the same
-day: twelve readers read the product code in full and a scanner compared
-every file for copied text. The audit found about 190 rules that are
-implemented more than once. In about 40 of them the copies already behave
-differently. Line numbers are those of commit 7e0ee84.
+**Proposed on 12 November 2026 and revised after two reviews on the same
+day. The owner approved it that day, made its two decisions and ruled
+that the implementation asks the owner nothing. Implementation started on
+12 November 2026.** It comes from an audit of
+the whole source tree: twelve readers read the product code in full and a
+scanner compared every file for copied text. The audit found about 190
+rules that are implemented more than once. In about 40 of them the copies
+already behave differently. Line numbers are those of commit 7e0ee84.
 
 Paths without a project prefix are under `app/src`. Engine paths start with
 `engine/`, library paths with `lib/`.
@@ -24,7 +26,7 @@ owner sits where the rest of the system expects it.**
 
 Removing each copy where it stands does not reach this goal. A pair removed
 in place leaves the cause, and the next change makes a new pair. This plan
-therefore works by owner: each stage completes or creates one owner, moves
+therefore works by owner: each change completes or creates one owner, moves
 every caller to it and deletes every copy.
 
 ## What the audit shows
@@ -33,10 +35,11 @@ The 190 findings have five causes. Each cause has its own remedy.
 
 1. **A fact has no name.** No member states the fact, so each caller spells
    it out. "Is this page a workspace" is written as `Torrents or Library`
-   in nine places. The app compares engine error codes as text in 15 places
-   in 8 files, although the [code style](../../AGENTS.md#code-style) says
-   that errors which cross a boundary have named types. Remedy: an enum, a
-   member on the model or a named constant at the owner.
+   in nine places. The app compares the engine's refusal words as text in
+   12 places in 7 files, although the
+   [code style](../../AGENTS.md#code-style) says that a contract separates
+   the failures its caller handles differently. Remedy: an enum, a member
+   on the model or a named constant at the owner.
 2. **An owner exists and callers go around it.** Its interface misses the
    caller's case, or it is private. `Navigation.IsWorkspace` is private.
    `FrameCallback` owns "run once at the next frame" and two places write
@@ -49,26 +52,20 @@ The 190 findings have five causes. Each cause has its own remedy.
    city data each implement download, stop, delete and replace. Eight
    places hand-write "run once after this turn". Remedy: one deep module,
    designed once.
-4. **Dependencies point the wrong way.** `Shared` is the lowest area and
-   names feature types: [DataDownload.cs](../../app/src/Shared/DataDownload.cs)
-   and [Geolocation.cs](../../app/src/Shared/Geolocation.cs) report failures
-   as `Library.VideoException`, so a failed city-data download is a "video"
-   failure; [Strings.cs](../../app/src/Shared/Strings.cs) lines 214 to 242
-   name the exception types of Library, Shell and Subtitles to choose a
-   text. `DialogPreference` uses Settings, `TorrentSource` uses Torrents,
-   `Controls/Pane` uses `Shell.Navigation` and `Controls/SettingsRow` uses
-   `Settings.Setting`. Features use each other: Torrents and Settings in
-   both directions (`AddDraft`, `SpeedLimit`, `ConnectionSetup`, `Editor`),
-   Library uses Torrents (`Browser/Information`) and Settings uses Library
-   (`Editor/Plugins`). The architecture names owners but states no
-   direction between the seven app areas, so nothing told a writer or a
-   reviewer which way was wrong. Remedy: a stated direction, and each
-   shared type moved to the area below its users.
-5. **A boundary forces two copies and nothing ties them together.** The
-   table library cannot use app code, so five helpers exist on both sides.
-   The engine is C++ and the app is C#, so ranges, units and words exist on
-   both sides, and the readers reported four pairs that disagree. Remedy: one home that both
-   sides can reach, or the side that knows the fact sends it.
+4. **Dependencies point the wrong way.** The architecture names owners but
+   states no direction between the seven app areas, so nothing told a
+   writer or a reviewer which way was wrong.
+   [Direction between the app areas](#direction-between-the-app-areas)
+   gives the measurement: eleven files in the base areas or in a feature
+   name an area they should not depend on. Remedy: a stated direction, and
+   each shared type moved to the area below its users.
+5. **A boundary forces two copies.** The table library cannot use app
+   code, and the engine is C++ where the app is C#, so a text loader, the
+   setting ranges and the engine's words exist on both sides. Checked in
+   the code, these pairs agree today or differ in shape, and a contract
+   already covers each one. Remedy: the pair stays, as
+   [What stays as it is](#what-stays-as-it-is) says, and a copy that
+   departs from its contract is corrected in place.
 
 ## Rules for this work
 
@@ -77,9 +74,10 @@ in [AGENTS.md](../../AGENTS.md), [naming](../agents/naming.md),
 [comments](../agents/comments.md) and
 [compilation](../agents/compilation.md).
 
-- **Work by owner, and finish each owner.** A stage moves every caller and
-  deletes every copy in the same change, because a half-moved rule is two
-  mechanisms.
+- **Work by owner, and finish each owner.** One change moves every caller
+  of one owner and deletes every copy, because a half-moved rule is two
+  mechanisms. A stage groups the owners that share a gate and a build; the
+  owner is the unit of change and of review.
 - **Design the owner from all its callers.** Before code, list what each
   caller needs and write the smallest interface that carries all of it. An
   owner fitted to its first caller is the owner the next caller goes
@@ -93,30 +91,88 @@ in [AGENTS.md](../../AGENTS.md), [naming](../agents/naming.md),
 - **A pair that only looks alike stays.** A pair is collapsed only when one
   sentence states the rule that both copies implement. Merging two
   different rules makes one function with a flag for each caller.
-- **No owner for one caller.** An interface, base class or new type needs
-  two real users today.
-- **Verification answers a question.** Each stage names its open question.
-  Moves that the compiler checks end on source review. No stage adds a test
-  by habit; [testing](../agents/testing.md#what-earns-a-test) decides.
-- **A TableView change starts from the table's history**, as
-  [its instructions](../../lib/TableView/AGENTS.md) rule.
+- **The normal build does not see every consumer of a name.** It leaves
+  out the 25 capture journeys (`Shell/MainWindow/Capture*.cs`) and the
+  `#if CAPTURE` blocks in 16 more files, and the check scripts in
+  `app/tests` reach types by name through reflection:
+  `SourceChecks.ps1` names `SubtitleException`, its `Reason`,
+  `Shared.DataDownload`, `ProviderException` and `RouteException`. So the
+  app batches build with `-Capture`, which compiles everything the normal
+  build does, and the gate of each stage searches for the rest.
 
 ## Direction between the app areas
 
-Proposed text for the architecture's
-[source layout](../contracts/architecture.md#projects-and-source-layout),
-if the owner accepts decision 3:
+Measured on commit 7e0ee84, capture journeys left out. A file names an area
+when it has a `using` line for it, a `using` alias for one of its types, or
+one of its types written with the area as qualifier, such as
+`Library.VideoException` or `Syno.TinyTorrent.Subtitles.Acquisition`. All
+three forms were counted. The `xmlns` lines of the XAML files were counted
+too; they add no file to the list below.
 
-> `Shared` uses no other app area. `Controls` uses `Shared`. `Torrents`,
-> `Settings`, `Library` and `Subtitles` use `Shared` and `Controls`, and
-> not each other; a type that two features need lives in `Shared` or
-> `Controls`. `Shell` composes the features and may use every area. This
-> lets a reviewer refuse a dependency by its direction, and keeps a feature
+The code already follows a direction in most places:
+
+- `Shared` and `Controls` name each other, in five files each way.
+  `Shared` holds the common dialogs, which use controls; the controls use
+  `Strings` and `RelayCommand`.
+- `Subtitles` names no other feature and nothing in `Shell`.
+- `Torrents`, `Settings` and `Library` name `Shell` in 8, 11 and 2 files.
+  They name its model types, such as `MainViewModel`, `Notifications` and
+  `Navigation`. No file outside `Shell` names a `Shell` view.
+
+These files break it:
+
+| File | Names | What it takes |
+| --- | --- | --- |
+| `Shared/Strings.cs` | Library, Shell, Subtitles | The exception types of each, to choose a text |
+| `Shared/DataDownload.cs`, `Shared/Geolocation.cs` | Library | `VideoException`, so a failed city-data download is a "video" failure |
+| `Shared/TorrentSource.cs` | Torrents | `Torrent`, `Pieces` |
+| `Shared/DialogPreference.cs` | Settings | `Setting`, `Editor` |
+| `Controls/SettingsRow.cs` | Settings | `Setting` |
+| `Torrents/SpeedLimit.cs` | Settings | `Editor`, for its number parser |
+| `Settings/ConnectionSetup.cs`, `Settings/Editor.cs` | Torrents | `SpeedLimit` |
+| `Settings/Editor/Plugins.cs` | Library | `Coverage` |
+| `Torrents/RemovalDraft.cs` | Subtitles | `Acquisition` and `Deletion`, to delete a removed torrent's subtitles |
+
+The Settings page is a separate case. `Settings/SettingsPage.xaml.cs`,
+`SettingsPage/Subtitles.cs` and `SettingsPage/Home.cs` name
+`Library.ProviderOption`, `Subtitles.Settings` and `Subtitles.Automatic`,
+because the page shows the settings of every feature. The architecture's
+[ownership decisions](../contracts/architecture.md#ownership-decisions)
+record that design, and the rule below states it as its one exception.
+
+Four more files have a `using` line for an area and name none of its
+types: `Controls/Pane.cs` and `Shared/Engine/PipeClient.cs` (Shell),
+`Torrents/AddDraft.cs` (Settings) and `Library/Browser/Information.cs`
+(Torrents). The lines look unused; the compiler confirms it in stage 2.
+
+A file can depend on an area without naming it. Every child owner takes
+its `MainViewModel`, as the ownership decisions record, and reads other
+owners through it: `Torrents/AddDraft.cs` 353 and `RemovalDraft.cs` 168 to
+174 read `Setting` values, and `Settings/Overview.cs` 85,
+`Settings/Editor.cs` 525 and `Settings/Editor/Plugins.cs` 22 read Library
+state. The rule limits names, so it does not count this path. Five files
+is a lower bound.
+
+Text for the architecture's
+[source layout](../contracts/architecture.md#projects-and-source-layout),
+which stage 2 adds:
+
+> `Shared` and `Controls` are the base: they name each other and no other
+> area. `Torrents`, `Settings`, `Library` and `Subtitles` name the base and
+> `Shell`, but never each other and never a `Shell` type that is a window,
+> a page or a control, which today are `MainWindow`, `InspectorPane`,
+> `AboutPage` and `CreditsPage`; a type that two features need lives in the
+> base. The Settings page is the one exception: it shows the settings of
+> every feature, so `Settings/SettingsPage.xaml.cs` and the files of
+> `Settings/SettingsPage` name `Library` and `Subtitles`. `Shell` composes
+> the features and names every area. A file names an area by a `using`
+> line, a `using` alias or a qualified type name, so a reviewer checks
+> this rule in the diff. The rule limits names: a feature still reads
+> another feature's state through its `MainViewModel`. It keeps a feature
 > from becoming the authority for a rule that another feature also needs.
 
-Two recorded decisions stay as they are: child owners take their
-`MainViewModel`, and `PipeClient.Files` holds Inspector arbitration
-([ownership decisions](../contracts/architecture.md#ownership-decisions)).
+A reviewer finds all three forms by searching the added lines for
+`TinyTorrent.<Area>` and for `<Area>.` before a type name.
 
 The app is one project, so the compiler cannot refuse a direction. Review
 enforces it, in the
@@ -129,14 +185,15 @@ owner, and the stage that completes it.
 
 | Concept | Owner | Today | Stage |
 | --- | --- | --- | --- |
-| Engine errors in the app | `CommandException`, with an enum in `Enums.cs` | Text compared in 15 places | 1 |
+| Engine refusals in the app | `CommandException` | Words compared in 12 places | 1 |
+| A torrent's problem | `Torrent` | One word compared outside it | 1 |
 | Torrent, peer, file and limit facts | The model types that hold the data | Spelled out by each caller | 1 |
 | Which pages are workspaces | `Navigation` | Private; 8 copies | 1 |
-| Failure text | Each failure carries its text key; `Strings.Error` reads it | `Strings` names feature types | 2 |
+| Failure text | Each failure carries its text | `Strings` names feature types | 2 |
 | Direction between areas | The architecture | Not stated | 2 |
 | Display text and number formats | `Shared/Strings` | Features format by hand | 3 |
 | Folders and paths in the app | One type in `Shared` | 5 versions | 3 |
-| Work on the UI thread, once per turn or frame | `Shared/FrameCallback` and one sibling | 11 hand-written | 4 |
+| Work on the UI thread, once per turn or frame | `Shared/FrameCallback` and one sibling | 10 hand-written | 4 |
 | Dialog, menu and command shells | The dialog owners in `MainWindow/Dialogs.cs`, `MenuItems` | Repeated per feature | 4 |
 | Settings | `Setting`, `Editor`, `Schedule`, `PeriodSpan`, `Overview` | Page and search restate them | 5 |
 | Custom-drawn controls | `Controls`, and the map's own owners | Each control has its own | 6 |
@@ -145,61 +202,103 @@ owner, and the stage that completes it.
 | What every plugin shares | The hosts: `VideoLookup` with `ProviderOption`, and `Supplier` | Plugins repeat host work | 8 |
 | Downloaded data files | `Shared/DataDownload` with `IDataset` | IMDb and city data each | 9 |
 | Subtitle operations | `Subtitles.Acquisition` | One shell per operation | 10 |
-| Mechanics the table and the app both need | A small library beside `lib/Glyphs` (decision 1) | A copy on each side | 11 |
+| Rules inside the table | `Body/Row`, `ItemIdentity` | Copies inside the library | 11 |
 | Tokens, styles and shared controls | `App.xaml` and `Controls` | Pages write literals | 12 |
 | Engine paths, text, errors and Windows resources | `Engine.h`, `Owned.h`, `Drives` | File-local copies | 13 |
 | Engine command, save and storage shells | `Commands.cpp`, `Changes`, `Files.cpp`, `Storage.cpp`, `Policy.cpp` | Repeated per command | 14 |
 | Handler registration | One table in `Registration.cpp` | 4 lists | 14 |
 | Engine windows | `Acrylic`, `Popup`, `Toasts`, as [engine instructions](../../engine/AGENTS.md) say | Copies in each window | 15 |
-| Facts both processes state | The engine sends them (decision 2) | Both state them; 4 disagree | 16 |
-| Test and diagnostic harness | `ProofHarness`, `CaptureMatrix`, one probe base | Copies per file | 17 |
+| Test and diagnostic harness | `ProofHarness`, `CaptureMatrix` | Copies per file | 16 |
 
-## Decisions for the owner
+## Decided by the owner
 
-1. **Where do mechanics live that the table and the app both need?**
-   Recommended: a small library beside `lib/Glyphs`, which is how the
-   repository already shares code between the two. The other choice is to
-   make them public in TableView; that puts non-table API into the table's
-   public contract, and code that does not use the table cannot reach it.
-   Its name goes through the naming review.
-2. **How do the two processes agree on a setting's range?** Recommended:
-   the engine sends each setting's range in the settings snapshot it
-   already sends, and the app stops stating ranges, because the owner that
-   knows a fact passes it. This changes the pipe contract and the protocol
-   version. The other choice keeps both lists and records the pairs in the
-   pipe contract, which removes no copy.
-3. **Does the direction rule above become contract text?** Recommended:
-   yes. Without it stage 2 has no standard to review against.
-4. **Are the six probe pages in `lib/TableView/sample/Probe` still in
-   use?** They hold 8,841 lines and last changed on 8 October 2026. If
-   their questions are answered, deleting them is the tidy result. If they
-   stay, stage 17 gives them one base page.
+The owner decided both on 12 November 2026.
 
-Every other choice in this plan has a default, stated in its stage.
+1. **The direction rule above becomes contract text.** Stage 2 adds it to
+   the architecture. The base stays two areas that name each other.
+2. **The six probe pages in `lib/TableView/sample/Probe` stay.** No stage
+   changes them. Nothing opens them today: the sample's window navigates
+   to four other pages (`lib/TableView/sample/MainWindow.cs` 31 to 43),
+   and no file outside the folder names a probe page.
+
+Every other choice in this plan has a default, stated in its stage or
+under [What stays as it is](#what-stays-as-it-is).
+
+## What approval covers, and the gate of each stage
+
+Approval of this plan covers the method, the table of owners, the order and
+each stage's "Settled as" choices, because each of those choices changes
+what a person sees. A choice that the owner strikes returns to its stage's
+gate as an open question. Approval covers no stage's code, because about
+half of the findings rest on one reader and several stages have a question
+that only reading answers.
+
+Each stage therefore starts with a gate, and no code is written before the
+gate is done:
+
+1. Re-read the findings that the stage marks "to re-read". Done when each
+   one is kept, with the one sentence that states its rule, or dropped.
+2. Answer the stage's open questions from the code and the owning contract.
+   Done when each answer cites a file and line or a contract section.
+3. Design the owner's interface with the `/codebase-design` skill. Done
+   when every caller the stage lists maps to a member of that interface, or
+   stays as it is with its reason.
+4. Search the product code, the capture journeys and `app/tests` for each
+   name the stage changes. Done when each name has its list of consumers.
+5. Write the result into the stage's gate record,
+   `docs/plans/22-one-owner-per-rule/stage-NN.md`: each owner, its
+   interface, each caller with the member it will call, and the files its
+   change may edit. State the stage's cost in builds and hours. The gate
+   record takes the place of the stage's text for the session that
+   implements it, so two sessions never edit this plan at once.
+
+**Owner ruling, 12 November 2026: the implementation asks the owner
+nothing.** The owner then authorized every build and check the batches
+need, and asked for proof that nothing regressed. The gate decides what this
+plan does not settle, such as a choice about what a person sees, by the
+contracts, the Owner rulings and
+[usability](../contracts/architecture.md#usability-comes-first). It writes
+the choice into the gate record, and the batch report names it. A recorded
+decision changes only where the stage cannot be correct without the change,
+and the batch report names that too.
 
 ## Stages
 
-Each stage lists what it absorbs. "To re-read" marks findings that one
-reader read on both sides and the lead has not checked; the stage re-reads
-them first and drops any that is not one rule.
+"To re-read" marks findings that one reader read on both sides and the lead
+has not checked.
 
 ### 1. Name the facts
 
-Owner per fact; no new file. The compiler checks every move.
+Owner per fact; no new file. Reads the
+[pipe API contract](../contracts/pipe-api.md) for the engine's words.
 
-- **Engine errors.** `CommandException.Code` becomes an enum that the pipe
-  client parses once. A word the app does not know becomes `Unknown` and
-  the exception keeps the engine's text, so the person still sees it. One
-  member answers "the folder was refused". Callers: `Shell/Inspector.cs`
-  90, 1021; `Shell/MainViewModel.cs` 1209, 1220;
-  `Shell/MainViewModel/Actions.cs` 242; `Shell/Notifications.cs` 490, 491,
-  809; `Torrents/AddDraft.cs` 224, 889; `Torrents/MoveDraft.cs` 135;
-  `Torrents/Torrent.cs` 193, 196, 203; `Shared/TorrentSource.cs` 229.
+- **Engine refusals.** The engine's word stays on `CommandException`,
+  because it is the word on the pipe and the key of the `errors` text
+  (`Shared/Strings.cs` 198; 50 keys). The app does not copy the engine's
+  whole list. The refusals that the app handles differently become one enum
+  on the exception, with one member for every other refusal, and a question
+  that covers several words, such as "the folder was refused", becomes one
+  member. Callers: `Shared/TorrentSource.cs` 229; `Shell/Inspector.cs` 90,
+  1021; `Shell/MainViewModel.cs` 1209, 1220; `Shell/Notifications.cs` 490,
+  491, 809; `Torrents/AddDraft.cs` 224, 710, 889; `Torrents/MoveDraft.cs`
+  135; and the capture journey `Shell/MainWindow/Capture.cs` 3175. The
+  enum states that its words are those of the engine's `ErrorCode`
+  (`engine/inc/Enums.h` 702 to 735), so a reader of one side finds the
+  other.
+- **A torrent's problem.** A torrent row's `ErrorCode` is a second list of
+  words, with its own `torrent_errors` text (17 keys). `Torrent` already
+  owns their text in one getter (`Torrents/Torrent.cs` 186 to 208), which
+  stays. One comparison is outside it: `Shell/MainViewModel/Actions.cs`
+  242 asks whether a move lost its source, and that becomes one member on
+  `Torrent`. No enum is added. The capture journey `CaptureFiles.cs` 270
+  compares another word and stays as it is.
 - **Workspace pages.** `Navigation.IsWorkspace` becomes internal. Callers:
   `Shell/MainWindow/Workspace.cs` 112, 119, 287, 318; `Actions.cs` 611;
   `Connections.cs` 38; `Chrome.cs` 357; `Shell/Inspector/Selection.cs` 25.
-- **Torrent state groups.** `Settings/Overview.cs` 87 calls
-  `MainViewModel.Matches` (`Shell/MainViewModel/Finding.cs` 161).
+- **Torrent state groups.** The rule that says which states a filter
+  covers reads only the torrent, so it moves from `MainViewModel.Matches`
+  (`Shell/MainViewModel/Finding.cs` 161) to `Torrent`, and
+  `Settings/Overview.cs` 87 calls it.
 - **Peer facts.** "Connected" and "active" become members of the peer
   record. Callers: `Torrents/Swarm.cs` 172; `Torrents/MapModel.cs` 993.
 - **File priorities.** One ordered list of value, text key and glyph in
@@ -220,49 +319,86 @@ Owner per fact; no new file. The compiler checks every move.
 - **A subtitle job is still active.** One member on `Acquisition` and one
   SQL constant. Callers: `Acquisition/Acquire.cs` 692; `Storage.cs` 465,
   798; `Work.cs` 20; `Jobs.cs` 84.
-- **Constants at their owners:** 125,000 bytes per Mbit/s
-  (`Settings/ConnectionSetup.cs` 15, 642, 800; `Shell/Inspector/Peers.cs`
-  107); the port range (`Settings/Proxy.cs` 288, `Editor.cs` 774,
-  `Shared/Network/ProviderHttp.cs` 359); the repository address
+- **Constants at their owners.** A constant that two features read, or
+  that the base reads, lives in the base: the search pause
+  (`Controls/FileSelection.cs` 18, `Library/Browser.cs` 899) and the
+  dataset age (`Shell/MainWindow/Datasets.cs` 64, `Shared/DatasetRow.cs`
+  167). The others stay with the owner that already holds one copy:
+  125,000 bytes per Mbit/s (`Settings/ConnectionSetup.cs` 15, 642, 800;
+  `Shell/Inspector/Peers.cs` 107); the repository address
   (`Shell/AboutPage.xaml.cs` 38, `CreditsPage.xaml.cs` 353, `App.cs` 24,
-  `Shell/Updates.cs` 22); the search pause (`Controls/FileSelection.cs` 18,
-  `Library/Browser.cs` 899); the minimum window size
-  (`Shell/MainWindow/Chrome.cs` 606, `Placement.cs` 162); the dataset age
-  (`Shell/MainWindow/Datasets.cs` 64, `Shared/DatasetRow.cs` 167). To
-  re-read: the plus and minus key codes (`MainWindow/Actions.cs` 60,
+  `Shell/Updates.cs` 22); the minimum window size
+  (`Shell/MainWindow/Chrome.cs` 606, `Placement.cs` 162). To re-read: the
+  plus and minus key codes (`MainWindow/Actions.cs` 60,
   `Torrents/SpeedGraph.xaml.cs` 42, `PeerMap/Navigation.cs` 18); the split
   height (`Workspace.cs` 26, `Placement.cs` 357); the guess count
   (`Subtitles/Batch.cs` 211, `Acquisition.cs` 17); file kinds written as
-  numbers in SQL (`Library/Store.cs` 677).
+  numbers in SQL (`Library/Store.cs` 677); the 4-pixel distance that turns
+  a press into a drag (`Settings/Week.cs` 602;
+  `Torrents/PeerMap/Navigation.cs` 137, as its square), which two features
+  read, so it lives in the base.
 
-Settled as: the home page counts seeding torrents as the filter does. A
-peer is active only while connected. `.ssa` and `.vtt` are subtitles
-everywhere. A restored window is never narrower than the title bar needs.
+Settled as: a refusal the app does not handle differently still shows its
+own text, because the word stays. The home page counts seeding torrents as
+the filter does. A peer is active only while connected. `.ssa` and `.vtt`
+are subtitles everywhere. A restored window is never narrower than the
+title bar needs.
 
 ### 2. Make dependencies point one way
 
-- **Failures carry their text.** One failure base in `Shared` states its
-  catalogue group, key and arguments. `Library.VideoException`,
-  `Shell.UpdateException` and `Subtitles.SubtitleException` use it, and
-  `Strings.Error` no longer names a feature. This also removes the four
-  copies of the subtitle failure key (`Shared/Strings.cs` 225,
-  `Shell/Notifications.cs` 515, `Shell/MainViewModel.cs` 303,
-  `Subtitles/Batch.cs` 253).
+The files are those in
+[Direction between the app areas](#direction-between-the-app-areas).
+
+- **Failures carry their text.** `Library.VideoException`,
+  `Shell.UpdateException` and `Subtitles.SubtitleException` each state
+  their own text, and `Strings.Error` no longer names a feature. This also
+  removes the four copies of the subtitle failure key (`Shared/Strings.cs`
+  225, `Shell/Notifications.cs` 515, `Shell/MainViewModel.cs` 303,
+  `Subtitles/Batch.cs` 253). `app/tests/SourceChecks.ps1` reads these
+  exception types by name, so it changes with them.
 - **A data download fails as a download.** `DataDownload` and
   `Geolocation` stop using Library's video failure. Stage 9 builds on this.
-- **Trace, then move down or move home:** `Shared/DialogPreference.cs`,
-  `Shared/TorrentSource.cs`, `Controls/Pane.cs`, `Controls/SettingsRow.cs`,
-  and the feature pairs `Torrents/AddDraft.cs`, `Torrents/SpeedLimit.cs`,
-  `Settings/ConnectionSetup.cs`, `Settings/Editor.cs`,
-  `Library/Browser/Information.cs`, `Settings/Editor/Plugins.cs`. For each
-  one, the type that two areas need moves to `Shared` or `Controls`, or the
-  file moves to the feature that alone uses it.
-- **The direction rule** goes into the architecture (decision 3).
+- **`Setting` moves to the base, by default.** Five files outside Settings
+  name it (`Controls/SettingsRow.cs`, `Shared/DialogPreference.cs`,
+  `Shell/MainViewModel/Finding.cs`, `Shell/MainWindow/Workspace.cs`,
+  `Shell/Updates.cs`), and two drafts in `Torrents` read its values, so it
+  is a type that two features need. It is built from `SettingStore` and
+  `Strings` and calls the number parsers of `Editor`. Its store moves with
+  it, and `SettingsRow` stays one control.
+- **The number parsers move to the base in either case**, so
+  `Torrents/SpeedLimit.cs` 155 and 172 no longer name `Settings.Editor`.
+- **`Torrents/RemovalDraft.cs` stops naming Subtitles.** Its creator in
+  `Shell` passes the operation that deletes a removed torrent's subtitles.
+- **The unused `using` lines go.**
+- **The direction rule** goes into the architecture when the last of the
+  eleven files follows it, because a contract describes how the product
+  works now.
 
-Not traced yet: what each of those ten files takes from the other area.
-The stage starts with that trace.
+Open questions for the gate:
+
+- Which way a failure carries its text. `CommandException` already takes
+  `Strings` and overrides `Message` (`Shared/Engine/PipeClient.cs` 877 to
+  888). The gate picks that way, or a stated group, key and arguments, for
+  every failure, so the stage does not add a second way.
+- Whether `Setting` moves. The other remedy keeps it in Settings and
+  splits `SettingsRow`, which changes the 67 `Setting="{…}"` rows of
+  `Settings/SettingsPage.xaml` and leaves `DialogPreference` and the two
+  drafts dependent on Settings. The gate lists everything `Setting` takes
+  from Settings, then confirms the default or takes the other remedy.
+- What `Shared/DialogPreference.cs` takes from `Editor`, so that its
+  creator in `Shell` can pass that and the file stays in the base, where
+  `Shared/Dialog.cs` and two drafts in `Torrents` use it.
+- Who else uses `Shared/TorrentSource.cs`, which decides whether it moves
+  to `Torrents`.
+- Why `Settings` names `Torrents.SpeedLimit`, which decides where that
+  draft lives.
+- Whether `Coverage` reaches `Settings/Editor/Plugins.cs` through the
+  model, because the architecture records that `Editor` owns plugin
+  coverage reads.
 
 ### 3. Text and paths
+
+Reads [localisation](../contracts/localisation.md), which owns formatting.
 
 - **`Strings` formats; features do not.** Absorbs: a count where 0 means
   unlimited (`Settings/Editor.cs` 325, `ConnectionSetup.cs` 717); "reason;
@@ -305,7 +441,10 @@ reported.
   (`MainWindow/Library.cs` 226; `Shell/InspectorPane/Library.cs` 216).
   `Library/Details.cs` 66 calls `OriginActions.Command`. To re-read: one
   copy-magnet and copy-hash rule (`Shell/MainViewModel/Actions.cs` 459;
-  `Shell/Inspector.cs` 128, 996); the Move and Download predicate
+  `Shell/Inspector.cs` 128, 996), which keeps the Inspector's command off
+  until the magnet arrives (`Shell/Inspector.cs` 262), because the engine
+  sends no magnet in a General view whose tracker detail has not arrived
+  (`engine/src/Torrent.cpp` 1428); the Move and Download predicate
   (`MainViewModel/Actions.cs` 189, 198).
 - **Shell rules.** `Shell/Notifications.cs` 66 and 86 become one. The
   "features may continue" guard in `Shell/Features.cs` 319, 336, 346, 382,
@@ -320,12 +459,15 @@ reported.
   `SettingsPage.xaml.cs` 917); name equals tooltip (`Chrome.cs` 650 is
   private; `InspectorPane/Peers.cs` 263); open a path (`Opening.cs` 12,
   `MainWindow/Library.cs` 68); popup theme (`Chrome.cs` 730, `Work.cs`
-  173).
+  173); whether Ctrl, Alt or Shift is down, read from the platform in nine
+  places (`MainWindow/Actions.cs` 72, 78, 83; `Shell/MainWindow.cs` 146;
+  `Torrents/PeerMap/Navigation.cs` 250, 255; `PiecesMap.xaml.cs` 564;
+  `SpeedGraph.xaml.cs` 721, 724).
 
 Settled as: the Library menu offers metadata commands only for a row that
 supports metadata. A dialog's primary button is disabled while the window
-closes. Copy magnet does nothing for a torrent without a magnet. The guard
-checks reset and a missing subtitle worker in every copy.
+closes. The guard checks reset and a missing subtitle worker in every
+copy.
 
 Open question: `Shell/MainWindow/Placement.cs` 91 waits inside the
 rendering event, and `FrameCallback` runs after it. Trace whether startup
@@ -375,6 +517,8 @@ stated once each. A brush's opacity counts, and channel values round.
 
 ### 7. Storage
 
+Reads the [database contract](../contracts/database.md).
+
 - `Shared/Storage/Database.cs` owns the connection options, the cancel
   hook and the interrupt mapping; `Library/Imdb/Dataset.cs` 391 to 427 and
   508 to 530 use them.
@@ -382,7 +526,7 @@ stated once each. A brush's opacity counts, and channel values round.
   `Library/Store/Identification.cs` 11, 161, 299, 318, 465 and
   `Shared/Storage/Database/Files.cs` 50 read it, as the view in `Schema.cs`
   205 does. A temporary view needs no schema revision; a stored view is a
-  migration under the [database contract](../contracts/database.md).
+  migration under the database contract.
 - To re-read: one small JSON state file loader and saver (`Shell/Updates.cs`
   116, 420; `Shell/MainWindow/Placement.cs` 141, 319); the Library filter
   vocabulary as one table (`Library/Store.cs` 237, 698, 760;
@@ -402,9 +546,8 @@ This stage has the largest design. It starts with the
 
 - **In `Shared/Network`:** the built-in key (`Subtitles/Suppliers`
   `OpenSubtitles.cs` 26, `SubDL.cs` 23, `SubSource.cs` 43; `Library`
-  `Tmdb/Provider.cs` 26, `Omdb/Provider.cs` 26, `MdbList/Provider.cs` 28)
-  and which key is sent (`Library/VideoLookup.cs` 230;
-  `Subtitles/Supplier.cs` 99). To re-read: reading a JSON text property
+  `Tmdb/Provider.cs` 26, `Omdb/Provider.cs` 26, `MdbList/Provider.cs`
+  28). To re-read: reading a JSON text property
   (`Supplier.cs` 517; `Omdb` 235; `Tmdb` 323; `MdbList` 201; `Wikidata`
   307); the common part of a reply failure (`Library/ProviderJson.cs` 63;
   `Supplier.cs` 361; `Shared/DataDownload.cs` 37); address safety, which
@@ -443,7 +586,8 @@ discard and the failure mapping. The IMDb data and the city data keep
 their source, their build and their reader. Absorbs `Shared/Geolocation.cs`
 149 to 240, 272 to 337 and 367 to 446; `Library/Browser/Information.cs`
 281 to 348 and 373 to 431; `Library/Imdb/Dataset.cs` 106 to 238 and 483 to
-503.
+503. `app/tests/SourceChecks.ps1` 996 constructs `Shared.DataDownload` by
+name, so it changes with the type.
 
 Open question: replacing a file while its reader is open. The city data
 closes and reopens its reader inside the lock; the shared owner must keep
@@ -472,40 +616,32 @@ re-read, except where marked.
 Settled as: a view refreshes once for a burst of changes, and reports a
 failure only while it is attached to its model.
 
-### 11. Mechanics the table and the app both need
+### 11. Rules inside the table
 
-Depends on decision 1. Absorbs:
+Reads the TableView contract and the
+[TableView instructions](../../lib/TableView/AGENTS.md), whose ruling
+starts every table change from the table's history. Paths in this stage
+are under `lib/TableView/src`.
 
-- the text catalogue loader (`lib/TableView/src/Strings.cs` 114 to 199;
-  `Shared/Strings.cs` 62 to 135);
-- the tooltip that shows the full text only while it is trimmed
-  (`lib/TableView/src/Header/Cell.cs` 171; `Controls/Trimming.cs`);
-- the click-versus-drag distance (`lib/TableView/src/DragDistance.cs`;
-  `Settings/Week.cs` 602; `Torrents/PeerMap/Navigation.cs` 137);
-- "is this key down" (`lib/TableView/src/Table/Input.cs` 1437; nine sites
-  in `Shell/MainWindow/Actions.cs`, `Shell/MainWindow.cs`,
-  `Torrents/PeerMap/Navigation.cs`, `PiecesMap.xaml.cs` and
-  `SpeedGraph.xaml.cs`).
+- `Body/Row.FindOwner` serves `CellsPanel.cs` 97.
+- One `KeyOf` on `ItemIdentity` replaces `Table/View.cs` 653,
+  `Body/Slots.cs` 492 and `Body/Projection.cs` 194.
+- To re-read: `Header/Strip.cs` 759 against `Table/Input.cs` 261;
+  `Input.cs` 521 against 560; `Header/Strip.cs` 205 against
+  `Header/Menu.cs` 111; `CellsPanel.cs` 209 against `EffectiveLayout.cs`
+  110; `CellsPanel.cs` 136 against 289.
 
-Inside the table: `Body/Row.FindOwner` serves `CellsPanel.cs` 97; one
-`KeyOf` on `ItemIdentity` replaces `Table/View.cs` 653, `Body/Slots.cs`
-492 and `Body/Projection.cs` 194. To re-read: `Header/Strip.cs` 759
-against `Table/Input.cs` 261; `Input.cs` 521 against 560;
-`Header/Strip.cs` 205 against `Header/Menu.cs` 111; `CellsPanel.cs` 209
-against `EffectiveLayout.cs` 110; `CellsPanel.cs` 136 against 289.
+The header menu's check items and the app's `Controls/MenuItems` are the
+area that the Switch.cs work settled; this stage confirms that one
+mechanism remains.
 
-Settled as: the Windows drag distance applies everywhere, so a person who
-raised it gets the same steadier clicks in the schedule and the map. A
-placeholder without a closing brace is an error in both catalogues.
-
-The header menu's check items and `Controls/MenuItems` are the area that
-the Switch.cs work settled; this stage confirms that one mechanism
-remains.
+The table and the app share no code after this stage either;
+[What stays as it is](#what-stays-as-it-is) gives the reason.
 
 ### 12. Tokens, styles and shared controls
 
-`App.xaml` owns tokens and styles and `Controls` owns shared controls;
-pages stop writing literals.
+Reads the [UI contract](../contracts/ui.md). `App.xaml` owns tokens and
+styles and `Controls` owns shared controls; pages stop writing literals.
 
 - One dictionary for the button brush aliases (`App.xaml` 599, 649, 699;
   `Shell/MainWindow.xaml` 82), as `Controls/ButtonResources.xaml` does.
@@ -529,26 +665,27 @@ pages stop writing literals.
   `Controls/SettingsLink.cs` 62); the toggle row, 35 times in
   `SettingsPage.xaml`; the legend colours (`Settings/Scheduler.xaml` 63
   against `Week.xaml` 33); secondary text set by hand at about 26 sites;
-  dividers; the icon font named in three spellings at 130 sites.
+  dividers.
 
 Settled as: every failure shows the same glyph; the UI contract's icon
 rules choose which. Every folder row has help text, a tooltip and an
 automation identifier.
 
 Open question: whether a moved style changes clipping, wrapping or
-spacing. One capture review answers it, in the smallest modes that show
-the changed surfaces.
+spacing. Each style or template is its own change and names the one
+capture mode that shows it. One capture review then answers the question
+for all of them.
 
 Not verified: whether the three identical theme dictionaries can become
 one.
 
 ### 13. Engine paths, text, errors and Windows resources
 
+Reads the [engine contract](../contracts/engine.md).
+
 - A scoped COM apartment in `engine/inc/Owned.h` replaces the hand-written
   ones (`engine/src/Main.cpp` 254; `Registration.cpp` 165, 644;
   `Engine/Removal.cpp` 470; `Desktop/Window.cpp` 73).
-- One predicate for a short file lock, and one retry
-  (`engine/src/Store.cpp` 13; `Payload.cpp` 290; `Engine/Storage.cpp` 41).
 - `Checks` from `engine/src/Torrent.cpp` 25 serves `Engine/Alerts.cpp`
   270, `Checkpoints.cpp` 126 and `Turns.cpp` 174.
 - Two names for the two `SameFolder` rules (`engine/src/Engine.cpp` 46
@@ -570,11 +707,19 @@ one.
   `Engine/Session.cpp` 972); the priority choices (`Engine/Additions.cpp`
   55; `Torrent.cpp` 58); a file's pieces (`Torrent.cpp` 288, 1612); the
   path-length literal (`Engine.cpp` 143, 155, 318; `Main.cpp` 72).
+- To re-read: the engine's language fallback (`engine/src/Strings.cpp`
+  34). [Localisation](../contracts/localisation.md) rules that every
+  project's loader resolves a missing message from a shipped parent
+  language, then English. If the engine does otherwise, it is corrected
+  to the contract.
 
-Settled as: `ERROR_LOCK_VIOLATION` is a short lock in every retry. Names
-compare as Windows compares them (`CompareStringOrdinal`).
+Settled as: names compare as Windows compares them
+(`CompareStringOrdinal`).
 
 ### 14. Engine command, save and storage shells, and registration
+
+Reads the [engine contract](../contracts/engine.md) and its references for
+the commands it touches.
 
 - One outcome-to-reply conversion (`engine/src/Engine/Commands.cpp` 109 is
   the helper; 183, 189, 327, 463, 607 repeat it).
@@ -627,35 +772,21 @@ round.
 Open question: the look of the popup, its menu and the splash after the
 shared code moves. One look at each, in light and dark, answers it.
 
-### 16. Facts both processes state
+### 16. Test and diagnostic harness
 
-Depends on decision 2. The pairs that disagree today:
+The stage has two parts, because the parts edit different projects.
 
-- history intervals (`Settings/Editor.cs` 875 states ranges;
-  `engine/src/Engine/Settings.cpp` 199 accepts fixed choices);
-- the proxy port (`Settings/Proxy.cs` 288 refuses 0; `Settings.cpp` 394
-  accepts it);
-- speed units (`engine/src/Desktop/Tray.cpp` 316 stops at GiB;
-  `Shared/Strings.cs` 277 goes to TiB);
-- language fallback (`engine/src/Strings.cpp` 34 uses the closest
-  catalogue; the C# loader applies every parent language).
+**16a, in the table's tests.** The tests use `ProofHarness`:
+`Descendants` (`lib/TableView/tests` `ColumnFitTests.cs` 835,
+`ColumnMenuTests.cs` 430, `ColumnMoveTests.cs` 450,
+`RealColumnDragTests.cs` 259, `RealHeaderMenuTests.cs` 87); `Shot`
+(`ColumnMoveTests.cs` 517; `SortingTests.cs` 859); the key-injection setup
+(`RealHeaderMenuTests.cs` 110; `RealKeyboardTests.cs` 145).
 
-All four are to re-read. The [pipe API contract](../contracts/pipe-api.md)
-lists the pairs that must stay on both sides, so a change to one names the
-other.
-
-### 17. Test and diagnostic harness
-
-- Table tests use `ProofHarness`: `Descendants` (`lib/TableView/tests`
-  `ColumnFitTests.cs` 835, `ColumnMenuTests.cs` 430, `ColumnMoveTests.cs`
-  450, `RealColumnDragTests.cs` 259, `RealHeaderMenuTests.cs` 87); `Shot`
-  (`ColumnMoveTests.cs` 517; `SortingTests.cs` 859); the key-injection
-  setup (`RealHeaderMenuTests.cs` 110; `RealKeyboardTests.cs` 145).
-- Capture journeys call `CaptureMatrix`
-  (`Shell/MainWindow/CaptureLibrary.cs` 481) in place of the loop at
-  `Capture.cs` 1398, 1549, 1753, 2285, 2469, 2847; `CaptureFiles.cs` 93;
-  `CaptureSearch.cs` 65; `CaptureTraffic.cs` 62.
-- The probe pages follow decision 4.
+**16b, in the app.** Capture journeys call `CaptureMatrix`
+(`Shell/MainWindow/CaptureLibrary.cs` 481) in place of the loop at
+`Capture.cs` 1398, 1549, 1753, 2285, 2469, 2847; `CaptureFiles.cs` 93;
+`CaptureSearch.cs` 65; `CaptureTraffic.cs` 62.
 
 ## The design step of stages 8, 9 and 10
 
@@ -665,79 +796,90 @@ data file is, and what a subtitle operation is. An interface chosen without
 those decisions is fitted to today's callers and is reshaped at the next
 feature.
 
-The owner starts each of these stages with the
-`/improve-codebase-architecture` skill and gives it the stage's area as its
-direction, for example "the Library providers and the subtitle suppliers,
-plan 22 stage 8". The skill reads that area, shows its candidates, and then
-asks the owner one question at a time until the shape of the module is
-decided. It designs alternative interfaces side by side for the owner to
-compare. Only the owner can start the skill.
-
-The direction is required. Without one the skill chooses where to read from
-recent commits, and reads code that this plan already covers.
-
-The direction also states three things that the skill cannot know:
+The owner ruled that the implementation asks the owner nothing, so the
+strongest model available to the lead does the gate of each of these
+stages, and of stage 2, which decides where shared types live. It designs
+the interface with the `/codebase-design` skill, including that skill's
+step that designs the interface in more than one way and compares them. It
+starts from three facts:
 
 - The settled decisions are the architecture's
   [ownership decisions](../contracts/architecture.md#ownership-decisions)
-  and the Owner rulings. The skill looks for them in `docs/adr/`, which
-  this repository does not have, so without this line it can propose what
-  is recorded as rejected.
+  and the Owner rulings.
 - A candidate is judged by whether a rule gets one place to change. Easier
   tests are not a benefit by themselves, as
   [testing](../agents/testing.md#what-earns-a-test) rules.
 - The stage's findings and its "Settled as" choices are the starting
-  point, so the skill does not search for them again.
+  point.
 
-Each decision goes into the stage's text in this plan when it is made. A
-new domain term goes into [CONTEXT.md](../../CONTEXT.md). A candidate that
-the owner rejects for a lasting reason goes into the ownership decisions,
-so a later review does not propose it again. The stage is then implemented
-against the decided interface.
+Each decision goes into the gate record. A new domain term goes into
+[CONTEXT.md](../../CONTEXT.md). A candidate rejected for a lasting reason
+goes into the ownership decisions, so a later review does not propose it
+again. An Opus session then implements the stage against the gate record.
 
 ## Order, tracks and cost
 
-Three tracks touch different files, so they can run side by side:
+Three tracks can run side by side, and each file belongs to one track, so
+two agents never edit one file:
 
-- **App:** 1, 2, 3, 4, 5, 7, 8, 9, 10, 12, in that order. Stage 6 joins
-  when no session is working on the map.
-- **Engine:** 13, 14, 15.
-- **Library and tests:** 17, then 11 after stage 4.
+- **App**, every file under `app/`: 1, 2, 3, 4, 5, 7, 8, 9, 10, 12, in that
+  order. Stage 6 joins when no session is working on the map, and 16b fits
+  anywhere after stage 1.
+- **Engine**, every file under `engine/`: 13, 14, 15.
+- **Libraries**, every file under `lib/`: 16a and 11.
 
-Stage 16 comes last, because it touches both processes.
+Each track edits the contracts of its own area: the app track the app's
+contracts and the architecture, the engine track the engine contract, the
+libraries track the TableView documents. The lead makes every change to
+this plan, so no two tracks edit one document.
 
 The order inside the app track follows dependence: names first, because
 later stages use them; then direction, because it decides where each later
 owner lives; then the owners that many features call; then the large
 designs; then XAML, which needs the one capture review.
 
-For each stage, a session that may judge design writes the owner's
-interface and the settled choices, a cheaper session moves the callers
-against that text, and the lead reads the diff in the
-[focused review passes](../agents/compilation.md#focused-review-passes). A
-stage starts only when no other session has uncommitted edits in its
-files.
+For each stage, an Opus session does the gate and moves the callers;
+the gates named in [the design step](#the-design-step-of-stages-8-9-and-10)
+go to the strongest model first. The session's work is done when a search
+for each copy the stage absorbs finds only its owner. It does not build;
+the lead builds each batch. An owner's change starts only when no other
+session has uncommitted edits in its files. Before a batch builds, an
+independent reviewer reads its diff in the
+[focused review passes](../agents/compilation.md#focused-review-passes),
+and the stage's session fixes what the reviewer finds.
 
 Builds are batched under [compilation](../agents/compilation.md): stages
-that are ready join one build.
+that are ready join one build. Every app batch builds with `-Capture`, so
+the capture journeys compile with each change. A batch is committed when
+its build and its checks pass.
+
+What proves that nothing regressed, as the owner asked:
+
+- In each batch, the build compiles every consumer of a changed name,
+  capture journeys included, and the existing checks whose subject the
+  batch changed pass on that build. The batch report names each behavior
+  that changed, and each is a "Settled as" choice or a gate decision.
+- At the end, one cross-feature regression pass on one build: every app
+  check script, the table tests without the interactive category, the
+  engine checks without `-Transfer` and `-OptIn`, `Transitions.exe` if the
+  storage control changed, and the capture review of stage 12.
 
 | Batch | Stages | Build | Checks beyond source review |
 | --- | --- | --- | --- |
-| A | 1, 2, 3 | App | None expected |
-| B | 4, 5, 7 | App | The check scripts whose subject changed |
-| C | 8, 9, 10 | App | Provider and IMDb checks for the changed paths, from saved pages |
-| D | 6, 11 | App and table tests | Table tests for the changed header and text paths |
-| E | 12 | Capture | One capture review |
-| F | 13, 14 | Engine | Filtered engine checks |
-| G | 15 | Engine | One look at each engine window |
-| H | 16 | Both | The existing pipe sample |
-| I | 17 | Table tests and capture | None; the next table test run and capture use them |
+| A | 1, 2, 3, 16b | App, with capture | The check scripts that name a moved type |
+| B | 4, 5, 7 | App, with capture | The check scripts whose subject changed |
+| C | 8, 9, 10 | App, with capture | Provider and IMDb checks for the changed paths, from saved pages |
+| D | 16a, 11 | Table tests | Table tests for the changed header and body paths |
+| E | 6 | App, with capture; joins another app batch if one is ready | None expected |
+| F | 12 | App, with capture | One capture review |
+| G | 13, 14 | Engine | Filtered engine checks |
+| H | 15 | Engine | One look at each engine window |
 
-Estimate: 17 stages, 9 builds, one capture review and three design sessions
-with the owner; 25 to 40 hours of agent work, about one week with three
-tracks. No stage is designed in
-detail yet, so the estimate is rough. Each stage states its own cost
-before it starts.
+Estimate: 16 stages, 8 builds and one more for the regression pass, one
+capture review and four design gates by the strongest model; 25 to 40
+hours of agent work, about one week with three tracks. No stage is
+designed in detail yet, so the estimate is rough. Each stage states its
+own cost at its gate.
 
 ## What stays as it is
 
@@ -748,31 +890,70 @@ before it starts.
   language codes.
 - The two title-matching strengths in `Subtitles/Supplier.cs` and
   `Library/VideoLookup/Identification.cs`. They are different rules.
+- The engine's three retry rules. `Retryable`
+  (`engine/src/Engine/Storage.cpp` 41) decides which storage failures the
+  engine tries again later. The store's retry (`engine/src/Store.cpp` 13)
+  and the delete retry (`Payload.cpp` 290) each keep their own list of
+  Windows errors and their own duration.
+- The text catalogue loader in each project. Localisation places a loader
+  in each project and gives all of them one rule. No library is added to
+  share one function: a new project would also change both solution
+  files, the installer's lists of shipped files, the engine build's
+  excluded inputs (`Build.ps1` 37) and the architecture's project table.
+- The table's own drag distance, key-state read and header tooltip. The
+  app has no copy of the first. The second is one platform call. The
+  third is tied to the table's header label, and `Controls/Trimming.cs`
+  is an attached property for any text block.
+- The setting ranges on both sides of the pipe. The engine checks what
+  crosses the pipe, and the app states the same ranges for its input
+  controls; a check repeated where data crosses a process boundary is not
+  a second owner. All 14 agree: 12 are equal (`Settings/Editor.cs` 595 to
+  956; `engine/src/Engine/Settings.cpp` 345 to 385), and the two interval
+  settings are lists of choices in the engine (`Settings.cpp` 199, 200)
+  that the app's two drop-down lists offer exactly
+  (`Settings/SettingsPage.xaml` 1936 to 1964).
+- Two differences between the processes that no person meets. The proxy
+  editor requires a port from 1 for a proxy in use, and the engine's
+  stored value also accepts 0 for none (`Settings/Proxy.cs` 288;
+  `Settings.cpp` 394). The tray's speed text stops at GiB per second
+  (`engine/src/Desktop/Tray.cpp` 316) and the app's goes to TiB.
+- Facts every reader knows, written where they are used: the port range
+  1 to 65535 (`Shared/Network/ProviderHttp.cs` 359, `Settings/Proxy.cs`
+  288, `Settings/Editor.cs` 773), and "the person's own key, else the
+  built-in one" (`Library/VideoLookup.cs` 230; `Subtitles/Supplier.cs`
+  99), which is one line over two different key stores.
+- The icon font. `Segoe.Font` in `lib/Glyphs` owns it, and `App.cs` 54
+  gives it to XAML as the `SegoeFont` resource.
 - The piece swatches drawn twice in `Torrents/PiecesMap.xaml`. A comment
   at line 303 says the repeat is deliberate.
 - The fast JSON text writer at `engine/src/Torrent.cpp` 1036. Its comment
   gives speed as the reason.
 - The peer map's own frame queue (`Torrents/PeerMap.xaml.cs` 337). It runs
   inside the rendering event on purpose, and motion is judged live.
-- No new test guards a collapsed pair. The compiler and the direction rule
-  guard them.
+- The six probe pages in `lib/TableView/sample/Probe`, as the owner
+  decided.
+- No new test guards a collapsed pair. The capture build and the direction
+  rule guard them.
 
 ## Done when
 
 - A second audit of the changed areas finds none of the pairs listed here.
 - The table of owners and the direction rule are in the architecture, and
   each settled choice is in the contract that owns its behavior.
-- This plan is deleted.
+- The cross-feature regression pass passes.
+- This plan and its gate records are deleted.
 
 ## Not verified
 
 - About half of the findings rest on one reader. They are marked "to
-  re-read".
+  re-read", and each stage's gate re-reads them.
 - `engine/src/Engine/Detail.cpp` was searched and not read.
   `engine/inc/Engine/State.h` was searched for constants only.
 - Tests, the table sample and the capture journeys were compared for
   copied text only. The PowerShell scripts and the JSON catalogues were
   not audited.
-- What the ten files in stage 2 take from the other area.
-- Whether the direction rule has further exceptions that only reading
-  each `using` shows.
+- The files that reach another feature's types through `MainViewModel`
+  were sampled, not counted.
+- The second review checked the decisions, the direction measurement and
+  the items its findings name. It read no stage in full.
+- The [documentation guide](../README.md) does not list this plan yet.
