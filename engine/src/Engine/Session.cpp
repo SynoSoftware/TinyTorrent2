@@ -236,6 +236,13 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
     queueOrder = saved.queueOrder;
     ApplyQueue();
     Unfinished(saved.tasks, saved.tasksContinued);
+    // The saved document already holds these tasks, so an unchanged start
+    // writes nothing. A start that continued them without asking must still
+    // save that, so the next start asks instead.
+    if (!tasksContinued)
+    {
+        recordedTasks = saved.tasks;
+    }
     for (auto& [id, torrent] : torrents)
     {
         torrent.ApplyIntent();

@@ -736,8 +736,9 @@ public:
     // The work that the last end left unfinished, while it waits for the
     // person's answer.
     std::vector<Task> asked;
-    // The work as the last save that RecordTasks made found it; nothing
-    // after that save failed.
+    // The work as the saved document holds it: as the start read it, or as
+    // the last save that RecordTasks made found it; nothing after that save
+    // failed.
     std::optional<std::vector<Task>> recordedTasks;
     // How a try of a give-back ended: what giving back did, the folder whose
     // root did not answer, or the failure.

@@ -574,12 +574,24 @@ try {
             $unrelated.torrent_id = 'unrelated'
             $unrelated.hashes = @(('2' * 40))
             $document.torrents = @($first, $second, $unrelated)
+            # A restored torrent waits for its folder lookup, so the conflict
+            # shows on a later pass, not in the snapshot taken at Ready.
+            function Wait-Conflicts {
+                $until = [DateTime]::UtcNow.AddSeconds(15)
+                do {
+                    $snapshot = (Send-Command @{ command = 'snapshot' }).data
+                    if (@($snapshot.torrents | Where-Object error -eq 'alias_conflict').Count -eq 2) { break }
+                    Start-Sleep -Milliseconds 100
+                } while ([DateTime]::UtcNow -lt $until)
+                return $snapshot
+            }
             foreach ($removed in 'zz-conflict', $torrentId) {
                 [IO.File]::WriteAllBytes($file, [Text.Encoding]::UTF8.GetBytes(($document | ConvertTo-Json -Depth 20)))
                 foreach ($id in $torrentId, 'zz-conflict') {
                     [IO.File]::WriteAllBytes((Join-Path $directory ($id + '.resume')), [byte[]](0))
                 }
-                $snapshot = Start-Engine
+                $null = Start-Engine
+                $snapshot = Wait-Conflicts
                 Assert ($snapshot.torrents.Count -eq 3) 'Restore discarded accepted membership'
                 $conflicts = @($snapshot.torrents | Where-Object { $_.error -eq 'alias_conflict' })
                 Assert ($conflicts.Count -eq 2) 'Restore silently shared a live handle between identities'
@@ -606,7 +618,8 @@ try {
             $null = New-Item -ItemType Directory -Path (Split-Path $shared) -Force
             [IO.File]::WriteAllBytes($shared, [byte[]](11, 22, 33))
             $originalHash = Payload-Hash $shared
-            $snapshot = Start-Engine
+            $null = Start-Engine
+            $snapshot = Wait-Conflicts
             Assert (@($snapshot.torrents | Where-Object error -eq 'alias_conflict').Count -eq 2) 'Readable checkpoints lost the conflict'
             $reply = Send-Command @{ command = 'file_scope'; torrent_ids = @('zz-conflict') }
             Assert ($reply.ok -and $reply.data.kept_files -gt 0) 'The pending identity lost its shared file ownership'
@@ -815,10 +828,17 @@ try {
             Assert ($null -ne $zone) 'The finished file of the unfinished suffix was not marked as downloaded'
             Stop-Engine
             $null = Start-Engine
-            foreach ($torrentId in $identities) {
-                $files = (Get-Files $torrentId)
-                Assert ($files[0].disk_path -eq 'shared.bin' -and $files[0].downloaded -eq 2048) 'The completed shared-file names or verified bytes were lost at restart'
-            }
+            # A restored torrent reads its names and progress after its folder
+            # lookup, so both are null in the first replies (pipe-api.md).
+            $until = [DateTime]::UtcNow.AddSeconds(15)
+            do {
+                $files = @($identities | ForEach-Object {
+                    (Get-Files $_)[0]
+                })
+                if (@($files | Where-Object { $_.disk_path -ne 'shared.bin' -or $_.downloaded -ne 2048 }).Count -eq 0) { break }
+                Start-Sleep -Milliseconds 100
+            } while ([DateTime]::UtcNow -lt $until)
+            Assert (@($files | Where-Object { $_.disk_path -ne 'shared.bin' -or $_.downloaded -ne 2048 }).Count -eq 0) 'The completed shared-file names or verified bytes were lost at restart'
             $reply = Send-Command @{ command = 'remove'; torrent_ids = $identities }
             Assert $reply.ok 'The completed fixture could not be removed while keeping its files'
             $empty = Join-Path $directory 'empty'
@@ -935,6 +955,10 @@ try {
             }
             $reply = Send-Command @{ command = 'delete_files'; torrent_ids = @($remaining) }
             Assert $reply.ok 'A failed no-op move prevented deletion of its original files'
+            # Exit stops a deletion that has not run, and the next start asks
+            # about it (engine/files.md), so the check lets the deletion finish.
+            $until = [DateTime]::UtcNow.AddSeconds(15)
+            while ((Test-Path -LiteralPath $sourceFile) -and [DateTime]::UtcNow -lt $until) { Start-Sleep -Milliseconds 100 }
             Stop-Engine
             $snapshot = Start-Engine
             Assert ($snapshot.torrents.Count -eq 0 -and -not (Test-Path -LiteralPath $sourceFile) -and (Payload-Hash $collisionFile) -eq $collisionHash) 'Deletion after a collision reached the unrelated destination or restored membership'
@@ -979,6 +1003,8 @@ try {
             $null = Start-Engine
             $reply = Send-Command @{ command = 'delete_files'; torrent_ids = $identities }
             Assert ($reply.ok -and $reply.data.kept_files -eq 0) 'The interrupted shared group could not delete its payload'
+            $until = [DateTime]::UtcNow.AddSeconds(15)
+            while ((Test-Path -LiteralPath $movedFile) -and [DateTime]::UtcNow -lt $until) { Start-Sleep -Milliseconds 100 }
             Stop-Engine
             $snapshot = Start-Engine
             Assert ($snapshot.torrents.Count -eq 0 -and -not (Test-Path -LiteralPath $movedFile) -and (Payload-Hash $collisionFile) -eq $collisionHash -and (Test-Path -LiteralPath $unrelated)) 'Group deletion reached the held destination, restored membership or damaged unrelated files'
@@ -994,6 +1020,8 @@ try {
             Assert ($reply.ok -and (Payload-Hash $sourceFile) -eq $originalHash) 'Ordinary removal damaged the surviving shared payload'
             $reply = Send-Command @{ command = 'delete_files'; torrent_ids = @($identities[1]) }
             Assert $reply.ok 'Deletion after ordinary removal was refused'
+            $until = [DateTime]::UtcNow.AddSeconds(15)
+            while ((Test-Path -LiteralPath $sourceFile) -and [DateTime]::UtcNow -lt $until) { Start-Sleep -Milliseconds 100 }
             Stop-Engine
             $snapshot = Start-Engine
             Assert ($snapshot.torrents.Count -eq 0 -and -not (Test-Path -LiteralPath $sourceFile) -and (Test-Path -LiteralPath $unrelated)) 'Deferred shared-file cleanup lost deletion or restored removed membership'
@@ -2173,12 +2201,19 @@ try {
             Assert $reply.ok 'Checkpoint retry fixture addition failed'
             $torrentId = $reply.data.torrent_id
             $blocked = Join-Path $directory ($torrentId + '.resume.tmp')
+            # The engine writes the resume file twice in a few milliseconds after
+            # the add, so its temporary file can return between the test and the
+            # creation; the creation is tried again until it wins.
             $until = [DateTime]::UtcNow.AddSeconds(5)
+            $created = $false
             do {
-                if (-not (Test-Path -LiteralPath $blocked)) { break }
+                if (-not (Test-Path -LiteralPath $blocked)) {
+                    try { $null = New-Item -ItemType Directory -Path $blocked -ErrorAction Stop; $created = $true; break }
+                    catch [IO.IOException] { }
+                }
                 [Threading.Thread]::Sleep(50)
             } while ([DateTime]::UtcNow -lt $until)
-            $null = New-Item -ItemType Directory -Path $blocked
+            Assert $created 'The checkpoint blocker could not be created'
             $reply = Send-Command @{command='resume';torrent_ids=@($torrentId)}
             Assert $reply.ok 'Checkpoint retry fixture did not resume'
             $until = [DateTime]::UtcNow.AddSeconds(10)
