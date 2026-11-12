@@ -229,7 +229,7 @@ internal sealed class MapDots<TRoute>(long smallest)
     {
         internal Input(IEnumerable<Traffic> routes, double area, double ceiling, double speed, double total)
         {
-            Dictionary<TRoute, Traffic> rates = [];
+            Dictionary<TRoute, Traffic> rates = new(routes.TryGetNonEnumeratedCount(out var count) ? count : 0);
             foreach (var traffic in routes)
             {
                 // A dot on a short route would never leave the fades at its ends.
@@ -243,12 +243,19 @@ internal sealed class MapDots<TRoute>(long smallest)
             Area = area;
             Speed = speed;
             Total = total;
-            Rate = rates.Values.Sum(traffic => traffic.Down + traffic.Up);
+            var rate = 0.0;
+            var inFlight = 0.0;
+            foreach (var traffic in rates.Values)
+            {
+                rate += traffic.Down + traffic.Up;
+                inFlight += (traffic.Down + traffic.Up) * traffic.Trip;
+            }
+            Rate = rate;
             Maximum = Math.Max(1, (int)(area * total / AreaPerDot));
             // People judge how crowded the view looks rather than count dots, and
             // the cube root spreads the count evenly from a trickle to capacity.
             var wanted = Math.Max(1, Maximum * Math.Min(1, Math.Cbrt(Rate / ceiling)));
-            var needed = rates.Values.Sum(traffic => (traffic.Down + traffic.Up) * traffic.Trip) / (Margin * wanted);
+            var needed = inFlight / (Margin * wanted);
             foreach (var traffic in rates.Values)
                 needed = Math.Max(needed, Math.Max(traffic.Down, traffic.Up) * traffic.Trip * Spacing / traffic.Length);
             Needed = needed;

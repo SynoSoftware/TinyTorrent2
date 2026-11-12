@@ -229,9 +229,10 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
             Dictionary<PeerPlace, int> marks = [];
             foreach (var destination in Destinations)
             {
-                foreach (var member in destination.Members)
+                var members = destination.Members;
+                for (var index = 0; index < members.Count; index++)
                 {
-                    var group = member.Group;
+                    var group = members[index].Group;
                     if (!marks.ContainsKey(group.Place) && selected.Counts.TryGetValue(group.Place, out var count))
                         marks[group.Place] = group.Regions.Length == 0 ? 1 : Reach(group.Regions, count);
                 }
@@ -629,9 +630,10 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
                 _previous[destination.Key] = destination;
                 if (whole || !_indexes.TryGetValue(destination.Key, out var landing))
                     continue;
-                foreach (var member in destination.Members)
+                var members = destination.Members;
+                for (var position = 0; position < members.Count; position++)
                 {
-                    if (_indexes.TryGetValue(member.Key, out var index))
+                    if (_indexes.TryGetValue(members[position].Key, out var index))
                         _landing[index] = landing;
                 }
                 Land(landing);
@@ -1097,9 +1099,9 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
         /// <summary>Whether it shows the peers of any of <paramref name="places"/>.</summary>
         internal bool Holds(IReadOnlySet<PeerPlace> places)
         {
-            foreach (var member in Members)
+            for (var index = 0; index < Members.Count; index++)
             {
-                if (places.Contains(member.Group.Place))
+                if (places.Contains(Members[index].Group.Place))
                     return true;
             }
             return false;
@@ -1111,8 +1113,9 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
         /// </summary>
         internal bool Marked(IReadOnlyDictionary<PeerPlace, int> marks)
         {
-            foreach (var member in Members)
+            for (var index = 0; index < Members.Count; index++)
             {
+                var member = Members[index];
                 if (marks.GetValueOrDefault(member.Group.Place) > member.Rank)
                     return true;
             }

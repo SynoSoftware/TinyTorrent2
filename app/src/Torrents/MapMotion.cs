@@ -1008,8 +1008,7 @@ internal sealed class MapMotion : IDisposable
         Track();
         var view = CurrentView;
         if (!ReferenceEquals(_visibility.Traffic, scene?.Traffic) || _visibility.View != view)
-            _visibility = (scene?.Traffic, view, scene is not null && view is { } current
-                && scene.Traffic.Routes.Any(route => route.Length >= MapDots<DestinationKey>.ShortRoute && current.Shows(route.Bounds, 13)));
+            _visibility = (scene?.Traffic, view, scene is not null && view is { } current && HasRouteInView(scene.Traffic, current));
         var visible = _visibility.Visible;
         // A followed drag keeps the loop running: the UI thread that would
         // pause and wake it may be blocked.
@@ -1019,6 +1018,19 @@ internal sealed class MapMotion : IDisposable
         var wait = scene is null ? null : _dots.Wait(visible);
         if (wait is null || wait > 2 * Frame)
             _dispatcher.TryEnqueue(() => Sleep(revision, wait, now));
+    }
+
+    private static bool HasRouteInView(Traffic traffic, MapView view)
+    {
+        for (var index = 0; index < traffic.Routes.Count; index++)
+        {
+            var route = traffic.Routes[index];
+            if (route.Length >= MapDots<DestinationKey>.ShortRoute && view.Shows(route.Bounds, 13))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     // Game loop thread.

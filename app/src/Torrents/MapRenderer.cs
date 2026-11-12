@@ -65,7 +65,15 @@ internal sealed class MapRenderer : IDisposable
     private bool _interpolating;
     private int _steps = 1;
     private double _shownProgress = 1;
-    private Arranged[] _arranged = [];
+    // PrepareRoutes' last arrangement, and its buffer for the next one.
+    private List<Arranged> _arranged = [];
+    private List<Arranged> _arranging = [];
+    // Arc gathers an arc's segments here and gives the route a copy.
+    private readonly List<Vector2> _segments = [];
+    // Crop's buffers: the ring cut so far, and the cut it returns, which its caller reads before
+    // the next Crop.
+    private readonly List<Vector2> _cut = [];
+    private readonly List<Vector2> _cropped = [];
     private GeoPoint? _arcOrigin;
     private double _originOpacity = 1;
     private CanvasRadialGradientBrush? _originMask;
@@ -383,14 +391,22 @@ internal sealed class MapRenderer : IDisposable
         if (originChanged)
             _arrangement++;
         // A rate change alone keeps the glow until its strengths change.
-        var arranged = _routes
-            .Select(route => Arranged.Of(route.Destination, _shown.Contains(route.Destination)))
-            .Concat(_model.Countries.Values
-                .Where(group => group.Estimated)
-                .Select(group => Arranged.Of(new DestinationKey(group.Code, null, true), group, false)))
-            .ToArray();
+        var arranged = _arranging;
+        arranged.Clear();
+        foreach (var route in _routes)
+        {
+            arranged.Add(Arranged.Of(route.Destination, _shown.Contains(route.Destination)));
+        }
+        foreach (var group in _model.Countries.Values)
+        {
+            if (group.Estimated)
+            {
+                arranged.Add(Arranged.Of(new DestinationKey(group.Code, null, true), group, false));
+            }
+        }
         if (!arranged.SequenceEqual(_arranged))
             _arrangement++;
+        _arranging = _arranged;
         _arranged = arranged;
         _originOpacity = OriginOpacity(_shown.Count);
         if (!retained)
@@ -399,15 +415,21 @@ internal sealed class MapRenderer : IDisposable
                 _displayedCountries.Remove(code);
         }
         _started = Stopwatch.GetTimestamp();
-        var change = _routes
-            .Where(route =>
-                _shown.Contains(route.Destination) || route.Destination.Totals is { Estimated: true, Active: > 0 })
-            .Select(route => Math.Abs(route.Strength - route.Start))
-            .Concat(_model.Countries.Values
-                .Where(group => group.Estimated && group.Active > 0)
-                .Select(group => Math.Abs(_countryTargets[group.Code] - _countryStarts[group.Code])))
-            .DefaultIfEmpty()
-            .Max();
+        var change = 0f;
+        foreach (var route in _routes)
+        {
+            if (_shown.Contains(route.Destination) || route.Destination.Totals is { Estimated: true, Active: > 0 })
+            {
+                change = Math.Max(change, Math.Abs(route.Strength - route.Start));
+            }
+        }
+        foreach (var group in _model.Countries.Values)
+        {
+            if (group.Estimated && group.Active > 0)
+            {
+                change = Math.Max(change, Math.Abs(_countryTargets[group.Code] - _countryStarts[group.Code]));
+            }
+        }
         // Strength sets colours with at most 255 levels. Below one level the
         // drawn strengths stay, so small changes add up until one shows.
         if (change < 1f / 255)
@@ -463,10 +485,21 @@ internal sealed class MapRenderer : IDisposable
         }
         if (Animated)
         {
-            _traffic = new MapMotion.Traffic(
-                _routes
-                    .Where(route => route.Arc is not null)
-                    .Select(route => new MapMotion.Route(
+            var count = 0;
+            foreach (var route in _routes)
+            {
+                if (route.Arc is not null)
+                {
+                    count++;
+                }
+            }
+            var routes = new MapMotion.Route[count];
+            count = 0;
+            foreach (var route in _routes)
+            {
+                if (route.Arc is not null)
+                {
+                    routes[count++] = new MapMotion.Route(
                         route.Destination.Key,
                         route.Path,
                         route.Destination.Point,
@@ -475,8 +508,11 @@ internal sealed class MapRenderer : IDisposable
                         route.Degrees * _viewport.Scale)
                     {
                         Bounds = route.Bounds,
-                    })
-                    .ToArray(),
+                    };
+                }
+            }
+            _traffic = new MapMotion.Traffic(
+                routes,
                 _viewport.FrameSize.Width * _viewport.FrameSize.Height,
                 _model.Ceiling,
                 Animation switch
@@ -712,7 +748,7 @@ internal sealed class MapRenderer : IDisposable
 
     // Sutherland-Hodgman: the part of a ring inside a window. Each ring is cut
     // on its own, so the Alternate fill keeps every hole inside the window.
-    private static IReadOnlyList<Vector2> Crop(Vector2[] ring, Extent window)
+    private IReadOnlyList<Vector2> Crop(Vector2[] ring, Extent window)
     {
         var extent = Extent.Of(ring);
         if (window.Contains(extent))
@@ -721,34 +757,40 @@ internal sealed class MapRenderer : IDisposable
             return [];
         var low = window.Low;
         var high = window.High;
-        IReadOnlyList<Vector2> points = ring;
-        points = Cut(points, point => point.X >= low.X, (a, b) => Across(a, b, (low.X - a.X) / (b.X - a.X)));
-        points = Cut(points, point => point.X <= high.X, (a, b) => Across(a, b, (high.X - a.X) / (b.X - a.X)));
-        points = Cut(points, point => point.Y >= low.Y, (a, b) => Across(a, b, (low.Y - a.Y) / (b.Y - a.Y)));
-        points = Cut(points, point => point.Y <= high.Y, (a, b) => Across(a, b, (high.Y - a.Y) / (b.Y - a.Y)));
-        return points;
+        Cut(ring, _cut, point => point.X >= low.X, (a, b) => Across(a, b, (low.X - a.X) / (b.X - a.X)));
+        Cut(_cut, _cropped, point => point.X <= high.X, (a, b) => Across(a, b, (high.X - a.X) / (b.X - a.X)));
+        Cut(_cropped, _cut, point => point.Y >= low.Y, (a, b) => Across(a, b, (low.Y - a.Y) / (b.Y - a.Y)));
+        Cut(_cut, _cropped, point => point.Y <= high.Y, (a, b) => Across(a, b, (high.Y - a.Y) / (b.Y - a.Y)));
+        return _cropped;
 
         static Vector2 Across(Vector2 from, Vector2 to, float amount) => from + (to - from) * amount;
 
-        static List<Vector2> Cut(
+        static void Cut(
             IReadOnlyList<Vector2> points,
+            List<Vector2> kept,
             Func<Vector2, bool> inside,
             Func<Vector2, Vector2, Vector2> edge
         )
         {
-            List<Vector2> kept = [];
+            kept.Clear();
             if (points.Count == 0)
-                return kept;
-            var previous = points[^1];
-            foreach (var point in points)
             {
+                return;
+            }
+            var previous = points[^1];
+            for (var index = 0; index < points.Count; index++)
+            {
+                var point = points[index];
                 if (inside(point) != inside(previous))
+                {
                     kept.Add(edge(previous, point));
+                }
                 if (inside(point))
+                {
                     kept.Add(point);
+                }
                 previous = point;
             }
-            return kept;
         }
     }
 
@@ -761,7 +803,8 @@ internal sealed class MapRenderer : IDisposable
         using var path = new CanvasPathBuilder(_device);
         var count = Math.Max(8, (int)Math.Ceiling(circle.Angle * 48));
         var previous = _viewport.Coordinates(circle.At(0));
-        List<Vector2> lines = [];
+        var lines = _segments;
+        lines.Clear();
         var length = 0f;
         var tolerance = .25f / scale;
         path.BeginFigure(previous);
@@ -1075,8 +1118,12 @@ internal sealed class MapRenderer : IDisposable
         // Prioritise the selected routes before map drawing uses its rebuild budget.
         if (arcDrawing is not null && _model.Origin is { } source)
         {
-            foreach (var selected in _routes.Where(route => highlight.IsMarked(route.Destination)))
+            foreach (var selected in _routes)
             {
+                if (!highlight.IsMarked(selected.Destination))
+                {
+                    continue;
+                }
                 cancellation.ThrowIfCancellationRequested();
                 if (
                     selected.Arc is null
@@ -1098,10 +1145,15 @@ internal sealed class MapRenderer : IDisposable
         }
         if (draw is not null)
         {
-            foreach (var group in _model.Countries.Values.Where(group => group.Estimated))
-                _displayedCountries[group.Code] =
-                    _countryStarts[group.Code]
-                    + (_countryTargets[group.Code] - _countryStarts[group.Code]) * (float)progress;
+            foreach (var group in _model.Countries.Values)
+            {
+                if (group.Estimated)
+                {
+                    _displayedCountries[group.Code] =
+                        _countryStarts[group.Code]
+                        + (_countryTargets[group.Code] - _countryStarts[group.Code]) * (float)progress;
+                }
+            }
         }
         var bounds = _viewport.View.Bounds;
         using (draw?.CreateLayer(1, bounds))
@@ -1752,12 +1804,29 @@ internal sealed class MapRenderer : IDisposable
     {
         var shown = ReferenceEquals(places, presentation.Destinations)
             ? presentation.ByKey : places.ToDictionary(destination => destination.Key);
-        return new(view ?? _viewport.View, _routes.Where(route => shown.ContainsKey(route.Destination.Key))
-            .Select(route => route.Target(shown[route.Destination.Key])).ToArray())
+        var count = 0;
+        var arcs = false;
+        foreach (var route in _routes)
+        {
+            if (shown.ContainsKey(route.Destination.Key))
+            {
+                count++;
+                arcs |= route.Arc is not null;
+            }
+        }
+        var targets = new Inspection.Target[count];
+        count = 0;
+        foreach (var route in _routes)
+        {
+            if (shown.TryGetValue(route.Destination.Key, out var destination))
+            {
+                targets[count++] = route.Target(destination);
+            }
+        }
+        return new(view ?? _viewport.View, targets)
         {
             Highlight = _highlight,
-            Origin = _routes.Any(route => route.Arc is not null && shown.ContainsKey(route.Destination.Key))
-                ? presentation.Origin : null,
+            Origin = arcs ? presentation.Origin : null,
             Subject = presentation.Subject,
             Cities = presentation.Cities,
             Destinations = places,
@@ -2227,13 +2296,10 @@ internal sealed class MapRenderer : IDisposable
             _coreTransform = Matrix3x2.Identity;
         }
 
-        // A method of its own, because a lambda that captures the colour
-        // allocates its closure on every call of Core, also when the brush
-        // is reused.
         private static CanvasGradientStop[] CoreStops(Color colour, float length)
         {
             var landed = 30 / length;
-            return new[]
+            Span<float> positions = stackalloc float[]
             {
                 0,
                 landed / 4,
@@ -2243,18 +2309,24 @@ internal sealed class MapRenderer : IDisposable
                 .2f,
                 .65f,
                 1,
+            };
+            positions.Sort();
+            var count = positions.Length;
+            while (positions[count - 1] > 1)
+            {
+                count--;
             }
-                .Where(position => position <= 1)
-                .Order()
-                .Select(position => new CanvasGradientStop
+            var stops = new CanvasGradientStop[count];
+            for (var index = 0; index < count; index++)
+            {
+                var position = positions[index];
+                stops[index] = new CanvasGradientStop
                 {
                     Position = position,
-                    Color = Alpha(
-                        colour,
-                        Route(1 - position) * Landing(position * length)
-                    ),
-                })
-                .ToArray();
+                    Color = Alpha(colour, Route(1 - position) * Landing(position * length)),
+                };
+            }
+            return stops;
         }
 
         /// <summary>Brightness at a fraction of the way from origin to destination.</summary>
