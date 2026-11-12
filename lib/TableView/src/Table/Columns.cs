@@ -327,37 +327,24 @@ public sealed partial class Table
 
     private bool _fillPending;
 
-    /// <summary>A different list is on screen and its fill has not run yet (section 10).</summary>
-    private bool _listFillDue;
-
     /// <summary>
-    /// Section 10: fill for a different list after the frame that shows it. The fill is enqueued at
-    /// low priority from the layout that shows the list, so it runs after that frame renders.
+    /// Runs while a different list waits for its fill (section 10). Each newer list restarts it,
+    /// so the lists a person passes through while clicking or arrowing quickly never fill.
     /// </summary>
+    private DispatcherQueueTimer? _listFillDue;
+
     private void QueueListFill()
     {
-        _listFillDue = true;
-        LayoutUpdated -= OnListLayout;
-        LayoutUpdated += OnListLayout;
-
-        // LayoutUpdated comes only with a layout pass, and the one that shows the list may already
-        // have run, so the table asks for one, as the preparation's own fill does.
-        InvalidateMeasure();
-    }
-
-    private void OnListLayout(object? sender, object args)
-    {
-        LayoutUpdated -= OnListLayout;
-        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, RunListFill);
-    }
-
-    private void RunListFill()
-    {
-        // A preparation in flight brings a newer view, and its end queues this fill again.
-        if (_listFillDue && !_preparingView)
+        if (_listFillDue is null)
         {
-            FillViewport();
+            _listFillDue = DispatcherQueue.CreateTimer();
+            _listFillDue.IsRepeating = false;
+            _listFillDue.Interval = TimeSpan.FromMilliseconds(300);
+            _listFillDue.Tick += (_, _) => FillViewport();
         }
+
+        _listFillDue.Stop();
+        _listFillDue.Start();
     }
 
     /// <summary>
@@ -392,7 +379,7 @@ public sealed partial class Table
         // Whatever this call does serves a different list too: it fills now, queues a fill for
         // the layout after the preparation, or finds the table hidden, unloaded or switched off,
         // where showing it or switching it on fills.
-        _listFillDue = false;
+        _listFillDue?.Stop();
         LayoutUpdated -= OnFillLayout;
         if (!IsAutomaticFillEnabled)
         {

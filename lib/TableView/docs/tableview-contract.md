@@ -1292,15 +1292,17 @@ at these times:
 - when the first rows arrive after a fill that found none, as in a table shown
   before its rows. One fill runs, in the layout that shows those rows;
 - when it shows a different list (section 5.3), as the inspector's peers table
-  does for each torrent the person selects. This fill runs after the frame that
-  shows the new rows, not in their layout. A host switches lists at each click
-  of a selection, and a fill measures every cell on screen at its natural width
-  and then lays the rows out again. In the layout that shows the rows it made
-  every click wait for that work: the median click took 48 to 85 ms instead of
-  21 ms on 11 November 2026. WinUI measures elements only on the UI thread, so
-  the fill cannot move to another thread. The person sees the new rows at once
-  with the old widths, and the new widths in the next frame. A newer list that
-  arrives before the fill runs takes its place.
+  does for each torrent the person selects, once that list has stayed on screen
+  for 300 ms. Each newer list restarts the wait, so the lists a person passes
+  through while clicking or arrowing quickly never fill. A host switches lists
+  at each click of a selection, and a fill measures every cell on screen at its
+  natural width and then lays the rows out again, on the UI thread, because
+  WinUI measures elements only there. In the layout that shows the rows that
+  work made every click wait: the median click took 48 to 85 ms instead of 27
+  ms at 160,000 peers on 11 November 2026. Right after that layout it still
+  landed on the next click, and 2 of 21 clicks took over 100 ms instead of
+  none. The person sees the new rows at once with the old widths, and the new
+  widths 300 ms later.
 
 A sort command, such rows and a different list replace what the screen shows,
 so a fill then moves nothing the person did not already change. Without it, a

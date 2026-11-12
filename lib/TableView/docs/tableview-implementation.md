@@ -119,11 +119,10 @@ order (`Ordering.Changed`) or the first rows after a fill that found none
 `LayoutUpdated` inside that layout and lays out again what the handler changes
 before the frame renders (`CLayoutManager::UpdateLayout`), so the new rows and
 the new widths appear in one frame. After a different list, `PrepareView` calls
-`QueueListFill` instead: the layout that shows the list enqueues `RunListFill`
-at low priority, so the fill runs after that frame renders. `QueueListFill`
-also invalidates the table's measure, because `LayoutUpdated` comes only with
-a layout pass. A preparation in flight when `RunListFill` runs brings a newer
-view, so `RunListFill` returns and the preparation's end queues it again. A fit
+`QueueListFill` instead, which restarts the one-shot 300-ms `_listFillDue`
+timer; its tick calls `FillViewport`. A tick during a preparation takes the
+`_fillPending` path above, and every `FillViewport` call stops the timer,
+because any fill serves the list on screen. A fit
 leaves out a row whose cells do not show the view's row at its index, because
 the rows below the screen show a different list's rows only after
 `QueueRebind`. It reads the cells' row (`CellsPanel.DataContext`), not the

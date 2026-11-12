@@ -198,9 +198,9 @@ public class ColumnFitTests
     /// <summary>
     /// A table shown before its rows fills from its headers, and its first rows fill again. Rows
     /// that join the rows on screen resize nothing: a fit to them would move every column in
-    /// front of the person as the data came in. A different list fills after the frame that shows
-    /// it, because a host switches lists at every selection click and a fill in that frame slowed
-    /// each click.
+    /// front of the person as the data came in. A different list fills only once it has stayed on
+    /// screen for a moment, because a host switches lists at every selection click and a fill at
+    /// each one slowed the clicks.
     /// </summary>
     [TestMethod]
     public Task ListsThatReplaceTheScreenFillAndJoiningRowsDoNot() =>
@@ -255,13 +255,15 @@ public class ColumnFitTests
                 "the layout that shows a different list does not fill"
             );
 
-            await SettleAsync(table);
+            var due = Proof.Field<Microsoft.UI.Dispatching.DispatcherQueueTimer>(table, "_listFillDue");
+            await TableHarness.WaitUntilAsync(() => !due.IsRunning, "the list to stay on screen");
+            table.UpdateLayout();
 
             Assert.AreEqual(
                 100 + Inset(table),
                 TableHarness.EffectiveWidth(table, "a"),
                 0.001,
-                "a different list fills after its frame"
+                "a different list fills once it has stayed on screen"
             );
             Assert.AreEqual(0, events(), "automatic fills report nothing");
         });
@@ -384,7 +386,7 @@ public class ColumnFitTests
             await TableHarness.WaitUntilAsync(() => !timer.IsRunning, "the first resize to settle");
             double before = TableHarness.EffectiveWidth(table, "a");
 
-            // They join the rows on screen; a different list would fill after its frame.
+            // They join the rows on screen; a different list would fill once it stayed on screen.
             List<FitRow> arrived = Rows(20, 600);
             arrived.AddRange(shown);
             table.ItemsSource = arrived;

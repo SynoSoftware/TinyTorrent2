@@ -208,7 +208,6 @@ public sealed partial class Table : Control
         DetachInput();
 
         LayoutUpdated -= OnFillLayout;
-        LayoutUpdated -= OnListLayout;
         if (_headerStrip is not null)
             _headerStrip.SizeChanged -= OnFillSizeChanged;
         if (_surface is not null)
@@ -244,9 +243,9 @@ public sealed partial class Table : Control
         _detached = true;
         QueueRealized();
         LayoutUpdated -= OnFillLayout;
-        LayoutUpdated -= OnListLayout;
         StopWatchingVisibility();
         _resizeDue?.Stop();
+        _listFillDue?.Stop();
 
         // A table taken out of the tree sees no exit, and nothing points at rows it no longer shows.
         _pointerOver = false;
