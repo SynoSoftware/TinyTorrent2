@@ -18,7 +18,7 @@ public sealed class Peer : INotifyPropertyChanged
     public string Endpoint { get; }
     public string Address { get; }
     public int? Port { get; }
-    public string PortText => Port?.ToString(CultureInfo.InvariantCulture) ?? "—";
+    public string PortText => Port?.ToString(CultureInfo.InvariantCulture) ?? Strings.NoValue;
     internal string TorrentId { get; }
     public string Client => _record.Client;
     public bool Incoming => _record.Values.Incoming;
@@ -30,19 +30,23 @@ public sealed class Peer : INotifyPropertyChanged
     public long Downloaded => _record.Values.Downloaded;
     public long Uploaded => _record.Values.Uploaded;
     public string ProgressText =>
-        State == PeerState.Known ? "—" : Progress.ToString("P1", CultureInfo.CurrentCulture);
+        State == PeerState.Known
+            ? Strings.NoValue
+            : Progress.ToString("P1", CultureInfo.CurrentCulture);
     public string DownloadText =>
-        State == PeerState.Known ? "—" : _text.Rate(DownloadRate);
+        State == PeerState.Known ? Strings.NoValue : _text.Rate(DownloadRate);
     public string UploadText =>
-        State == PeerState.Known ? "—" : _text.Rate(UploadRate);
-    public string DownloadedText => State == PeerState.Known ? "—" : _text.Bytes(Downloaded);
-    public string UploadedText => State == PeerState.Known ? "—" : _text.Bytes(Uploaded);
-    public string ClientText => string.IsNullOrEmpty(Client) ? "—" : Client;
+        State == PeerState.Known ? Strings.NoValue : _text.Rate(UploadRate);
+    public string DownloadedText =>
+        State == PeerState.Known ? Strings.NoValue : _text.Bytes(Downloaded);
+    public string UploadedText =>
+        State == PeerState.Known ? Strings.NoValue : _text.Bytes(Uploaded);
+    public string ClientText => string.IsNullOrEmpty(Client) ? Strings.NoValue : Client;
 
     /// <summary>The ISO country code that names the peer's flag, or empty without a location.</summary>
     public string CountryCode => Location?.Code ?? string.Empty;
-    public string CountryText => Location?.CountryName(_text.Language) ?? "—";
-    public string CityText => Location?.City?.Name(_text.Language) ?? "—";
+    public string CountryText => Location?.CountryName(_text.Language) ?? Strings.NoValue;
+    public string CityText => Location?.City?.Name(_text.Language) ?? Strings.NoValue;
     public string LocationText =>
         Location?.City?.Name(_text.Language) is { } city
             ? _text.Format("peers", "location_city", city, CountryText)
@@ -156,7 +160,7 @@ public sealed class Peer : INotifyPropertyChanged
             );
         }
     }
-    public string ConnectionText => State == PeerState.Known ? "—" : TransportText;
+    public string ConnectionText => State == PeerState.Known ? Strings.NoValue : TransportText;
 
     /// <summary>The connection's raw values, which the Connection column sorts by.</summary>
     internal (PeerTransport Transport, bool Incoming, PeerEncryption Encryption) Connection
@@ -226,6 +230,13 @@ public sealed class Peer : INotifyPropertyChanged
         internal double UploadRate;
         internal long Downloaded;
         internal long Uploaded;
+
+        /// <summary>A connection to the peer is open or opening: any state but known.</summary>
+        internal readonly bool IsConnected => State != PeerState.Known;
+
+        /// <summary>The peer moves data over its open connection.</summary>
+        internal readonly bool IsActive =>
+            State == PeerState.Connected && DownloadRate + UploadRate > 0;
     }
 
     /// <summary>

@@ -92,7 +92,7 @@ public sealed record VideoChoice(string CatalogId, string VideoId, VideoKind Kin
     public string? Original { get; init; }
 
     public string Label => Title + (Year is { } year ? " (" + year + ")" : string.Empty);
-    public string YearText => Year?.ToString(CultureInfo.CurrentCulture) ?? "—";
+    public string YearText => Year?.ToString(CultureInfo.CurrentCulture) ?? Strings.NoValue;
 }
 
 internal sealed record VideoQuery(string Text, string Language, ProviderGet Get)
@@ -282,15 +282,21 @@ internal sealed record Episode(int Season, int Number, string Name, string Synop
 internal sealed record VideoRecord(string Path, JsonElement Content, long Retrieved);
 
 internal class VideoException(VideoFailure failure, Exception? inner = null)
-    : Exception(failure.ToString(), inner)
+    : Exception(failure.ToString(), inner), IFailure
 {
     internal VideoFailure Failure { get; } = failure;
 
     /// <summary>The provider that failed, which Library sets so the text can name it.</summary>
     internal ProviderOption? Provider { get; set; }
 
-    /// <summary>What the text names instead when no provider is involved, such as the city data's publisher.</summary>
-    internal string? Subject { get; set; }
+    public virtual string Describe(Strings text)
+    {
+        // A provider without an API key refused the request, not a key.
+        var reason = this is { Failure: VideoFailure.Refused, Provider.Access: not Access.Key }
+            ? "refused_request"
+            : Failure.ToString().ToLowerInvariant();
+        return text.Format("library", "failure_" + reason, Provider?.Name ?? string.Empty);
+    }
 }
 
 internal class ProviderException(
@@ -306,6 +312,10 @@ internal class ProviderException(
 
     /// <summary>The request protection that holds lookups back, when the failure is <see cref="VideoFailure.Blocked"/>.</summary>
     internal RequestBlock? Block { get; }
+
+    // The protection's reason only; Library.Browser.Error adds the retry time.
+    public override string Describe(Strings text) =>
+        Block is { } block ? text.Protection(block.Kind) : base.Describe(text);
 }
 
 /// <summary>

@@ -225,8 +225,8 @@ internal sealed class FileSources(Database database)
                         size=excluded.size, complete=excluded.complete, wanted=excluded.wanted,
                         kind=excluded.kind, title=excluded.title, type=excluded.type, year=excluded.year,
                         search=excluded.search
-                    WHERE (entry_id,name,path,size,complete,wanted) <>
-                        (excluded.entry_id,excluded.name,excluded.path,excluded.size,excluded.complete,excluded.wanted);
+                    WHERE (entry_id,name,path,size,complete,wanted,kind) <>
+                        (excluded.entry_id,excluded.name,excluded.path,excluded.size,excluded.complete,excluded.wanted,excluded.kind);
                     """;
                 foreach (var name in new[] { "origin", "name", "path", "title", "type", "search" })
                     write.Parameters.Add("$" + name, SqliteType.Text);
@@ -265,10 +265,10 @@ internal sealed class FileSources(Database database)
                     write.Parameters["$kind"].Value = (int)kind;
                     write.Parameters["$title"].Value = release.Title;
                     // The name identifies a video before any provider does: a
-                    // season makes it an episode, and every other video is a movie.
+                    // file of a series is one of its episodes.
                     write.Parameters["$type"].Value =
                         kind != FileKind.Video ? string.Empty
-                        : release.Season is null ? "movie"
+                        : release.Kind == VideoKind.Movie ? "movie"
                         : "episode";
                     write.Parameters["$year"].Value =
                         kind != FileKind.Video
@@ -336,7 +336,7 @@ internal sealed class FileSources(Database database)
         var incoming = files.ToDictionary(file => file.Index);
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT f.file_index,f.path,f.name,l.path,f.size,f.complete,f.wanted
+            SELECT f.file_index,f.path,f.name,l.path,f.size,f.complete,f.wanted,f.kind
             FROM source_files f JOIN locations l USING(entry_id) WHERE f.origin=$origin;
             """;
         command.Parameters.AddWithValue("$origin", origin);
@@ -355,6 +355,7 @@ internal sealed class FileSources(Database database)
                 || reader.GetInt64(4) != file.Size
                 || reader.GetBoolean(5) != IsComplete(file, path)
                 || reader.GetBoolean(6) != file.Wanted
+                || reader.GetInt32(7) != (int)FileName.Kind(path)
             )
                 return false;
             count++;

@@ -62,7 +62,7 @@ public sealed partial class MainWindow
 
         await SelectTorrent(new Syno.TableView.Selection([target], target));
         await ShowConnections(false);
-        Model.Filter = MainViewModel.Matches(target, TorrentFilter.Downloading)
+        Model.Filter = target.Matches(TorrentFilter.Downloading)
             ? TorrentFilter.Seeding
             : TorrentFilter.Downloading;
         await CaptureLayout();

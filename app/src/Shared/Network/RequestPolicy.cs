@@ -214,7 +214,8 @@ internal sealed record RequestBlock(RequestBlockKind Kind, DateTimeOffset? Retry
                 or RequestBlockKind.NoMatch;
 }
 
-internal sealed class RequestBlockedException(RequestBlock block) : Exception(block.Kind.ToString())
+internal sealed class RequestBlockedException(RequestBlock block)
+    : Exception(block.Kind.ToString()), IFailure
 {
     internal RequestBlock Block { get; } = block;
 
@@ -223,4 +224,6 @@ internal sealed class RequestBlockedException(RequestBlock block) : Exception(bl
     /// with the lookup it held back; null when the block is not one resource's.
     /// </summary>
     internal RequestKey? Request { get; init; }
+
+    public string Describe(Strings text) => text.Protection(Block);
 }

@@ -195,7 +195,7 @@ public sealed class Notifications
                     ? torrentId.Length == 0 ? "unknown"
                         : "torrent_error"
                 : kind;
-            var error = new CommandException(code, detail, _text);
+            var error = new CommandException(code, detail);
             // The title already says what failed, so the engine's reason
             // alone is the body; without one, the error code's text is. A
             // torrent problem's detail only names what it concerns, such as a
@@ -209,14 +209,7 @@ public sealed class Notifications
                     : kind == "error" && code != "torrent_error" ? _text.Error(error)
                     : detail.Length > 0 ? detail
                     : _text.Error(error);
-                return count > 1
-                    ? _text.Format(
-                        "errors",
-                        "detail",
-                        reason,
-                        _text.Format("errors", "additional_problems", count - 1)
-                    )
-                    : reason;
+                return _text.Problems(reason, count);
             }
             var title = kind switch
             {
@@ -487,8 +480,8 @@ public sealed class Notifications
                     : failure.Reason?.Invoke() ?? _text.Error(failure.Error);
                 error.Folder = failure.Error switch
                 {
-                    CommandException { Code: "move_destination_unavailable" or "invalid_destination" } when failure.Place is FailurePlace.OfTorrent destination => destination.Path ?? string.Empty,
-                    CommandException { Code: "move_failed" or "move_interrupted" } => string.Empty,
+                    CommandException { Reason: EngineFailure.Destination } when failure.Place is FailurePlace.OfTorrent destination => destination.Path ?? string.Empty,
+                    CommandException { Reason: EngineFailure.Move } => string.Empty,
                     _ => failure.Recovery?.Destination ?? error.OpenPath ?? string.Empty,
                 };
                 error.ShowTorrent = failure.Recovery is not null || failure.Place is FailurePlace.OfTorrent ? error.Reveal : null;
@@ -510,10 +503,7 @@ public sealed class Notifications
                 break;
             case Toast.SubtitleError subtitle:
                 var latest = subtitle.Latest;
-                var reason = _text.Get(
-                    "subtitles",
-                    "failure_" + latest.Reason.ToString().ToLowerInvariant()
-                );
+                var reason = Subtitles.SubtitleException.Describe(_text, latest.Reason);
                 subtitle.Title = _text.Get(
                     "notifications",
                     latest.Reason == SubtitleFailure.Delete
@@ -521,15 +511,7 @@ public sealed class Notifications
                         : "subtitle_not_saved"
                 );
                 subtitle.Subject = Path.GetFileName(latest.Path);
-                subtitle.Message =
-                    subtitle.Count == 1
-                        ? reason
-                        : _text.Format(
-                            "errors",
-                            "detail",
-                            reason,
-                            _text.Format("errors", "additional_problems", subtitle.Count - 1)
-                        );
+                subtitle.Message = _text.Problems(reason, subtitle.Count);
                 subtitle.Action = _owner.ShowSubtitleSettings;
                 subtitle.ActionText = _text.Get("notifications", "settings");
                 subtitle.ActionTip = _text.Get("notifications", "subtitles_tip");
@@ -805,8 +787,8 @@ public abstract class Toast : INotifyPropertyChanged
         internal RelayCommand Reveal { get; }
         internal RelayCommand Download { get; }
         internal RelayCommand Choose { get; }
-        internal bool IsDestinationError => Failure.Error is CommandException
-            { Code: "move_destination_unavailable" or "invalid_destination" };
+        internal bool IsDestinationError =>
+            Failure.Error is CommandException { Reason: EngineFailure.Destination };
         internal bool NeedsFolder => Failure.Recovery is { } recovery
             && (IsDestinationError || _owner.IsLocationUnavailable(recovery.Destination));
 

@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Syno.TinyTorrent.Controls;
+using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shell;
 
 namespace Syno.TinyTorrent.Settings;

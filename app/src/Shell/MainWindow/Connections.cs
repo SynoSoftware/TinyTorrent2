@@ -35,7 +35,7 @@ public sealed partial class MainWindow
         !Model.IsClosing
         && !HasDialog
         && !Model.Inspector.IsPending
-        && Model.Page is WindowPage.Torrents or WindowPage.Library
+        && Navigation.IsWorkspace(Model.Page)
         && (all || Model.Page == WindowPage.Torrents && Model.Selected.Count > 0);
 
     private async Task ShowConnections(bool all)

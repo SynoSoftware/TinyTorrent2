@@ -477,46 +477,4 @@ public sealed partial class MainWindow
         await CapturePieces(outcomes, completed);
         Model.CloseInspector();
     }
-
-    private async Task CaptureMatrix(Func<string, SizeInt32, Task> capture)
-    {
-        foreach (var language in new[] { "en", "es" })
-        {
-            Model.SelectLanguage(language);
-            await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);
-            foreach (var theme in new[] { "light", "dark" })
-            {
-                await Model.Settings.SelectTheme(theme);
-                await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
-                foreach (
-                    var size in new[]
-                    {
-                        new SizeInt32(720, 560),
-                        new SizeInt32(1040, 680),
-                        new SizeInt32(1280, 800),
-                    }
-                )
-                {
-                    await CaptureLayout();
-                    var scale = Root.XamlRoot.RasterizationScale;
-                    var minimum =
-                        (
-                            (Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter
-                        ).PreferredMinimumWidth
-                        ?? 0;
-                    AppWindow.Resize(
-                        new SizeInt32(
-                            Math.Max((int)(size.Width * scale), minimum),
-                            (int)(size.Height * scale)
-                        )
-                    );
-                    await CaptureLayout();
-                    await capture(
-                        language + "-" + theme + "-" + size.Width + "x" + size.Height,
-                        size
-                    );
-                }
-            }
-        }
-    }
 }

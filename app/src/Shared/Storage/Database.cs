@@ -313,10 +313,12 @@ internal sealed partial class Database : IAsyncDisposable
 // The file is from another schema version or is damaged. Both have one
 // recovery: the person deletes the file. Until then every database call
 // fails, and each feature handles it as any other SQLite failure.
-internal sealed class DatabaseVersionException : SqliteException
+internal sealed class DatabaseVersionException : SqliteException, IFailure
 {
     internal DatabaseVersionException()
         : base(null, raw.SQLITE_ERROR) { }
+
+    public string Describe(Strings text) => text.Get("errors", "database_incompatible");
 }
 
 internal sealed record Statistics
@@ -328,3 +330,5 @@ internal sealed record Statistics
     internal required long Subtitles { get; init; }
     internal required long Languages { get; init; }
 }
+
+internal sealed record Coverage(int Total, int Informed);

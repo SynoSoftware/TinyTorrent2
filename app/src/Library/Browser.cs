@@ -7,6 +7,7 @@ using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Network;
 using Syno.TinyTorrent.Shared.Storage;
 using Syno.TinyTorrent.Shell;
+using FileSelection = Syno.TinyTorrent.Controls.FileSelection;
 using Selection = Syno.TableView.Selection;
 
 namespace Syno.TinyTorrent.Library;
@@ -161,7 +162,7 @@ public sealed partial class Browser
         {
             if (HasFailure)
                 return Text.Get("notifications", "library_unavailable");
-            var label = Text.Get("library", RowsConfiguration.ToString().ToLowerInvariant());
+            var label = Text.Get(RowsConfiguration);
             if (_rowsQuery is not { } query)
                 return label;
             var count = Text.FormatCount("library", "files", Rows.Count);
@@ -896,7 +897,7 @@ public sealed partial class Browser
                 if (_typing)
                 {
                     _typing = false;
-                    await Task.Delay(TimeSpan.FromMilliseconds(200), cancellation.Token);
+                    await Task.Delay(FileSelection.SearchPause, cancellation.Token);
                 }
                 var query = new Query(Query, Configuration)
                 {
@@ -1463,7 +1464,8 @@ public sealed class LibraryRow(Entry entry, Browser library) : INotifyPropertyCh
     // An empty provider cell of an unmatched file shows a dash, so a file the
     // provider does not have differs from one not looked up yet. Only table
     // cells use it.
-    private string Provided(string value) => value.Length == 0 && Entry.IsUnmatched ? "—" : value;
+    private string Provided(string value) =>
+        value.Length == 0 && Entry.IsUnmatched ? Strings.NoValue : value;
 
     internal string RatingTip(RatingSource source)
     {

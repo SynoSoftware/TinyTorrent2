@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.Windows.Input;
-using Syno.TinyTorrent.Settings;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Torrents;
 
@@ -63,7 +62,7 @@ public sealed partial class MainViewModel
             ReleaseRequested?.Invoke(
                 this,
                 Torrents
-                    .Where(torrent => Matches(torrent, _filter) != Matches(torrent, value))
+                    .Where(torrent => torrent.Matches(_filter) != torrent.Matches(value))
                     .ToArray()
             );
             _filter = value;
@@ -115,9 +114,10 @@ public sealed partial class MainViewModel
             {
                 var category =
                     Navigation.Current == WindowPage.Connection
-                        ? "connection_setup"
-                        : Navigation.Settings?.Category?.ToString().ToLowerInvariant() ?? "home";
-                return Text.Get("commands", "settings") + " · " + Text.Get("settings", category);
+                        ? Text.Get("settings", "connection_setup")
+                    : Navigation.Settings?.Category is { } shown ? Text.Get(shown)
+                    : Text.Get("settings", "home");
+                return Text.Get("commands", "settings") + " · " + category;
             }
             if (IsAbout)
                 return Page == WindowPage.Credits
@@ -148,7 +148,7 @@ public sealed partial class MainViewModel
                 : count;
         }
     }
-    private string FilterName => Text.Get("filters", Filter.ToString().ToLowerInvariant());
+    private string FilterName => Text.Get(Filter);
     public ICommand ShowSettings { get; }
     public ICommand ShowTorrents { get; }
     public ICommand ShowLibrary { get; }
@@ -158,27 +158,10 @@ public sealed partial class MainViewModel
     public event EventHandler? LibraryRequested;
     public event EventHandler? AboutRequested;
 
-    internal static bool Matches(Torrent torrent, TorrentFilter filter) =>
-        filter switch
-        {
-            TorrentFilter.All => true,
-            TorrentFilter.Downloading => torrent.State
-                is TorrentState.Downloading
-                    or TorrentState.Metadata,
-            TorrentFilter.Seeding => torrent.State is TorrentState.Seeding or TorrentState.Completed,
-            TorrentFilter.Paused => torrent.State == TorrentState.Paused,
-            TorrentFilter.Queued => torrent.State
-                is TorrentState.Queued
-                    or TorrentState.WaitingCheck
-                    or TorrentState.WaitingMove,
-            TorrentFilter.Errors => torrent.IsError,
-            _ => false,
-        };
-
     private bool Project()
     {
         var desired = Torrents
-            .Where(torrent => Matches(torrent, Filter))
+            .Where(torrent => torrent.Matches(Filter))
             .OrderBy(torrent => torrent.QueueOrder)
             .ToArray();
         // TableView rebuilds its whole view for every source notification, so a
@@ -301,7 +284,7 @@ public sealed partial class MainViewModel
         );
         yield return new(
             Text.Get("commands", "limits"),
-            Text.Format("finding", "setting_detail", Text.Get("settings", "limits")),
+            Text.Format("finding", "setting_detail", Text.Get(SettingsCategory.Limits)),
             SuggestionScope.Settings,
             Limits
         );
@@ -390,7 +373,7 @@ public sealed partial class MainViewModel
         );
         foreach (var section in Enum.GetValues<InspectorSection>())
             yield return new(
-                Text.Get("inspector", section.ToString().ToLowerInvariant()),
+                Text.Get(section),
                 Text.Get("commands", "properties") + " · " + selection,
                 SuggestionScope.Navigation,
                 new RelayCommand(() => Inspect(section), () => Properties.CanExecute(null))
@@ -409,10 +392,7 @@ public sealed partial class MainViewModel
     private IEnumerable<Suggestion> SettingSuggestions()
     {
         foreach (var category in Enum.GetValues<SettingsCategory>())
-            yield return SettingSuggestion(
-                new(category),
-                Text.Get("settings", category.ToString().ToLowerInvariant())
-            );
+            yield return SettingSuggestion(new(category), Text.Get(category));
         foreach (var setting in Settings.All)
         {
             if (
@@ -463,11 +443,7 @@ public sealed partial class MainViewModel
             label,
             target.Name is null || target.Category is not { } category
                 ? Text.Get("finding", "settings")
-                : Text.Format(
-                    "finding",
-                    "setting_detail",
-                    Text.Get("settings", category.ToString().ToLowerInvariant())
-                ),
+                : Text.Format("finding", "setting_detail", Text.Get(category)),
             SuggestionScope.Settings,
             new RelayCommand(() => RequestSettings(target), () => true),
             Text.Find(
@@ -492,7 +468,7 @@ public sealed class FilterChoice(MainViewModel owner, TorrentFilter filter) : IN
             TorrentFilter.Errors => Torrent.GetGlyph(TorrentState.Error),
             _ => throw new ArgumentOutOfRangeException(nameof(Filter)),
         };
-    public string Label => owner.Text.Get("filters", Filter.ToString().ToLowerInvariant());
+    public string Label => owner.Text.Get(Filter);
     public int Count => _count;
     public bool IsCountAccent => Filter == TorrentFilter.Downloading && Count > 0;
     public bool IsCountCritical => Filter == TorrentFilter.Errors && Count > 0;
@@ -502,7 +478,7 @@ public sealed class FilterChoice(MainViewModel owner, TorrentFilter filter) : IN
 
     internal void Refresh(bool textChanged = true)
     {
-        var count = owner.Torrents.Count(torrent => MainViewModel.Matches(torrent, Filter));
+        var count = owner.Torrents.Count(torrent => torrent.Matches(Filter));
         if (!textChanged && count == _count)
             return;
         _count = count;

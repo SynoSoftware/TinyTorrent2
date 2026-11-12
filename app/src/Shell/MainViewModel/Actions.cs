@@ -36,29 +36,41 @@ public sealed partial class MainViewModel
                 )
             );
     public string MissingAdapter { get; private set; } = string.Empty;
+    private IncomingState IncomingState =>
+        MissingAdapter.Length > 0 ? IncomingState.MissingAdapter
+        : Settings.Proxy.IsInUse ? IncomingState.Proxied
+        : HasIncoming ? IncomingState.Open
+        : IncomingState.Closed;
     public string Incoming =>
-        MissingAdapter.Length > 0 ? Text.Format("window", "no_adapter", MissingAdapter)
-        : Settings.Proxy.IsInUse ? Settings.Proxy.Route
-        : Text.Get("window", HasIncoming ? "incoming" : "no_incoming");
+        IncomingState switch
+        {
+            IncomingState.MissingAdapter => Text.Format("window", "no_adapter", MissingAdapter),
+            IncomingState.Proxied => Settings.Proxy.Route,
+            IncomingState.Open => Text.Get("window", "incoming"),
+            _ => Text.Get("window", "no_incoming"),
+        };
     public string IncomingStatus =>
         Text.Get(
             "window",
-            MissingAdapter.Length > 0 ? "no_adapter_status"
-                : Settings.Proxy.IsInUse ? "proxy_status"
-                : HasIncoming ? "incoming_status"
-                : "no_incoming_status"
+            IncomingState switch
+            {
+                IncomingState.MissingAdapter => "no_adapter_status",
+                IncomingState.Proxied => "proxy_status",
+                IncomingState.Open => "incoming_status",
+                _ => "no_incoming_status",
+            }
         );
     public string IncomingGlyph =>
-        MissingAdapter.Length > 0 ? Syno.Segoe.Unplug
-        : Settings.Proxy.IsInUse ? Syno.Segoe.Route
-        : Syno.Segoe.Network;
-
-    // A proxy route says nothing about the port, so only a direct connection
-    // reports the port as open or closed.
-    public bool IsIncomingProxied => MissingAdapter.Length == 0 && Settings.Proxy.IsInUse;
-    public bool IsIncomingOpen =>
-        MissingAdapter.Length == 0 && !Settings.Proxy.IsInUse && HasIncoming;
-    public bool IsIncomingClosed => !IsIncomingProxied && !IsIncomingOpen;
+        IncomingState switch
+        {
+            IncomingState.MissingAdapter => Syno.Segoe.Unplug,
+            IncomingState.Proxied => Syno.Segoe.Route,
+            _ => Syno.Segoe.Network,
+        };
+    public bool IsIncomingProxied => IncomingState == IncomingState.Proxied;
+    public bool IsIncomingOpen => IncomingState == IncomingState.Open;
+    public bool IsIncomingClosed =>
+        IncomingState is IncomingState.MissingAdapter or IncomingState.Closed;
     public string SelectionText => Text.Format("window", "selected", _selected.Length);
     public bool HasSelection => _selected.Length > 0;
     public bool CanReorder => CanEdit;
@@ -169,6 +181,24 @@ public sealed partial class MainViewModel
     public event EventHandler<OpenRequestedEventArgs>? OpenRequested;
     public event EventHandler<string>? CopyRequested;
 
+    /// <summary>
+    /// Reads which subtitles belong to the torrents, and returns the step that
+    /// deletes them; null while Subtitles is not available. The caller runs the
+    /// step only after the engine accepts the removal. The read joins the
+    /// database queue now, ahead of the Library work the removal starts, so it
+    /// still finds the subtitles. It returns a step instead of waiting for the
+    /// read, because the removal command must not wait behind that queue.
+    /// </summary>
+    internal Func<Task>? CaptureSubtitles(string[] torrentIds, DeletionMode mode)
+    {
+        if (Subtitles is not { } subtitles)
+        {
+            return null;
+        }
+        var capture = subtitles.CaptureDeletion(torrentIds);
+        return async () => subtitles.Delete(await capture, mode);
+    }
+
     internal ICommand SpeedCommand(Func<Torrent[]> targets) =>
         new RelayCommand(
             () =>
@@ -239,7 +269,7 @@ public sealed partial class MainViewModel
     }
 
     internal Torrent[] FindRecoverable(MoveRecovery recovery) => recovery.TorrentIds.Select(Find).OfType<Torrent>()
-        .Where(torrent => !torrent.IsMoving && torrent.ErrorCode == "move_source_unavailable").ToArray();
+        .Where(torrent => !torrent.IsMoving && torrent.IsSourceUnavailable).ToArray();
 
     // Picked sources come from Add torrent file; the others are dropped,
     // pasted or sent by another instance.

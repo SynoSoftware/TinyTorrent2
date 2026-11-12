@@ -119,7 +119,8 @@ colours; a fact with one
 value needs no marker beyond its own icon. Transfers identifies its default
 download folder above Download locations, and Queue limits names downloads,
 seeds and the total beside their values so the limits are clear. Home uses one
-Home title beside its logo and an activity subtitle.
+Home title beside its logo and an activity subtitle, which counts downloading
+and seeding torrents as the Downloading and Seeding filters do.
 Speed limits summarises Current limits; Schedule identifies whether it is active
 and counts saved periods, so an inactive schedule does not imply those periods
 are running. An inactive schedule has no subtitle, because its title and the
@@ -514,7 +515,8 @@ the periods and keeps them for the next time Weekly schedule is chosen. A refuse
 save keeps the attempted values in the open period and reports the failure through
 the application notification, so the person can correct them or close the period
 without a navigation delay.
-Full-day descriptions say All day rather than midnight to midnight.
+Full-day descriptions say All day rather than midnight to midnight, and a
+period's length reads as every length of time does, so a full day is one day.
 Each period has days, start/end times, and a choice of alternative limits
 or pause, edited with native checkboxes, TimePicker controls, and a ComboBox.
 Standard limits apply outside periods; pause takes precedence on overlap. Overnight

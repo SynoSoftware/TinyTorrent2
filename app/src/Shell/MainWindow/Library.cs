@@ -257,7 +257,7 @@ public sealed partial class MainWindow
         yield return new MenuSeparator();
         foreach (var configuration in Enum.GetValues<LibraryConfiguration>())
             yield return new MenuChoice(
-                Model.Text.Get("library", configuration.ToString().ToLowerInvariant()),
+                Model.Text.Get(configuration),
                 configuration switch
                 {
                     LibraryConfiguration.Videos => Syno.Segoe.Film,

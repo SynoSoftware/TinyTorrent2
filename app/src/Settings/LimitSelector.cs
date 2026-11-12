@@ -82,9 +82,9 @@ public sealed class LimitSelector : ComboBox
             var mode = (LimitMode)item.Tag;
             var label = mode switch
             {
-                LimitMode.Speed => _main.Text.Get("settings", "speed"),
-                LimitMode.Alternative => _main.Text.Get("settings", "alternative"),
-                LimitMode.None => _main.Text.Get("transfer_limits", "none"),
+                LimitMode.Speed => _main.LimitsTitle(LimitProfile.Speed),
+                LimitMode.Alternative => _main.LimitsTitle(LimitProfile.Alternative),
+                LimitMode.None => _main.LimitsTitle(LimitProfile.None),
                 _ => _main.Text.Get("transfer_limits", "follow"),
             };
             if (!Equals(item.Content, label))

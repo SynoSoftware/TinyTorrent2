@@ -42,11 +42,11 @@ internal sealed class DataDownload
     internal static Exception Failure(ReplyException error) =>
         error switch
         {
-            ReplyException.Route => new Library.RouteException(error),
+            ReplyException.Route => new DownloadException(DownloadFailure.Route, error),
             ReplyException.Held { Failure: ReplyFailure.Wait } wait => new RequestBlockedException(
                 wait.Hold
             ),
-            _ => new Library.VideoException(VideoFailure.DownloadFailed, error),
+            _ => new DownloadException(DownloadFailure.Failed, error),
         };
 
     /// <summary>
@@ -81,7 +81,7 @@ internal sealed class DataDownload
             System.Diagnostics.Debug.WriteLine(
                 $"Data download interrupted: {_work.Observation.Description}."
             );
-            var error = new Library.VideoException(VideoFailure.Interrupted);
+            var error = new DownloadException(DownloadFailure.Interrupted);
             Operation.Error = error;
             report(error);
         }
@@ -169,4 +169,21 @@ internal sealed class DataDownload
             return _work.Completion;
         }
     }
+}
+
+/// <summary>A data download, or the replacement or removal of its installed data, failed.</summary>
+internal sealed class DownloadException(DownloadFailure failure, Exception? inner = null)
+    : Exception(failure.ToString(), inner), IFailure
+{
+    internal DownloadFailure Failure { get; } = failure;
+
+    /// <summary>The name of the data, which its owner sets so the text can name it.</summary>
+    internal string? Subject { get; set; }
+
+    public string Describe(Strings text) =>
+        text.Format(
+            "work",
+            "download_" + Failure.ToString().ToLowerInvariant(),
+            Subject ?? string.Empty
+        );
 }

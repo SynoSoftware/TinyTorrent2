@@ -86,7 +86,14 @@
     "sources": "正在添加种子来源",
     "maintenance_recovery": "正在恢复媒体库",
     "maintenance_resetprotection": "正在重置搜索保护",
-    "maintenance_deletedataset": "正在删除已下载的数据"
+    "maintenance_deletedataset": "正在删除已下载的数据",
+    "download_failed": "无法下载{0}数据。请稍后重试。",
+    "download_damaged": "下载的{0}数据已损坏。请稍后重试。",
+    "download_diskfull": "磁盘已满，无法保存{0}数据。请释放空间后重试。",
+    "download_inuse": "另一个程序正在使用{0}数据。请关闭该程序后重试。",
+    "download_unknownformat": "{0}的数据格式已更改，此版本的微种下载器无法读取。已安装的数据未变更。",
+    "download_interrupted": "网络或搜索保护设置已更改，{0}数据下载已停止。请重试。",
+    "download_route": "{0}无法使用所选网络连接方式。请检查代理和网络适配器设置后重试。"
   },
   "library": {
     "failure_unavailable": "{0}无法返回视频信息。请稍后重试。",
@@ -98,12 +105,6 @@
     "failure_unreadable": "无法读取{0}数据。请重试，或在设置中重新下载。",
     "failure_invalidresult": "{0}未返回可用的视频信息。已保存的信息未变更。",
     "failure_missing": "{0}没有此视频的信息。",
-    "failure_downloadfailed": "无法下载{0}数据。请稍后重试。",
-    "failure_downloaddamaged": "下载的{0}数据已损坏。请稍后重试。",
-    "failure_diskfull": "磁盘已满，无法保存{0}数据。请释放空间后重试。",
-    "failure_inuse": "另一个程序正在使用{0}数据。请关闭该程序后重试。",
-    "failure_unknownformat": "{0}的数据格式已更改，此版本的微种下载器无法读取。已安装的数据未变更。",
-    "failure_interrupted": "网络或搜索保护设置已更改，{0}数据下载已停止。请重试。",
     "failure_providerunavailable": "{0}不可用。请选择其他提供方，或稍后重试。",
     "failure_lookupstopped": "连接或设置已更改，请求已停止。请重试。",
     "failure_filechanged": "文件或文件信息已更改，或微种下载器已不再管理此文件。请重试。",

@@ -160,11 +160,15 @@ public sealed partial class DatasetRow : UserControl
         }
     }
 
-    // The age is in whole days, as the update dialog states it.
+    // The installed data's age in whole days, as the row and the update
+    // dialog state it.
+    internal static int Age(FileInfo installed) =>
+        (int)(DateTime.UtcNow - installed.LastWriteTimeUtc).TotalDays;
+
     private string Describe(string section, FileInfo installed, Strings text)
     {
         var size = text.Bytes(installed.Length);
-        var days = (int)(DateTime.UtcNow - installed.LastWriteTimeUtc).TotalDays;
+        var days = Age(installed);
         var age = days == 0 ? text.Get(section, "age_new") : text.FormatCount(section, "age", days);
         return _count is { IsCompletedSuccessfully: true } count
             ? text.Format(

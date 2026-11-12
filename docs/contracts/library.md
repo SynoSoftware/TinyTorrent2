@@ -109,7 +109,9 @@ behavior. The filename is the engine's final name, used unchanged. The engine
 distinguishes that name from the file's current disk path, and stripping a
 textual `.!tt` suffix would also change genuine filenames. One file-kind table
 classifies extensions for ingestion and the file tree, and keeps every format
-either already recognizes, including NFO, Markdown, subtitles and ISO files. One
+either already recognizes, including NFO, Markdown, ISO files and every
+subtitle format that Subtitles reads. A saved file takes a changed
+classification the next time its torrent's files are read. One
 glyph map serves both file presentations; Library keeps its
 identified-episode TV icon.
 

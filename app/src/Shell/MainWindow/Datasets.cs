@@ -61,7 +61,7 @@ public sealed partial class MainWindow
                         }
                         // Current data warns, as the dataset's IsCurrent explains;
                         // data less than a week old notes that little has changed.
-                        var days = (int)(DateTime.UtcNow - installed.LastWriteTimeUtc).TotalDays;
+                        var days = DatasetRow.Age(installed);
                         dialog.Title = Model.Text.Get(section, "update_title");
                         var body =
                             current ? Model.Text.Get(section, "update_current")

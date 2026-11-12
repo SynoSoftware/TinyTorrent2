@@ -4,7 +4,6 @@ using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
 using MaxMind.Db;
-using Syno.TinyTorrent.Library;
 using Syno.TinyTorrent.Shared.Network;
 
 namespace Syno.TinyTorrent.Shared;
@@ -275,15 +274,15 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
         }
         catch (Exception error) when (error is InvalidDataException or InvalidDatabaseException)
         {
-            throw new VideoException(VideoFailure.DownloadDamaged, error);
+            throw new DownloadException(DownloadFailure.Damaged, error);
         }
         catch (IOException error) when (DataDownload.IsDiskFull(error))
         {
-            throw new VideoException(VideoFailure.DiskFull, error);
+            throw new DownloadException(DownloadFailure.DiskFull, error);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
-            throw new VideoException(VideoFailure.DownloadFailed, error);
+            throw new DownloadException(DownloadFailure.Failed, error);
         }
         finally
         {
@@ -385,7 +384,7 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
-            throw new VideoException(VideoFailure.InUse, error);
+            throw new DownloadException(DownloadFailure.InUse, error);
         }
         finally
         {
@@ -434,7 +433,7 @@ internal sealed class Geolocation(ProviderHttp http, BackgroundWork work) : IDat
 
     private void Report(Exception error)
     {
-        if (error is VideoException failure)
+        if (error is DownloadException failure)
             failure.Subject ??= Name;
         Failed?.Invoke(this, error);
     }

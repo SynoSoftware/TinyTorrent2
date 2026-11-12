@@ -4,7 +4,6 @@ using System.Text.Json;
 using System.Windows.Input;
 using Microsoft.UI.Xaml.Controls;
 using Syno.TinyTorrent.Controls;
-using Syno.TinyTorrent.Settings;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Desktop;
 using Syno.TinyTorrent.Shared.Engine;
@@ -92,12 +91,9 @@ public sealed class AddDraft : IDraft
     }
     private bool HasNewDestination =>
         !string.IsNullOrWhiteSpace(_destination)
-        && !string.Equals(
-            Path.TrimEndingDirectorySeparator(_destination.Trim()),
-            Path.TrimEndingDirectorySeparator(
-                _owner.Settings.Destination.ConfirmedText?.Trim() ?? string.Empty
-            ),
-            StringComparison.OrdinalIgnoreCase
+        && !FolderComparer.Instance.Equals(
+            _destination.Trim(),
+            _owner.Settings.Destination.ConfirmedText?.Trim() ?? string.Empty
         );
     public bool CanSaveDestination => CanEdit && HasNewDestination;
     public bool SaveDestination
@@ -196,7 +192,7 @@ public sealed class AddDraft : IDraft
             .Prepend(_defaultDestination)
             .Select(folder => Path.TrimEndingDirectorySeparator(folder.Trim()))
             .Where(folder => folder.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Distinct(FolderComparer.Instance)
             .Take(6)
             .ToArray();
     public string Shared =>
@@ -221,7 +217,7 @@ public sealed class AddDraft : IDraft
         ?? (source.Content is SourceContent.Present ? null : _destinationFailure);
 
     internal static bool IsDestinationError(Exception error) =>
-        error is CommandException { Code: "invalid_destination" };
+        error is CommandException { Reason: EngineFailure.Destination };
 
     public bool HasDestinationError => _destinationFailure is not null || _space is DiskSpace.Unavailable;
     public string DestinationMessage =>
@@ -264,7 +260,7 @@ public sealed class AddDraft : IDraft
         _owner = owner;
         _client = client;
         _strings = strings;
-        Confirmation = new(owner.Settings);
+        Confirmation = new(owner.Settings.Save);
         _destination = _defaultDestination = Windows.Storage.UserDataPaths.GetDefault().Downloads;
         _emptyFiles = new FileSelection(strings);
     }
@@ -319,7 +315,7 @@ public sealed class AddDraft : IDraft
         var rejected = Sources.Where(source => source.NeedsFiles).ToArray();
         if (rejected.Length > 0)
         {
-            failure = new CommandException("invalid_priorities", null, _strings, "add");
+            failure = new CommandException("invalid_priorities", null, "add");
             await Discard(rejected);
         }
         if (CanEdit && !IsOpen && HasDraft && !await Submit() && Failure is { } error)
@@ -424,7 +420,7 @@ public sealed class AddDraft : IDraft
                 !Uri.TryCreate(value, UriKind.Absolute, out var address)
                 || address.Scheme != "magnet"
             )
-                throw new CommandException("invalid_source", null, _strings, "preview");
+                throw new CommandException("invalid_source", null, "preview");
             await _pass;
             var source = new AddSource(value, _strings, this);
             var destination = _destination;
@@ -707,7 +703,7 @@ public sealed class AddDraft : IDraft
         {
             // The rows read again without a refused choice, so a new preview
             // does not get it either. Any other failure keeps it.
-            if (error is CommandException { Code: not "preview_expired" })
+            if (error is CommandException { Reason: not EngineFailure.PreviewExpired })
                 source.Refuse(choices);
             Fail(error);
             source.Files.Reload();
@@ -886,7 +882,7 @@ public sealed class AddDraft : IDraft
                         );
                         source.Apply(detail, destination, await ReadFiles(source, detail));
                     }
-                    catch (CommandException error) when (error.Code == "preview_expired")
+                    catch (CommandException error) when (error.Reason == EngineFailure.PreviewExpired)
                     {
                         source.PreviewId = null;
                         await Acquire(source);
@@ -1265,7 +1261,7 @@ public sealed class AddSource : INotifyPropertyChanged
         var error = preview.GetProperty("error").GetString();
         if (!string.IsNullOrEmpty(error) && Problem is null)
             Problem = new SourceProblem.Preview(
-                new CommandException("preview_failed", error, _strings, "preview_detail")
+                new CommandException("preview_failed", error, "preview_detail")
             );
         Hashes = preview
             .GetProperty("hashes")

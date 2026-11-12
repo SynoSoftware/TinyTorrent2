@@ -35,7 +35,7 @@ public sealed partial class AboutPage : UserControl
         _company.Description = "synapse.sr";
         _company.Click += (_, _) => LinkRequested?.Invoke(this, new("https://synapse.sr/"));
         _source.Click += (_, _) =>
-            LinkRequested?.Invoke(this, new("https://github.com/SynoSoftware/TinyTorrent2"));
+            LinkRequested?.Invoke(this, new(App.RepositoryPage));
         _credits.Click += (_, _) => CreditsRequested?.Invoke(this, EventArgs.Empty);
         Links.Children.Add(_company);
         Links.Children.Add(_source);

@@ -23,6 +23,17 @@ internal enum CityPhase
     Installing,
 }
 
+internal enum DownloadFailure
+{
+    Failed,
+    Damaged,
+    DiskFull,
+    InUse,
+    UnknownFormat,
+    Interrupted,
+    Route,
+}
+
 internal enum UpdatePhase
 {
     Checking,
@@ -192,6 +203,32 @@ public enum Consumer
     Summary,
     Inspector,
     Draft,
+}
+
+/// <summary>
+/// The engine's refusals and problems that the app handles apart from their
+/// text. <see cref="Shared.Engine.CommandException"/> reads them from its
+/// word: a reply's error code, the words of the engine's <c>ErrorCode</c>,
+/// or a notification's problem, the words of its <c>ProblemKind</c> (both in
+/// <c>engine/inc/Enums.h</c>). Every other word is <see cref="Other"/> and
+/// shows its own text.
+/// </summary>
+internal enum EngineFailure
+{
+    Other,
+    Starting,
+
+    /// <summary>The engine could not read or save its download state.</summary>
+    Storage,
+    MetadataUnavailable,
+    AliasConflict,
+    PreviewExpired,
+
+    /// <summary>The folder is not usable, or its drive is unavailable.</summary>
+    Destination,
+
+    /// <summary>A move failed or was interrupted, so its files can be in either folder.</summary>
+    Move,
 }
 
 // Who requested an engine command. Only an accepted command the person
@@ -603,6 +640,15 @@ internal enum UnfinishedAnswer
     Abandon,
 }
 
+// The main keyboard's keys the app reads that VirtualKey does not name; each
+// value is the key's Windows virtual-key code.
+internal enum OemKey
+{
+    Plus = 0xBB,
+    Comma = 0xBC,
+    Minus = 0xBD,
+}
+
 // What started the window's close.
 internal enum CloseRequest
 {
@@ -696,14 +742,6 @@ internal enum VideoFailure
     InvalidResult,
     Missing,
 
-    // Downloading the provider's data failed, and the installed data stays.
-    DownloadFailed,
-    DownloadDamaged,
-    DiskFull,
-    InUse,
-    UnknownFormat,
-    Interrupted,
-
     // Library refused the request itself.
     ProviderUnavailable,
     LookupStopped,
@@ -795,6 +833,16 @@ internal enum DatabaseCondition
 
     // The file is marked read-only; Repair clears the mark.
     ReadOnlyFile,
+}
+
+// What the status bar says about incoming connections. A missing adapter
+// outranks a proxy, and a proxy route says nothing about the port.
+internal enum IncomingState
+{
+    MissingAdapter,
+    Proxied,
+    Open,
+    Closed,
 }
 
 internal enum PauseReason

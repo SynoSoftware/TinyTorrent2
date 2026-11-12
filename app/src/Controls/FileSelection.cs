@@ -15,7 +15,9 @@ public sealed class FileSelection : INotifyPropertyChanged
     // The rows a browser holds, the window of the engine's `tree` replies.
     internal const int Window = 10_000;
 
-    private static readonly TimeSpan Pause = TimeSpan.FromMilliseconds(200);
+    // How long a search waits after the person's last keystroke, so typing a
+    // word runs one search. Library's search waits as long.
+    internal static readonly TimeSpan SearchPause = TimeSpan.FromMilliseconds(200);
 
     private readonly Strings _strings;
     private readonly Dictionary<string, FileNode> _folders = [];
@@ -466,7 +468,7 @@ public sealed class FileSelection : INotifyPropertyChanged
 
     private async Task Find(string text)
     {
-        await Task.Delay(Pause);
+        await Task.Delay(SearchPause);
         if (text != _search || _read is null)
             return;
         if (FileName.SearchWords(text).Length == 0)
@@ -548,7 +550,9 @@ public sealed class FileSelection : INotifyPropertyChanged
 
     public void SelectMatching(bool wanted)
     {
-        FileAction action = wanted ? new FileAction.Want() : new FileAction.Set(0);
+        FileAction action = wanted
+            ? new FileAction.Want()
+            : new FileAction.Set(FilePriority.Skip.Value);
         if (_matches is not { } matches)
         {
             Choose([_root], action);
@@ -750,7 +754,8 @@ public sealed class FileNode : INotifyPropertyChanged
         _downloaded is not { } downloaded ? null
         : _size == 0 ? 1
         : Math.Clamp((double)downloaded / _size, 0, 1);
-    public string ProgressText => Progress?.ToString("P1", CultureInfo.CurrentCulture) ?? "—";
+    public string ProgressText =>
+        Progress?.ToString("P1", CultureInfo.CurrentCulture) ?? Strings.NoValue;
     public double ProgressValue => Progress ?? 0;
     public bool IsIndeterminate => Progress is null;
     public bool IsComplete => Progress is >= 1;
@@ -769,7 +774,9 @@ public sealed class FileNode : INotifyPropertyChanged
             if (value is { } wanted)
                 _owner.Choose(
                     [this],
-                    wanted ? new FileAction.Want() : new FileAction.Set(0)
+                    wanted
+                        ? new FileAction.Want()
+                        : new FileAction.Set(FilePriority.Skip.Value)
                 );
         }
     }
@@ -782,33 +789,32 @@ public sealed class FileNode : INotifyPropertyChanged
                 _owner.Choose([this], new FileAction.Set(value));
         }
     }
+    // The combo lists Unchanged first, for a folder whose files differ, then
+    // FilePriority.All.
     public int PriorityIndex
     {
-        get =>
-            Priority switch
+        get
+        {
+            for (var index = 0; index < FilePriority.All.Count; index++)
             {
-                0 => 1,
-                1 => 2,
-                4 => 3,
-                7 => 4,
-                _ => 0,
-            };
+                if (FilePriority.All[index].Value == Priority)
+                {
+                    return index + 1;
+                }
+            }
+            return 0;
+        }
         set =>
-            Priority = value switch
-            {
-                1 => 0,
-                2 => 1,
-                3 => 4,
-                4 => 7,
-                _ => -1,
-            };
+            Priority = value >= 1 && value <= FilePriority.All.Count
+                ? FilePriority.All[value - 1].Value
+                : -1;
     }
     public event PropertyChangedEventHandler? PropertyChanged;
     public string Unchanged => _owner.Text.Get("files", "unchanged");
-    public string Skip => _owner.Text.Get("files", "skip");
-    public string Low => _owner.Text.Get("files", "low");
-    public string Normal => _owner.Text.Get("files", "normal");
-    public string High => _owner.Text.Get("files", "high");
+    public string Skip => _owner.Text.Get("files", FilePriority.Skip.TextKey);
+    public string Low => _owner.Text.Get("files", FilePriority.Low.TextKey);
+    public string Normal => _owner.Text.Get("files", FilePriority.Normal.TextKey);
+    public string High => _owner.Text.Get("files", FilePriority.High.TextKey);
 
     internal FileNode(FileSelection owner, string name, FileNode? parent, int index)
     {
@@ -892,7 +898,7 @@ public sealed class FileNode : INotifyPropertyChanged
         _priority = action.Apply(_priority);
         if (!IsFolder)
             return;
-        (_wantedCount, _wantedSize) = action is FileAction.Set { Priority: 0 } ? (0, 0) : (_count, _size);
+        (_wantedCount, _wantedSize) = action.Skips ? (0, 0) : (_count, _size);
         foreach (var child in Children)
             child.Choose(action);
     }
@@ -902,7 +908,8 @@ public sealed class FileNode : INotifyPropertyChanged
         if (!IsFolder)
         {
             _count = 1;
-            (_wantedCount, _wantedSize) = _priority > 0 ? (1, _size) : (0, 0);
+            (_wantedCount, _wantedSize) =
+                _priority != FilePriority.Skip.Value ? (1, _size) : (0, 0);
         }
         var changed = false;
         foreach (var child in Children)
@@ -950,29 +957,43 @@ internal abstract record FileTarget
         folder.Length == 0 || path.StartsWith(folder + "/", StringComparison.Ordinal);
 }
 
+// The priorities a person chooses for files, in menu order. TextKey names the
+// text and, with "_key", the access key in the `files` section; Value is the
+// engine's priority.
+internal sealed record FilePriority(int Value, string TextKey, string Glyph)
+{
+    internal static readonly FilePriority Skip = new(0, "skip", Segoe.CircleSlash);
+    internal static readonly FilePriority Low = new(1, "low", Segoe.ArrowDown);
+    internal static readonly FilePriority Normal = new(4, "normal", Segoe.Minus);
+    internal static readonly FilePriority High = new(7, "high", Segoe.ArrowUp);
+    internal static readonly IReadOnlyList<FilePriority> All = [Skip, Low, Normal, High];
+}
+
 // What a choice sets on every file it covers, by the rule of the pipe API's
 // `edit`.
 internal abstract record FileAction
 {
     private FileAction() { }
 
-    // That priority: 0 skips the file.
     internal sealed record Set(int Priority) : FileAction;
 
     // Normal on a skipped file; another priority stays.
     internal sealed record Want : FileAction;
 
+    internal bool Skips => this is Set set && set.Priority == FilePriority.Skip.Value;
+
     internal int Apply(int priority) =>
         this is Set set ? set.Priority
-        : priority == 0 ? 4
+        : priority == FilePriority.Skip.Value ? FilePriority.Normal.Value
         : priority;
 
-    internal bool Holds(int priority) => this is Set set ? priority == set.Priority : priority > 0;
+    internal bool Holds(int priority) =>
+        this is Set set ? priority == set.Priority : priority != FilePriority.Skip.Value;
 
     // Whether a folder with these values already holds the choice; its
     // priority is -1 when its files differ.
     internal bool Holds(long wantedCount, long count, int priority) =>
-        this is Set { Priority: 0 } ? wantedCount == 0
+        Skips ? wantedCount == 0
         : this is Set set ? priority == set.Priority
         : wantedCount == count;
 }

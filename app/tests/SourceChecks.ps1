@@ -1003,7 +1003,7 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
             try { & $Send }
             catch {
                 $failure = $_.Exception
-                while ($failure.InnerException -and $failure.GetType().Name -notin @('ProviderException', 'RouteException', 'VideoException', 'SubtitleException', 'RequestBlockedException')) { $failure = $failure.InnerException }
+                while ($failure.InnerException -and $failure.GetType().Name -notin @('ProviderException', 'RouteException', 'VideoException', 'DownloadException', 'SubtitleException', 'RequestBlockedException')) { $failure = $failure.InnerException }
                 return $failure
             }
             return $null
@@ -1011,8 +1011,8 @@ public sealed class SubtitleSearchReply : HttpMessageHandler {
         function Read-Value($Target, [string] $Name) { return $Target.GetType().GetProperty($Name, $flags).GetValue($Target) }
         $replyCases = @(
             @{ Status = 429; Hold = 4; Library = 'RemoteWait'; Subtitles = 'Quota'; City = 'RemoteWait' },
-            @{ Status = 503; Hold = 3; Library = 'Unavailable'; Subtitles = 'Network'; City = 'DownloadFailed' },
-            @{ Transport = $true; Hold = 3; Library = 'Unavailable'; Subtitles = 'Network'; City = 'DownloadFailed' },
+            @{ Status = 503; Hold = 3; Library = 'Unavailable'; Subtitles = 'Network'; City = 'Failed' },
+            @{ Transport = $true; Hold = 3; Library = 'Unavailable'; Subtitles = 'Network'; City = 'Failed' },
             @{ Route = $true; Library = 'Route'; Subtitles = 'Route'; City = 'Route' }
         )
         try {

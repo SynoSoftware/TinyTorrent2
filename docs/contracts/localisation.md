@@ -149,6 +149,18 @@ retain codes/arguments for operation status and outcomes so they can be rendered
 again after a switch. Raw operating-system or library diagnostics may accompany
 that message without being treated as translated product copy.
 
+Each failure type the app declares implements `IFailure` and builds its text
+from `Strings` when a surface asks for it through `Strings.Error`, so the text
+follows a language change; it never stores translated text. A platform
+exception that the app throws, such as an `IOException`, carries its text from
+`Strings` as its message, and `Strings.Error` shows that message.
+
+`Strings` owns these display formats, so each reads the same on every surface:
+sizes, rates, lengths of time, count limits, key combinations, the labels of
+the settings categories, torrent filters, Library configurations, inspector
+sections and tracker states, and the em dash of a value that is not known. A
+count limit shows digit grouping, as 1,000.
+
 Use locale-correct plural forms for counted messages, not an English singular/
 plural rule for every language. Select forms using the message's resolved language,
 including when it falls back to English. Keep regional number/date/unit formatting

@@ -354,7 +354,7 @@ public sealed partial class MainWindow
                 return;
         }
 
-        if (selected > 0 && content.Page is WindowPage.Library or WindowPage.Torrents)
+        if (selected > 0 && Navigation.IsWorkspace(content.Page))
             SetStatus(
                 CountLabel,
                 Model.Text.Format("window", "selected", selected),
@@ -591,10 +591,27 @@ public sealed partial class MainWindow
         );
     }
 
+    // The smallest window in DIPs; the title bar's content can need more width.
+    private const int MinimumWidth = 720;
+    private const int MinimumHeight = 560;
+
     private void UpdateMinimum(double scale)
     {
         if (AppWindow.Presenter is not OverlappedPresenter presenter)
             return;
+        var minimum = MinimumSize(scale);
+        if (presenter.PreferredMinimumWidth != minimum.Width)
+            presenter.PreferredMinimumWidth = minimum.Width;
+        if (presenter.PreferredMinimumHeight != minimum.Height)
+            presenter.PreferredMinimumHeight = minimum.Height;
+        if (Model.Page == WindowPage.Settings && AppWindow.Size.Width < minimum.Width)
+            AppWindow.Resize(new SizeInt32(minimum.Width, AppWindow.Size.Height));
+    }
+
+    // The smallest window, in physical pixels and with its frame, that shows
+    // the whole title bar.
+    private SizeInt32 MinimumSize(double scale)
+    {
         var content =
             CaptionStart.ActualWidth
             + Menus.ActualWidth
@@ -607,15 +624,11 @@ public sealed partial class MainWindow
         var width =
             (int)
                 Math.Ceiling(
-                    Math.Max(720, content + LeftInset.Width.Value + RightInset.Width.Value) * scale
+                    Math.Max(MinimumWidth, content + LeftInset.Width.Value + RightInset.Width.Value)
+                        * scale
                 ) + frame;
-        var height = (int)Math.Ceiling(560 * scale);
-        if (presenter.PreferredMinimumWidth != width)
-            presenter.PreferredMinimumWidth = width;
-        if (presenter.PreferredMinimumHeight != height)
-            presenter.PreferredMinimumHeight = height;
-        if (Model.Page == WindowPage.Settings && AppWindow.Size.Width < width)
-            AppWindow.Resize(new SizeInt32(width, AppWindow.Size.Height));
+        var height = (int)Math.Ceiling(MinimumHeight * scale);
+        return new SizeInt32(width, height);
     }
 
     private void UpdateColors()
@@ -671,12 +684,7 @@ public sealed partial class MainWindow
         NameButton(StatusMore, Model.Text.Get("notifications", "silence_location"));
         NameButton(
             BackButton,
-            Model.Text.Format(
-                "shortcuts",
-                "tip",
-                Model.Text.Get("menus", "back"),
-                ShortcutText(Back)
-            )
+            Model.Text.ShortcutTip(Model.Text.Get("menus", "back"), ShortcutText(Back))
         );
         RefreshMenus();
         QueueStatus();

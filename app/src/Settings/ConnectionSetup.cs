@@ -5,14 +5,15 @@ using System.Text.Json;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Engine;
 using Syno.TinyTorrent.Shell;
-using Syno.TinyTorrent.Torrents;
 
 namespace Syno.TinyTorrent.Settings;
 
 public sealed class ConnectionSetup : INotifyPropertyChanged
 {
+    // The bytes a second in one decimal megabit a second, the unit of capacity.
+    internal const int MbitPerSecond = 125_000;
     private const double MinimumCapacity = 0.01;
-    private const double MaximumCapacity = int.MaxValue / 125000.0;
+    private const double MaximumCapacity = int.MaxValue / (double)MbitPerSecond;
     private readonly Editor _settings;
     private readonly MainViewModel _main;
     private readonly PipeClient _client;
@@ -172,11 +173,11 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         : Changes() is { } changes
             ? Text.Get("connection_setup", changes.Count > 0 ? "ready" : "unchanged")
         : string.Empty;
-    public string PresetName => SavedPreset is { } preset ? Name(preset) : "—";
+    public string PresetName => SavedPreset is { } preset ? Name(preset) : Strings.NoValue;
     public string SavedCapacity =>
         _settings.Capacity is (var download, var upload)
             ? Text.Format("settings", "caps_summary", LinkSpeed(download), LinkSpeed(upload))
-            : "—";
+            : Strings.NoValue;
     public string StandardSummary => _settings.StandardSummary;
     public string AlternativeSummary => _settings.AlternativeSummary;
     public IReadOnlyList<string> Hierarchy { get; private set; } = [];
@@ -349,8 +350,8 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
             [
                 new(
                     Text.Get("transfer_limits", "control"),
-                    Text.Get("transfer_limits", "none"),
-                    Text.Get("settings", "speed"),
+                    _main.LimitsTitle(LimitProfile.None),
+                    _main.LimitsTitle(LimitProfile.Speed),
                     true
                 ),
             ]
@@ -365,10 +366,20 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
                 Text.Get("settings", "active_downloads"),
                 saved?.Downloads,
                 queue?.Downloads,
-                Count
+                count => Text.CountLimit(count)
             ),
-            Row(Text.Get("settings", "active_seeds"), saved?.Seeds, queue?.Seeds, Count),
-            Row(Text.Get("settings", "active_total"), saved?.Total, queue?.Total, Count),
+            Row(
+                Text.Get("settings", "active_seeds"),
+                saved?.Seeds,
+                queue?.Seeds,
+                count => Text.CountLimit(count)
+            ),
+            Row(
+                Text.Get("settings", "active_total"),
+                saved?.Total,
+                queue?.Total,
+                count => Text.CountLimit(count)
+            ),
         ];
     }
 
@@ -540,7 +551,7 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
     {
         var hierarchy = new[]
         {
-            Text.Get("settings", "limits"),
+            Text.Get(SettingsCategory.Limits),
             Text.Get("connection_setup", "title"),
         };
         if (!Hierarchy.SequenceEqual(hierarchy))
@@ -639,7 +650,7 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
             return initial;
         if (caps.Download == 0)
             return Unlimited;
-        return Math.Clamp((int)Math.Round(caps.Download / (capacity * 125000) * 20) * 5, 5, 95);
+        return Math.Clamp((int)Math.Round(caps.Download / (capacity * MbitPerSecond) * 20) * 5, 5, 95);
     }
 
     // Nothing is proposed until the saved values are known, because each
@@ -701,8 +712,8 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
     ) =>
         new(
             label,
-            current is { } saved ? display(saved) : "—",
-            next is { } value ? display(value) : "—",
+            current is { } saved ? display(saved) : Strings.NoValue,
+            next is { } value ? display(value) : Strings.NoValue,
             next is { } changed && changed != current
         );
 
@@ -713,11 +724,6 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
         mbps >= 1000
             ? Text.Format("units", "speed", mbps / 1000, Text.Get("units", "gbps"))
             : Text.Format("units", "speed", mbps, Text.Get("units", "mbps"));
-
-    private string Count(int number) =>
-        number == 0
-            ? Text.Get("transfer_limits", "unlimited")
-            : number.ToString("N0", CultureInfo.CurrentCulture);
 
     private string Rates(int share)
     {
@@ -767,7 +773,7 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
     {
         if (string.IsNullOrWhiteSpace(input))
             return 0;
-        return Editor.TryNumber(input, out var number) ? number : double.NaN;
+        return Strings.TryNumber(input, out var number) ? number : double.NaN;
     }
 
     private static string Input(Setting setting)
@@ -788,7 +794,6 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
     private static QueueLimits Queue(int share) =>
         share <= Share(TransferPreset.Reduced) ? new(2, 2, 3) : new(3, 5, 8);
 
-    // Capacity is in megabits a second, so 1 Mbps is 125,000 bytes a second.
     private static Caps? CapsAt(int share, double download, double upload)
     {
         if (share == Unlimited)
@@ -797,8 +802,8 @@ public sealed class ConnectionSetup : INotifyPropertyChanged
             return null;
         var fraction = share / 100.0;
         return new(
-            (int)Math.Round(download * 125000 * fraction),
-            (int)Math.Round(upload * 125000 * fraction)
+            (int)Math.Round(download * MbitPerSecond * fraction),
+            (int)Math.Round(upload * MbitPerSecond * fraction)
         );
     }
 

@@ -1,9 +1,9 @@
 using System.ComponentModel;
-using Syno.TinyTorrent.Settings;
 
 namespace Syno.TinyTorrent.Shared;
 
-public sealed class DialogPreference(Editor settings) : INotifyPropertyChanged
+public sealed class DialogPreference(Func<IReadOnlyDictionary<string, bool>, Task> save)
+    : INotifyPropertyChanged
 {
     private bool _neverShow;
 
@@ -33,6 +33,6 @@ public sealed class DialogPreference(Editor settings) : INotifyPropertyChanged
             .Distinct()
             .Where(setting => setting.ConfirmedOn == true)
             .ToDictionary(setting => setting.Name, _ => false);
-        return values.Count > 0 ? settings.Save(values) : Task.CompletedTask;
+        return values.Count > 0 ? save(values) : Task.CompletedTask;
     }
 }

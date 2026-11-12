@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Microsoft.UI.Xaml;
+using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Torrents;
-using Windows.Graphics;
 
 namespace Syno.TinyTorrent.Shell;
 
@@ -21,11 +21,7 @@ public sealed partial class MainWindow
             Model.Torrents.Count != 1
             || target.TorrentId != fixture.GetProperty("target").GetString()
             || target.Size != fixture.GetProperty("size").GetInt64()
-            || !string.Equals(
-                Path.GetFullPath(target.SavePath),
-                destination,
-                StringComparison.OrdinalIgnoreCase
-            )
+            || !FolderComparer.Instance.Equals(target.SavePath, destination)
             || Model.Settings.Adapter.Input != fixture.GetProperty("interface").GetString()
         )
             throw new InvalidOperationException(
@@ -44,35 +40,11 @@ public sealed partial class MainWindow
         Model.IsFilterOpen = false;
         Torrents.Selection = new Syno.TableView.Selection([target], target);
         await SelectTorrent();
-        var scale = Root.XamlRoot.RasterizationScale;
-        var minimum =
-            ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).PreferredMinimumWidth
-            ?? 0;
         var started = target.Downloaded;
-        foreach (var language in new[] { "en", "es" })
-        foreach (var theme in new[] { "light", "dark" })
-        {
-            await Model.Settings.SelectTheme(theme);
-            await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
-            Model.SelectLanguage(language);
-            await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);
-            foreach (
-                var size in new[]
-                {
-                    new SizeInt32(720, 560),
-                    new SizeInt32(1040, 680),
-                    new SizeInt32(1280, 800),
-                }
-            )
+        await CaptureMatrix(
+            async (suffix, _) =>
             {
-                AppWindow.Resize(
-                    new SizeInt32(
-                        Math.Max((int)(size.Width * scale), minimum),
-                        (int)(size.Height * scale)
-                    )
-                );
-                var prefix =
-                    "traffic-" + language + "-" + theme + "-" + size.Width + "x" + size.Height;
+                var prefix = "traffic-" + suffix;
                 Model.CloseInspector();
                 await CaptureReady(
                     target,
@@ -155,7 +127,7 @@ public sealed partial class MainWindow
                     );
                 }
             }
-        }
+        );
         if (target.Downloaded <= started || Model.Torrents.Count != 1 || target.Progress >= 1)
             throw new InvalidOperationException(
                 "The traffic capture did not retain an advancing incomplete fixture."

@@ -12,14 +12,6 @@ internal static partial class SubtitleFile
 {
     private static readonly IReadOnlyDictionary<string, string> LanguageNames = Languages();
 
-    internal static bool IsSubtitle(string path) =>
-        Path.GetExtension(path).ToLowerInvariant()
-            is ".srt"
-                or ".ass"
-                or ".ssa"
-                or ".vtt"
-                or ".sub";
-
     internal static bool BelongsTo(string subtitle, string movie, string folder, bool sole)
     {
         var title = FileName.Interpret(movie).Name;
@@ -176,13 +168,7 @@ internal static partial class SubtitleFile
     {
         yield return Path.GetFileNameWithoutExtension(subtitle);
         var parent = Path.GetDirectoryName(subtitle);
-        while (
-            parent is not null
-            && !StringComparer.OrdinalIgnoreCase.Equals(
-                Path.TrimEndingDirectorySeparator(parent),
-                Path.TrimEndingDirectorySeparator(folder)
-            )
-        )
+        while (parent is not null && !FolderComparer.Instance.Equals(parent, folder))
         {
             yield return Path.GetFileName(parent);
             parent = Path.GetDirectoryName(parent);

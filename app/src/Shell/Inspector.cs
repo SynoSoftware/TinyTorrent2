@@ -87,7 +87,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
         _target is not null && _owner.Contains(_target) && IsAvailable && _owner.CanSave;
     public bool CanEdit => IsVisible && CanSave && !IsReplacing && !_owner.IsClosing;
     public bool IsPending => _pending is not null;
-    private bool IsStarting => _readFailure is CommandException { Code: "starting" };
+    private bool IsStarting => _readFailure is CommandException { Reason: EngineFailure.Starting };
     public bool IsLoading =>
         _subjectFrame is not null
         || _fetching
@@ -131,7 +131,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
         _target?.Hashes.FirstOrDefault(hash => hash.Length == 64) ?? string.Empty;
     public string HashV1Label => Text.Get("inspector", HashV2.Length > 0 ? "hash_v1" : "hash");
     public string HashV2Label => Text.Get("inspector", HashV1.Length > 0 ? "hash_v2" : "hash");
-    public long Created { get; private set; }
+    public DateTimeOffset? Created { get; private set; }
     public int PieceSize { get; private set; }
     public int PieceCount { get; private set; }
     public bool? IsPrivate { get; private set; }
@@ -166,10 +166,9 @@ public sealed partial class Inspector : INotifyPropertyChanged
                 : Text.Format("inspector", "progress_eta", progress, torrent.EtaText);
         }
     }
-    public string CommentText => Comment.Length > 0 ? Comment : "—";
-    public string CreatorText => Creator.Length > 0 ? Creator : "—";
-    public string CreatedText =>
-        Created <= 0 ? "—" : Text.Time(DateTimeOffset.FromUnixTimeSeconds(Created));
+    public string CommentText => Comment.Length > 0 ? Comment : Strings.NoValue;
+    public string CreatorText => Creator.Length > 0 ? Creator : Strings.NoValue;
+    public string CreatedText => Created is { } created ? Text.Time(created) : Strings.NoValue;
     public string PiecesText =>
         HasMetadata
             ? Text.Format(
@@ -178,9 +177,11 @@ public sealed partial class Inspector : INotifyPropertyChanged
                 PieceCount.ToString("N0", CultureInfo.CurrentCulture),
                 Text.Bytes(PieceSize)
             )
-            : "—";
+            : Strings.NoValue;
     public string PrivacyText =>
-        IsPrivate is { } privacy ? Text.Get("inspector", privacy ? "private" : "public") : "—";
+        IsPrivate is { } privacy
+            ? Text.Get("inspector", privacy ? "private" : "public")
+            : Strings.NoValue;
     public string PrivacyGlyph =>
         IsPrivate switch
         {
@@ -404,6 +405,8 @@ public sealed partial class Inspector : INotifyPropertyChanged
         if (!_owner.IsClosing && _target == target)
             Select(section);
     }
+
+    internal Task Copy(string text) => _owner.Copy(text);
 
     internal void Select(InspectorSection section)
     {
@@ -998,7 +1001,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
             Magnet = magnet;
         Comment = reply.GetProperty("comment").GetString()!;
         Creator = reply.GetProperty("creator").GetString()!;
-        Created = reply.GetProperty("created").GetInt64();
+        Created = PipeClient.ReadTime(reply.GetProperty("created"));
         PieceSize = reply.GetProperty("piece_size").GetInt32();
         PieceCount = reply.GetProperty("piece_count").GetInt32();
         var privacy = reply.GetProperty("private");
@@ -1018,7 +1021,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
             {
                 root = await ReadTree(torrent, new() { ["folder"] = string.Empty }).WaitAsync(cancellation);
             }
-            catch (CommandException error) when (error.Code == "metadata_unavailable")
+            catch (CommandException error) when (error.Reason == EngineFailure.MetadataUnavailable)
             {
                 return;
             }
@@ -1220,7 +1223,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
                 || address.Scheme is not "http" and not "https" and not "udp"
             )
             {
-                _editFailure = new CommandException("invalid_trackers", url, Text);
+                _editFailure = new CommandException("invalid_trackers", url);
                 Refresh();
                 return;
             }
@@ -1341,7 +1344,8 @@ public sealed partial class Inspector : INotifyPropertyChanged
         _pieceFiles = null;
         History = null;
         Folder = Comment = Creator = Magnet = string.Empty;
-        Created = PieceSize = PieceCount = 0;
+        Created = null;
+        PieceSize = PieceCount = 0;
         IsPrivate = null;
     }
 

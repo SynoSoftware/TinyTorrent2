@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Syno.TinyTorrent.Shared;
 
 namespace Syno.TinyTorrent.Shell;
 
@@ -103,22 +104,26 @@ public sealed partial class MainViewModel
             )
             : string.Empty;
     public string LimitsHeading =>
-        _limits?.Profile switch
+        _limits is { } limits ? LimitsTitle(limits.Profile) : Strings.NoValue;
+
+    // The name a heading or a choice gives these limits; LimitLabel is the
+    // form inside a sentence.
+    internal string LimitsTitle(LimitProfile profile) =>
+        profile switch
         {
-            null => "—",
             LimitProfile.Speed => Text.Get("settings", "speed"),
             LimitProfile.Alternative => Text.Get("settings", "alternative"),
             _ => Text.Get("transfer_limits", "none"),
         };
     public string LimitsSummary =>
         _limits is not { } limits
-            ? "—"
+            ? Strings.NoValue
             : LimitsHeading
                 + " · "
                 + FormatCaps("settings", "caps_summary")
                 + (limits.Mode == LimitMode.Schedule ? " · " + LimitsNow : string.Empty);
     public string ScheduleSummary =>
-        _limits is null ? "—"
+        _limits is null ? Strings.NoValue
         : FixedLimits is { } mode ? Text.Format("settings", "schedule_unused", LimitLabel(mode))
         : Settings.Schedule.NextChange(DateTime.Now) is { } change
             ? Text.Format("settings", "schedule_until", change)

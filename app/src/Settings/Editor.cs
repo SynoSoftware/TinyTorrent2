@@ -6,7 +6,7 @@ using System.Windows.Input;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Engine;
 using Syno.TinyTorrent.Shell;
-using Syno.TinyTorrent.Torrents;
+using ElementTheme = Microsoft.UI.Xaml.ElementTheme;
 
 namespace Syno.TinyTorrent.Settings;
 
@@ -151,7 +151,7 @@ public sealed partial class Editor : INotifyPropertyChanged
                 || InactiveTime.ConfirmedNumber is not { } idle
                 || SeedRule.ConfirmedText is not { } rule
             )
-                return "—";
+                return Strings.NoValue;
             var limits = new List<string>();
             if (ratio > 0)
                 limits.Add(Text.Format("settings", "ratio_summary", ratio));
@@ -175,13 +175,13 @@ public sealed partial class Editor : INotifyPropertyChanged
         StartInTray.ConfirmedOn is { } tray && StartPaused.ConfirmedOn is { } paused
             ? Text.Get("settings", tray ? "startup_tray_summary" : "startup_window_summary")
                 + (paused ? " · " + Text.Get("settings", "startup_paused_summary") : string.Empty)
-            : "—";
+            : Strings.NoValue;
     public string AddingSummary =>
         StartDownload.ConfirmedOn is { } start && QueueTop.ConfirmedOn is { } top
             ? Text.Get("settings", start ? "adding_start_summary" : "adding_paused_summary")
                 + " · "
                 + Text.Get("settings", top ? "queue_top_summary" : "queue_bottom_summary")
-            : "—";
+            : Strings.NoValue;
     public string PowerSummary =>
         PreventSleep.ConfirmedOn is { } prevent && SeedingSleep.ConfirmedOn is { } seeding
             ? Text.Get(
@@ -190,7 +190,7 @@ public sealed partial class Editor : INotifyPropertyChanged
                     : seeding ? "power_both_summary"
                     : "power_download_summary"
             )
-            : "—";
+            : Strings.NoValue;
     public string ConfirmationsSummary
     {
         get
@@ -201,7 +201,7 @@ public sealed partial class Editor : INotifyPropertyChanged
                 || ConfirmDelete.ConfirmedOn is not { } delete
                 || ConfirmExit.ConfirmedOn is not { } exit
             )
-                return "—";
+                return Strings.NoValue;
             var disabled = new List<string>();
             if (!torrent)
                 disabled.Add(Text.Get("settings", "torrent_dialog_off"));
@@ -221,27 +221,27 @@ public sealed partial class Editor : INotifyPropertyChanged
             ? Text.Get("settings", overhead ? "accounting_overhead" : "accounting_payload")
                 + " · "
                 + Text.Get("settings", lan ? "accounting_lan" : "accounting_lan_unlimited")
-            : "—";
+            : Strings.NoValue;
     internal string QueueDownloads => QueueCount(ActiveDownloads, "queue_download");
     internal string QueueSeeds => QueueCount(ActiveSeeds, "queue_seed");
     internal string QueueTotal =>
         ActiveTotal.ConfirmedNumber switch
         {
-            null => "—",
+            null => Strings.NoValue,
             0 => Text.Get("settings", "queue_unlimited"),
-            _ => Text.Format("settings", "queue_total", CountText(ActiveTotal)),
+            { } total => Text.Format("settings", "queue_total", Text.CountLimit(total)),
         };
     public string QueueSummary =>
         ActiveDownloads.ConfirmedNumber is null
         || ActiveSeeds.ConfirmedNumber is null
         || ActiveTotal.ConfirmedNumber is null
-            ? "—"
+            ? Strings.NoValue
             : string.Join(" · ", QueueDownloads, QueueSeeds, QueueTotal);
 
     private string QueueCount(Setting setting, string key) =>
         setting.ConfirmedNumber switch
         {
-            null => "—",
+            null => Strings.NoValue,
             0 => Text.Get("settings", key + "_unlimited"),
             { } count => Text.FormatCount("settings", key, (long)count),
         };
@@ -249,12 +249,12 @@ public sealed partial class Editor : INotifyPropertyChanged
         ConnectionLimit.ConfirmedNumber is null
         || TorrentConnections.ConfirmedNumber is null
         || Transport.ConfirmedText is not { } transport
-            ? "—"
+            ? Strings.NoValue
             : Text.Format(
                 "settings",
                 "peers_summary",
-                CountText(ConnectionLimit),
-                CountText(TorrentConnections),
+                Text.CountLimit(ConnectionLimit.ConfirmedNumber),
+                Text.CountLimit(TorrentConnections.ConfirmedNumber),
                 Text.Get("settings", "transport_" + transport)
             );
     public string DiscoverySummary
@@ -266,7 +266,7 @@ public sealed partial class Editor : INotifyPropertyChanged
                 || Pex.ConfirmedOn is not { } pex
                 || Lsd.ConfirmedOn is not { } lsd
             )
-                return "—";
+                return Strings.NoValue;
             var enabled = new List<string>();
             if (dht)
                 enabled.Add(Text.Get("settings", "discovery_dht"));
@@ -284,22 +284,22 @@ public sealed partial class Editor : INotifyPropertyChanged
         Proxy.IsInUse ? PortHint
         : Port.ConfirmedNumber is { } port && PortMapping.ConfirmedOn is { } mapping
             ? Text.Format("settings", "incoming_summary", port, mapping ? OnText : OffText)
-        : "—";
+        : Strings.NoValue;
     public string WatchedSummary =>
         Watch.ConfirmedOn is { } watch && WatchPath.ConfirmedText is { } path
             ? watch
                 ? path
                 : Text.Get("settings", "watch_off_summary")
-            : "—";
+            : Strings.NoValue;
     public string CheckingSummary =>
         HashingThreads.ConfirmedNumber is { } threads
             ? Text.FormatCount("settings", "checking_threads", (int)threads)
-            : "—";
+            : Strings.NoValue;
     public string HistorySummary =>
         RecentInterval.ConfirmedNumber is { } recent
         && HistoryInterval.ConfirmedNumber is { } history
             ? Text.Format("settings", "history_summary", recent, history)
-            : "—";
+            : Strings.NoValue;
 
     public string RaiseAddHint => DependentHint(RaiseAdd, null, "enable_add_dialog");
     public string SeedingSleepHint => DependentHint(SeedingSleep, null, "enable_sleep_prevention");
@@ -322,31 +322,23 @@ public sealed partial class Editor : INotifyPropertyChanged
         : enabled is null ? string.Empty
         : Text.Get("settings", enabled);
 
-    private string CountText(Setting setting) =>
-        setting.ConfirmedNumber switch
-        {
-            null => "—",
-            0 => Text.Get("transfer_limits", "unlimited"),
-            { } count => count.ToString("G", CultureInfo.CurrentCulture),
-        };
-
     private string DurationText(Setting setting) =>
         setting.ConfirmedNumber is { } minutes
             ? (minutes / setting.DurationScale).ToString("G", CultureInfo.CurrentCulture)
                 + " "
                 + Text.Get("settings", setting.DurationUnit + "_unit")
-            : "—";
+            : Strings.NoValue;
 
     public string StandardSummary => LimitSummary(Download, Upload);
     public string AlternativeSummary => LimitSummary(AlternativeDownload, AlternativeUpload);
     public string EncryptionSummary =>
         Encryption.ConfirmedText is { Length: > 0 } encryption
             ? Text.Get("settings", "encryption_" + encryption)
-            : "—";
+            : Strings.NoValue;
 
     private string LimitSummary(Setting download, Setting upload) =>
         download.ConfirmedNumber is null || upload.ConfirmedNumber is null
-            ? "—"
+            ? Strings.NoValue
             : Text.Format(
                 "settings",
                 "caps_summary",
@@ -374,6 +366,7 @@ public sealed partial class Editor : INotifyPropertyChanged
         _owner.Notifications.Report(error, "failed_settings", () => setting.Label, null);
 
     internal LimitProfile? FixedLimits => _owner.FixedLimits;
+    internal string LimitsTitle(LimitProfile profile) => _owner.LimitsTitle(profile);
     public bool CanRegister => CanEdit && !_registering;
     public bool HasRegistration => _registration.ValueKind == JsonValueKind.Object;
 
@@ -499,6 +492,16 @@ public sealed partial class Editor : INotifyPropertyChanged
         }
         await Theme.Commit();
     }
+
+    // The theme a word of the theme setting chooses; any word but "light" and
+    // "dark" follows Windows.
+    internal static ElementTheme ReadTheme(string? word) =>
+        word switch
+        {
+            "light" => ElementTheme.Light,
+            "dark" => ElementTheme.Dark,
+            _ => ElementTheme.Default,
+        };
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? TextChanged;
@@ -1160,43 +1163,6 @@ public sealed partial class Editor : INotifyPropertyChanged
         await Task.WhenAll(saves);
         await schedule;
     }
-
-    internal static bool TryInteger(string input, out int number) =>
-        int.TryParse(
-            input,
-            NumberStyles.Integer | NumberStyles.AllowThousands,
-            CultureInfo.CurrentCulture,
-            out number
-        )
-        && number >= 0;
-
-    internal static bool TryNumber(string input, out double number) =>
-        double.TryParse(
-            input,
-            NumberStyles.Float | NumberStyles.AllowThousands,
-            CultureInfo.CurrentCulture,
-            out number
-        )
-        && double.IsFinite(number)
-        && number >= 0;
-
-    // The engine stores bytes per second; each editor specifies its unit.
-    internal static bool TryRate(string input, out int bytes, RateScale scale)
-    {
-        bytes = 0;
-        if (!TryNumber(input, out var number) || number > int.MaxValue / (double)scale)
-            return false;
-        bytes = checked((int)Math.Round(number * (double)scale));
-        return true;
-    }
-
-    // Small positive values retain editable precision; unchanged input never
-    // changes a saved limit through display rounding.
-    internal static string RateInput(int bytes, RateScale scale) =>
-        (bytes / (double)scale).ToString(
-            bytes > 0 && bytes < (int)scale / 100.0 ? "0.##########" : "0.##",
-            CultureInfo.CurrentCulture
-        );
 
     public Task CancelDraft() => Schedule.Close();
 

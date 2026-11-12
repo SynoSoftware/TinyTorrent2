@@ -992,9 +992,9 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
                 Leechers += sign;
             if (observation.Location?.Point is null)
                 _unpointed += sign;
-            if (observation.State != PeerState.Known)
+            if (observation.IsConnected)
                 Connections += sign;
-            if (observation.Down + observation.Up > 0)
+            if (observation.IsActive)
                 Active += sign;
             Down += sign * observation.Down;
             Up += sign * observation.Up;
@@ -1145,9 +1145,23 @@ internal sealed class MapModel(Inspector owner) : INotifyPropertyChanged
         }
     }
 
-    internal readonly record struct Observation(Location? Location, double Down, double Up, PeerRole Role, PeerState State)
+    internal readonly record struct Observation
     {
         internal Observation(Peer.Record record, Location? location)
-            : this(location, record.Values.DownloadRate, record.Values.UploadRate, record.Values.Role, record.Values.State) { }
+        {
+            Location = location;
+            Down = record.Values.DownloadRate;
+            Up = record.Values.UploadRate;
+            Role = record.Values.Role;
+            IsConnected = record.Values.IsConnected;
+            IsActive = record.Values.IsActive;
+        }
+
+        internal Location? Location { get; }
+        internal double Down { get; }
+        internal double Up { get; }
+        internal PeerRole Role { get; }
+        internal bool IsConnected { get; }
+        internal bool IsActive { get; }
     }
 }

@@ -103,7 +103,7 @@ Write-Output 'PASS: a listed torrent settles an unconfirmed add, and a failed pr
 
 # Inspect the queued settings command without starting a pipe or touching the user's engine.
 $settingsType = $assembly.GetType('Syno.TinyTorrent.Settings.Editor', $true)
-$settingType = $assembly.GetType('Syno.TinyTorrent.Settings.Setting', $true)
+$settingType = $assembly.GetType('Syno.TinyTorrent.Shared.Setting', $true)
 $preferenceType = $assembly.GetType('Syno.TinyTorrent.Shared.DialogPreference', $true)
 $clientType = $assembly.GetType('Syno.TinyTorrent.Shared.Engine.PipeClient', $true)
 $settings = [Runtime.CompilerServices.RuntimeHelpers]::GetUninitializedObject($settingsType)
@@ -134,7 +134,11 @@ for ($index = 0; $index -lt $order.Count; $index++) {
 $queue = $clientType.GetField('_commands', $flags).GetValue($client)
 $save = $preferenceType.GetMethod('Save', $flags)
 try {
-    $preference = [Activator]::CreateInstance($preferenceType, [object[]]@($settings))
+    $saveSettings = [Delegate]::CreateDelegate(
+        [Func[Collections.Generic.IReadOnlyDictionary[string, bool], Threading.Tasks.Task]],
+        $settings,
+        $settingsType.GetMethod('Save', $flags))
+    $preference = [Activator]::CreateInstance($preferenceType, [object[]]@($saveSettings))
     $save.Invoke($preference, [object[]]@(,$choices)).GetAwaiter().GetResult()
     if ($queue.Count -ne 0) { throw 'An unchecked opt-out changed a preference.' }
     $preference.NeverShow = $true

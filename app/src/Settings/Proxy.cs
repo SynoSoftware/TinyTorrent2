@@ -285,7 +285,7 @@ public sealed class Proxy : IDraft
         };
 
     private int? ParsePort() =>
-        Editor.TryInteger(_port, out var port) && port is >= 1 and <= 65535 ? port : null;
+        Strings.TryInteger(_port, out var port) && port is >= 1 and <= 65535 ? port : null;
 
     // Ends the dialog's check when the snapshot reports its result. A snapshot
     // without the check means that the engine could not run it or restarted.
@@ -306,7 +306,7 @@ public sealed class Proxy : IDraft
         if (!reported)
         {
             _main.Notifications.Report(
-                new CommandException("unknown", null, Text),
+                new CommandException("unknown", null),
                 "failed_proxy_check",
                 () => Label(server),
                 null
@@ -322,7 +322,7 @@ public sealed class Proxy : IDraft
         // The engine reports an outcome rather than an error, so the outcome's
         // reason is the toast's text.
         _main.Notifications.Report(
-            new CommandException(Word(result), null, Text, "check_proxy"),
+            new CommandException(Word(result), null, "check_proxy"),
             "failed_proxy_check",
             () => Label(server),
             () => Reason(result, server)

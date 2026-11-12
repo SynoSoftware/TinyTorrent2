@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Syno.TinyTorrent.Controls;
+using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shell;
 
 namespace Syno.TinyTorrent.Settings;
@@ -22,7 +23,7 @@ public sealed partial class SettingsPage
             () =>
                 Main.ShowsFreeSpace
                     ? Model.Destination.ConfirmedText + " · " + Main.FreeSpaceStatus
-                    : Model.Destination.ConfirmedText ?? "—",
+                    : Model.Destination.ConfirmedText ?? Strings.NoValue,
             new(SettingsCategory.Transfers, "download_locations"),
             Syno.Segoe.Folder
         );
@@ -74,14 +75,14 @@ public sealed partial class SettingsPage
                             ", ",
                             acquisition.EffectiveLanguages.Select(Model.Text.LanguageName)
                         )
-                    : "—",
+                    : Strings.NoValue,
             new(SettingsCategory.Plugins, "subtitle_supplier"),
             Syno.Segoe.Captions
         );
         AddLink(
             HomeNetwork,
             "network_interface",
-            () => Model.SelectedAdapter?.Text ?? "—",
+            () => Model.SelectedAdapter?.Text ?? Strings.NoValue,
             new(SettingsCategory.Network, "network_interface"),
             Syno.Segoe.Network
         );

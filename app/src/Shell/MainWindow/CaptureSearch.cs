@@ -50,38 +50,16 @@ public sealed partial class MainWindow
             return list;
         }
 
-        async Task Matrix()
-        {
-            foreach (var language in new[] { "en", "es" })
-            foreach (var theme in new[] { "light", "dark" })
-            {
-                await Model.Settings.SelectTheme(theme);
-                await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
-                Model.SelectLanguage(language);
-                await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);
-                foreach (
-                    var size in new[]
-                    {
-                        new SizeInt32(720, 560),
-                        new SizeInt32(1040, 680),
-                        new SizeInt32(1280, 800),
-                    }
-                )
+        Task Matrix() =>
+            CaptureMatrix(
+                async (suffix, _) =>
                 {
-                    AppWindow.Resize(
-                        new SizeInt32(
-                            Math.Max((int)(size.Width * scale), minimum),
-                            (int)(size.Height * scale)
-                        )
-                    );
-                    var prefix =
-                        "search-" + language + "-" + theme + "-" + size.Width + "x" + size.Height;
+                    var prefix = "search-" + suffix;
                     await Open(Model.Text.Get("finding", "settings"), prefix + "-settings-results");
                     Search.IsSuggestionListOpen = false;
                     completed.Add(prefix);
                 }
-            }
-        }
+            );
 
         async Task<(bool Available, bool Enabled, bool Submitted)> Choose(
             ListView? list,

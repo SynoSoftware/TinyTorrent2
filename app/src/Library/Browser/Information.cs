@@ -1,6 +1,5 @@
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Network;
-using Syno.TinyTorrent.Torrents;
 
 namespace Syno.TinyTorrent.Library;
 
@@ -318,6 +317,10 @@ public sealed partial class Browser
                 {
                     if (error is VideoException failure)
                         failure.Provider ??= option;
+                    if (error is DownloadException download)
+                    {
+                        download.Subject ??= option.Name;
+                    }
                     ReportCommand(error);
                 }
             );
@@ -397,6 +400,10 @@ public sealed partial class Browser
         {
             if (error is VideoException failure)
                 failure.Provider ??= option;
+            if (error is DownloadException download)
+            {
+                download.Subject ??= option.Name;
+            }
             operation.Error = error;
             ReportCommand(error);
         }

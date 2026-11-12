@@ -1,9 +1,8 @@
 using System.ComponentModel;
 using System.Globalization;
 using System.Text.Json;
-using Syno.TinyTorrent.Shared;
 
-namespace Syno.TinyTorrent.Settings;
+namespace Syno.TinyTorrent.Shared;
 
 public sealed class Setting : INotifyPropertyChanged
 {
@@ -159,7 +158,7 @@ public sealed class Setting : INotifyPropertyChanged
                 value.ValueKind == JsonValueKind.String ? value.GetString()!
                 : value.ValueKind != JsonValueKind.Number || HasUnlimited && value.GetDouble() == 0
                     ? string.Empty
-                : IsRate ? Editor.RateInput(value.GetInt32(), RateScale)
+                : IsRate ? Strings.RateInput(value.GetInt32(), RateScale)
                 : (value.GetDouble() / DurationScale).ToString("G", CultureInfo.CurrentCulture);
             if (!preserve)
             {
@@ -223,7 +222,7 @@ public sealed class Setting : INotifyPropertyChanged
             return;
         var scale = DurationScale;
         DurationUnit = unit;
-        if (Editor.TryNumber(_input, out var number))
+        if (Strings.TryNumber(_input, out var number))
             _input = (number * scale / DurationScale).ToString("G", CultureInfo.CurrentCulture);
         _confirmedInput =
             ConfirmedNumber is not { } minutes || minutes == 0
@@ -462,7 +461,7 @@ public sealed class Setting : INotifyPropertyChanged
         }
         if (IsRate)
         {
-            if (!Editor.TryRate(Input, out var bytes, RateScale) || bytes > Maximum)
+            if (!Strings.TryRate(Input, out var bytes, RateScale) || bytes > Maximum)
                 return false;
             value = bytes;
             return true;
@@ -470,11 +469,11 @@ public sealed class Setting : INotifyPropertyChanged
         double number;
         if (Kind == SettingKind.Integer && !IsDuration)
         {
-            if (!Editor.TryInteger(Input, out var integer))
+            if (!Strings.TryInteger(Input, out var integer))
                 return false;
             number = integer;
         }
-        else if (!Editor.TryNumber(Input, out number))
+        else if (!Strings.TryNumber(Input, out number))
             return false;
         if (IsDuration)
             number = Math.Round(number * DurationScale, 8);

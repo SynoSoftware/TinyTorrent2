@@ -124,7 +124,7 @@ public sealed partial class Speedometer : UserControl
                 _from = _target;
         }
         var description = text.Format("connection_setup", "speed_reading", label,
-            _speed is { } rate ? rate.ToString("0.##", CultureInfo.CurrentCulture) : "—");
+            _speed is { } rate ? rate.ToString("0.##", CultureInfo.CurrentCulture) : Strings.NoValue);
         AutomationProperties.SetName(this, description);
         ToolTipService.SetToolTip(this, description);
         _canvas?.Invalidate();

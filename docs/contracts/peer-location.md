@@ -179,7 +179,8 @@ updates carry counts, never peer lists. A selected torrent limits the request
 to that torrent; the existing global view aggregates only while it is open.
 Hiding the inspector or leaving Peers withdraws its demand. Disconnected
 addresses appear as Known in the table, with no connection statistics. Connecting and handshaking peers
-also keep their locations. Transfer rates alone determine activity.
+also keep their locations. A peer is active while it is connected and
+transfers, so the map and the Peers counts agree.
 Cities is disabled without installed city data. Get city data starts the existing
 dataset download directly, with progress in the application status bar, so the
 person need not leave the inspector. It is disabled during a download and omitted

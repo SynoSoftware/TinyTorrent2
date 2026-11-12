@@ -17,9 +17,13 @@ public static class Segoe
     // Windows 11 is build 22000 and later, and every build of it has Segoe Fluent Icons.
     private static readonly bool Windows11 = OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000);
 
-    /// <summary>The installed icon font, for a <c>FontIcon</c> that draws these glyphs.</summary>
-    public static FontFamily Font { get; } =
-        new(Windows11 ? "Segoe Fluent Icons" : "Segoe MDL2 Assets");
+    private static FontFamily? _font;
+
+    /// <summary>
+    /// The installed icon font, for a <c>FontIcon</c> that draws these glyphs. It is made at first
+    /// use, so code that runs without WinUI can still read the glyph names.
+    /// </summary>
+    public static FontFamily Font => _font ??= new(Windows11 ? "Segoe Fluent Icons" : "Segoe MDL2 Assets");
 
     public const string Activity = "\uE9D9";
     public const string AlignHorizontalSpaceBetween = "\uE9A6";

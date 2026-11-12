@@ -237,7 +237,8 @@ stays local. The root holds `App`, `Enums.cs`, the project and manifest;
   coordinates their lifetime and native window interactions; feature rules
   remain with their existing owners.
 - `Torrents/` owns torrent state, peers, trackers, pieces, torrent
-  visualizations, addition, file operations and speed-limit editing.
+  visualizations, addition, file operations and speed-limit editing, and
+  the Library data source that reports the files of managed torrents.
 - `Settings/` owns Editor, SettingsPage, connection and proxy setup, scheduling,
   limits, theme and Windows integration. MainViewModel.Settings retains its
   property name; Editor identifies the settings editor type without colliding
@@ -248,11 +249,11 @@ stays local. The root holds `App`, `Enums.cs`, the project and manifest;
 - `Subtitles/` owns acquisition and its shared supplier contract. `Suppliers/`
   holds OpenSubtitles, SubDL and SubSource; the Supplier host and the
   ISupplier contract stay at the root.
-- `Shared/` owns common dialogs, drafts, accounts, file membership, dataset and
-  work presentation, text, geography and RelayCommand. Its `Engine/`, `Storage/`,
-  `Network/`, `Desktop/` and `Diagnostics/` folders group the engine connection
-  and the engine process, database, network policy, Windows integration
-  mechanics and failure reporting.
+- `Shared/` owns common dialogs, drafts, settings fields, accounts, file
+  membership, dataset and work presentation, text, geography and RelayCommand.
+  Its `Engine/`, `Storage/`, `Network/`, `Desktop/` and `Diagnostics/`
+  folders group the engine connection and the engine process, database,
+  network policy, Windows integration mechanics and failure reporting.
 - `Controls/` owns reusable UI controls and framework mechanics, including the
   state a control owns, such as FileSelection beside FileBrowser.
 

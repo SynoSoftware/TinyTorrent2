@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Text.Json;
 using Syno.TinyTorrent.Shared;
+using Syno.TinyTorrent.Shared.Engine;
 
 namespace Syno.TinyTorrent.Torrents;
 
@@ -82,6 +83,10 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
     // torrent keeps another state, such as a hash failure while it downloads.
     public bool IsError => ErrorCode.Length > 0;
 
+    // A move failed because its source folder is unavailable, so downloading
+    // again at the destination recovers the torrent.
+    internal bool IsSourceUnavailable => ErrorCode == "move_source_unavailable";
+
     // The engine could not recover the torrent by itself, so the torrent, or
     // its failed move, runs again only when the person selects Retry.
     public bool CanRetry { get; private set; }
@@ -130,6 +135,20 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
     public bool IsStatusNeutral => !IsDownloading && !IsError;
     private bool IsWaiting =>
         State is TorrentState.Queued or TorrentState.WaitingCheck or TorrentState.WaitingMove;
+
+    // Which torrents a filter shows, and which the Settings home counts.
+    internal bool Matches(TorrentFilter filter) =>
+        filter switch
+        {
+            TorrentFilter.All => true,
+            TorrentFilter.Downloading => State is TorrentState.Downloading or TorrentState.Metadata,
+            TorrentFilter.Seeding => State is TorrentState.Seeding or TorrentState.Completed,
+            TorrentFilter.Paused => State == TorrentState.Paused,
+            TorrentFilter.Queued => IsWaiting,
+            TorrentFilter.Errors => IsError,
+            _ => false,
+        };
+
     public string StatusGlyph => GetGlyph(State);
     public static string GetGlyph(TorrentState state) =>
         state switch
@@ -213,14 +232,14 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
     public string RemainingText => strings.Bytes(Remaining);
     public string ProgressText => Progress.ToString("P1", CultureInfo.CurrentCulture);
     public string DownloadText =>
-        OpensConnections ? strings.Rate(DownloadRate) : "—";
+        OpensConnections ? strings.Rate(DownloadRate) : Strings.NoValue;
     public string UploadText =>
-        OpensConnections ? strings.Rate(UploadRate) : "—";
+        OpensConnections ? strings.Rate(UploadRate) : Strings.NoValue;
     public string DownloadName =>
         strings.Format("units", "detail", strings.Get("columns", "down"), DownloadText);
     public string UploadName =>
         strings.Format("units", "detail", strings.Get("columns", "up"), UploadText);
-    public string EtaText => Eta is { } seconds ? strings.Duration(seconds) : "—";
+    public string EtaText => Eta is { } seconds ? strings.Duration(seconds) : Strings.NoValue;
     public string RatioText =>
         double.IsPositiveInfinity(Ratio)
             ? "∞"
@@ -234,7 +253,8 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
     public string? AddedTip => Time(Added);
     public string CompletedOnText => Ago(CompletedOn);
     public string? CompletedOnTip => Time(CompletedOn);
-    public string QueueText => IsQueued ? (Queue + 1).ToString(CultureInfo.CurrentCulture) : "—";
+    public string QueueText =>
+        IsQueued ? (Queue + 1).ToString(CultureInfo.CurrentCulture) : Strings.NoValue;
     internal string SearchText => _searchText ??= FileName.Normalize(Name + " " + StateText);
 
     // The limits that are set, such as "↓ 0.5 MB/s"; empty without one.
@@ -243,7 +263,7 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
     // LimitText in words, because Narrator reads the arrows as arrows.
     public string LimitName => Limits("spoken_");
 
-    private string Ago(DateTimeOffset? moment) => moment is { } at ? strings.Ago(at) : "—";
+    private string Ago(DateTimeOffset? moment) => moment is { } at ? strings.Ago(at) : Strings.NoValue;
 
     private string? Time(DateTimeOffset? moment) => moment is { } at ? strings.Time(at) : null;
 
@@ -445,8 +465,12 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
             Fields.SwarmLeecherCount
         );
         Queue = Set(Queue, row.GetProperty("queue").GetInt32(), Fields.Queue);
-        Added = Set(Added, Moment(row.GetProperty("added")), Fields.Added);
-        CompletedOn = Set(CompletedOn, Moment(row.GetProperty("completed_on")), Fields.CompletedOn);
+        Added = Set(Added, PipeClient.ReadTime(row.GetProperty("added")), Fields.Added);
+        CompletedOn = Set(
+            CompletedOn,
+            PipeClient.ReadTime(row.GetProperty("completed_on")),
+            Fields.CompletedOn
+        );
         var hashes = row.GetProperty("hashes");
         var sameHashes = hashes.GetArrayLength() == Hashes.Length;
         for (var index = 0; sameHashes && index < Hashes.Length; index++)
@@ -502,12 +526,5 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
             changed |= field;
             return value.GetString()!;
         }
-    }
-
-    // The engine sends 0 for a time it does not have.
-    private static DateTimeOffset? Moment(JsonElement value)
-    {
-        var seconds = value.GetInt64();
-        return seconds > 0 ? DateTimeOffset.FromUnixTimeSeconds(seconds) : null;
     }
 }

@@ -23,7 +23,8 @@ public sealed partial class MainWindow
     private WindowPage _page;
     private bool _refreshingFilters;
     private bool _selecting;
-    private double _splitHeight = 360;
+    private const double DefaultSplitHeight = 360;
+    private double _splitHeight = DefaultSplitHeight;
 
     private bool HasEditorFocus()
     {
@@ -109,14 +110,14 @@ public sealed partial class MainWindow
     private void FocusPage()
     {
         if (
-            Model.Page is WindowPage.Torrents or WindowPage.Library
+            Navigation.IsWorkspace(Model.Page)
             && Model.HasInspector
             && !Model.IsInspectorCompact
             && Model.IsInspectorMaximized
             && InspectorFrame is { } frame
         )
             frame.FocusHeader(FocusState.Programmatic);
-        else if (Model.Navigation.Current is WindowPage.Torrents or WindowPage.Library)
+        else if (Navigation.IsWorkspace(Model.Navigation.Current))
             FocusRows(FocusState.Programmatic);
         else
             BackButton.Focus(FocusState.Programmatic);
@@ -284,7 +285,7 @@ public sealed partial class MainWindow
                 settings.Navigate(Model.Navigation.Settings ?? new(), animate: animate);
             }
         }
-        TorrentMenu.IsEnabled = Model.Page is WindowPage.Torrents or WindowPage.Library;
+        TorrentMenu.IsEnabled = Navigation.IsWorkspace(Model.Page);
         ViewMenu.IsEnabled = TorrentMenu.IsEnabled;
         UpdateWorkspacePage();
         // A page restored while the window is still hidden replaces the
@@ -315,7 +316,7 @@ public sealed partial class MainWindow
         ShowPageCommands();
         UpdateInspectorSize();
         UpdateChrome();
-        if (Model.Page is not (WindowPage.Torrents or WindowPage.Library))
+        if (!Navigation.IsWorkspace(Model.Page))
             return;
         _workspaces.Show(library ? LibraryContent : TorrentContent, forward: library);
         _filters.Show(library ? LibraryFilters : Filters, forward: library);

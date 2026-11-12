@@ -66,7 +66,7 @@ internal sealed partial class Acquisition
                             continue;
                         Execute(
                             connection,
-                            """
+                            $"""
                             UPDATE subtitle_jobs AS destination
                             SET match=CASE WHEN previous.match=$exact THEN $exact
                                 ELSE COALESCE(destination.match,previous.match) END
@@ -81,8 +81,8 @@ internal sealed partial class Acquisition
                                 retry_at=excluded.retry_at,attempts=excluded.attempts,manual=excluded.manual,
                                 guesses=excluded.guesses,reference=excluded.reference,fresh=excluded.fresh,
                                 match=CASE WHEN excluded.reference IS NOT NULL THEN excluded.match ELSE subtitle_jobs.match END
-                            WHERE excluded.manual=1 AND excluded.outcome IN ($pending,$unavailable,$blocked)
-                                AND (subtitle_jobs.manual=0 OR subtitle_jobs.outcome NOT IN ($pending,$unavailable,$blocked));
+                            WHERE excluded.manual=1 AND excluded.outcome IN {ActiveOutcomes}
+                                AND (subtitle_jobs.manual=0 OR subtitle_jobs.outcome NOT IN {ActiveOutcomes});
                             """,
                             ("$new", target.Path),
                             ("$old", source.Path),

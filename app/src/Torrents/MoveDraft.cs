@@ -39,7 +39,7 @@ public sealed class MoveDraft : FileDraft
     public string? Folder =>
         Locations
             .Select(torrent => torrent.SavePath)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Distinct(FolderComparer.Instance)
             .Count() == 1
             ? Locations[0].SavePath
             : null;
@@ -132,7 +132,7 @@ public sealed class MoveDraft : FileDraft
         {
             return false;
         }
-        catch (Exception error) when (error is CommandException { Code: "invalid_destination" or "move_destination_unavailable" })
+        catch (Exception error) when (error is CommandException { Reason: EngineFailure.Destination })
         {
             _destinationFailure = error;
             return false;

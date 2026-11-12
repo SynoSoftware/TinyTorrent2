@@ -350,7 +350,7 @@ public sealed partial class CreditsPage : UserControl
                 new(
                     "TinyTorrent",
                     "tinytorrent",
-                    "https://github.com/SynoSoftware/TinyTorrent2",
+                    App.RepositoryPage,
                     new("MPL-2.0", "https://www.mozilla.org/MPL/2.0/")
                 )
             );

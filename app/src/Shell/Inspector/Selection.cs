@@ -22,7 +22,7 @@ public sealed partial class Inspector
             !_owner.IsMinimized
             && _owner.HasInspector
             && !_owner.IsInspectorCompact
-            && _owner.Page is WindowPage.Torrents or WindowPage.Library
+            && Navigation.IsWorkspace(_owner.Page)
                 ? _owner.Page
                 : null;
         if (_workspace == workspace)

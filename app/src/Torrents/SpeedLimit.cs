@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using Microsoft.UI.Xaml.Controls;
-using Syno.TinyTorrent.Settings;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Engine;
 using Syno.TinyTorrent.Shell;
@@ -152,7 +151,7 @@ public sealed class SpeedLimit : IDraft
     private static Field Start(IEnumerable<int> limits) =>
         limits.Distinct().ToArray() switch
         {
-            [> 0 and var limit] => new(Editor.RateInput(limit, RateScale.MbPerSecond), false),
+            [> 0 and var limit] => new(Strings.RateInput(limit, RateScale.MbPerSecond), false),
             [_] => new(string.Empty, false),
             _ => new(string.Empty, true),
         };
@@ -169,7 +168,7 @@ public sealed class SpeedLimit : IDraft
             limit = 0;
             return true;
         }
-        if (!Editor.TryRate(input, out var bytes, RateScale.MbPerSecond))
+        if (!Strings.TryRate(input, out var bytes, RateScale.MbPerSecond))
             return false;
         limit = bytes;
         return true;

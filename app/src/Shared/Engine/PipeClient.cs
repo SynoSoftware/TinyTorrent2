@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.IO.Pipes;
 using System.Security.Principal;
 using System.Text.Json;
-using Syno.TinyTorrent.Shell;
 
 namespace Syno.TinyTorrent.Shared.Engine;
 
@@ -250,7 +249,7 @@ internal sealed partial class PipeClient : IDisposable
                         continue;
                     }
 #endif
-                    CheckVersion(pipe, hello, _strings);
+                    CheckVersion(pipe, hello);
                     _ =
                         hello.GetProperty("session_id").GetString()
                         ?? throw new InvalidDataException();
@@ -280,7 +279,7 @@ internal sealed partial class PipeClient : IDisposable
                         var message =
                             error is TimeoutException
                                 ? launchFailure?.Message ?? string.Empty
-                                : error.Message;
+                                : _strings.Error(error);
                         if (message != lastFailure)
                             Disconnected?.Invoke(new(message, error is VersionException));
                         lastFailure = message;
@@ -434,7 +433,7 @@ internal sealed partial class PipeClient : IDisposable
             await Write(pipe, fields, deadline.Token);
             request.Written.TrySetResult();
             var reply = await pending.Completion.Task.WaitAsync(deadline.Token);
-            var data = ReadOutcome(reply, _strings, request.Name);
+            var data = ReadOutcome(reply, request.Name);
             request.Completion.TrySetResult(data);
         }
         catch (CommandException error)
@@ -484,7 +483,7 @@ internal sealed partial class PipeClient : IDisposable
                 if (root.TryGetProperty("type", out var kind) && kind.ValueEquals("observation"))
                 {
                     if (Keeps(root))
-                        Observed?.Invoke(new(document, bytes, _strings));
+                        Observed?.Invoke(new(document, bytes));
                     else
                         Return(document, bytes);
                     continue;
@@ -508,7 +507,7 @@ internal sealed partial class PipeClient : IDisposable
                     else if (type.GetString() == "toast")
                         Toast?.Invoke(message);
                     else if (type.GetString() == "snapshot")
-                        Publish(ReadOutcome(message, _strings, "snapshot"));
+                        Publish(ReadOutcome(message, "snapshot"));
                 }
                 else if (message.TryGetProperty("request_id", out var id))
                 {
@@ -602,7 +601,7 @@ internal sealed partial class PipeClient : IDisposable
             TokenImpersonationLevel.Identification
         );
 
-    internal static JsonElement ReadOutcome(JsonElement reply, Strings strings, string command)
+    internal static JsonElement ReadOutcome(JsonElement reply, string command)
     {
         if (!reply.GetProperty("ok").GetBoolean())
         {
@@ -610,11 +609,18 @@ internal sealed partial class PipeClient : IDisposable
             throw new CommandException(
                 error.GetProperty("code").GetString()!,
                 error.TryGetProperty("detail", out var detail) ? detail.GetString() : null,
-                strings,
                 command
             );
         }
         return reply.TryGetProperty("data", out var value) ? value : default;
+    }
+
+    // A time the engine sends in Unix seconds; it sends 0 for a time it does
+    // not have.
+    internal static DateTimeOffset? ReadTime(JsonElement value)
+    {
+        var seconds = value.GetInt64();
+        return seconds > 0 ? DateTimeOffset.FromUnixTimeSeconds(seconds) : null;
     }
 
     private static async Task<JsonElement> ReadGreeting(
@@ -639,11 +645,11 @@ internal sealed partial class PipeClient : IDisposable
         }
     }
 
-    private static void CheckVersion(NamedPipeClientStream pipe, JsonElement hello, Strings strings)
+    private static void CheckVersion(NamedPipeClientStream pipe, JsonElement hello)
     {
         if (hello.TryGetProperty("version", out var version) && version.GetInt32() == 39)
             return;
-        throw new VersionException(EngineProcess.VersionMessage(pipe, strings));
+        throw new VersionException(EngineProcess.Executable(pipe));
     }
 
     internal static async Task ForwardOpen(Strings strings)
@@ -653,14 +659,14 @@ internal sealed partial class PipeClient : IDisposable
             using var pipe = CreatePipe();
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
             await pipe.ConnectAsync(timeout.Token);
-            CheckVersion(pipe, await ReadGreeting(pipe, strings, timeout.Token), strings);
+            CheckVersion(pipe, await ReadGreeting(pipe, strings, timeout.Token));
             await Write(pipe, new { request_id = 1, command = "open" }, timeout.Token);
             while (true)
             {
                 var reply = await Read(pipe, timeout.Token);
                 if (!reply.TryGetProperty("request_id", out var id) || id.GetInt64() != 1)
                     continue;
-                ReadOutcome(reply, strings, "open");
+                ReadOutcome(reply, "open");
                 return;
             }
         }
@@ -782,7 +788,7 @@ internal sealed partial class PipeClient : IDisposable
         private byte[]? _bytes;
 
         // Takes over the pooled buffers of an observation message.
-        internal Observation(JsonDocument document, byte[] bytes, Strings strings)
+        internal Observation(JsonDocument document, byte[] bytes)
         {
             _document = document;
             _bytes = bytes;
@@ -792,7 +798,7 @@ internal sealed partial class PipeClient : IDisposable
             TorrentId = message.GetProperty("torrent_id").GetString()!;
             try
             {
-                Detail = ReadOutcome(message, strings, "torrent");
+                Detail = ReadOutcome(message, "torrent");
             }
             catch (CommandException error)
             {
@@ -831,7 +837,13 @@ internal sealed partial class PipeClient : IDisposable
         }
     }
 
-    private sealed class VersionException(string message) : Exception(message);
+    // The engine speaks another protocol version. The path of its executable is
+    // read while the pipe is open, because the text says where it runs.
+    private sealed class VersionException(string? executable)
+        : Exception("The engine speaks another protocol version."), IFailure
+    {
+        public string Describe(Strings text) => EngineProcess.VersionMessage(executable, text);
+    }
 
     private sealed record PendingReply(Request Request, JsonElement Arguments)
     {
@@ -874,15 +886,27 @@ internal sealed partial class PipeClient : IDisposable
     }
 }
 
-internal sealed class CommandException(
-    string code,
-    string? detail,
-    Strings strings,
-    string? command = null
-) : Exception
+internal sealed class CommandException(string code, string? detail, string? command = null)
+    : Exception(detail is null ? code : code + ": " + detail), IFailure
 {
+    // The engine's word, which also keys its text.
     public string Code { get; } = code;
     public string? Detail { get; } = detail;
     public string? Command { get; } = command;
-    public override string Message => strings.Error(Code, Detail);
+    internal EngineFailure Reason { get; } = Read(code);
+
+    public string Describe(Strings text) => text.Error(Code, Detail);
+
+    private static EngineFailure Read(string code) =>
+        code switch
+        {
+            "starting" => EngineFailure.Starting,
+            "storage_failed" => EngineFailure.Storage,
+            "metadata_unavailable" => EngineFailure.MetadataUnavailable,
+            "alias_conflict" => EngineFailure.AliasConflict,
+            "preview_expired" => EngineFailure.PreviewExpired,
+            "invalid_destination" or "move_destination_unavailable" => EngineFailure.Destination,
+            "move_failed" or "move_interrupted" => EngineFailure.Move,
+            _ => EngineFailure.Other,
+        };
 }

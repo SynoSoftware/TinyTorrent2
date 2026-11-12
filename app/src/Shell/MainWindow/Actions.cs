@@ -57,11 +57,8 @@ public sealed partial class MainWindow
 
     private void OnQueueKey(object sender, KeyRoutedEventArgs args)
     {
-        // VirtualKey omits the Windows OEM plus and minus codes.
-        const VirtualKey plus = (VirtualKey)0xBB;
-        const VirtualKey minus = (VirtualKey)0xBD;
         if (
-            args.Key != plus && args.Key != minus
+            args.Key != (VirtualKey)OemKey.Plus && args.Key != (VirtualKey)OemKey.Minus
             || HasDialog
             || Model.Page != WindowPage.Torrents
             || HasEditorFocus()
@@ -82,7 +79,7 @@ public sealed partial class MainWindow
         var shift = Microsoft
             .UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift)
             .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
-        var key = args.Key == plus ? VirtualKey.Add : VirtualKey.Subtract;
+        var key = args.Key == (VirtualKey)OemKey.Plus ? VirtualKey.Add : VirtualKey.Subtract;
         var modifiers =
             VirtualKeyModifiers.Control
             | (shift ? VirtualKeyModifiers.Shift : VirtualKeyModifiers.None);
@@ -171,12 +168,8 @@ public sealed partial class MainWindow
         )
         {
             var label = Model.Text.Get("commands", name);
-            var shortcut = ShortcutText(command);
             button.Label = label;
-            ToolTipService.SetToolTip(
-                button,
-                shortcut.Length > 0 ? Model.Text.Format("shortcuts", "tip", label, shortcut) : label
-            );
+            ToolTipService.SetToolTip(button, Model.Text.ShortcutTip(label, ShortcutText(command)));
         }
     }
 
@@ -497,27 +490,10 @@ public sealed partial class MainWindow
 
     private string MenuKey(string name) => Model.Text.Get("menus", name + "_key");
 
-    private string ShortcutText(ICommand command)
-    {
-        if (!_shortcuts.TryGetValue(command, out var accelerator))
-            return string.Empty;
-        var parts = new List<string>();
-        if (accelerator.Modifiers.HasFlag(VirtualKeyModifiers.Control))
-            parts.Add(Model.Text.Get("shortcuts", "control"));
-        if (accelerator.Modifiers.HasFlag(VirtualKeyModifiers.Menu))
-            parts.Add(Model.Text.Get("shortcuts", "alt"));
-        if (accelerator.Modifiers.HasFlag(VirtualKeyModifiers.Shift))
-            parts.Add(Model.Text.Get("shortcuts", "shift"));
-        var name = accelerator.Key switch
-        {
-            VirtualKey.Number1 => "number_1",
-            VirtualKey.Number2 => "number_2",
-            Comma => "comma",
-            _ => accelerator.Key.ToString().ToLowerInvariant(),
-        };
-        parts.Add(Model.Text.Get("shortcuts", name));
-        return string.Join("+", parts);
-    }
+    private string ShortcutText(ICommand command) =>
+        _shortcuts.TryGetValue(command, out var accelerator)
+            ? Model.Text.Shortcut(accelerator.Modifiers, accelerator.Key)
+            : string.Empty;
 
     private async Task ConfirmMerge()
     {
@@ -608,7 +584,7 @@ public sealed partial class MainWindow
             var submitted = false;
             async Task<bool> Submit()
             {
-                if (!Model.IsClosing && Model.Page is WindowPage.Torrents or WindowPage.Library)
+                if (!Model.IsClosing && Navigation.IsWorkspace(Model.Page))
                     FocusRows(focus);
                 Torrents.Release(torrents);
                 submitted = await draft.Submit();

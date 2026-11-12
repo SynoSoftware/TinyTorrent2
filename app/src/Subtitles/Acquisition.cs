@@ -775,10 +775,15 @@ internal abstract record Account
 }
 
 internal sealed class SubtitleException(SubtitleFailure reason, DateTimeOffset? retryAt = null)
-    : Exception(reason.ToString())
+    : Exception(reason.ToString()), IFailure
 {
     internal SubtitleFailure Reason { get; } = reason;
     internal DateTimeOffset? RetryAt { get; } = retryAt;
+
+    internal static string Describe(Strings text, SubtitleFailure reason) =>
+        text.Get("subtitles", "failure_" + reason.ToString().ToLowerInvariant());
+
+    public string Describe(Strings text) => Describe(text, Reason);
 }
 
 /// <summary>

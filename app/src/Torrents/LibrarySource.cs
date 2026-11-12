@@ -1,10 +1,10 @@
 using System.Text.Json;
+using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Engine;
-using Syno.TinyTorrent.Torrents;
 
-namespace Syno.TinyTorrent.Shared;
+namespace Syno.TinyTorrent.Torrents;
 
-internal sealed class TorrentSource : IAsyncDisposable
+internal sealed class LibrarySource : IAsyncDisposable
 {
     private readonly PipeClient _client;
     private readonly FileSources _sources;
@@ -31,7 +31,7 @@ internal sealed class TorrentSource : IAsyncDisposable
     internal bool IsCurrent { get; private set; }
     internal bool IsReady { get; private set; }
 
-    internal TorrentSource(PipeClient client, FileSources sources)
+    internal LibrarySource(PipeClient client, FileSources sources)
     {
         _client = client;
         _sources = sources;
@@ -226,7 +226,7 @@ internal sealed class TorrentSource : IAsyncDisposable
                 }
                 catch (Exception error)
                     when (error is TimeoutException
-                        || error is CommandException { Code: not "storage_failed" })
+                        || error is CommandException { Reason: not EngineFailure.Storage })
                 {
                     failed = true;
                     System.Diagnostics.Debug.WriteLine(error);

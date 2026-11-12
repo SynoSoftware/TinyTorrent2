@@ -480,6 +480,22 @@ issues own actionable work and its status.
   moving the source or the late-report filter into its handle would be the
   shared cancellation machinery that
   [search protection](search-protection.md#ownership-and-interface) rejects.
+- `Setting` and `SettingStore` live in `Shared`, because `SettingsRow`,
+  `DialogPreference`, `Shell` and two drafts in `Torrents` use a setting,
+  and `Settings.Editor` registers them. Splitting `SettingsRow` so that
+  `Setting` could stay in `Settings` would change every row of the
+  Settings page and leave those users dependent on `Settings`.
+- A failure type states the text a person reads through
+  `IFailure.Describe`, and `Strings.Error` asks for it; any other
+  exception shows its message. A failure does not hold `Strings`, because
+  providers and suppliers throw failures and receive no host object. A
+  failure does not expose a group, key and arguments either, because the
+  text of an engine refusal, of a request block and of a provider refusal
+  each needs more than one lookup.
+- The Library data source for managed torrents, `LibrarySource`, lives in
+  `Torrents`, because it reads torrent rows and no feature names it.
+  `FileSources`, which accepts every data source's contributions, stays in
+  `Shared`.
 
 Each `Setting` saves through a `SettingStore`. A store says whether its value
 can be edited and saved, saves it, and says whether a failed save proves the
@@ -522,6 +538,20 @@ desktop and diagnostics in their own folders; `Controls/` holds reusable UI.
 `App` and `Enums.cs` stay in the project root. Partial-type folders keep their
 owner's namespace. [Naming and structure](../agents/naming.md#app-folders) owns the
 placement rules.
+
+`Shared` and `Controls` are the base: they name each other and no other
+area. `Torrents`, `Settings`, `Library` and `Subtitles` name the base and
+`Shell`, but never each other and never a `Shell` type that is a window,
+a page or a control, which today are `MainWindow`, `InspectorPane`,
+`AboutPage` and `CreditsPage`; a type that two features need lives in the
+base. The Settings page is the one exception: it shows the settings of
+every feature, so `Settings/SettingsPage.xaml.cs` and the files of
+`Settings/SettingsPage` name `Library` and `Subtitles`. `Shell` composes
+the features and names every area. A file names an area by a `using`
+line, a `using` alias or a qualified type name, so a reviewer checks
+this rule in the diff. The rule limits names: a feature still reads
+another feature's state through its `MainViewModel`. It keeps a feature
+from becoming the authority for a rule that another feature also needs.
 
 TableView owns its templates and English text and has no engine dependency.
 Hosts supply rows, columns, templates, identity and handlers through its public

@@ -107,7 +107,7 @@ public sealed class RemovalDraft : FileDraft
     internal RemovalDraft(MainViewModel owner, PipeClient client)
         : base(owner, client)
     {
-        Confirmation = new(owner.Settings);
+        Confirmation = new(owner.Settings.Save);
     }
 
     internal void Begin(Torrent[] torrents, DeletionMode deletion)
@@ -127,14 +127,9 @@ public sealed class RemovalDraft : FileDraft
         var deletesDownloaded = DeleteDownloaded;
         await Confirmation.Save(Owner.Settings.ConfirmDelete);
         await SaveChoices();
-        var subtitles = Owner.Subtitles;
-        // The capture joins the database queue now, ahead of the Library work
-        // the deletion starts, so it still reads the torrents' subtitles; the
-        // command does not wait behind that queue.
-        var subtitleDeletion =
-            deletesDownloaded && subtitles is not null
-                ? subtitles.CaptureDeletion(TorrentIds)
-                : null;
+        var deleteSubtitles = deletesDownloaded
+            ? Owner.CaptureSubtitles(TorrentIds, _deletion)
+            : null;
         var outcome = await Client.Send(
             deletesDownloaded ? "delete_files" : "remove",
             new
@@ -146,8 +141,10 @@ public sealed class RemovalDraft : FileDraft
             Requester.Person
         );
         Owner.Notifications.AnnounceAccepted("commands", "remove");
-        if (subtitleDeletion is not null && subtitles is not null)
-            _ = DeleteSubtitles(subtitles, subtitleDeletion, _deletion);
+        if (deleteSubtitles is not null)
+        {
+            _ = deleteSubtitles();
+        }
         if (!deletesDownloaded)
             return true;
         var count = outcome.GetProperty("kept_files");
@@ -155,12 +152,6 @@ public sealed class RemovalDraft : FileDraft
             Owner.Notifications.Announce(Text.FormatCount("file_action", "kept", kept));
         return true;
     }
-
-    private static async Task DeleteSubtitles(
-        Syno.TinyTorrent.Subtitles.Acquisition subtitles,
-        Task<Syno.TinyTorrent.Subtitles.Deletion> capture,
-        DeletionMode mode
-    ) => subtitles.Delete(await capture, mode);
 
     // Remove remembers the check boxes for the next removal; Cancel does not.
     private Task SaveChoices()
@@ -184,7 +175,7 @@ public sealed class RemovalDraft : FileDraft
     {
         base.RefreshItems();
         Folders = Locations
-            .GroupBy(torrent => torrent.SavePath, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(torrent => torrent.SavePath, FolderComparer.Instance)
             .Select(folder => new FolderGroup(folder.Key, folder.Select(Selected).ToArray()))
             .ToArray();
     }

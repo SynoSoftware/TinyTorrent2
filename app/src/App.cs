@@ -18,10 +18,14 @@ public partial class App : Application
         SetErrorMode(GetErrorMode() | 0x0002);
     }
 
+    // The product's GitHub repository, as its owner and name, and its page.
+    internal const string Repository = "SynoSoftware/TinyTorrent2";
+    internal const string RepositoryPage = "https://github.com/" + Repository;
+
     internal static Version Version { get; } =
         typeof(App).Assembly.GetName().Version ?? new Version(0, 0, 0, 0);
     internal static string UserAgent { get; } =
-        "TinyTorrent/" + Version + " (+https://github.com/SynoSoftware/TinyTorrent2)";
+        "TinyTorrent/" + Version + " (+" + RepositoryPage + ")";
     private Mutex? _instance;
     private MainWindow? _window;
 

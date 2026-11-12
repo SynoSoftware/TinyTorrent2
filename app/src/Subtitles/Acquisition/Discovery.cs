@@ -304,7 +304,10 @@ internal sealed partial class Acquisition
                             var parent = Path.GetDirectoryName(path);
                             if (folders.TryGetValue(origin, out var folder))
                             {
-                                while (folder is not null && !Within(path, folder))
+                                while (
+                                    folder is not null
+                                    && !FolderComparer.Instance.Contains(folder, path)
+                                )
                                     folder = Path.GetDirectoryName(folder);
                                 parent = folder;
                             }
@@ -344,7 +347,7 @@ internal sealed partial class Acquisition
                             var recursive =
                                 folder is not null
                                 && savePath.Length > 0
-                                && Within(folder, savePath);
+                                && FolderComparer.Instance.Contains(savePath, folder);
                             result.Add(
                                 new(
                                     video,
@@ -585,12 +588,6 @@ internal sealed partial class Acquisition
         }
     }
 
-    private static bool Within(string path, string folder) =>
-        path.StartsWith(
-            Path.EndsInDirectorySeparator(folder) ? folder : folder + Path.DirectorySeparatorChar,
-            StringComparison.OrdinalIgnoreCase
-        );
-
     private static IEnumerable<string> SubtitleFiles(string folder, bool recursive)
     {
         var options = new EnumerationOptions
@@ -600,7 +597,7 @@ internal sealed partial class Acquisition
             AttributesToSkip = FileAttributes.ReparsePoint,
         };
         foreach (var path in Directory.EnumerateFiles(folder, "*", options))
-            if (SubtitleFile.IsSubtitle(path))
+            if (FileName.IsSubtitle(path))
                 yield return path;
         if (!recursive)
             foreach (var name in new[] { "Subs", "Subtitles" })

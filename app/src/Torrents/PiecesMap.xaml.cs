@@ -11,7 +11,6 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Syno.TinyTorrent.Controls;
 using Syno.TinyTorrent.Shared;
-using Windows.ApplicationModel.DataTransfer;
 using Windows.Foundation;
 using Windows.System;
 using Windows.UI;
@@ -49,6 +48,10 @@ public sealed partial class PiecesMap : UserControl
     private bool _drawing;
     private CancellationToken _cancellation;
     private XamlRoot? _root;
+
+    // Ctrl+C passes the value to the host, whose one clipboard write reports
+    // a failed copy.
+    internal event EventHandler<string>? CopyRequested;
 
     public PiecesMap()
     {
@@ -153,7 +156,7 @@ public sealed partial class PiecesMap : UserControl
             {
                 var label = Pieces.Name(text, kind);
                 var total = counts is null
-                    ? "—"
+                    ? Strings.NoValue
                     : counts[(int)kind].ToString("N0", CultureInfo.CurrentCulture);
                 legendChanged |= labels[(int)kind].Text != label || totals[(int)kind].Text != total;
                 labels[(int)kind].Text = label;
@@ -161,7 +164,7 @@ public sealed partial class PiecesMap : UserControl
             }
             if (legendChanged)
                 RefreshLegend();
-            AutomationProperties.SetName(this, text.Get("inspector", "pieces"));
+            AutomationProperties.SetName(this, text.Get(InspectorSection.Pieces));
             Refresh();
         }
         if (changed || resumed)
@@ -565,9 +568,7 @@ public sealed partial class PiecesMap : UserControl
                 .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down)
         )
         {
-            var package = new DataPackage();
-            package.SetText(_value);
-            Clipboard.SetContent(package);
+            CopyRequested?.Invoke(this, _value);
             args.Handled = true;
             return;
         }

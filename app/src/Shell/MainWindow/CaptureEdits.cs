@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Syno.TinyTorrent.Settings;
+using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Engine;
 using Syno.TinyTorrent.Torrents;
 using Windows.Graphics;
@@ -246,7 +247,7 @@ public sealed partial class MainWindow
             completed.Add("edits-search-departure");
 
             await Edit(rate, "128");
-            var refusal = new CommandException("storage_failed", null, Model.Text);
+            var refusal = new CommandException("storage_failed", null);
             rate.Reject(refusal);
             var refusedPage = _settingsPage!;
             var categories = (NavigationView)refusedPage.FindName("Categories");

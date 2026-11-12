@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Net;
 using System.Text.Json;
+using Syno.TinyTorrent.Settings;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Engine;
 using Syno.TinyTorrent.Torrents;
@@ -17,8 +18,8 @@ public sealed partial class Inspector
 
     /// <summary>Keeps <paramref name="peers"/> as a torrent's peers, as its latest reply would.</summary>
     internal void CaptureSwarm(string torrentId, Peer[] peers) =>
-        _swarms[torrentId] = new(new Swarm(torrentId, peers), peers.Count(peer => peer.State != PeerState.Known),
-            peers.Count(peer => peer.State == PeerState.Connected && peer.DownloadRate + peer.UploadRate > 0), ++_swarmReads,
+        _swarms[torrentId] = new(new Swarm(torrentId, peers), peers.Count(peer => peer.Capture().Values.IsConnected),
+            peers.Count(peer => peer.Capture().Values.IsActive), ++_swarmReads,
             _owner.Geolocation.Version);
 
     /// <summary>
@@ -98,13 +99,14 @@ public sealed partial class Inspector
             _mapPopulation = null;
             _mapReplies = null;
         }
-        // Decimal Mbit/s: 125,000 bytes per second each.
         Map.Update(
             _mapPopulation ?? new(PeerSubject, []),
             origin,
             Text,
             cities,
-            _owner.Settings.Capacity is (var download, var upload) ? (download + upload) * 125_000 : null
+            _owner.Settings.Capacity is (var download, var upload)
+                ? (download + upload) * ConnectionSetup.MbitPerSecond
+                : null
         );
     }
 
@@ -360,10 +362,10 @@ public sealed partial class Inspector
         : _owner.Selected;
 
     public string DownloadText =>
-        OpensConnections ? Text.Rate(Scope.Sum(torrent => torrent.DownloadRate)) : "—";
+        OpensConnections ? Text.Rate(Scope.Sum(torrent => torrent.DownloadRate)) : Strings.NoValue;
 
     public string UploadText =>
-        OpensConnections ? Text.Rate(Scope.Sum(torrent => torrent.UploadRate)) : "—";
+        OpensConnections ? Text.Rate(Scope.Sum(torrent => torrent.UploadRate)) : Strings.NoValue;
 
     private bool OpensConnections => IsAvailable && Scope.Any(torrent => torrent.OpensConnections);
 

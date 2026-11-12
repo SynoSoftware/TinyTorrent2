@@ -6,6 +6,19 @@ namespace Syno.TinyTorrent.Shared;
 
 internal static partial class FileName
 {
+    // The subtitle formats, which Subtitles reads and Kind counts as documents.
+    private static readonly HashSet<string> SubtitleExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".srt",
+        ".ass",
+        ".ssa",
+        ".vtt",
+        ".sub",
+    };
+
+    internal static bool IsSubtitle(string path) =>
+        SubtitleExtensions.Contains(Path.GetExtension(path));
+
     internal static FileKind Kind(string path) =>
         Path.GetExtension(path).ToLowerInvariant() switch
         {
@@ -62,10 +75,8 @@ internal static partial class FileName
             or ".ppt"
             or ".pptx"
             or ".nfo"
-            or ".md"
-            or ".srt"
-            or ".ass"
-            or ".sub" => FileKind.Document,
+            or ".md" => FileKind.Document,
+            var extension when SubtitleExtensions.Contains(extension) => FileKind.Document,
             ".zip" or ".rar" or ".7z" or ".tar" or ".gz" or ".bz2" or ".xz" or ".iso" =>
                 FileKind.Archive,
             _ => FileKind.Other,
@@ -205,4 +216,7 @@ internal sealed record Release(string Title, string Name)
     internal int? Season { get; init; }
     internal IReadOnlyList<int> Episodes { get; init; } = [];
     internal bool IsExtra { get; init; }
+
+    // A name with a season names a series; any other names a movie.
+    internal VideoKind Kind => Season is null ? VideoKind.Movie : VideoKind.Series;
 }

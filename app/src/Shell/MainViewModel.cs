@@ -11,6 +11,7 @@ using Syno.TinyTorrent.Shared.Network;
 using Syno.TinyTorrent.Torrents;
 using LibraryBrowser = Syno.TinyTorrent.Library.Browser;
 using SubtitleAcquisition = Syno.TinyTorrent.Subtitles.Acquisition;
+using SubtitleException = Syno.TinyTorrent.Subtitles.SubtitleException;
 
 namespace Syno.TinyTorrent.Shell;
 
@@ -212,7 +213,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
     public ICommand SwitchToolbar { get; }
 
     private string Rate(double rate) =>
-        IsRunning && Torrents.Any(torrent => torrent.OpensConnections) ? Text.Rate(rate) : "—";
+        IsRunning && Torrents.Any(torrent => torrent.OpensConnections)
+            ? Text.Rate(rate)
+            : Strings.NoValue;
 
 #if CAPTURE
     private Status? _presentedStatus;
@@ -300,7 +303,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             )
                 return new(
                     Text.Get("notifications", "subtitles_paused"),
-                    Text.Get("subtitles", "failure_" + failure.ToString().ToLowerInvariant()),
+                    SubtitleException.Describe(Text, failure),
                     InfoBarSeverity.Warning,
                     // A folder that refused a file is fixed outside the app,
                     // so its action tries the work again.
@@ -1206,7 +1209,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 Notifications.AnnounceAccepted("commands", command);
         }
         catch (CommandException refusal)
-            when (refusal.Code is "alias_conflict" or "metadata_unavailable"
+            when (refusal.Reason is EngineFailure.AliasConflict or EngineFailure.MetadataUnavailable
                 && command is "retry" or "resume" or "force" or "verify")
         {
             // The engine acted on every other torrent, so the toast names
@@ -1217,7 +1220,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
                 null,
                 () =>
                     Text.Error(
-                        refusal.Code == "alias_conflict" ? "alias_listed" : refusal.Code,
+                        refusal.Reason == EngineFailure.AliasConflict ? "alias_listed" : refusal.Code,
                         refusal.Detail
                     )
             );

@@ -11,9 +11,13 @@ namespace Syno;
 /// </remarks>
 public static class Flags
 {
-    /// <summary>The vendored font, for a <c>TextBlock</c> that shows one <see cref="Glyph"/>.</summary>
-    public static FontFamily Font { get; } =
-        new("ms-appx:///Glyphs/Fonts/twemoji.ttf#Twemoji Mozilla");
+    private static FontFamily? _font;
+
+    /// <summary>
+    /// The vendored font, for a <c>TextBlock</c> that shows one <see cref="Glyph"/>. It is made at
+    /// first use, so code that runs without WinUI can still call <see cref="Glyph"/>.
+    /// </summary>
+    public static FontFamily Font => _font ??= new("ms-appx:///Glyphs/Fonts/twemoji.ttf#Twemoji Mozilla");
 
     /// <summary>
     /// The regional indicator pair that <see cref="Font"/> joins into the flag of the ISO 3166-1

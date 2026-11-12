@@ -15,8 +15,6 @@ public sealed partial class PeerMap
     private static readonly InputSystemCursor PanCursor = InputSystemCursor.Create(
         InputSystemCursorShape.SizeAll
     );
-    private const VirtualKey Plus = (VirtualKey)0xBB;
-    private const VirtualKey Minus = (VirtualKey)0xBD;
     private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _navigationTimer;
     private Drag? _drag;
 
@@ -61,9 +59,9 @@ public sealed partial class PeerMap
         }
         ZoomLabel.Text = text.Format("peer_map", "zoom", _viewport.Zoom);
         var fit = text.Get("peer_map", "fit");
-        var shortcut = text.Get("shortcuts", "control") + "+" + text.Get("shortcuts", "number_0");
+        var shortcut = text.Shortcut(VirtualKeyModifiers.Control, VirtualKey.Number0);
         AutomationProperties.SetName(FitButton, fit);
-        ToolTipService.SetToolTip(FitButton, text.Format("shortcuts", "tip", fit, shortcut));
+        ToolTipService.SetToolTip(FitButton, text.ShortcutTip(fit, shortcut));
     }
 
     private void ShowNavigation()
@@ -256,8 +254,17 @@ public sealed partial class PeerMap
             .HasFlag(CoreVirtualKeyStates.Down);
         if (args.Key == VirtualKey.Escape && _drag is not null)
             EndDrag(true);
-        else if (args.Key is VirtualKey.Add or Plus or VirtualKey.Subtract or Minus)
-            ZoomInspection(args.Key is VirtualKey.Add or Plus ? 1.25f : .8f, displayed);
+        else if (
+            args.Key
+            is VirtualKey.Add
+                or (VirtualKey)OemKey.Plus
+                or VirtualKey.Subtract
+                or (VirtualKey)OemKey.Minus
+        )
+            ZoomInspection(
+                args.Key is VirtualKey.Add or (VirtualKey)OemKey.Plus ? 1.25f : .8f,
+                displayed
+            );
         else if (control && args.Key is VirtualKey.Number0 or VirtualKey.NumberPad0)
             Fit();
         else if (

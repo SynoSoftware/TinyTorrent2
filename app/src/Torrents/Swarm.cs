@@ -169,11 +169,11 @@ internal sealed class Swarm
                     joinBuffer[joinCount++] = new Peer(text, torrentId, address, parsed,
                         parsed is null ? null : locate(parsed.Address), Peer.Make(values, client));
                 }
-                if (values.State != PeerState.Known)
+                if (values.IsConnected)
                 {
                     connected++;
                 }
-                if (values.State == PeerState.Connected && values.DownloadRate + values.UploadRate > 0)
+                if (values.IsActive)
                 {
                     active++;
                 }

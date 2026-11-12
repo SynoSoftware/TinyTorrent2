@@ -40,7 +40,7 @@ outside it. `Database/Files.cs` owns the shared reconciliation, cleanup and
 search invalidation SQL so membership changes commit consistently across both
 domains. `FileSources` applies source facts through that transaction boundary
 and owns contribution scheduling, readiness and the checked timestamps;
-`TorrentSource` obtains those facts from coherent engine replies and
+`LibrarySource` obtains those facts from coherent engine replies and
 coordinates engine reads without SQL of its own. It keeps its own range-checked
 verification projection, because the Pieces display model also parses
 availability and downloading and classifies every piece, which the source does

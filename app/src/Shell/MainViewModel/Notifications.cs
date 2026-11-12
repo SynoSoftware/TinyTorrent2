@@ -183,21 +183,11 @@ public sealed partial class MainViewModel
         Changed(nameof(CurrentStatus));
     }
 
-    internal bool IsLocationUnavailable(string path)
-    {
-        if (!Path.IsPathFullyQualified(path))
-            return false;
-        var folder = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
-        return _locations.Any(known =>
-        {
-            if (!Path.IsPathFullyQualified(known.Location.Root))
-                return false;
-            var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(known.Location.Root));
-            return folder.Equals(root, StringComparison.OrdinalIgnoreCase)
-                || folder.StartsWith(Path.EndsInDirectorySeparator(root) ? root : root + Path.DirectorySeparatorChar,
-                    StringComparison.OrdinalIgnoreCase);
-        });
-    }
+    internal bool IsLocationUnavailable(string path) =>
+        _locations.Any(known =>
+            FolderComparer.Instance.Equals(path, known.Location.Root)
+            || FolderComparer.Instance.Contains(known.Location.Root, path)
+        );
 
     // One bar covers every torrent that needs Retry, and its Retry runs them
     // all, so torrents that stopped together need one click.
@@ -244,17 +234,9 @@ public sealed partial class MainViewModel
         var reason = location.CauseKey is { } cause
             ? Text.Format("errors", "detail", Text.Get("errors", cause), affected)
             : affected;
-        var body = Text.Format("errors", "line", location.Root, reason);
-        if (_locations.Count > 1)
-            body = Text.Format(
-                "errors",
-                "detail",
-                body,
-                Text.Format("errors", "additional_problems", _locations.Count - 1)
-            );
         return new(
             Text.Get("notifications", "location_unavailable"),
-            body,
+            Text.Problems(Text.Format("errors", "line", location.Root, reason), _locations.Count),
             InfoBarSeverity.Warning,
             ShowErrorsAction,
             CanSilence: true

@@ -11,6 +11,7 @@ using Syno.TinyTorrent.Shared.Storage;
 using ImdbDataset = Syno.TinyTorrent.Library.Imdb.Dataset;
 using ImdbProvider = Syno.TinyTorrent.Library.Imdb.Provider;
 using LibraryBrowser = Syno.TinyTorrent.Library.Browser;
+using LibrarySource = Syno.TinyTorrent.Torrents.LibrarySource;
 using MdbListProvider = Syno.TinyTorrent.Library.MdbList.Provider;
 using OmdbProvider = Syno.TinyTorrent.Library.Omdb.Provider;
 using SubtitleAcquisition = Syno.TinyTorrent.Subtitles.Acquisition;
@@ -37,7 +38,7 @@ internal sealed class Features
     private Database? _database;
     private Task<bool>? _opening;
     private RequestPolicy? _policy;
-    private TorrentSource? _source;
+    private LibrarySource? _source;
     private HttpRoute? _route;
     private Task? _subtitlesStarting;
     private Task? _settled;
@@ -183,7 +184,7 @@ internal sealed class Features
             Post(subtitles, () => Subtitles, () => _owner.Notifications.ShowSubtitleFailure(failure));
         Raise();
         _subtitlesStarting = subtitles.Initialize(_owner.Text.Language);
-        var source = new TorrentSource(_client, new FileSources(_database));
+        var source = new LibrarySource(_client, new FileSources(_database));
         _source = source;
         source.Changed += (_, _) =>
         {
@@ -680,7 +681,7 @@ internal sealed class Features
 
     private async Task Detach()
     {
-        TorrentSource? source;
+        LibrarySource? source;
         SubtitleAcquisition? subtitles;
         Task? starting;
         lock (_gate)

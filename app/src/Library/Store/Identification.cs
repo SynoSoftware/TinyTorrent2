@@ -235,7 +235,7 @@ internal sealed partial class Store
                 using var command = connection.CreateCommand();
                 command.CommandText = $"""
                     SELECT f.entry_id,f.path,f.name,f.size FROM collected_files f
-                    WHERE f.kind=0 AND f.entry_id IN (SELECT value FROM json_each($entries))
+                    WHERE f.kind={(int)FileKind.Video} AND f.entry_id IN (SELECT value FROM json_each($entries))
                         AND {Eligible};
                     """;
                 command.Parameters.AddWithValue("$catalog", catalogId);

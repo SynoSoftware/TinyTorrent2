@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Globalization;
+using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shell;
+using ElementTheme = Microsoft.UI.Xaml.ElementTheme;
 
 namespace Syno.TinyTorrent.Settings;
 
@@ -33,9 +35,7 @@ public sealed class Overview : INotifyPropertyChanged
 
     public SettingsCategory? Category => _main.Navigation.Current == WindowPage.Connection
         ? SettingsCategory.Limits : _main.Navigation.Settings?.Category;
-    public string PageTitle => Category is { } category
-        ? _settings.Text.Get("settings", category.ToString().ToLowerInvariant())
-        : string.Empty;
+    public string PageTitle => Category is { } category ? _settings.Text.Get(category) : string.Empty;
     // The captions live here rather than in the category states, because a
     // setter does not update its target while its state stays active, so a
     // language change would not reach the shown tab.
@@ -47,7 +47,7 @@ public sealed class Overview : INotifyPropertyChanged
         SettingsCategory.Schedule => Caption(
             _main.LimitsIndex < 0 ? "weekly_schedule"
                 : _main.FollowsSchedule ? "schedule_active" : "schedule_inactive"),
-        SettingsCategory.Network => _settings.SelectedAdapter?.Text ?? "—",
+        SettingsCategory.Network => _settings.SelectedAdapter?.Text ?? Strings.NoValue,
         SettingsCategory.Plugins => _settings.Text.Get("library", "title"),
         _ => string.Empty,
     };
@@ -77,29 +77,28 @@ public sealed class Overview : INotifyPropertyChanged
     };
     public string Subtitle => Category switch
     {
-        SettingsCategory.Transfers => _settings.Destination.ConfirmedText ?? "—",
+        SettingsCategory.Transfers => _settings.Destination.ConfirmedText ?? Strings.NoValue,
         SettingsCategory.Limits => _main.FollowsSchedule ? _main.LimitsNow : _main.LimitsHeading,
         // The inactive title and the Current limits fact already say what applies.
         SettingsCategory.Schedule => _main.FollowsSchedule ? _main.ScheduleSummary : string.Empty,
-        SettingsCategory.Network => _main.IsConnected ? _main.IncomingStatus : "—",
+        SettingsCategory.Network => _main.IsConnected ? _main.IncomingStatus : Strings.NoValue,
         SettingsCategory.Plugins => _main.Library.Status,
         null => _settings.Text.Format("settings", "home_activity",
-            _main.Torrents.Count(torrent =>
-                torrent.State is TorrentState.Downloading or TorrentState.Metadata),
-            _main.Torrents.Count(torrent => torrent.State == TorrentState.Seeding)),
+            _main.Torrents.Count(torrent => torrent.Matches(TorrentFilter.Downloading)),
+            _main.Torrents.Count(torrent => torrent.Matches(TorrentFilter.Seeding))),
         _ => string.Empty,
     };
 
     public string FirstValue => Category switch
     {
-        SettingsCategory.General => _settings.HasRegistration ? _settings.TorrentApp : "—",
+        SettingsCategory.General => _settings.HasRegistration ? _settings.TorrentApp : Strings.NoValue,
         SettingsCategory.Transfers => _settings.QueueSummary,
         SettingsCategory.Limits => _settings.StandardSummary,
         SettingsCategory.Schedule => _main.LimitsHeading,
-        SettingsCategory.Appearance => _settings.Text.Get("settings", _settings.Theme.Input switch
+        SettingsCategory.Appearance => _settings.Text.Get("settings", Editor.ReadTheme(_settings.Theme.Input) switch
         {
-            "light" => "light_theme",
-            "dark" => "dark_theme",
+            ElementTheme.Light => "light_theme",
+            ElementTheme.Dark => "dark_theme",
             _ => "system_theme",
         }),
         SettingsCategory.Network => _settings.Proxy.Summary,
@@ -109,14 +108,14 @@ public sealed class Overview : INotifyPropertyChanged
     };
     public string SecondValue => Category switch
     {
-        SettingsCategory.General => !_settings.HasRegistration ? "—"
+        SettingsCategory.General => !_settings.HasRegistration ? Strings.NoValue
             : _settings.Startup ? _settings.OnText : _settings.OffText,
         SettingsCategory.Transfers => _settings.SeedingSummary,
         SettingsCategory.Limits => _settings.AlternativeSummary,
         SettingsCategory.Schedule => _settings.Schedule.Periods.Count.ToString("N0", CultureInfo.CurrentCulture),
         SettingsCategory.Appearance => _settings.Text.LanguageName(_settings.Text.Language),
         SettingsCategory.Network => _settings.EncryptionSummary,
-        SettingsCategory.Plugins => _main.Subtitles?.SupplierId.ToString() ?? "—",
+        SettingsCategory.Plugins => _main.Subtitles?.SupplierId.ToString() ?? Strings.NoValue,
         SettingsCategory.Advanced => _settings.HistorySummary,
         _ => TotalsDescription(_main.LifetimeTotals),
     };
@@ -144,7 +143,8 @@ public sealed class Overview : INotifyPropertyChanged
         : Amount(_main.LifetimeTotals.Uploaded);
 
     private string Caption(string key) => _settings.Text.Get("settings", key);
-    private string Amount(long bytes) => _main.IsConnected ? _settings.Text.Bytes(bytes) : "—";
+    private string Amount(long bytes) =>
+        _main.IsConnected ? _settings.Text.Bytes(bytes) : Strings.NoValue;
     private string TotalsDescription(TransferTotals totals) => _main.IsConnected
         ? _settings.Text.Format("settings", "transfer_totals_hint", Amount(totals.Downloaded), Amount(totals.Uploaded))
         : _settings.Text.Get("connection", "unavailable");

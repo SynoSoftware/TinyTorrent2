@@ -51,7 +51,7 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
             command.CommandText =
                 """
                     CREATE TEMP TABLE timing_videos AS
-                    SELECT * FROM current_files WHERE kind=0 ORDER BY entry_id LIMIT 1000;
+                    SELECT * FROM current_files WHERE kind=$video ORDER BY entry_id LIMIT 1000;
                     INSERT INTO video_information(catalog_id,video_id,language,title,type,year,genres,cast,synopsis,keywords,search)
                     SELECT 'timing',CAST(entry_id AS TEXT),'en','Coastal mystery ' || entry_id,'movie',2024,
                         'Drama · Mystery','Alex Morgan · Jamie Rivera · Taylor Chen · Casey Bennett · Jordan Williams · Robin Patel · Avery Thompson · Cameron Ellis · Morgan Brooks · Reese Anderson · Riley Campbell · Quinn Mitchell · Rowan Stewart · Parker Hughes · Skyler Evans · Emerson Reed',
@@ -74,17 +74,19 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
                     FROM source_files f JOIN timing_videos v USING(entry_id);
                     INSERT OR REPLACE INTO file_facts(origin,file_index,created,modified,title,artist,album,track,year,genre,duration,search)
                     SELECT origin,file_index,1700000000,1700000100,
-                        CASE WHEN kind=1 THEN 'Track ' || file_index ELSE '' END,
-                        CASE WHEN kind=1 THEN 'Example Artist' ELSE '' END,
-                        CASE WHEN kind=1 THEN 'Example Album' ELSE '' END,
-                        CASE WHEN kind=1 THEN file_index%12+1 END,
-                        CASE WHEN kind=1 THEN 2024 END,
-                        CASE WHEN kind=1 THEN 'Rock' ELSE '' END,
-                        CASE WHEN kind=1 THEN 180 END,
-                        CASE WHEN kind=1 THEN 'example artist album rock' ELSE '' END
+                        CASE WHEN kind=$audio THEN 'Track ' || file_index ELSE '' END,
+                        CASE WHEN kind=$audio THEN 'Example Artist' ELSE '' END,
+                        CASE WHEN kind=$audio THEN 'Example Album' ELSE '' END,
+                        CASE WHEN kind=$audio THEN file_index%12+1 END,
+                        CASE WHEN kind=$audio THEN 2024 END,
+                        CASE WHEN kind=$audio THEN 'Rock' ELSE '' END,
+                        CASE WHEN kind=$audio THEN 180 END,
+                        CASE WHEN kind=$audio THEN 'example artist album rock' ELSE '' END
                     FROM source_files;
                     DROP TABLE timing_videos;
                     """ + Database.Invalidate;
+            command.Parameters.AddWithValue("$video", (int)FileKind.Video);
+            command.Parameters.AddWithValue("$audio", (int)FileKind.Audio);
             command.ExecuteNonQuery();
             command.CommandText =
                 "SELECT COUNT(*) FROM video_information WHERE catalog_id='timing';";
@@ -671,11 +673,13 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
 
     private static string Match(SqliteCommand command, Query query, string? except = null)
     {
+        // The kind is written into the SQL, because the counts query matches
+        // every configuration in one command, which holds one value per name.
         var sql = new StringBuilder(
             query.Configuration switch
             {
-                LibraryConfiguration.Videos => "r.kind=0",
-                LibraryConfiguration.Music => "r.kind=1",
+                LibraryConfiguration.Videos => $"r.kind={(int)FileKind.Video}",
+                LibraryConfiguration.Music => $"r.kind={(int)FileKind.Audio}",
                 _ => "1=1",
             }
         );
@@ -860,5 +864,3 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
         };
     }
 }
-
-internal sealed record Coverage(int Total, int Informed);

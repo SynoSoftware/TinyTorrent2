@@ -37,10 +37,6 @@ public sealed partial class SpeedGraph : UserControl
     // One notch of a mouse wheel. A touchpad sends smaller deltas that add up to
     // it, so one swipe does not race through every zoom level.
     private const int Notch = 120;
-
-    // The + and - keys of the main keyboard; VirtualKey names only the keypad ones.
-    private const VirtualKey Plus = (VirtualKey)0xBB;
-    private const VirtualKey Minus = (VirtualKey)0xBD;
     private Strings? _text;
     private long _length = 300;
 
@@ -240,7 +236,7 @@ public sealed partial class SpeedGraph : UserControl
     }
 
     private static string Rate(Strings text, double? value) =>
-        value is { } rate ? text.Format("units", "rate", text.Bytes(rate)) : "—";
+        value is { } rate ? text.Rate(rate) : Strings.NoValue;
 
     private static string Time(double time, string format) =>
         DateTimeOffset
@@ -733,11 +729,11 @@ public sealed partial class SpeedGraph : UserControl
             case VirtualKey.Escape when _marker is not null:
                 Mark(null);
                 break;
-            case VirtualKey.Add or Plus:
+            case VirtualKey.Add or (VirtualKey)OemKey.Plus:
                 Zoom(-1, anchor);
                 Mark(anchor);
                 break;
-            case VirtualKey.Subtract or Minus:
+            case VirtualKey.Subtract or (VirtualKey)OemKey.Minus:
                 Zoom(1, anchor);
                 Mark(anchor);
                 break;

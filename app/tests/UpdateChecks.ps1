@@ -70,7 +70,7 @@ $directory = Join-Path ([IO.Path]::GetTempPath()) "TinyTorrentUpdateChecks-$([Gu
 [IO.Directory]::CreateDirectory($directory) | Out-Null
 $strings = New-Value 'Shared.Strings'
 $setting = [Runtime.CompilerServices.RuntimeHelpers]::GetUninitializedObject(
-    $assembly.GetType('Syno.TinyTorrent.Settings.Setting', $true))
+    $assembly.GetType('Syno.TinyTorrent.Shared.Setting', $true))
 Set-Field $setting '_choice' $false
 $client = New-Value 'Shared.Engine.PipeClient' @($strings)
 Set-Field $client '_dataDirectory' $directory

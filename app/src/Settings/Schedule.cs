@@ -37,7 +37,7 @@ public sealed class Schedule : INotifyPropertyChanged
 
     internal string FormatFixedLimits(ScheduleMode mode) =>
         _owner.FixedLimits == LimitProfile.None
-            ? Text.Get("transfer_limits", "none")
+            ? _owner.LimitsTitle(LimitProfile.None)
             : FormatMode(mode);
 
     public bool FollowsSchedule => FixedMode is null;
@@ -429,9 +429,7 @@ public sealed class Schedule : INotifyPropertyChanged
                     return null;
                 if (range.Mode == mode)
                     continue;
-                return offset == 0
-                    ? Time(range.Start)
-                    : Text.Format("transfer_limits", "day_time", ShortDay(day), Time(range.Start));
+                return offset == 0 ? Time(range.Start) : DayTime(day, range.Start);
             }
         }
         return null;
@@ -460,12 +458,17 @@ public sealed class Schedule : INotifyPropertyChanged
             }[index]
         );
 
+    internal string DayTime(int day, int minute) =>
+        Text.Format("transfer_limits", "day_time", ShortDay(day), Time(minute));
+
     // Time outside the periods has the standard limits.
     internal string FormatMode(ScheduleMode mode) =>
-        Text.Get(
-            "settings",
-            mode == ScheduleMode.Normal ? "speed" : mode.ToString().ToLowerInvariant()
-        );
+        mode switch
+        {
+            ScheduleMode.Normal => _owner.LimitsTitle(LimitProfile.Speed),
+            ScheduleMode.Alternative => _owner.LimitsTitle(LimitProfile.Alternative),
+            _ => Text.Get("settings", "paused"),
+        };
 
     internal string Behavior(ScheduleMode mode) =>
         mode == ScheduleMode.Alternative ? FormatMode(mode) + " · " + _owner.AlternativeSummary
@@ -515,10 +518,7 @@ public sealed class SchedulePeriod
                 Schedule.Time(Start),
                 Schedule.Time(End)
             );
-    public string Length =>
-        Span.Duration < 60 ? _owner.Text.Format("units", "minutes", Span.Duration)
-        : Span.Duration % 60 == 0 ? _owner.Text.Format("units", "hours", Span.Duration / 60)
-        : _owner.Text.Format("units", "hours_minutes", Span.Duration / 60, Span.Duration % 60);
+    public string Length => _owner.Text.Duration(Span.Duration * 60.0);
     public string TimeLabel => _owner.Text.Format("settings", "time_summary", TimeRange, Length);
     public string When => _owner.DescribeDays(Days) + " · " + TimeLabel;
     public string Behavior => _owner.Behavior(Mode);

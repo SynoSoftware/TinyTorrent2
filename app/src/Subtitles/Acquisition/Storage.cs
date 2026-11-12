@@ -434,6 +434,14 @@ internal sealed partial class Acquisition
         );
     }
 
+    // A job is active while it still has to search: pending, or waiting until
+    // its supplier can serve it. ActiveOutcomes is the same list in SQL, whose
+    // statements bind $pending, $unavailable and $blocked.
+    private static bool IsActive(SubtitleOutcome outcome) =>
+        outcome is SubtitleOutcome.Pending or SubtitleOutcome.Unavailable or SubtitleOutcome.Blocked;
+
+    private const string ActiveOutcomes = "($pending,$unavailable,$blocked)";
+
     private static void Unblock(SqliteConnection connection) =>
         Execute(
             connection,
@@ -460,9 +468,9 @@ internal sealed partial class Acquisition
     ) =>
         Execute(
             connection,
-            """
+            $"""
             UPDATE subtitle_jobs SET outcome=$cancelled,retry_at=0
-            WHERE outcome IN ($pending,$unavailable,$blocked) AND ($manual IS NULL OR manual=$manual)
+            WHERE outcome IN {ActiveOutcomes} AND ($manual IS NULL OR manual=$manual)
                 AND ($language IS NULL OR language=$language) AND ($path IS NULL OR path=$path);
             """,
             ("$pending", (int)SubtitleOutcome.Pending),
@@ -795,12 +803,7 @@ internal sealed partial class Acquisition
                         while (reader.Read())
                         {
                             var outcome = (SubtitleOutcome)reader.GetInt32(1);
-                            if (
-                                outcome
-                                is SubtitleOutcome.Pending
-                                    or SubtitleOutcome.Unavailable
-                                    or SubtitleOutcome.Blocked
-                            )
+                            if (IsActive(outcome))
                                 finding |= reader.GetBoolean(2);
                             else if (outcome == SubtitleOutcome.Complete)
                                 completed.Add(reader.GetString(0));

@@ -297,8 +297,11 @@ drive appears under it, and a warning replaces it when the wanted files do not
 fit; the warning never blocks Add, because the person may free space first.
 Below free space, Set as default download folder is a draft choice saved through
 Settings after Add succeeds; Cancel leaves the saved default unchanged. It is
-disabled when the entered folder is empty or already the configured default,
-ignoring case and a trailing directory separator.
+disabled when the entered folder is empty or already the configured default.
+Two paths name the same folder when they are equal after `/` becomes `\` and a
+trailing directory separator is removed, ignoring case; the comparison reads no
+disk, so a sleeping drive never holds the window. The recent folders, Move's
+From and Remove's folder groups compare folders the same way.
 Enter in the folder field commits the typed path and invokes Add through the
 dialog's default button. When the recent-folders list is open, Enter only selects
 its folder, so choosing a recent folder does not submit the dialog.
@@ -943,8 +946,9 @@ rule below preserve its visual language. Change that design only with
   moving the selection, because a pointer passing over the map must not move the
   keyboard's place. A key press is the latest input, so it shows the selected
   square until the pointer moves again. The selected square's detail line is the
-  map's UI Automation value, and Ctrl+C copies it; without a selection, the
-  value is the status answer and its reason.
+  map's UI Automation value, and Ctrl+C copies it; a failed copy is reported
+  as a failed Copy magnet link is. Without a selection, the value is the
+  status answer and its reason.
 - **Drawing cost.** Draw the squares into one bitmap and redraw only when the
   data changes, because one element per square is too slow at thousands of
   pieces.

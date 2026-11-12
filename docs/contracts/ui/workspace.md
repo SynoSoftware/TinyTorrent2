@@ -186,7 +186,8 @@ access key that is unique in its menu, as in other Windows applications: in
 English, Alt+F, X exits.
 Add is available in File and through the existing keyboard and search paths.
 The first window has a 560 effective-pixel minimum height; its minimum width
-keeps the complete title-bar row usable, starting at 720 effective pixels.
+keeps the complete title-bar row usable, starting at 720 effective pixels. A
+window restored to its saved size keeps the same minimum.
 Native dragging, resizing, caption semantics and DPI behavior remain.
 Add torrent file opens the native picker first; cancelling returns to the table
 without a draft. The selected source then opens the Add dialog for destination,

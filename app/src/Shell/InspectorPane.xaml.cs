@@ -254,6 +254,9 @@ public sealed partial class InspectorPane : UserControl
                 if (_layout.Trackers is { } trackers)
                     TrackerTable.Layout = trackers;
                 break;
+            case InspectorSection.Pieces:
+                Map.CopyRequested += (_, text) => _ = Model.Copy(text);
+                break;
         }
         RefreshText();
         return content;
@@ -543,7 +546,7 @@ public sealed partial class InspectorPane : UserControl
         {
             if (section.Tag is not InspectorSection kind)
                 continue;
-            section.Text = text.Get("inspector", kind.ToString().ToLowerInvariant());
+            section.Text = text.Get(kind);
             AutomationProperties.SetName(section, section.Text);
         }
         AutomationProperties.SetName(Sections, text.Get("inspector", "sections"));
@@ -571,7 +574,7 @@ public sealed partial class InspectorPane : UserControl
         if (Trackers is not null)
         {
             TrackerTable.Strings = text.Table;
-            AutomationProperties.SetName(TrackerInput, text.Get("inspector", "trackers"));
+            AutomationProperties.SetName(TrackerInput, text.Get(InspectorSection.Trackers));
             UrlColumn.DisplayName = text.Get("trackers", "url");
             TierColumn.DisplayName = text.Get("trackers", "tier");
             TrackerStatusColumn.DisplayName = text.Get("columns", "status");

@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Text.Json;
 using Syno.TinyTorrent.Shared;
+using Syno.TinyTorrent.Shared.Engine;
 
 namespace Syno.TinyTorrent.Torrents;
 
@@ -16,9 +17,9 @@ public sealed class Tracker : INotifyPropertyChanged
     public int SeedCount { get; private set; }
     public int LeecherCount { get; private set; }
     public int DownloadCount { get; private set; }
-    public long NextAnnounce { get; private set; }
+    public DateTimeOffset? NextAnnounce { get; private set; }
     public string Message { get; private set; } = string.Empty;
-    public string StatusText => _text.Get("trackers", Status.ToString().ToLowerInvariant());
+    public string StatusText => _text.Get(Status);
     public string StatusGlyph =>
         Status switch
         {
@@ -37,17 +38,15 @@ public sealed class Tracker : INotifyPropertyChanged
     public string NextHint => _text.Get("trackers", "next_hint");
     public string TierText => (Tier + 1).ToString(CultureInfo.CurrentCulture);
     public string SeedsText =>
-        SeedCount < 0 ? "—" : SeedCount.ToString("N0", CultureInfo.CurrentCulture);
+        SeedCount < 0 ? Strings.NoValue : SeedCount.ToString("N0", CultureInfo.CurrentCulture);
     public string LeechersText =>
-        LeecherCount < 0 ? "—" : LeecherCount.ToString("N0", CultureInfo.CurrentCulture);
+        LeecherCount < 0 ? Strings.NoValue : LeecherCount.ToString("N0", CultureInfo.CurrentCulture);
     public string DownloadsText =>
-        DownloadCount < 0 ? "—" : DownloadCount.ToString("N0", CultureInfo.CurrentCulture);
+        DownloadCount < 0 ? Strings.NoValue : DownloadCount.ToString("N0", CultureInfo.CurrentCulture);
     public string NextText =>
-        NextAnnounce <= 0
-            ? "—"
-            : DateTimeOffset
-                .FromUnixTimeSeconds(NextAnnounce)
-                .LocalDateTime.ToString("T", CultureInfo.CurrentCulture);
+        NextAnnounce is { } next
+            ? next.LocalDateTime.ToString("T", CultureInfo.CurrentCulture)
+            : Strings.NoValue;
     public event PropertyChangedEventHandler? PropertyChanged;
 
     internal Tracker(Strings text, JsonElement data)
@@ -59,7 +58,7 @@ public sealed class Tracker : INotifyPropertyChanged
         SeedCount = data.GetProperty("seed_count").GetInt32();
         LeecherCount = data.GetProperty("leecher_count").GetInt32();
         DownloadCount = data.GetProperty("download_count").GetInt32();
-        NextAnnounce = data.GetProperty("next_announce").GetInt64();
+        NextAnnounce = PipeClient.ReadTime(data.GetProperty("next_announce"));
         Message = data.GetProperty("message").GetString()!;
         _endpoints = data.GetProperty("endpoints").EnumerateArray()
             .Select(endpoint => new Endpoint(endpoint)).ToArray();
@@ -103,7 +102,7 @@ public sealed class Tracker : INotifyPropertyChanged
             "endpoint_hint",
             endpoint.Address,
             endpoint.Version.ToUpperInvariant(),
-            _text.Get("trackers", endpoint.Status.ToString().ToLowerInvariant()),
+            _text.Get(endpoint.Status),
             endpoint.Failures
         );
         return endpoint.Message.Length == 0 ? summary : summary + "\n" + endpoint.Message;

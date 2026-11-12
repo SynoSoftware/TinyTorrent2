@@ -4,8 +4,8 @@ using System.Windows.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Torrents;
-using Windows.Graphics;
 
 namespace Syno.TinyTorrent.Shell;
 
@@ -58,8 +58,8 @@ public sealed partial class MainWindow
         if (
             group.Length != 3
             || Model.Torrents.Count != 4
-            || group.Any(torrent => !SamePath(torrent.SavePath, source))
-            || !SamePath(outside.SavePath, collision)
+            || group.Any(torrent => !FolderComparer.Instance.Equals(torrent.SavePath, source))
+            || !FolderComparer.Instance.Equals(outside.SavePath, collision)
         )
             throw new InvalidOperationException(
                 "The files capture torrent scope does not match its disposable fixture."
@@ -77,54 +77,15 @@ public sealed partial class MainWindow
         await ShowTorrents();
         Model.CloseInspector();
 
-        async Task Matrix(string name, FrameworkElement? content = null)
-        {
-            foreach (var language in new[] { "en", "es" })
-            {
-                Model.SelectLanguage(language);
-                await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);
-                foreach (var theme in new[] { "light", "dark" })
+        Task Matrix(string name, FrameworkElement? content = null) =>
+            CaptureMatrix(
+                async (suffix, _) =>
                 {
-                    await Model.Settings.SelectTheme(theme);
-                    await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
-                    foreach (
-                        var size in new[]
-                        {
-                            new SizeInt32(720, 560),
-                            new SizeInt32(1040, 680),
-                            new SizeInt32(1280, 800),
-                        }
-                    )
-                    {
-                        var scale = Root.XamlRoot.RasterizationScale;
-                        var minimum =
-                            (
-                                (Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter
-                            ).PreferredMinimumWidth
-                            ?? 0;
-                        AppWindow.Resize(
-                            new SizeInt32(
-                                Math.Max((int)(size.Width * scale), minimum),
-                                (int)(size.Height * scale)
-                            )
-                        );
-                        var prefix =
-                            "files-"
-                            + language
-                            + "-"
-                            + theme
-                            + "-"
-                            + size.Width
-                            + "x"
-                            + size.Height
-                            + "-"
-                            + name;
-                        await CapturePage(prefix, content);
-                        completed.Add(prefix);
-                    }
+                    var prefix = "files-" + suffix + "-" + name;
+                    await CapturePage(prefix, content);
+                    completed.Add(prefix);
                 }
-            }
-        }
+            );
 
         async Task<(ContentDialog Dialog, Task Closed)> Open(Torrent[] torrents, ICommand command, FileDraft draft)
         {
@@ -189,7 +150,7 @@ public sealed partial class MainWindow
             );
             if (
                 _interaction?.Dialog is null
-                || !SamePath(Model.MoveDraft.Destination, collision)
+                || !FolderComparer.Instance.Equals(Model.MoveDraft.Destination, collision)
                 || !Model.MoveDraft.IncludeShared
             )
                 throw new InvalidOperationException(
@@ -272,7 +233,7 @@ public sealed partial class MainWindow
         CheckBytes(sourceFile, sourceHash);
         CheckBytes(collisionFile, collisionHash);
         CheckBytes(unrelated, unrelatedHash);
-        if (group.Any(torrent => !SamePath(torrent.SavePath, source)))
+        if (group.Any(torrent => !FolderComparer.Instance.Equals(torrent.SavePath, source)))
             throw new InvalidOperationException(
                 "The occupied-file collision changed the source location."
             );
@@ -291,7 +252,10 @@ public sealed partial class MainWindow
                     chosenDestination = collision,
                     moveDestination = group[0].MoveDestination,
                     reopenedDestination = Model.MoveDraft.Destination,
-                    destinationRetained = SamePath(Model.MoveDraft.Destination, collision),
+                    destinationRetained = FolderComparer.Instance.Equals(
+                        Model.MoveDraft.Destination,
+                        collision
+                    ),
                     scope = "Accepted asynchronous work closes the dialog; a cleared preflight marker requires choosing the folder again.",
                 }
             );
@@ -315,7 +279,7 @@ public sealed partial class MainWindow
                 group.All(torrent =>
                     !torrent.IsMoving
                     && torrent.MoveDestination.Length == 0
-                    && SamePath(torrent.SavePath, destination)
+                    && FolderComparer.Instance.Equals(torrent.SavePath, destination)
                 )
         );
         CheckBytes(movedFile, sourceHash);
@@ -431,13 +395,6 @@ public sealed partial class MainWindow
             }
         );
     }
-
-    private static bool SamePath(string first, string second) =>
-        string.Equals(
-            first.TrimEnd(Path.DirectorySeparatorChar),
-            second.TrimEnd(Path.DirectorySeparatorChar),
-            StringComparison.OrdinalIgnoreCase
-        );
 
     private static void CheckBytes(string path, string? expected)
     {

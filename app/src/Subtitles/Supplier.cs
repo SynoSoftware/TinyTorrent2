@@ -438,7 +438,7 @@ internal sealed class Supplier(ISupplier supplier, RequestPolicy policy)
         );
 
     private static bool Agrees(Release release, Listing listing) =>
-        listing.Kind == (release.Season is null ? VideoKind.Movie : VideoKind.Series)
+        listing.Kind == release.Kind
         && (listing.Season is null || listing.Season == release.Season)
         && (listing.Episode is not { } episode || release.Episodes.Contains(episode))
         && SameYear(release, listing.Year);

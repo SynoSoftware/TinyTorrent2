@@ -231,7 +231,7 @@ internal sealed partial class OpenSubtitles : ISupplier
         var parameters = new SortedDictionary<string, string>(StringComparer.Ordinal)
         {
             ["query"] = (release.Season is null ? release.Name : release.Title).ToLowerInvariant(),
-            ["type"] = release.Season is null ? "movie" : "tvshow",
+            ["type"] = release.Kind == VideoKind.Movie ? "movie" : "tvshow",
         };
         var reply = await Request(
                 client,
@@ -242,7 +242,7 @@ internal sealed partial class OpenSubtitles : ISupplier
             .ConfigureAwait(false);
         using var document = Parse(reply.Bytes);
         // The request names the type, so each listing has that type.
-        var kind = release.Season is null ? VideoKind.Movie : VideoKind.Series;
+        var kind = release.Kind;
         var listings = new Dictionary<long, Listing>();
         foreach (var feature in Data(document.RootElement).EnumerateArray())
         {

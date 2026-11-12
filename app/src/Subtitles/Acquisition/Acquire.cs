@@ -689,12 +689,7 @@ internal sealed partial class Acquisition
             {
                 if (outcome == SubtitleOutcome.Pending && retry is null)
                     retry = DateTimeOffset.UtcNow.AddMinutes(1);
-                var intent = outcome
-                    is SubtitleOutcome.Pending
-                        or SubtitleOutcome.Unavailable
-                        or SubtitleOutcome.Blocked
-                    ? target.Fresh
-                    : null;
+                var intent = IsActive(outcome) ? target.Fresh : null;
                 Execute(
                     connection,
                     """

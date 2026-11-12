@@ -90,7 +90,7 @@ internal static class EngineProcess
     // The executable of the engine serving `pipe`, compared as launched, which
     // matches because the window starts the engine beside it. Windows hides the
     // path of an engine running as administrator.
-    private static string? Executable(NamedPipeClientStream pipe)
+    internal static string? Executable(NamedPipeClientStream pipe)
     {
         if (ProcessId(pipe) is not { } id)
             return null;
@@ -109,8 +109,8 @@ internal static class EngineProcess
     // Another version stays unusable however often the window retries, so the
     // message says where that engine runs: another folder's engine exits from
     // the tray, while a folder holding both versions needs reinstalling.
-    internal static string VersionMessage(NamedPipeClientStream pipe, Strings strings) =>
-        Executable(pipe) switch
+    internal static string VersionMessage(string? executable, Strings strings) =>
+        executable switch
         {
             null => strings.Get("connection", "version_hidden"),
             { } path when IsAdjacent(path) => strings.Get("connection", "version"),

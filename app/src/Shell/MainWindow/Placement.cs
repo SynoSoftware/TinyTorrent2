@@ -159,22 +159,23 @@ public sealed partial class MainWindow
                 var area = display.WorkArea;
                 AppWindow.Move(
                     new PointInt32(
-                        Math.Clamp(placement.X, area.X, area.X + Math.Max(0, area.Width - 720)),
-                        Math.Clamp(placement.Y, area.Y, area.Y + Math.Max(0, area.Height - 560))
+                        Math.Clamp(placement.X, area.X, area.X + Math.Max(0, area.Width - MinimumWidth)),
+                        Math.Clamp(placement.Y, area.Y, area.Y + Math.Max(0, area.Height - MinimumHeight))
                     )
                 );
                 var scale =
                     GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(this)) / 96.0;
+                var minimum = MinimumSize(scale);
                 var width = (int)
                     Math.Clamp(
                         placement.Width / savedScale * scale,
-                        Math.Min(720 * scale, area.Width),
+                        Math.Min(minimum.Width, area.Width),
                         area.Width
                     );
                 var height = (int)
                     Math.Clamp(
                         placement.Height / savedScale * scale,
-                        Math.Min(560 * scale, area.Height),
+                        Math.Min(minimum.Height, area.Height),
                         area.Height
                     );
                 AppWindow.MoveAndResize(
@@ -354,7 +355,7 @@ public sealed partial class MainWindow
         public int Height { get; init; }
         public double Scale { get; init; } = 1;
         public bool Maximized { get; init; }
-        public double SplitHeight { get; init; } = 360;
+        public double SplitHeight { get; init; } = DefaultSplitHeight;
         public Syno.TableView.ColumnLayout? Torrents { get; init; }
         public InspectorLayout? Inspector { get; init; }
         public WindowPage Page { get; init; }

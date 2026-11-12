@@ -102,7 +102,7 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
     /// bytes, a source read its approximate position, and the episode and
     /// search-index phases their rows; optimizing and flushing are unknown.
     /// </summary>
-    /// <exception cref="VideoException">The download or the import failed.</exception>
+    /// <exception cref="DownloadException">The download or the import failed.</exception>
     internal async Task Build(Action<ImdbPhase, WorkProgress> report, CancellationToken cancellation)
     {
         var fresh = FreshRequest.Once(Access);
@@ -149,9 +149,9 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
         catch (InvalidDataException error)
         {
             Remove(Archives);
-            throw new VideoException(VideoFailure.DownloadDamaged, error);
+            throw new DownloadException(DownloadFailure.Damaged, error);
         }
-        catch (VideoException error) when (error.Failure == VideoFailure.UnknownFormat)
+        catch (DownloadException error) when (error.Failure == DownloadFailure.UnknownFormat)
         {
             Remove(Archives);
             throw;
@@ -161,17 +161,17 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
                 || error is IOException io && DataDownload.IsDiskFull(io)
             )
         {
-            throw new VideoException(VideoFailure.DiskFull, error);
+            throw new DownloadException(DownloadFailure.DiskFull, error);
         }
         catch (Exception error)
             when (error is IOException or UnauthorizedAccessException or SqliteException)
         {
-            throw new VideoException(VideoFailure.DownloadFailed, error);
+            throw new DownloadException(DownloadFailure.Failed, error);
         }
     }
 
     /// <summary>Replaces the installed data with the data <see cref="Build"/> made.</summary>
-    /// <exception cref="VideoException">Another program holds the data.</exception>
+    /// <exception cref="DownloadException">Another program holds the data.</exception>
     internal void Install()
     {
         _file.EnterWriteLock();
@@ -183,7 +183,7 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
-            throw new VideoException(VideoFailure.InUse, error);
+            throw new DownloadException(DownloadFailure.InUse, error);
         }
         finally
         {
@@ -216,7 +216,7 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
     }
 
     /// <summary>Deletes the installed data and the archives kept for a new import.</summary>
-    /// <exception cref="VideoException">Another program holds the data.</exception>
+    /// <exception cref="DownloadException">Another program holds the data.</exception>
     internal void Delete()
     {
         _file.EnterWriteLock();
@@ -229,7 +229,7 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
-            throw new VideoException(VideoFailure.InUse, error);
+            throw new DownloadException(DownloadFailure.InUse, error);
         }
         finally
         {
@@ -603,7 +603,7 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
                     cancellation
                 );
                 if (titles == 0 || rated == 0)
-                    throw new VideoException(VideoFailure.UnknownFormat);
+                    throw new DownloadException(DownloadFailure.UnknownFormat);
                 IndexTitles(connection, titles, Counting(ImdbPhase.Indexing), cancellation);
                 Execute(connection, "COMMIT;");
                 report(ImdbPhase.Optimizing, new WorkProgress.Unknown());
@@ -701,7 +701,7 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
     {
         var numbers = CollectionsMarshal.AsSpan(episodes);
         if (numbers.Length == 0)
-            throw new VideoException(VideoFailure.UnknownFormat);
+            throw new DownloadException(DownloadFailure.UnknownFormat);
         numbers.Sort(BySeries);
         var maximum = 0;
         foreach (var episode in numbers)
@@ -1018,7 +1018,7 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
         using Stream content = packed ? new GZipStream(file, CompressionMode.Decompress) : file;
         using var reader = new StreamReader(content, Encoding.UTF8, bufferSize: 64 * 1024);
         if (reader.ReadLine() != header)
-            throw new VideoException(VideoFailure.UnknownFormat);
+            throw new DownloadException(DownloadFailure.UnknownFormat);
         var count = 0;
         report(0);
         while (reader.ReadLine() is { } line)

@@ -451,7 +451,7 @@ internal sealed class Settings : UserControl
                 _selection.Text,
                 Text.Get("settings", model.Enabled ? "on" : "off")
             )
-            : "—";
+            : Strings.NoValue;
         _refreshing = false;
     }
 

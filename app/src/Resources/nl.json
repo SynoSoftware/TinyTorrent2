@@ -86,7 +86,14 @@
     "sources": "Torrentbronnen toevoegen",
     "maintenance_recovery": "Bibliotheek herstellen",
     "maintenance_resetprotection": "Zoekbeveiliging opnieuw instellen",
-    "maintenance_deletedataset": "Gedownloade gegevens verwijderen"
+    "maintenance_deletedataset": "Gedownloade gegevens verwijderen",
+    "download_failed": "De gegevens van {0} konden niet worden gedownload. Probeer het later opnieuw.",
+    "download_damaged": "De gedownloade gegevens van {0} zijn beschadigd. Probeer het later opnieuw.",
+    "download_diskfull": "De schijf is vol, waardoor de gegevens van {0} niet konden worden opgeslagen. Maak ruimte vrij en probeer het opnieuw.",
+    "download_inuse": "Een ander programma gebruikt de gegevens van {0}. Sluit het en probeer het opnieuw.",
+    "download_unknownformat": "{0} heeft de gegevensindeling gewijzigd, waardoor deze versie van TinyTorrent ze niet kan lezen. Je geïnstalleerde gegevens zijn ongewijzigd.",
+    "download_interrupted": "Het downloaden van de gegevens van {0} is gestopt omdat een netwerk- of zoekbeveiligingsinstelling is gewijzigd. Probeer het opnieuw.",
+    "download_route": "{0} kan de gekozen netwerkroute niet gebruiken. Controleer de proxy- en netwerkadapterinstellingen en probeer het opnieuw."
   },
   "library": {
     "failure_unavailable": "{0} kon geen video-informatie ophalen. Probeer het later opnieuw.",
@@ -98,12 +105,6 @@
     "failure_unreadable": "De gegevens van {0} konden niet worden gelezen. Probeer het opnieuw of download ze opnieuw in Instellingen.",
     "failure_invalidresult": "{0} heeft geen bruikbare video-informatie teruggestuurd. Je opgeslagen informatie is ongewijzigd.",
     "failure_missing": "{0} heeft geen informatie over deze video.",
-    "failure_downloadfailed": "De gegevens van {0} konden niet worden gedownload. Probeer het later opnieuw.",
-    "failure_downloaddamaged": "De gedownloade gegevens van {0} zijn beschadigd. Probeer het later opnieuw.",
-    "failure_diskfull": "De schijf is vol, waardoor de gegevens van {0} niet konden worden opgeslagen. Maak ruimte vrij en probeer het opnieuw.",
-    "failure_inuse": "Een ander programma gebruikt de gegevens van {0}. Sluit het en probeer het opnieuw.",
-    "failure_unknownformat": "{0} heeft de gegevensindeling gewijzigd, waardoor deze versie van TinyTorrent ze niet kan lezen. Je geïnstalleerde gegevens zijn ongewijzigd.",
-    "failure_interrupted": "Het downloaden van de gegevens van {0} is gestopt omdat een netwerk- of zoekbeveiligingsinstelling is gewijzigd. Probeer het opnieuw.",
     "failure_providerunavailable": "{0} is niet beschikbaar. Kies een andere aanbieder of probeer het later opnieuw.",
     "failure_lookupstopped": "De aanvraag is gestopt omdat de verbinding of een instelling is gewijzigd. Probeer het opnieuw.",
     "failure_filechanged": "Het bestand of de bijbehorende informatie is gewijzigd, of TinyTorrent beheert het niet meer. Probeer het opnieuw.",

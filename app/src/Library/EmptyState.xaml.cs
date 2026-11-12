@@ -62,7 +62,7 @@ public sealed partial class EmptyState : UserControl
             configuration != _model.Configuration && count > 0
                 ? Visibility.Visible
                 : Visibility.Collapsed;
-        var name = _model.Text.Get("library", configuration.ToString().ToLowerInvariant());
+        var name = _model.Text.Get(configuration);
         button.Text = _model.Text.Format("filters", "count", name, count);
         ToolTipService.SetToolTip(
             button,

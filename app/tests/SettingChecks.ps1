@@ -7,8 +7,8 @@ $binary = (Resolve-Path -LiteralPath $BinaryDirectory).Path
 $assembly = [Reflection.Assembly]::LoadFrom((Join-Path $binary 'TinyTorrentUI.dll'))
 $flags = [Reflection.BindingFlags]'Instance,Public,NonPublic'
 $strings = [Activator]::CreateInstance($assembly.GetType('Syno.TinyTorrent.Shared.Strings', $true))
-$settingType = $assembly.GetType('Syno.TinyTorrent.Settings.Setting', $true)
-$storeType = $assembly.GetType('Syno.TinyTorrent.Settings.SettingStore', $true)
+$settingType = $assembly.GetType('Syno.TinyTorrent.Shared.Setting', $true)
+$storeType = $assembly.GetType('Syno.TinyTorrent.Shared.SettingStore', $true)
 
 # Compiled, because the setting calls these after a reply, possibly on a
 # thread where script blocks cannot run.

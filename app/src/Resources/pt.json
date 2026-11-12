@@ -86,7 +86,14 @@
     "sources": "Adicionando fontes de torrents",
     "maintenance_recovery": "Recuperando a Biblioteca",
     "maintenance_resetprotection": "Redefinindo proteção de busca",
-    "maintenance_deletedataset": "Excluindo dados baixados"
+    "maintenance_deletedataset": "Excluindo dados baixados",
+    "download_failed": "Não foi possível baixar os dados de {0}. Tente novamente mais tarde.",
+    "download_damaged": "Os dados baixados de {0} estão danificados. Tente novamente mais tarde.",
+    "download_diskfull": "O disco está cheio e os dados de {0} não foram salvos. Libere espaço e tente novamente.",
+    "download_inuse": "Outro programa está usando os dados de {0}. Feche-o e tente novamente.",
+    "download_unknownformat": "{0} mudou o formato dos dados e esta versão do TinyTorrent não pode lê-los. Os dados instalados foram mantidos.",
+    "download_interrupted": "O download dos dados de {0} foi interrompido porque uma configuração de rede ou proteção de busca mudou. Tente novamente.",
+    "download_route": "{0} não pode usar a rota de rede selecionada. Verifique as configurações de proxy e adaptador de rede e tente novamente."
   },
   "library": {
     "failure_unavailable": "{0} não pôde retornar informações do vídeo. Tente novamente mais tarde.",
@@ -98,12 +105,6 @@
     "failure_unreadable": "Não foi possível ler os dados de {0}. Tente novamente ou baixe-os novamente nas Configurações.",
     "failure_invalidresult": "{0} não retornou informações de vídeo utilizáveis. Os detalhes salvos foram mantidos.",
     "failure_missing": "{0} não tem informações sobre este vídeo.",
-    "failure_downloadfailed": "Não foi possível baixar os dados de {0}. Tente novamente mais tarde.",
-    "failure_downloaddamaged": "Os dados baixados de {0} estão danificados. Tente novamente mais tarde.",
-    "failure_diskfull": "O disco está cheio e os dados de {0} não foram salvos. Libere espaço e tente novamente.",
-    "failure_inuse": "Outro programa está usando os dados de {0}. Feche-o e tente novamente.",
-    "failure_unknownformat": "{0} mudou o formato dos dados e esta versão do TinyTorrent não pode lê-los. Os dados instalados foram mantidos.",
-    "failure_interrupted": "O download dos dados de {0} foi interrompido porque uma configuração de rede ou proteção de busca mudou. Tente novamente.",
     "failure_providerunavailable": "{0} está indisponível. Escolha outro provedor ou tente novamente mais tarde.",
     "failure_lookupstopped": "A solicitação foi interrompida porque a conexão ou uma configuração mudou. Tente novamente.",
     "failure_filechanged": "O arquivo ou seus detalhes mudaram, ou o TinyTorrent não o gerencia mais. Tente novamente.",

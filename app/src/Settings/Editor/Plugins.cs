@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.Globalization;
 using System.Text.Json;
-using Syno.TinyTorrent.Library;
+using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Storage;
 using Syno.TinyTorrent.Shell;
 
@@ -19,7 +19,7 @@ public sealed partial class Editor
     private bool _pluginsVisible;
     private bool _databaseVisible;
 
-    public string VideoProvider => _owner.Library.Option?.Name ?? "—";
+    public string VideoProvider => _owner.Library.Option?.Name ?? Strings.NoValue;
     public string VideoSummary => Text.Format(
         "plugins",
         "video_summary",
@@ -30,12 +30,13 @@ public sealed partial class Editor
 
     public string VideoCoverage => _coverage is { } coverage
         ? Text.Format("plugins", "coverage", coverage.Informed, coverage.Total)
-        : "—";
+        : Strings.NoValue;
     public string SubtitleCoverage => _coverage is { } coverage && _owner.Subtitles is { } acquisition
         ? Text.Format("subtitles", "coverage", acquisition.WithSubtitles, coverage.Total)
-        : "—";
-    public string DatabaseSize => _databaseSize is { } size ? Text.Bytes(size) : "—";
-    public string LibraryFiles => _statistics?.Files.ToString("N0", CultureInfo.CurrentCulture) ?? "—";
+        : Strings.NoValue;
+    public string DatabaseSize => _databaseSize is { } size ? Text.Bytes(size) : Strings.NoValue;
+    public string LibraryFiles =>
+        _statistics?.Files.ToString("N0", CultureInfo.CurrentCulture) ?? Strings.NoValue;
     public string StoredInformation => _statistics is { } statistics
         ? Text.Format(
             "plugins",
@@ -44,7 +45,7 @@ public sealed partial class Editor
             Text.FormatCount("plugins", "series_count", statistics.Series),
             Text.FormatCount("plugins", "episode_count", statistics.Episodes)
         )
-        : "—";
+        : Strings.NoValue;
     public string StoredSubtitles => _statistics is { } statistics
         ? Text.Format(
             "plugins",
@@ -52,7 +53,7 @@ public sealed partial class Editor
             Text.FormatCount("plugins", "file_count", statistics.Subtitles),
             Text.FormatCount("plugins", "language_count", statistics.Languages)
         )
-        : "—";
+        : Strings.NoValue;
 
     internal void AttachLibrary()
     {

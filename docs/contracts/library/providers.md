@@ -278,6 +278,10 @@ so one bad page cannot suspend unrelated enrichment. Cancellation stays
 `OperationCanceledException`, and storage errors stay with the existing failure
 owner.
 
+A failed download, replacement or removal of a provider's data is a
+`DownloadException` with a `DownloadFailure`, the same failure the city
+data uses.
+
 The background sweep takes each video file on screen that has no saved
 decision, no attempt in this session and no remembered no-match answer from
 the provider under the file's current name. A file that scrolls away before

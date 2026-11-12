@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using Syno.TinyTorrent.Shared;
 
 namespace Syno.TinyTorrent.Shell;
 
@@ -32,11 +33,12 @@ public sealed partial class MainViewModel
     internal bool IsAbout => Page is WindowPage.About or WindowPage.Credits;
     internal bool ShowsMemory => IsAbout || Settings.ShowMemory.IsOn;
     internal string EngineMemory =>
-        IsConnected && _engineMemory is { } bytes ? Text.Bytes(bytes) : "—";
-    internal string UiMemory => _uiMemory is { } bytes ? Text.Bytes(bytes) : "—";
+        IsConnected && _engineMemory is { } bytes ? Text.Bytes(bytes) : Strings.NoValue;
+    internal string UiMemory => _uiMemory is { } bytes ? Text.Bytes(bytes) : Strings.NoValue;
     internal string LifetimeDownloaded =>
-        IsRunning ? Text.Bytes(LifetimeTotals.Downloaded) : "—";
-    internal string LifetimeUploaded => IsRunning ? Text.Bytes(LifetimeTotals.Uploaded) : "—";
+        IsRunning ? Text.Bytes(LifetimeTotals.Downloaded) : Strings.NoValue;
+    internal string LifetimeUploaded =>
+        IsRunning ? Text.Bytes(LifetimeTotals.Uploaded) : Strings.NoValue;
 
     private void ObserveMemory()
     {

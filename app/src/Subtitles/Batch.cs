@@ -206,14 +206,12 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
         if (_language != _text.Language)
         {
             _language = _text.Language;
-            _download.ItemsSource = new[]
-            {
-                T("exact_only"),
-                T("best_match"),
-                _text.Format("subtitles", "up_to", 2),
-                _text.Format("subtitles", "up_to", 3),
-                _text.Format("subtitles", "up_to", 4),
-            };
+            // A choice's index is the guesses Find takes, so the last choice
+            // is the best match and every extra one.
+            var upTo = Enumerable
+                .Range(2, Acquisition.MaximumExtras)
+                .Select(count => _text.Format("subtitles", "up_to", count));
+            _download.ItemsSource = new[] { T("exact_only"), T("best_match") }.Concat(upTo).ToArray();
             _download.SelectedIndex = download;
         }
         var keys = new[] { "new", "missing_data", "all" };
@@ -250,7 +248,7 @@ internal sealed class Batch : UserControl, INotifyPropertyChanged
                 "retry_at",
                 _text.Time(reset)
             ),
-            var failure => T("failure_" + failure.ToString().ToLowerInvariant()),
+            var failure => SubtitleException.Describe(_text, failure),
         };
 
     internal Task Act() => Finding ? Stop() : Find();

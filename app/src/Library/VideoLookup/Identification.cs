@@ -156,7 +156,7 @@ internal sealed partial class VideoLookup
     )
     {
         var release = request.Release;
-        var kind = release.Season is null ? VideoKind.Movie : VideoKind.Series;
+        var kind = release.Kind;
         if (!CanMatch(context.Option, release))
             return null;
         if (series is not null)
@@ -418,13 +418,13 @@ internal sealed partial class VideoLookup
     private static bool CanMatch(ProviderOption option, Release release) =>
         !release.IsExtra
         && release.Title.Length > 0
-        && option.Kinds.Contains(release.Season is null ? VideoKind.Movie : VideoKind.Series)
+        && option.Kinds.Contains(release.Kind)
         && (release.Season is null || release.Episodes.Count > 0);
 
     private static VideoChoice[] Matches(Release release, IEnumerable<VideoChoice> choices) =>
         choices
             .Where(choice =>
-                choice.Kind == (release.Season is null ? VideoKind.Movie : VideoKind.Series)
+                choice.Kind == release.Kind
                 && Confidence(release, choice) > 0.8
             )
             .ToArray();

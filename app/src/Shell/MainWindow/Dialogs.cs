@@ -266,7 +266,7 @@ public sealed partial class MainWindow
             return;
         await Interact(async interaction =>
         {
-            var preference = new DialogPreference(Model.Settings);
+            var preference = new DialogPreference(Model.Settings.Save);
             var dialog = new Dialog
             {
                 Glyph = Segoe.ListChecks,

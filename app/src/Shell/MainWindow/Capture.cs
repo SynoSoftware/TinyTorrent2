@@ -656,7 +656,7 @@ public sealed partial class MainWindow
                 "subtitles-paused",
                 new(
                     text.Get("notifications", "subtitles_paused"),
-                    text.Get("subtitles", "failure_authentication"),
+                    Subtitles.SubtitleException.Describe(text, SubtitleFailure.Authentication),
                     InfoBarSeverity.Warning,
                     new(
                         command,
@@ -737,7 +737,7 @@ public sealed partial class MainWindow
             Notify("completed", string.Empty, string.Empty);
             Model.Notifications.ShowOutcome("subtitles", "connected", "OpenSubtitles");
             await CapturePage(prefix + "toast-finished");
-            Model.Notifications.Report(new CommandException("storage_failed", null, text, "move"));
+            Model.Notifications.Report(new CommandException("storage_failed", null, "move"));
             await CapturePage(prefix + "toast-command");
             Notify("error", "storage_failed", string.Empty);
             await CapturePage(prefix + "toast-torrent");
@@ -809,6 +809,59 @@ public sealed partial class MainWindow
         {
             dialog.Hide();
             await closed;
+        }
+    }
+
+    // The review's languages, by default English and Spanish, each in Light
+    // and Dark, chosen through Settings as a person chooses them. The capture
+    // receives the name part that tells the scenes apart, such as
+    // en-light-720x560, and the size.
+    private async Task CaptureMatrix(
+        Func<string, SizeInt32, Task> capture,
+        string[]? languages = null
+    )
+    {
+        foreach (var language in languages ?? ["en", "es"])
+        {
+            Model.SelectLanguage(language);
+            await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);
+            foreach (var theme in new[] { "light", "dark" })
+            {
+                await Model.Settings.SelectTheme(theme);
+                await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
+                await CaptureSizes(size =>
+                    capture(language + "-" + theme + "-" + size.Width + "x" + size.Height, size)
+                );
+            }
+        }
+    }
+
+    // The review's window sizes in DIPs, each resized in physical pixels and
+    // never below the window's minimum width.
+    private async Task CaptureSizes(Func<SizeInt32, Task> capture)
+    {
+        foreach (
+            var size in new[]
+            {
+                new SizeInt32(720, 560),
+                new SizeInt32(1040, 680),
+                new SizeInt32(1280, 800),
+            }
+        )
+        {
+            await CaptureLayout();
+            var scale = Root.XamlRoot.RasterizationScale;
+            var minimum =
+                ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).PreferredMinimumWidth
+                ?? 0;
+            AppWindow.Resize(
+                new SizeInt32(
+                    Math.Max((int)(size.Width * scale), minimum),
+                    (int)(size.Height * scale)
+                )
+            );
+            await CaptureLayout();
+            await capture(size);
         }
     }
 
@@ -1384,80 +1437,45 @@ public sealed partial class MainWindow
                 }
             );
 
-            foreach (var language in new[] { "en", "es" })
-            {
-                Model.SelectLanguage(language);
-                await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);
-                foreach (var theme in new[] { "light", "dark" })
+            await CaptureMatrix(
+                async (suffix, size) =>
                 {
-                    await Model.Settings.SelectTheme(theme);
-                    await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
-                    foreach (
-                        var size in new[]
-                        {
-                            new SizeInt32(720, 560),
-                            new SizeInt32(1040, 680),
-                            new SizeInt32(1280, 800),
-                        }
-                    )
+                    var prefix = "schedule-" + suffix;
+                    await schedule.Close();
+                    if (size.Width == 720)
                     {
-                        var scale = Root.XamlRoot.RasterizationScale;
-                        var minimum =
-                            (
-                                (Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter
-                            ).PreferredMinimumWidth
-                            ?? 0;
-                        AppWindow.Resize(
-                            new SizeInt32(
-                                Math.Max((int)(size.Width * scale), minimum),
-                                (int)(size.Height * scale)
-                            )
-                        );
-                        var prefix =
-                            "schedule-"
-                            + language
-                            + "-"
-                            + theme
-                            + "-"
-                            + size.Width
-                            + "x"
-                            + size.Height;
-                        await schedule.Close();
-                        if (size.Width == 720)
-                        {
-                            await Model.ChooseLimits(LimitMode.None);
-                            if (Model.LimitsIndex != (int)LimitMode.None)
-                                throw new InvalidOperationException(
-                                    "The review could not choose No limits."
-                                );
-                            await CapturePage(prefix + "-fixed", page);
-                            await Model.ChooseLimits(LimitMode.Schedule);
-                            if (!Model.FollowsSchedule)
-                                throw new InvalidOperationException(
-                                    "The review could not restore the weekly schedule."
-                                );
-                        }
-                        await CapturePage(prefix + "-overview", page);
-                        await schedule.Open(created);
-                        await CapturePage(prefix + "-open", page);
-                        if (size.Width == 720)
-                        {
-                            await CaptureTime("PeriodStart", prefix + "-start-picker");
-                            await CaptureTime("PeriodEnd", prefix + "-end-picker");
-                        }
-                        await ClearDays();
-                        await CaptureReady(schedule, () => schedule.HasError);
-                        await CaptureLayout();
-                        await CaptureUi(prefix + "-validation");
-                        await schedule.Close();
-                        if (!schedule.Periods.Contains(created) || created.Days.Count != 1)
+                        await Model.ChooseLimits(LimitMode.None);
+                        if (Model.LimitsIndex != (int)LimitMode.None)
                             throw new InvalidOperationException(
-                                "Closing the period changed the saved period."
+                                "The review could not choose No limits."
                             );
-                        completed.Add(prefix);
+                        await CapturePage(prefix + "-fixed", page);
+                        await Model.ChooseLimits(LimitMode.Schedule);
+                        if (!Model.FollowsSchedule)
+                            throw new InvalidOperationException(
+                                "The review could not restore the weekly schedule."
+                            );
                     }
+                    await CapturePage(prefix + "-overview", page);
+                    await schedule.Open(created);
+                    await CapturePage(prefix + "-open", page);
+                    if (size.Width == 720)
+                    {
+                        await CaptureTime("PeriodStart", prefix + "-start-picker");
+                        await CaptureTime("PeriodEnd", prefix + "-end-picker");
+                    }
+                    await ClearDays();
+                    await CaptureReady(schedule, () => schedule.HasError);
+                    await CaptureLayout();
+                    await CaptureUi(prefix + "-validation");
+                    await schedule.Close();
+                    if (!schedule.Periods.Contains(created) || created.Days.Count != 1)
+                        throw new InvalidOperationException(
+                            "Closing the period changed the saved period."
+                        );
+                    completed.Add(prefix);
                 }
-            }
+            );
             outcomes.Add(new { journey = "close invalid period", savedPeriodRetained = true });
 
             await schedule.Reschedule(created, created.Span.Adjust(PeriodAction.Move, 15));
@@ -1535,82 +1553,50 @@ public sealed partial class MainWindow
             throw new InvalidOperationException(
                 "The unfinished native magnet input did not reach its draft."
             );
-        foreach (var language in new[] { "en", "es" })
-        {
-            Model.SelectLanguage(language);
-            await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);
-            foreach (var theme in new[] { "light", "dark" })
+        await CaptureMatrix(
+            async (suffix, _) =>
             {
-                await Model.Settings.SelectTheme(theme);
-                await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
-                foreach (
-                    var size in new[]
-                    {
-                        new SizeInt32(720, 560),
-                        new SizeInt32(1040, 680),
-                        new SizeInt32(1280, 800),
-                    }
+                var prefix = "desktop-" + suffix;
+                Run(Model.Exit);
+                await CaptureReady(
+                    Model,
+                    () => _interaction is { IsDraftDecision: true, Dialog: not null }
+                );
+                await CapturePage(prefix + "-exit-prompt");
+                var prompt =
+                    _interaction?.Dialog
+                    ?? throw new InvalidOperationException("Exit did not retain its draft prompt.");
+                CaptureInvoke(
+                    CaptureElements(prompt)
+                        .OfType<Button>()
+                        .Single(control => control.Name == "CloseButton")
+                );
+                await CaptureReady(
+                    Model,
+                    () =>
+                        !Model.IsClosing
+                        && Model.CanEdit
+                        && Model.AddDraft.IsOpen
+                        && _interaction is { IsDraftDecision: false, Dialog: not null }
+                );
+                await CaptureLayout();
+                dialog =
+                    _interaction?.Dialog
+                    ?? throw new InvalidOperationException(
+                        "Keep input did not recover the Add dialog."
+                    );
+                input = CaptureElements(dialog)
+                    .OfType<TextBox>()
+                    .Single(control => control.Name == "MagnetInput");
+                if (
+                    input.Text != magnet
+                    || Model.AddDraft.Magnet != magnet
+                    || !Model.AddDraft.HasDraft
                 )
-                {
-                    var scale = Root.XamlRoot.RasterizationScale;
-                    var minimum =
-                        (
-                            (Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter
-                        ).PreferredMinimumWidth
-                        ?? 0;
-                    AppWindow.Resize(
-                        new SizeInt32(
-                            Math.Max((int)(size.Width * scale), minimum),
-                            (int)(size.Height * scale)
-                        )
-                    );
-                    var prefix =
-                        "desktop-" + language + "-" + theme + "-" + size.Width + "x" + size.Height;
-                    Run(Model.Exit);
-                    await CaptureReady(
-                        Model,
-                        () => _interaction is { IsDraftDecision: true, Dialog: not null }
-                    );
-                    await CapturePage(prefix + "-exit-prompt");
-                    var prompt =
-                        _interaction?.Dialog
-                        ?? throw new InvalidOperationException(
-                            "Exit did not retain its draft prompt."
-                        );
-                    CaptureInvoke(
-                        CaptureElements(prompt)
-                            .OfType<Button>()
-                            .Single(control => control.Name == "CloseButton")
-                    );
-                    await CaptureReady(
-                        Model,
-                        () =>
-                            !Model.IsClosing
-                            && Model.CanEdit
-                            && Model.AddDraft.IsOpen
-                            && _interaction is { IsDraftDecision: false, Dialog: not null }
-                    );
-                    await CaptureLayout();
-                    dialog =
-                        _interaction?.Dialog
-                        ?? throw new InvalidOperationException(
-                            "Keep input did not recover the Add dialog."
-                        );
-                    input = CaptureElements(dialog)
-                        .OfType<TextBox>()
-                        .Single(control => control.Name == "MagnetInput");
-                    if (
-                        input.Text != magnet
-                        || Model.AddDraft.Magnet != magnet
-                        || !Model.AddDraft.HasDraft
-                    )
-                        throw new InvalidOperationException(
-                            "Keep input lost the unfinished magnet."
-                        );
-                    completed.Add(prefix);
-                }
+                    throw new InvalidOperationException("Keep input lost the unfinished magnet.");
+                completed.Add(prefix);
             }
-        }
+        );
         outcomes.Add(
             new
             {
@@ -1746,31 +1732,21 @@ public sealed partial class MainWindow
         var requestedTheme = Root.RequestedTheme;
         try
         {
+            // Settings cannot save a theme or a language while the engine is
+            // disconnected, so only the window's theme changes.
             foreach (var theme in new[] { ElementTheme.Light, ElementTheme.Dark })
-            foreach (
-                var size in new[]
-                {
-                    new SizeInt32(720, 560),
-                    new SizeInt32(1040, 680),
-                    new SizeInt32(1280, 800),
-                }
-            )
             {
-                AppWindow.Resize(
-                    new SizeInt32(
-                        Math.Max((int)(size.Width * raster), minimumWidth),
-                        (int)(size.Height * raster)
-                    )
-                );
                 Root.RequestedTheme = theme;
-                await CapturePage(
-                    "desktop-disconnected-es-"
-                        + theme.ToString().ToLowerInvariant()
-                        + "-"
-                        + size.Width
-                        + "x"
-                        + size.Height,
-                    InspectorContent.Content as FrameworkElement
+                await CaptureSizes(size =>
+                    CapturePage(
+                        "desktop-disconnected-es-"
+                            + theme.ToString().ToLowerInvariant()
+                            + "-"
+                            + size.Width
+                            + "x"
+                            + size.Height,
+                        InspectorContent.Content as FrameworkElement
+                    )
                 );
             }
         }
@@ -1995,7 +1971,9 @@ public sealed partial class MainWindow
                         {
                             await CaptureReady(
                                 Model,
-                                () => Model.Settings.ShowMemory.ConfirmedOn == true && Model.UiMemory != "—"
+                                () =>
+                                    Model.Settings.ShowMemory.ConfirmedOn == true
+                                    && Model.UiMemory != Strings.NoValue
                             );
                             await Scene("memory", "Real Show memory usage setting");
                         }
@@ -2268,52 +2246,23 @@ public sealed partial class MainWindow
                 globalPaused = Model.IsSessionPaused,
             }
         );
-        foreach (var captureLanguage in new[] { "en", "es" })
-        foreach (var theme in new[] { "light", "dark" })
-        {
-            await Model.Settings.SelectTheme(theme);
-            await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
-            Model.SelectLanguage(captureLanguage);
-            await CaptureReady(
-                Model,
-                () => Model.CanClose && Model.Text.Language == captureLanguage
-            );
-            await CaptureLayout();
-            foreach (
-                var size in new[]
-                {
-                    new SizeInt32(720, 560),
-                    new SizeInt32(1040, 680),
-                    new SizeInt32(1280, 800),
-                }
-            )
+        await CaptureMatrix(
+            async (suffix, size) =>
             {
                 if (!Model.IsSessionPaused)
                     throw new InvalidOperationException(
                         "The populated tracker capture lost global pause."
                     );
-                var scale = Root.XamlRoot.RasterizationScale;
-                var minimum =
-                    (
-                        (Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter
-                    ).PreferredMinimumWidth
-                    ?? 0;
-                AppWindow.Resize(
-                    new SizeInt32(
-                        Math.Max((int)Math.Round(size.Width * scale), minimum),
-                        (int)Math.Round(size.Height * scale)
-                    )
-                );
                 await CapturePage(
-                    $"details-{captureLanguage}-{theme}-{size.Width}x{size.Height}-trackers",
+                    "details-" + suffix + "-trackers",
                     InspectorContent.Content as FrameworkElement
                 );
                 outcomes.Add(
                     new
                     {
                         journey = "populated tracker capture",
-                        language = captureLanguage,
-                        theme,
+                        language = Model.Text.Language,
+                        theme = Model.Theme,
                         requestedWidth = size.Width,
                         requestedHeight = size.Height,
                         clientWidth = AppWindow.ClientSize.Width,
@@ -2322,7 +2271,7 @@ public sealed partial class MainWindow
                     }
                 );
             }
-        }
+        );
         CaptureInvoke(FindButton("EditTrackers"));
         await CaptureLayout();
         if (Model.Inspector.HasDraft)
@@ -2403,14 +2352,7 @@ public sealed partial class MainWindow
                 );
             await CaptureReady(Model, () => Model.IsConnected && !Model.IsLoading);
             await Model.LanguageLoad;
-            if (
-                !string.Equals(
-                    Path.GetFullPath(store).TrimEnd(Path.DirectorySeparatorChar),
-                    Path.GetFullPath(Model.DataDirectory ?? string.Empty)
-                        .TrimEnd(Path.DirectorySeparatorChar),
-                    StringComparison.OrdinalIgnoreCase
-                )
-            )
+            if (!FolderComparer.Instance.Equals(store, Model.DataDirectory))
                 throw new InvalidOperationException(
                     "The connected engine does not own the capture store."
                 );
@@ -2453,37 +2395,11 @@ public sealed partial class MainWindow
             }
             if (ReviewMode == CaptureMode.SettingsLayout)
             {
-                foreach (var language in new[] { "en", "es" })
-                foreach (var theme in new[] { "light", "dark" })
-                {
-                    Model.SelectLanguage(language);
-                    await CaptureReady(
-                        Model,
-                        () => Model.CanClose && Model.Text.Language == language
-                    );
-                    await Model.Settings.SelectTheme(theme);
-                    await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
-                    foreach (
-                        var size in new[]
-                        {
-                            new SizeInt32(720, 560),
-                            new SizeInt32(1040, 680),
-                            new SizeInt32(1280, 800),
-                        }
-                    )
+                await CaptureMatrix(
+                    async (suffix, size) =>
                     {
-                        var scale = Root.XamlRoot.RasterizationScale;
-                        var minimum =
-                            (
-                                (Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter
-                            ).PreferredMinimumWidth
-                            ?? 0;
-                        AppWindow.Resize(
-                            new SizeInt32(
-                                Math.Max((int)(size.Width * scale), minimum),
-                                (int)(size.Height * scale)
-                            )
-                        );
+                        var language = Model.Text.Language;
+                        var theme = Model.Theme;
                         await ShowSettings(new(SettingsCategory.General));
                         var page =
                             _settingsPage
@@ -2494,15 +2410,7 @@ public sealed partial class MainWindow
                             Model.Settings,
                             () => Model.Settings.HasRegistration && !Model.Settings.IsPending
                         );
-                        var name =
-                            "settings-"
-                            + language
-                            + "-"
-                            + theme
-                            + "-"
-                            + size.Width
-                            + "x"
-                            + size.Height;
+                        var name = "settings-" + suffix;
                         await CapturePage(name, page);
                         if (language == "en" && theme == "light" && size.Width == 720)
                         {
@@ -2695,7 +2603,7 @@ public sealed partial class MainWindow
                             Model.Notifications.Dismiss(toast);
                         completed.Add(name);
                     }
-                }
+                );
                 outcomes.Add(
                     new
                     {
@@ -2831,25 +2739,15 @@ public sealed partial class MainWindow
                 .Settings.All.Select(setting => (setting.Name, setting.Input, setting.IsOn))
                 .ToArray();
             (int Index, int Priority)[]? priorities = null;
-            string[] languages = filesOnly || addOnly ? ["en", "es"] : [Model.Text.Language];
-            var themes =
-                ReviewMode == CaptureMode.Smoke ? Array.Empty<string>() : ["light", "dark"];
-            foreach (var language in languages)
-            foreach (var theme in themes)
-            {
-                await Model.Settings.SelectTheme(theme);
-                await CaptureReady(Model, () => Model.CanClose && Model.Theme == theme);
-                Model.SelectLanguage(language);
-                await CaptureReady(Model, () => Model.CanClose && Model.Text.Language == language);
-                foreach (
-                    var size in new[]
-                    {
-                        new SizeInt32(720, 560),
-                        new SizeInt32(1040, 680),
-                        new SizeInt32(1280, 800),
-                    }
-                )
+            string[] languages =
+                ReviewMode == CaptureMode.Smoke ? []
+                : filesOnly || addOnly ? ["en", "es"]
+                : [Model.Text.Language];
+            await CaptureMatrix(
+                async (_, size) =>
                 {
+                    var language = Model.Text.Language;
+                    var theme = Model.Theme;
                     var prefix =
                         (
                             addOnly ? "add-layout-" + language + "-"
@@ -2862,18 +2760,6 @@ public sealed partial class MainWindow
                         + "x"
                         + size.Height
                         + "-";
-                    var scale = Root.XamlRoot.RasterizationScale;
-                    var minimum =
-                        (
-                            (Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter
-                        ).PreferredMinimumWidth
-                        ?? 0;
-                    AppWindow.Resize(
-                        new SizeInt32(
-                            Math.Max((int)(size.Width * scale), minimum),
-                            (int)(size.Height * scale)
-                        )
-                    );
                     await ShowTorrents();
                     if (!filesOnly)
                         Model.CloseInspector();
@@ -3172,7 +3058,7 @@ public sealed partial class MainWindow
                                 is not CommandException
                                 {
                                     Command: "add",
-                                    Code: "invalid_destination"
+                                    Reason: EngineFailure.Destination
                                 }
                             )
                                 throw new InvalidOperationException(
@@ -3195,7 +3081,7 @@ public sealed partial class MainWindow
                                 new
                                 {
                                     journey = prefix + "destination refusal",
-                                    message = Model.AddDraft.Failure.Message,
+                                    message = Model.Text.Error(Model.AddDraft.Failure),
                                     focus = (
                                         FocusManager.GetFocusedElement(Root.XamlRoot)
                                         as FrameworkElement
@@ -3237,7 +3123,7 @@ public sealed partial class MainWindow
                             await closed;
                         }
                         completed.Add(prefix);
-                        continue;
+                        return;
                     }
                     if (!filesOnly)
                     {
@@ -3317,7 +3203,7 @@ public sealed partial class MainWindow
                     if (filesOnly)
                     {
                         completed.Add(prefix);
-                        continue;
+                        return;
                     }
                     await ShowAbout();
                     await CapturePage(prefix + "about");
@@ -3340,8 +3226,9 @@ public sealed partial class MainWindow
                     Model.AddDraft.EditingMagnet = true;
                     await CaptureDialog(prefix + "add", ShowAdd, () => _interaction?.Dialog);
                     completed.Add(prefix);
-                }
-            }
+                },
+                languages
+            );
             if (addOnly)
                 return;
             if (filesOnly)

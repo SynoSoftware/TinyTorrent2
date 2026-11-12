@@ -16,9 +16,9 @@ internal sealed partial class Acquisition
                 connection =>
                 {
                     using var command = connection.CreateCommand();
-                    command.CommandText = """
+                    command.CommandText = $"""
                         SELECT path,language,manual,retry_at FROM subtitle_jobs
-                        WHERE outcome IN ($pending,$unavailable,$blocked);
+                        WHERE outcome IN {ActiveOutcomes};
                         """;
                     command.Parameters.AddWithValue("$pending", (int)SubtitleOutcome.Pending);
                     command.Parameters.AddWithValue(

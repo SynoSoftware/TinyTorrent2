@@ -6,7 +6,6 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Windows.Input;
-using Syno.TinyTorrent.Settings;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Engine;
 using Syno.TinyTorrent.Shared.Network;
@@ -19,7 +18,7 @@ namespace Syno.TinyTorrent.Shell;
 internal sealed class Updates
 {
     private const string LatestRelease =
-        "https://api.github.com/repos/SynoSoftware/TinyTorrent2/releases/latest";
+        "https://api.github.com/repos/" + App.Repository + "/releases/latest";
     private readonly ProviderHttp _http;
     private readonly BackgroundWork _work;
     private readonly PipeClient _client;
@@ -436,7 +435,10 @@ internal sealed class Updates
     private sealed record ReleaseCheck(DateTimeOffset CheckedAt, Version? Version);
 }
 
-internal sealed class UpdateException(UpdateFailure reason) : Exception(reason.ToString())
+internal sealed class UpdateException(UpdateFailure reason) : Exception(reason.ToString()), IFailure
 {
     internal UpdateFailure Reason { get; } = reason;
+
+    public string Describe(Strings text) =>
+        text.Get("about", "update_" + Reason.ToString().ToLowerInvariant());
 }

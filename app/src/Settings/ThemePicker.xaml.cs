@@ -38,10 +38,10 @@ public sealed partial class ThemePicker : UserControl
 
     private void Refresh()
     {
-        var index = Model.Theme.Input switch
+        var index = Editor.ReadTheme(Model.Theme.Input) switch
         {
-            "light" => 1,
-            "dark" => 2,
+            ElementTheme.Light => 1,
+            ElementTheme.Dark => 2,
             _ => 0,
         };
         if (Theme.SelectedIndex == index)

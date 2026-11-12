@@ -36,9 +36,6 @@ public sealed partial class MainWindow : Window
     private (bool Selected, bool All)? _maps;
     private readonly Dictionary<ICommand, KeyboardAccelerator> _shortcuts = [];
 
-    // VirtualKey omits the Windows OEM comma code.
-    private const VirtualKey Comma = (VirtualKey)0xBC;
-
     public MainWindow(Strings strings)
     {
         Model = new MainViewModel(strings, DispatcherQueue, new Navigation(PrepareNavigation));
@@ -322,7 +319,7 @@ public sealed partial class MainWindow : Window
             FocusSearch
         );
         AddShortcut(
-            new() { Key = Comma, Modifiers = VirtualKeyModifiers.Control },
+            new() { Key = (VirtualKey)OemKey.Comma, Modifiers = VirtualKeyModifiers.Control },
             Model.ShowSettings
         );
         AddShortcut(new() { Key = VirtualKey.Left, Modifiers = VirtualKeyModifiers.Menu }, Back);
@@ -488,12 +485,7 @@ public sealed partial class MainWindow : Window
             string.IsNullOrEmpty(args.PropertyName)
             || args.PropertyName == nameof(MainViewModel.Theme)
         )
-            Root.RequestedTheme = Model.Theme switch
-            {
-                "light" => ElementTheme.Light,
-                "dark" => ElementTheme.Dark,
-                _ => ElementTheme.Default,
-            };
+            Root.RequestedTheme = Editor.ReadTheme(Model.Theme);
         if (
             string.IsNullOrEmpty(args.PropertyName)
             || args.PropertyName == nameof(MainViewModel.Backdrop)
@@ -774,7 +766,7 @@ public sealed partial class MainWindow : Window
         var answer = ExitAnswer.Cancelled;
         await Interact(async interaction =>
         {
-            var preference = new DialogPreference(Model.Settings);
+            var preference = new DialogPreference(Model.Settings.Save);
             var dialog = new Dialog
             {
                 Glyph = Syno.Segoe.Power,

@@ -86,7 +86,14 @@
     "sources": "Adding torrent sources",
     "maintenance_recovery": "Recovering Library",
     "maintenance_resetprotection": "Resetting search protection",
-    "maintenance_deletedataset": "Deleting downloaded data"
+    "maintenance_deletedataset": "Deleting downloaded data",
+    "download_failed": "The {0} data couldn't be downloaded. Try again later.",
+    "download_damaged": "The downloaded {0} data is damaged. Try again later.",
+    "download_diskfull": "The disk is full, so the {0} data couldn't be saved. Free some space, then try again.",
+    "download_inuse": "Another program is using the {0} data. Close it, then try again.",
+    "download_unknownformat": "{0} changed the format of its data, so this version of TinyTorrent can't read it. Your installed data is unchanged.",
+    "download_interrupted": "The {0} data download stopped because a network or search protection setting changed. Try again.",
+    "download_route": "{0} can't use the selected network route. Check the proxy and network adapter settings, then try again."
   },
   "library": {
     "failure_unavailable": "{0} couldn't return video information. Try again later.",
@@ -98,12 +105,6 @@
     "failure_unreadable": "The {0} data couldn't be read. Try again, or download it again in Settings.",
     "failure_invalidresult": "{0} didn't return usable video information. Your saved details are unchanged.",
     "failure_missing": "{0} has no information for this video.",
-    "failure_downloadfailed": "The {0} data couldn't be downloaded. Try again later.",
-    "failure_downloaddamaged": "The downloaded {0} data is damaged. Try again later.",
-    "failure_diskfull": "The disk is full, so the {0} data couldn't be saved. Free some space, then try again.",
-    "failure_inuse": "Another program is using the {0} data. Close it, then try again.",
-    "failure_unknownformat": "{0} changed the format of its data, so this version of TinyTorrent can't read it. Your installed data is unchanged.",
-    "failure_interrupted": "The {0} data download stopped because a network or search protection setting changed. Try again.",
     "failure_providerunavailable": "{0} isn't available. Choose another provider, or try again later.",
     "failure_lookupstopped": "The request stopped because the connection or a setting changed. Try again.",
     "failure_filechanged": "The file or its details changed, or TinyTorrent no longer manages it. Try again.",

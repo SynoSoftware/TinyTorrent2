@@ -169,13 +169,7 @@ public sealed partial class FileBrowser : UserControl
         if (!Model.IsEnabled || nodes.Length == 0)
             return;
         var menu = MenuItems.Flyout(
-            () =>
-                [
-                    Choice("skip", 0, Segoe.CircleSlash),
-                    Choice("low", 1, Segoe.ArrowDown),
-                    Choice("normal", 4, Segoe.Minus),
-                    Choice("high", 7, Segoe.ArrowUp),
-                ],
+            () => [.. FilePriority.All.Select(Choice)],
             () => Model.Text
         );
         FlyoutShowOptions options = new();
@@ -183,18 +177,18 @@ public sealed partial class FileBrowser : UserControl
             options.Position = point;
         menu.ShowAt(target, options);
 
-        MenuChoice Choice(string key, int priority, string glyph) =>
+        MenuChoice Choice(FilePriority priority) =>
             new(
-                Model.Text.Get("files", key),
-                glyph,
-                nodes.All(node => node.Priority == priority),
+                Model.Text.Get("files", priority.TextKey),
+                priority.Glyph,
+                nodes.All(node => node.Priority == priority.Value),
                 new RelayCommand(
-                    () => Model.Choose(nodes, new FileAction.Set(priority)),
+                    () => Model.Choose(nodes, new FileAction.Set(priority.Value)),
                     () => true
                 )
             )
             {
-                AccessKey = Model.Text.Get("files", key + "_key"),
+                AccessKey = Model.Text.Get("files", priority.TextKey + "_key"),
                 Group = "FilePriority",
             };
     }

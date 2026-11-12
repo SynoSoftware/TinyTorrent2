@@ -65,12 +65,7 @@ public sealed partial class Scheduler : UserControl
 
     private void OnTime(object? sender, DateTime time)
     {
-        var position = Model.Text.Format(
-            "transfer_limits",
-            "day_time",
-            Model.ShortDay(Schedule.Weekday(time)),
-            Schedule.Time(time.Hour * 60 + time.Minute)
-        );
+        var position = Model.DayTime(Schedule.Weekday(time), time.Hour * 60 + time.Minute);
         Now.Text = Model.Text.Format("transfer_limits", "now", position);
     }
 

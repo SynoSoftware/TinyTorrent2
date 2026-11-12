@@ -4,14 +4,16 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Syno.TinyTorrent.Shared.Engine;
 using Syno.TinyTorrent.Shared.Network;
-using Syno.TinyTorrent.Shared.Storage;
+using Windows.System;
 
 namespace Syno.TinyTorrent.Shared;
 
 public sealed class Strings
 {
+    // What a value shows while it is not known or does not exist.
+    internal const string NoValue = "—";
+
     internal static IReadOnlyList<CultureInfo> Languages { get; } =
         Array.AsReadOnly<CultureInfo>([
             new("en"),
@@ -169,6 +171,21 @@ public sealed class Strings
             }
         );
 
+    internal string Get(SettingsCategory category) =>
+        Get("settings", category.ToString().ToLowerInvariant());
+
+    internal string Get(TorrentFilter filter) =>
+        Get("filters", filter.ToString().ToLowerInvariant());
+
+    internal string Get(LibraryConfiguration configuration) =>
+        Get("library", configuration.ToString().ToLowerInvariant());
+
+    internal string Get(InspectorSection section) =>
+        Get("inspector", section.ToString().ToLowerInvariant());
+
+    internal string Get(TrackerStatus status) =>
+        Get("trackers", status.ToString().ToLowerInvariant());
+
     internal string Get(WorkResult result)
     {
         var key = result.Observation.Description switch
@@ -205,48 +222,29 @@ public sealed class Strings
             : Format("errors", "detail", message, detail);
     }
 
-    public string Error(Exception error) =>
-        error switch
-        {
-            CommandException => error.Message,
-            DatabaseVersionException => Get("errors", "database_incompatible"),
-            RequestBlockedException blocked => Protection(blocked.Block),
-            Library.ProviderException { Block: { } block } => Get(
-                "request_protection",
-                block.Kind.ToString().ToLowerInvariant()
-            ),
-            Library.VideoException video => Failure(video),
-            Shell.UpdateException update => Get(
-                "about",
-                "update_" + update.Reason.ToString().ToLowerInvariant()
-            ),
-            Subtitles.SubtitleException subtitle => Get(
-                "subtitles",
-                "failure_" + subtitle.Reason.ToString().ToLowerInvariant()
-            ),
-            // A title or the surrounding control already says that the
-            // operation failed, so only the reason follows it.
-            _ => string.IsNullOrWhiteSpace(error.Message)
-                ? Get("errors", "unknown")
-                : error.Message,
-        };
+    /// <summary>
+    /// The first problem's text, followed by how many more occurred when
+    /// <paramref name="count"/>, the number of problems, is more than one.
+    /// </summary>
+    internal string Problems(string first, int count) =>
+        count > 1
+            ? Format("errors", "detail", first, Format("errors", "additional_problems", count - 1))
+            : first;
 
-    // A provider without an API key refused the request, not a key.
-    private string Failure(Library.VideoException error)
-    {
-        var reason = error is { Failure: VideoFailure.Refused, Provider.Access: not Access.Key }
-            ? "refused_request"
-            : error.Failure.ToString().ToLowerInvariant();
-        return Format(
-            "library",
-            "failure_" + reason,
-            error.Provider?.Name ?? error.Subject ?? string.Empty
-        );
-    }
+    public string Error(Exception error) =>
+        error is IFailure failure ? failure.Describe(this)
+        // A title or the surrounding control already says that the
+        // operation failed, so only the reason follows it.
+        : string.IsNullOrWhiteSpace(error.Message) ? Get("errors", "unknown")
+        : error.Message;
+
+    // The reason alone, without the retry time.
+    internal string Protection(RequestBlockKind kind) =>
+        Get("request_protection", kind.ToString().ToLowerInvariant());
 
     internal string Protection(RequestBlock block)
     {
-        var reason = Get("request_protection", block.Kind.ToString().ToLowerInvariant());
+        var reason = Protection(block.Kind);
         return block.RetryAt is { } retry
             ? Format("request_protection", "retry_at", reason, Time(retry))
             : reason;
@@ -255,18 +253,65 @@ public sealed class Strings
     public string RateUnit(RateScale scale) =>
         Get("units", scale == RateScale.KibPerSecond ? "kib_per_second" : "mb_per_second");
 
-    // A speed limit in bytes per second, or "—" while it is not known.
+    // A speed limit in bytes per second, or NoValue while it is not known.
     public string SpeedLimit(double? bytes)
     {
         var unit = RateUnit(RateScale.MbPerSecond);
         return bytes switch
         {
-            null => "—",
+            null => NoValue,
             0 => Get("transfer_limits", "unlimited"),
             < 10000 => Format("units", "speed_under", 0.01, unit),
             _ => Format("units", "speed", bytes / (double)RateScale.MbPerSecond, unit),
         };
     }
+
+    // A count limit, such as a connection or queue limit, or NoValue while
+    // it is not known.
+    internal string CountLimit(double? count) =>
+        count switch
+        {
+            null => NoValue,
+            0 => Get("transfer_limits", "unlimited"),
+            { } value => value.ToString("N0", CultureInfo.CurrentCulture),
+        };
+
+    internal static bool TryInteger(string input, out int number) =>
+        int.TryParse(
+            input,
+            NumberStyles.Integer | NumberStyles.AllowThousands,
+            CultureInfo.CurrentCulture,
+            out number
+        )
+        && number >= 0;
+
+    internal static bool TryNumber(string input, out double number) =>
+        double.TryParse(
+            input,
+            NumberStyles.Float | NumberStyles.AllowThousands,
+            CultureInfo.CurrentCulture,
+            out number
+        )
+        && double.IsFinite(number)
+        && number >= 0;
+
+    // The engine stores bytes per second; each editor specifies its unit.
+    internal static bool TryRate(string input, out int bytes, RateScale scale)
+    {
+        bytes = 0;
+        if (!TryNumber(input, out var number) || number > int.MaxValue / (double)scale)
+            return false;
+        bytes = checked((int)Math.Round(number * (double)scale));
+        return true;
+    }
+
+    // Small positive values retain editable precision; unchanged input never
+    // changes a saved limit through display rounding.
+    internal static string RateInput(int bytes, RateScale scale) =>
+        (bytes / (double)scale).ToString(
+            bytes > 0 && bytes < (int)scale / 100.0 ? "0.##########" : "0.##",
+            CultureInfo.CurrentCulture
+        );
 
     /// <summary>Formats a move's copy rate in KiB/s, or MiB/s from 1 MiB/s, never GiB/s.</summary>
     public string CopyRate(double bytes) =>
@@ -306,7 +351,7 @@ public sealed class Strings
         };
     }
 
-    /// <summary>Formats a remaining time in its two largest units; 100 days or more reads as never.</summary>
+    /// <summary>Formats a length of time in its two largest units; 100 days or more reads as never.</summary>
     public string Duration(double seconds)
     {
         var minutes = (long)Math.Ceiling(seconds / 60);
@@ -342,6 +387,30 @@ public sealed class Strings
 
     public string Time(DateTimeOffset moment) =>
         moment.LocalDateTime.ToString("g", CultureInfo.CurrentCulture);
+
+    /// <summary>A key combination as menus and tooltips show it, such as Ctrl+Shift+N.</summary>
+    internal string Shortcut(VirtualKeyModifiers modifiers, VirtualKey key)
+    {
+        var parts = new List<string>();
+        if (modifiers.HasFlag(VirtualKeyModifiers.Control))
+            parts.Add(Get("shortcuts", "control"));
+        if (modifiers.HasFlag(VirtualKeyModifiers.Menu))
+            parts.Add(Get("shortcuts", "alt"));
+        if (modifiers.HasFlag(VirtualKeyModifiers.Shift))
+            parts.Add(Get("shortcuts", "shift"));
+        var name = key switch
+        {
+            >= VirtualKey.Number0 and <= VirtualKey.Number9 => "number_" + (key - VirtualKey.Number0),
+            (VirtualKey)OemKey.Comma => "comma",
+            _ => key.ToString().ToLowerInvariant(),
+        };
+        parts.Add(Get("shortcuts", name));
+        return string.Join("+", parts);
+    }
+
+    /// <summary>A control's tooltip: its label, then its shortcut when it has one.</summary>
+    internal string ShortcutTip(string label, string shortcut) =>
+        shortcut.Length > 0 ? Format("shortcuts", "tip", label, shortcut) : label;
 
     internal sealed record Catalogue(
         string Language,
@@ -386,4 +455,10 @@ public sealed class Strings
             }
         }
     }
+}
+
+/// <summary>A failure that states the text a person reads for it.</summary>
+internal interface IFailure
+{
+    string Describe(Strings text);
 }
