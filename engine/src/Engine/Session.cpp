@@ -178,6 +178,7 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
     for (auto [id, facts] : saved.torrents)
     {
         lt::add_torrent_params params;
+        std::optional<lt::typed_bitfield<lt::piece_index_t>> kept;
         auto found = resumes.find(id);
         // A record that lost its folder takes the one its resume file holds.
         if (facts.savePath.empty())
@@ -188,8 +189,13 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
         if (found != resumes.end())
         {
             params = std::move(found->second);
-            if (facts.verifyFiles || !SameFolder(params.save_path, facts.savePath))
+            bool here = SameFolder(params.save_path, facts.savePath);
+            if (facts.verifyFiles || !here)
             {
+                // The look before the check judges by the pieces it clears,
+                // which belong to this folder only.
+                if (here)
+                    kept = Claimed(params);
                 params.have_pieces.clear();
                 params.verified_pieces.clear();
                 params.unfinished_pieces.clear();
@@ -209,9 +215,9 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
             }
         }
         params.save_path = facts.savePath;
-        if (!facts.priorities.empty())
+        if (!facts.Priorities().empty())
         {
-            params.file_priorities = facts.priorities;
+            params.file_priorities = facts.Priorities();
         }
         // Piece priorities follow from the saved file priorities and
         // firstLast, so a resume file older than those choices cannot keep
@@ -224,6 +230,7 @@ void Engine::State::Start(Document const& saved, Resumes& resumes)
         if (!params.ti)
             std::fill(params.file_priorities.begin(), params.file_priorities.end(), lt::dont_download);
         Restore(id, facts, std::move(params));
+        torrents.at(id).kept = std::move(kept);
     }
     // Sends the lookups of the folders that Restore asked for, once for all.
     ContinueLookups();
@@ -311,6 +318,10 @@ void Engine::State::AddRestored(std::string const& id, Torrent& torrent)
         return;
     }
     auto added = std::move(params);
+    // The engine keeps the pieces the add claims and holds the torrent until
+    // libtorrent has judged them; a restore that cleared them keeps those.
+    if (auto claimed = Claimed(added))
+        torrent.kept = std::move(claimed);
     Install(id, handle, torrent.facts, added);
     if (torrent.facts.trackers)
     {
@@ -587,6 +598,7 @@ tt::Activity Engine::State::Activity() const
             break;
         case Status::Seeding:
         case Status::Completed:
+        case Status::FilesMissing:
             activity.seeding = true;
             ++activity.activeCount;
             break;
@@ -943,6 +955,7 @@ void Engine::State::Tick()
         }
         QueryCompletions();
         QueryFiles();
+        SaveQuestions();
         UpdateProblems();
         if (queuePending)
             ApplyQueue();
@@ -1004,6 +1017,7 @@ void Engine::State::Maintain()
         WatchFolder();
         RefreshPolicy();
         RetryStorage();
+        ContinueLooks();
         ProbeRoots();
         LimitSeeds();
         auto time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -1020,6 +1034,7 @@ void Engine::State::Maintain()
             Isolate(id, [this, &torrent]
             {
                 QueryPriorities(torrent);
+                JudgeAdd(torrent);
                 ApplyWaiting(torrent);
                 FinishFiles(torrent);
                 FinishDownload(torrent);

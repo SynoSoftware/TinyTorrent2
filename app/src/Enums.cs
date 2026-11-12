@@ -501,6 +501,9 @@ public enum TorrentState
     Downloading,
     Seeding,
     Completed,
+    // Finished but for files deleted or moved outside TinyTorrent, which wait
+    // for the person's answer, also while the other files upload.
+    FilesMissing,
     Paused,
     AllPaused,
     Checking,

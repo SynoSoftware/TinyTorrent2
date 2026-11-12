@@ -495,6 +495,18 @@ enum class CheckReads
     Stalled
 };
 
+// Where a torrent's look is: one run of LostData on its drive's worker.
+enum class LookPhase
+{
+    Idle,
+    // A check, an answer or the hold at an add waits for a look, which the
+    // driver starts once the torrent's files are free.
+    Wanted,
+    Running,
+    // A look has run since a check was wanted, so the check can start.
+    Looked
+};
+
 // Where a torrent's checkpoint is: waiting for libtorrent's resume data, or
 // writing that data to the resume file.
 enum class CheckpointPhase
@@ -577,6 +589,9 @@ enum class Status
     Queued,
     Seeding,
     Completed,
+    // Finished but for files of its question, also while it uploads its
+    // other files.
+    FilesMissing,
     Downloading
 };
 

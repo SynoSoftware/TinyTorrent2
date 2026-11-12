@@ -78,7 +78,7 @@ bool Control::Recovers() const
 
 bool Control::AwaitsReload() const
 {
-    return !lost_.empty();
+    return !lost_.empty() || restores_;
 }
 
 std::optional<Problem> Control::Cause() const
@@ -244,16 +244,32 @@ void Control::On(Reloaded const& reloaded, Reality const&, Effects& effects)
     if (!reloaded.failure)
     {
         lost_.clear();
+        restores_ = false;
     }
     if (!storage_)
     {
-        // Files that lost their data still wait for this reload, so its
-        // failure begins a failure of its own, which recovers as any other.
-        if (reloaded.failure && !lost_.empty())
+        // The wanted reload still waits, so its failure begins a failure of
+        // its own, which recovers as any other.
+        if (reloaded.failure && AwaitsReload())
         {
             storage_ = Failure{.causes = {*reloaded.failure}};
             return;
         }
+        effects.clear = true;
+        return;
+    }
+    // A reload that Due started for lost files is no retry of the failure:
+    // the ladder stays where it is, and its failure is the failure
+    // returning.
+    if (storage_->ladder.stage == FailureStage::Continued)
+    {
+        if (reloaded.failure)
+        {
+            storage_->ladder.Return();
+            storage_->causes = {*reloaded.failure};
+            return;
+        }
+        storage_->progress.reset();
         effects.clear = true;
         return;
     }
@@ -285,6 +301,7 @@ void Control::On(Answered const& answered, Reality const&, Effects& effects)
     if (answered.answer == FailureAnswer::Remove)
     {
         lost_.clear();
+        restores_ = false;
     }
     // A release or reload that runs clears the error when it ends.
     effects.clear = !Busy();
@@ -309,6 +326,8 @@ void Control::On(Replaced const& replaced, Reality const&, Effects&)
     job_.reset();
     checkJob_.reset();
     Forget(replaced.lost);
+    // The proof was about the old folder.
+    restores_ = false;
 }
 
 void Control::On(Dropped const&, Reality const&, Effects&)
@@ -337,7 +356,10 @@ void Control::On(Due const& due, Reality const& reality, Effects& effects)
     {
         Start(job_, {.kind = JobKind::Probe}, effects);
     }
-    else if (!storage_ && !lost_.empty() && !job_ && !reality.fileWork)
+    // Also in Continued: a held torrent makes no progress, and Continued
+    // ends only by progress.
+    if ((!storage_ || storage_->ladder.stage == FailureStage::Continued) && AwaitsReload() && !job_ &&
+        !reality.fileWork)
     {
         Start(job_, {.kind = JobKind::Reload}, effects);
     }
@@ -355,6 +377,15 @@ void Control::On(Due const& due, Reality const& reality, Effects& effects)
     {
         Start(checkJob_, {.kind = JobKind::FinalCheck}, effects);
     }
+}
+
+// Whatever the failure, the files and the wish wait for a reload: Due starts
+// it when no failure holds the torrent, and the failure's own continue
+// otherwise. The driver drops a look's result while a reload runs.
+void Control::On(Looked const& looked, Reality const&, Effects&)
+{
+    Lose(looked.lost);
+    restores_ = restores_ || looked.back;
 }
 
 void Control::On(MoveStarted const& started, Reality const&, Effects&)
@@ -433,7 +464,7 @@ void Control::Judge(Reality const& reality, Effects& effects)
 
 void Control::Continue(Reality const& reality, Effects& effects)
 {
-    if (reality.checking || !lost_.empty())
+    if (reality.checking || AwaitsReload())
     {
         Start(job_, {.kind = JobKind::Reload}, effects);
         return;

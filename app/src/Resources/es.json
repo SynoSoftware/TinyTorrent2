@@ -607,6 +607,7 @@
     "queued": "En cola",
     "error": "Error",
     "completed": "Completado",
+    "files_missing": "Faltan archivos",
     "metadata": "Obteniendo metadatos",
     "moving": "Moviendo archivos",
     "waiting_check": "Esperando para comprobar",

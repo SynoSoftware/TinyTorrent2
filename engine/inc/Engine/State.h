@@ -752,6 +752,9 @@ public:
     std::chrono::steady_clock::time_point stoppedCheckAt{};
     // The folders whose minute check has not returned.
     std::set<std::string, PathLess> stoppedChecks;
+    // The reloads of this engine turn, by torrent, whose first step is the
+    // save of their question.
+    std::map<std::string, std::shared_ptr<Control::Job const>> reloads;
     std::chrono::steady_clock::time_point statusAt{};
     bool statusPending = false;
     bool statusOutstanding = false;
@@ -1482,7 +1485,33 @@ public:
     // here, so both cover the same work.
     void EachUnlistedWork(std::function<void(std::string const& folder, std::string const& torrentId)> const& visit)
         const;
+    // The reload's first step: the save of the question and of the skipped
+    // priorities, which SaveQuestions makes at the end of the engine turn,
+    // once for every torrent that reloads in it.
     void Reload(Torrent& torrent, std::shared_ptr<Control::Job const> job);
+    void SaveQuestions();
+    // Builds the torrent's parameters without the lost files' pieces,
+    // releases its files and adds it again. A save that failed ends the
+    // reload before this, as a failed reload.
+    void Rebuild(Torrent& torrent, std::shared_ptr<Control::Job const> job);
+    // The pieces that an add of `params` claims, or nothing when it claims
+    // none, so there is nothing to judge.
+    static std::optional<lt::typed_bitfield<lt::piece_index_t>> Claimed(lt::add_torrent_params const& params);
+    // Starts each wanted look once the torrent's storage control has no job,
+    // no reload is wanted and no file work uses the files. Part of the
+    // maintenance pass.
+    void ContinueLooks();
+    // Gives what a look found to the storage control, and to the check, the
+    // answer and the hold that waited for it. Nothing when its folder did
+    // not answer or its worker failed.
+    void EndLook(std::string const& id, lt::torrent_handle const& handle,
+        std::optional<std::vector<lt::file_index_t>> lost);
+    // libtorrent judged the pieces that a held add claimed: it kept every
+    // one, so the hold ends, or it discarded them and queued a check of
+    // every file, which waits for a look judged by the kept pieces. An add
+    // that did not claim them, as the restore of a torrent marked for
+    // verification, waits for the look too. Part of the maintenance pass.
+    void JudgeAdd(Torrent& torrent);
     // Drops the pieces of `files` from the resume data, so the torrent
     // downloads those files again without checking the others.
     static void DropPieces(lt::add_torrent_params& params, std::vector<lt::file_index_t> const& files);
@@ -1589,9 +1618,15 @@ public:
     static std::optional<std::string> Reach(std::vector<std::string> const& folders,
         std::function<void()> const& work);
     // The files that held downloaded data but are gone or shorter than that
-    // data, as when they were deleted while their share was away. Blocks on
-    // the drive and on libtorrent, so it runs on the drive's worker.
-    static std::vector<lt::file_index_t> LostData(lt::torrent_handle const& handle);
+    // data, as when they were deleted while their share was away, judged by
+    // the handle's pieces or the `kept` ones. Blocks on the drive and on
+    // libtorrent, so it runs on the drive's worker.
+    static std::vector<lt::file_index_t> LostData(lt::torrent_handle const& handle,
+        std::optional<lt::typed_bitfield<lt::piece_index_t>> const& kept = std::nullopt);
+    // LostData from what `status` holds: its metadata, folder, names and
+    // pieces. Blocks on the drive.
+    static std::vector<lt::file_index_t> LostData(lt::torrent_status const& status,
+        std::vector<lt::download_priority_t> const& priorities);
     // Whether storage work in `folder`, whose location answers, can succeed
     // now, tested without writing data: `file`, when it exists, opens with
     // the access the work needs, the folder otherwise accepts a new file, and
@@ -1616,16 +1651,22 @@ public:
         // The files whose name on disk differs from the prepared one, with
         // that name.
         std::vector<std::pair<lt::file_index_t, std::string>> renames;
+        // What the preparation found as LostData does.
+        std::vector<lt::file_index_t> lost;
     };
     // On the worker of the torrent's folder: releases its files, reads the
     // names libtorrent holds, and chooses the names `params` asks for, with the
-    // renames that give them. Blocks on the drive and on libtorrent.
+    // renames that give them; the `lost` files keep their names. Blocks on
+    // the drive and on libtorrent.
     NameChoice ChooseNames(lt::torrent_handle const& handle, lt::add_torrent_params params, bool appendsSuffix,
-        Layout layout);
+        Layout layout, std::vector<lt::file_index_t> const& lost = {});
     // Whether a file named `actual` still carries the suffix of an unfinished
     // download of the file `name`.
     static bool IsUnfinished(std::string const& actual, std::string const& name);
-    static void PrepareNames(lt::add_torrent_params& params, bool appendsSuffix, Layout layout);
+    // Gives each file that is not found the unfinished name, apart from the
+    // `lost` ones, which keep theirs.
+    static void PrepareNames(lt::add_torrent_params& params, bool appendsSuffix, Layout layout,
+        std::vector<lt::file_index_t> const& lost = {});
     // The renames that give each file its prepared name. A worker finds
     // them, because comparing every path of a large torrent is slow.
     static std::vector<std::pair<lt::file_index_t, std::string>> Renames(lt::add_torrent_params const& prepared,

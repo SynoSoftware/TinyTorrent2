@@ -332,11 +332,13 @@ void Engine::State::PrepareMove(Move& moving)
     std::vector<Location> files;
     std::vector<lt::torrent_handle> handles;
     std::map<std::string, std::string> roots;
+    std::map<std::string, lt::torrent_handle> owners;
     for (auto const& id : moving.ids)
     {
         auto const& torrent = Working(id);
         handles.push_back(torrent.handle);
         roots.emplace(id, ProbeFolder(torrent));
+        owners.emplace(id, torrent.handle);
         auto physical = torrent.Paths();
         auto logical = torrent.Paths(true);
         // Only a continued member starts with its destination checked.
@@ -364,8 +366,10 @@ void Engine::State::PrepareMove(Move& moving)
         std::vector<std::filesystem::path> found;
         std::set<std::string> checks;
         std::map<std::string, Problem> problems;
+        // The sources' files whose data is gone, by member.
+        std::map<std::string, std::vector<lt::file_index_t>> lost;
     };
-    moving.job->worker->Run([this, handles, files, roots]() -> Destination
+    moving.job->worker->Run([this, handles, files, roots, owners]() -> Destination
     {
         ReleaseFiles(handles);
         // Libtorrent can leave an empty placeholder before any bytes arrive.
@@ -382,6 +386,17 @@ void Engine::State::PrepareMove(Move& moving)
                 known->second = Reachable(Wide(root));
             if (!known->second)
                 destination.problems.emplace(id, Problem{ProblemKind::MoveSourceUnavailable, root});
+        }
+        // The move looks at its sources before it places files: libtorrent
+        // checks every file after the move of a torrent with a skipped file,
+        // and the lost files must be in the question by then.
+        for (auto const& [id, handle] : owners)
+        {
+            if (destination.problems.contains(id))
+                continue;
+            auto& lost = destination.lost[id];
+            if (Reach({roots.at(id)}, [&] { lost = LostData(handle); }))
+                destination.problems.emplace(id, Problem{ProblemKind::MoveSourceUnavailable, roots.at(id)});
         }
         std::vector<std::filesystem::path> stale;
         for (auto const& file : files)
@@ -461,13 +476,18 @@ void Engine::State::PrepareMove(Move& moving)
         // The checked destination is saved before any file changes, so the
         // next launch may continue this move and keep its complete copies.
         // Its found files are saved with it, so abandoning the move leaves
-        // them.
-        if (!changes.Queue([this, &moving]
+        // them, and so is the question of the files the sources lost.
+        if (!changes.Queue([this, &moving, lost = std::move(checked->lost)]
         {
             // ContinueMove dropped the members removed during the preflight.
             std::map<std::string, std::vector<std::string>> found;
+            std::map<std::string, Facts::Lost> asked;
             for (auto const& id : moving.ids)
             {
+                auto const& torrent = Working(id);
+                if (auto files = lost.find(id); files != lost.end() && !files->second.empty())
+                    asked.emplace(id, Facts::Lost{files->second, torrent.ChosenPriorities(torrent.Metadata()),
+                        torrent.status.is_finished});
                 auto paths = FilePaths(Working(id), moving.destination, false);
                 auto logical = FilePaths(Working(id), moving.destination);
                 paths.insert(paths.end(), logical.begin(), logical.end());
@@ -477,19 +497,28 @@ void Engine::State::PrepareMove(Move& moving)
                         found[id].push_back(Utf8(path.wstring()));
                 }
             }
-            CommitFacts(moving.ids, [found](std::string const& id, Facts& facts)
+            CommitFacts(moving.ids, [found, asked](std::string const& id, Facts& facts)
             {
+                if (auto files = asked.find(id); files != asked.end())
+                    facts.Revise(files->second);
                 if (!facts.marker || facts.marker->stage != MoveStage::Staged)
                     return;
                 facts.marker->stage = MoveStage::Placing;
                 if (auto paths = found.find(id); paths != found.end())
                     facts.marker->found = paths->second;
-            }, [this, &moving](Outcome outcome, auto const&)
+            }, [this, &moving, asked](Outcome outcome, auto const&)
             {
                 if (outcome.error)
                 {
                     FailMove(moving, Problem{ProblemKind::MoveFailed, outcome.detail});
                     return;
+                }
+                // Their pieces go with the move's own reload, or with the
+                // reload at the new folder.
+                for (auto const& [id, change] : asked)
+                {
+                    if (auto torrent = FindWorking(id))
+                        Steer(*torrent, Control::Looked{change.files});
                 }
                 moving.phase = MovePhase::Ready;
                 ContinueMove(moving);
@@ -872,13 +901,25 @@ void Engine::State::SaveMove(Move& moving)
     if (moving.mode == MoveMode::Files)
         moving.cleaning = Task::Deletion{{id}, DeletionMode::Permanent, sources,
             {FullPath(Wide(Working(id).facts.savePath))}, Working(id).Name(), true};
-    auto relocate = [destination = moving.destination, verifies, reconciled = moving.pieces.has_value()]
+    // A file of the question that the move verified at the destination
+    // leaves the question.
+    std::vector<lt::file_index_t> verified;
+    if (auto metadata = Working(id).Metadata(); moving.pieces && metadata)
+    {
+        for (auto const& [file, priority] : Working(id).facts.Asked().files)
+        {
+            if (Complete(*metadata, file, *moving.pieces))
+                verified.push_back(file);
+        }
+    }
+    auto relocate = [destination = moving.destination, verifies, reconciled = moving.pieces.has_value(), verified]
         (std::string const&, Facts& facts)
     {
         facts.savePath = destination;
         facts.finalFolder.clear();
         facts.marker.reset();
         facts.verifyFiles = !reconciled && (facts.verifyFiles || verifies);
+        facts.Revise(Facts::Found{verified});
     };
     auto settle = [this, &moving, id]
     {

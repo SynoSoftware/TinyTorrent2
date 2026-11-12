@@ -1,10 +1,10 @@
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'Conflict', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'MoveRecovery', 'DriveTurns', 'UnfinishedTasks', 'StorageStop', 'StoppedLocation', 'AbsentLink', 'LinkedNotice', 'KilledCheck', 'StoppedHeld', 'MagnetAbsent', 'FileWindow')]
+    [ValidateSet('Frames', 'Summaries', 'Targets', 'Facts', 'Restore', 'Exit', 'Conflict', 'FailedCommit', 'CheckpointRetry', 'Restart', 'DiskError', 'PreviewGuard', 'RemoveKeepFiles', 'QueueOrder', 'SelectedTransfer', 'MagnetDownload', 'SettingsPolicy', 'CommittedFiles', 'FilesSafety', 'FileNames', 'Pause', 'History', 'Accounting', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'MoveRecovery', 'DriveTurns', 'UnfinishedTasks', 'StorageStop', 'StoppedLocation', 'AbsentLink', 'LinkedNotice', 'KilledCheck', 'StoppedHeld', 'MagnetAbsent', 'FileWindow', 'MissingFiles')]
     [string] $Check,
     # Every check but Conflict, FilesSafety, WaitingMove, RemoveDuringMove, MoveAndVerify,
     # MoveExisting, MoveRecovery, DriveTurns, UnfinishedTasks, StorageStop, StoppedLocation,
-    # AbsentLink, LinkedNotice, KilledCheck, FileWindow and SelectedTransfer,
+    # AbsentLink, LinkedNotice, KilledCheck, FileWindow, SelectedTransfer and MissingFiles,
     # which make their own torrents.
     [string] $TorrentFile,
     [string] $EnginePath,
@@ -31,7 +31,7 @@ $transferChecks = 'MagnetDownload', 'SelectedTransfer', 'DiskError', 'PreviewGua
 # These checks each guard one defect that was already fixed, so a run of every
 # check skips them; the owner asks for them when that code changes.
 $optInChecks = 'WaitingMove', 'RemoveDuringMove'
-if (-not $TorrentFile -and $Check -notin 'Conflict', 'FilesSafety', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'MoveRecovery', 'DriveTurns', 'UnfinishedTasks', 'StorageStop', 'StoppedLocation', 'AbsentLink', 'LinkedNotice', 'KilledCheck', 'FileWindow', 'SelectedTransfer') {
+if (-not $TorrentFile -and $Check -notin 'Conflict', 'FilesSafety', 'WaitingMove', 'RemoveDuringMove', 'MoveAndVerify', 'MoveExisting', 'MoveRecovery', 'DriveTurns', 'UnfinishedTasks', 'StorageStop', 'StoppedLocation', 'AbsentLink', 'LinkedNotice', 'KilledCheck', 'FileWindow', 'SelectedTransfer', 'MissingFiles') {
     throw "$Check needs -TorrentFile."
 }
 if ($Check -in $transferChecks -and -not $Transfer) {
@@ -2461,6 +2461,42 @@ try {
             $snapshot = Start-Engine
             Assert (@($snapshot.torrents).Count -eq 1 -and $snapshot.torrents[0].torrent_id -eq $torrentId) `
                 'A damaged resume file lost its torrent'
+        }
+        'MissingFiles' {
+            # A finished torrent's file deleted while the engine was closed
+            # waits for the person as a skipped file instead of downloading
+            # again, and the torrent's other file stays complete.
+            $folder = Join-Path $payload 'missing'
+            $null = New-Item -ItemType Directory -Path $folder
+            $piece = [byte[]]::new(16384)
+            [Array]::Fill($piece, [byte]0x61)
+            foreach ($name in 'a.bin', 'b.bin') { [IO.File]::WriteAllBytes((Join-Path $folder $name), $piece) }
+            $fixture = Join-Path $directory 'missing.torrent'
+            Write-Torrent $fixture 'missing' 'd6:lengthi16384e4:pathl5:a.bineed6:lengthi16384e4:pathl5:b.binee' 32768
+            $preview = Send-Command @{ command = 'preview'; source = $fixture; destination = $payload }
+            Assert $preview.ok 'The two-file fixture did not preview'
+            $reply = Send-Command @{ command = 'add'; preview_id = $preview.data.preview_id; destination = $payload }
+            Assert $reply.ok 'The two-file fixture could not be added'
+            $torrentId = $reply.data.torrent_id
+            $null = Wait-Torrent $torrentId { param($row) $row.status -eq 'seeding' } 60 'The complete fixture did not seed'
+            Stop-Engine
+            Remove-Item -LiteralPath (Join-Path $folder 'b.bin')
+            $null = Start-Engine
+            $missing = { param($row) $row.status -eq 'files_missing' }
+            $null = Wait-Torrent $torrentId $missing 30 'The deleted file did not wait for the person'
+            $files = Get-Files $torrentId
+            Assert ($files[1].priority -eq 0 -and $files[0].priority -ne 0 -and $files[0].downloaded -eq 16384) `
+                'The deleted file was not skipped, or the kept file lost its data'
+            Assert (-not (Test-Path -LiteralPath (Join-Path $folder 'b.bin')) -and
+                -not (Test-Path -LiteralPath (Join-Path $folder 'b.bin.!tt'))) 'The deleted file was created again'
+            $saved = (Get-Content -LiteralPath (Join-Path $directory 'settings.json') -Raw | ConvertFrom-Json).torrents |
+                Where-Object torrent_id -eq $torrentId
+            Assert (@($saved.question.files).Count -eq 1 -and $saved.question.files[0].index -eq 1 -and
+                $saved.question.files[0].priority -ne 0) 'The question was not saved with the priority the person gave'
+            Stop-Engine
+            $null = Start-Engine
+            $null = Wait-Torrent $torrentId $missing 30 'The question did not survive a restart'
+            Assert ((Get-Files $torrentId)[1].priority -eq 0) 'A restart made the deleted file wanted again'
         }
         'DiskError' {
             function Wait-Transfer([scriptblock] $condition, [string] $failure, [int] $seconds = 20) {

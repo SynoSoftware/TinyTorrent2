@@ -972,6 +972,20 @@ void Engine::State::Answer(Torrent& torrent, FailureAnswer answer)
         torrent.moveError.reset();
     else
         torrent.AnswerMoveProblem();
+    // The end of a storage failure clears libtorrent's error, and the fork
+    // then checks every file of a seed whose write failed, so the answer
+    // waits for a look that puts the lost files in the question first. A
+    // wanted reload saves the question before anything can check, and the
+    // look would wait for that reload, which waits for this answer.
+    if ((answer == FailureAnswer::Retry || answer == FailureAnswer::Verify) && torrent.control.Storage() &&
+        !torrent.waiting && torrent.handle.torrent_file() && !torrent.control.AwaitsReload())
+    {
+        torrent.answering = answer;
+        if (torrent.look != LookPhase::Running)
+            torrent.look = LookPhase::Wanted;
+        torrent.ApplyIntent();
+        return;
+    }
     Steer(torrent, Control::Answered{answer});
     torrent.ApplyIntent();
 }
@@ -985,6 +999,16 @@ void Engine::State::Recheck(Torrent& torrent)
         torrent.needsRecheck = true;
         return;
     }
+    // The check discards the pieces that show which files held data, so a
+    // look comes first, and the reload of what it found.
+    if (torrent.look != LookPhase::Looked || torrent.control.AwaitsReload())
+    {
+        torrent.needsRecheck = true;
+        if (torrent.look == LookPhase::Idle)
+            torrent.look = LookPhase::Wanted;
+        return;
+    }
+    torrent.look = LookPhase::Idle;
     // libtorrent restarts a recheck from its start, so a recheck that waited
     // ends with the one sent now.
     torrent.needsRecheck = false;
@@ -1001,7 +1025,7 @@ void Engine::State::ApplyWaiting(Torrent& torrent)
     if (torrent.prioritiesPending)
     {
         torrent.prioritiesPending = false;
-        torrent.handle.prioritize_files(torrent.facts.priorities);
+        torrent.handle.prioritize_files(torrent.facts.Priorities());
         Invalidate(torrent.torrentId);
     }
     if (torrent.needsRecheck && torrent.checkReads == CheckReads::None)

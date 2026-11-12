@@ -1,7 +1,8 @@
 # Missing torrent files and files moved outside TinyTorrent
 
 **Design of 11 November 2026, rewritten on 12 November 2026 after four review
-rounds and the owner's decisions of that day. Nothing is implemented.** Not
+rounds and the owner's decisions of that day. Steps 1 to 5 are implemented;
+the [engine contract](../contracts/engine.md#lost-files) holds their rules.** Not
 reviewed: the corrections from the last report of round 4 (the Continued
 row, the end of a returned file's question, a drop rule of the record, and a
 controller row removed as wrong), the trust of a payload that plainly moved
@@ -395,7 +396,7 @@ judges by those pieces.
 | Start | The look |
 | --- | --- |
 | `Recheck`, the engine's one caller of `force_recheck`: Verify, the check of a finished download, a check after a restart or after names | `Recheck` owns the wait. It keeps the wanted check and asks for a look. It sends `force_recheck` when a look has run and no reload is wanted. |
-| The fork's own check after a write had failed. `clear_error` starts it (`src/torrent.cpp:1278`, `:9981-9987`), and both `ClearDiskError` and every `resume()` reach `clear_error` (`:10574-10607`) | An answer that ends a storage failure waits for one look: `Answer` asks for it, and gives the answer to the controller when the look returns or fails. A torrent without a failure, and the answers Stop, Move and Remove, go on at once. The answer then clears the error as today. After a failed write the fork's resume data lists no pieces, so the fork's check of every file runs: it repairs a counted piece that is not on disk, and by then the lost files are in the question. The clears that the engine makes by itself follow a probe, which has just looked. |
+| The fork's own check after a write had failed. `clear_error` starts it (`src/torrent.cpp:1278`, `:9981-9987`), and both `ClearDiskError` and every `resume()` reach `clear_error` (`:10574-10607`) | An answer that ends a storage failure waits for one look: `Answer` asks for it, and gives the answer to the controller when the look returns or fails. A torrent without a failure, the answers Stop, Move and Remove, and an answer while a reload is already wanted go on at once: that reload saves the question before anything can check, and a look would wait for it while it waits for the answer. The answer then clears the error as today. After a failed write the fork's resume data lists no pieces, so the fork's check of every file runs: it repairs a counted piece that is not on disk, and by then the lost files are in the question. The clears that the engine makes by itself follow a probe, which has just looked. |
 | The fork's own check after Move files of a torrent that has a skipped file: `move_storage` finds a file at the destination and asks for a check (`src/storage_utils.cpp:128-131`, `src/torrent.cpp:9457-9464`) | The move looks at the source, and saves the question, before it places files. Every torrent with a question has a skipped file, so every such move takes this path. |
 | An add from resume data: the engine start, a move, the reload | See "The hold at an add". |
 | The restore of a torrent that is marked for verification, which clears the pieces first | The restore keeps the pieces that it clears, as an add keeps its own. A restore whose resume file names another folder keeps nothing: those pieces belong to the other folder. |

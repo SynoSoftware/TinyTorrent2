@@ -88,10 +88,27 @@ void Engine::State::On(lt::save_resume_data_alert& alert)
 
 void Engine::State::SaveCheckpoint(Torrent& torrent, lt::add_torrent_params params)
 {
+    // Exit saves every torrent from libtorrent's own pieces, which a
+    // rejected add has discarded, so the pieces the engine keeps go instead.
+    if (torrent.kept)
+        params.have_pieces = *torrent.kept;
     // libtorrent still claims the pieces of files whose data is gone until
-    // the reload drops them, and a start whose resume data claims them
-    // checks every file.
-    DropPieces(params, torrent.control.Lost());
+    // the reload drops them. A checkpoint leaves them out only for the files
+    // that the saved facts skip: a start without the pieces of a wanted file
+    // downloads it, while one that still claims them finds the file lost
+    // again.
+    if (!torrent.control.Lost().empty())
+    {
+        std::vector<lt::file_index_t> skipped;
+        auto chosen = torrent.ChosenPriorities(params.ti);
+        for (auto file : torrent.control.Lost())
+        {
+            auto item = static_cast<std::size_t>(static_cast<int>(file));
+            if (item < chosen.size() && chosen[item] == lt::dont_download)
+                skipped.push_back(file);
+        }
+        DropPieces(params, skipped);
+    }
     torrent.checkpointPhase = CheckpointPhase::Writing;
     auto id = torrent.torrentId;
     auto completion = [this, id, uploaded = params.total_uploaded, path = params.save_path,

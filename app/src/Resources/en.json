@@ -607,6 +607,7 @@
     "queued": "Queued",
     "error": "Error",
     "completed": "Completed",
+    "files_missing": "Files missing",
     "metadata": "Getting metadata",
     "moving": "Moving files",
     "waiting_check": "Waiting to check",

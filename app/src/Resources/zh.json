@@ -607,6 +607,7 @@
     "queued": "正在排队",
     "error": "出错",
     "completed": "已完成",
+    "files_missing": "缺少文件",
     "metadata": "正在获取元数据",
     "moving": "正在移动文件",
     "waiting_check": "正在等待校验",

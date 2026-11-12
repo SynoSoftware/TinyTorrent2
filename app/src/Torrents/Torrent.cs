@@ -76,6 +76,7 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
             is TorrentState.Downloading
                 or TorrentState.Seeding
                 or TorrentState.Completed
+                or TorrentState.FilesMissing
                 or TorrentState.Metadata;
 
     // The row names its problem in ErrorCode. The engine names one whenever it
@@ -142,7 +143,10 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
         {
             TorrentFilter.All => true,
             TorrentFilter.Downloading => State is TorrentState.Downloading or TorrentState.Metadata,
-            TorrentFilter.Seeding => State is TorrentState.Seeding or TorrentState.Completed,
+            TorrentFilter.Seeding => State
+                is TorrentState.Seeding
+                    or TorrentState.Completed
+                    or TorrentState.FilesMissing,
             TorrentFilter.Paused => State == TorrentState.Paused,
             TorrentFilter.Queued => IsWaiting,
             TorrentFilter.Errors => IsError,
@@ -158,6 +162,7 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
             TorrentState.Paused => Syno.Segoe.Square,
             TorrentState.AllPaused => Syno.Segoe.Pause,
             TorrentState.Completed => Syno.Segoe.CircleCheck,
+            TorrentState.FilesMissing => Syno.Segoe.TriangleAlert,
             TorrentState.Checking => Syno.Segoe.RefreshCw,
             TorrentState.Moving => Syno.Segoe.FolderInput,
             TorrentState.Queued
@@ -177,6 +182,7 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
         [TorrentState.Downloading] = "downloading",
         [TorrentState.Seeding] = "seeding",
         [TorrentState.Completed] = "completed",
+        [TorrentState.FilesMissing] = "files_missing",
         [TorrentState.Paused] = "paused",
         [TorrentState.AllPaused] = "all_paused",
         [TorrentState.Checking] = "checking",

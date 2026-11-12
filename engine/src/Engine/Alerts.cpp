@@ -202,6 +202,34 @@ void Engine::State::On(lt::torrent_checked_alert const& alert)
         torrent->piecesPending = true;
         QueryPriorities(*torrent);
     }
+    // A check reads every file that exists, whatever its priority, so a file
+    // of the question whose every piece it verified is back. While the
+    // engine keeps an add's pieces, this ends libtorrent's judgement of the
+    // resume data instead, which leaves skipped files out.
+    auto const& asked = torrent->facts.Asked().files;
+    auto metadata = alert.handle.torrent_file();
+    if (asked.empty() || !metadata || torrent->kept)
+        return;
+    auto pieces = alert.handle.status(lt::torrent_handle::query_pieces).pieces;
+    std::vector<lt::file_index_t> verified;
+    for (auto const& [file, priority] : asked)
+    {
+        if (Complete(*metadata, file, pieces))
+            verified.push_back(file);
+    }
+    if (verified.empty())
+        return;
+    changes.Queue([this, id = torrent->torrentId, verified]
+    {
+        if (!torrents.contains(id))
+            return;
+        CommitFacts({id}, [verified](std::string const&, Facts& facts) { facts.Revise(Facts::Found{verified}); },
+            [this, id](Outcome, auto const&)
+        {
+            if (auto found = torrents.find(id); found != torrents.end())
+                found->second.ApplyIntent();
+        });
+    });
 }
 
 void Engine::State::On(lt::torrent_paused_alert const& alert)

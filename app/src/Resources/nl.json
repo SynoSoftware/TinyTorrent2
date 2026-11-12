@@ -607,6 +607,7 @@
     "queued": "In wachtrij",
     "error": "Fout",
     "completed": "Voltooid",
+    "files_missing": "Bestanden ontbreken",
     "metadata": "Metagegevens ophalen",
     "moving": "Bestanden verplaatsen",
     "waiting_check": "Wachten op controle",

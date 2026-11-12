@@ -425,9 +425,10 @@ and that held downloaded data is gone or shorter than that data, as when it was
 deleted while its share was away, the engine asks the location again in the
 same job, and reloads the torrent from its resume data without the pieces of
 those files only when it still answers, so a share that drops during the search
-loses no pieces. The torrent downloads only those files again, rather than
-writing around zeros or failing every read, and needs no check of every file,
-which can take hours. An error that waiting cannot fix ends recovery only once
+loses no pieces. Those files join the torrent's question and wait for the
+person, as [lost files](#lost-files) says, rather than the torrent writing
+around zeros or failing every read, and the torrent needs no check of every
+file, which can take hours. An error that waiting cannot fix ends recovery only once
 the location answers, because Windows reports an absent share with many codes.
 
 Recovery resumes a torrent by itself once. When the error returns before the
@@ -481,7 +482,10 @@ is removed, only clears the error when it ends; a probe or minute check then
 only records the files it found without their data, and a removed torrent
 starts no other job. Files that lost
 their data keep the torrent paused until a reload without their pieces
-succeeds, so they download again instead of the torrent writing around zeros.
+succeeds, so the torrent never writes around zeros. A look that finds them
+without a failure wants that reload too, also while a failure is Continued,
+where the reload leaves the ladder as it is and its failure is the failure
+returning.
 Only the torrent's removal, and a move whose own reload settled them, forget
 them. A move to a new folder reloads the torrent itself when it verifies files
 that it found at the destination, and in download mode: that reload leaves
@@ -520,6 +524,43 @@ once more. When that add fails too, or a saved torrent cannot be added at
 start, the row shows the error and Retry, which adds it again.
 Every replacement restores the status-update subscription that native resume
 data omits, so the list and transfer policy keep following the new handle.
+
+<a id="lost-files"></a>A lost file, whose verified data is gone while its folder
+answers, does not download again by itself. When the person wanted it, it
+joins the torrent's question: its saved priority becomes "do not download",
+and the facts keep the priority the person gave it, so every reader of the
+priorities reads the truth without knowing the question. One function of the
+facts changes the question, the priorities and the repair mark together, and
+every writer of the priorities goes through it; a person's edit names its
+files to it, and those leave the question with their new priority. A file
+whose every piece a check or a move verifies leaves it with its earlier
+priority. The reload saves the question before it drops pieces, once for every
+torrent of an engine turn, and a save that fails is a failed reload. A
+checkpoint leaves out a lost file's pieces only when the saved facts skip the
+file, so a crash before that save finds the file lost again at the next start.
+A torrent is done when libtorrent calls it finished and it has no question:
+the final move, the Completed status and toast, the check of a finished
+download and the row's `complete` read that, so a finished torrent with a
+question shows Files missing and stays in its folder. Files that join the
+question of a finished torrent set the repair mark, saved with its facts: the
+download of the pieces they shared with their neighbours then sends no toast
+and starts no check. The mark ends when the torrent is next done, and when
+the person makes a skipped file wanted.
+
+The engine looks for lost files, on the drive's worker, before every check of
+every file can start, because the check discards the pieces that show which
+files held data. Recheck waits for a look and for the reload of what it found.
+An answer that ends a storage failure waits for one look, unless a reload is
+already wanted, because clearing the error lets the fork check every file of a
+seed whose write failed. A move of files looks at its sources and saves the
+question before it places files. An add whose resume data claims pieces holds
+the torrent, keeping those pieces, until libtorrent has judged them: once
+libtorrent has every one the hold ends; otherwise the engine looks, judged by
+the kept pieces, and the reload adds the torrent again from them without the
+lost files' pieces, so the check of every file never runs. Name preparation
+at an add is that add's look, and a lost file keeps its name. While the engine
+keeps pieces, checkpoints and reloads use them. The restore of a torrent
+marked for verification keeps the pieces it clears for its look.
 
 <a id="mark-of-the-web"></a>Mark each payload file as downloaded from the internet when it completes while
 its torrent is downloading, by writing the internet zone to the file's

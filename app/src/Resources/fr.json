@@ -607,6 +607,7 @@
     "queued": "En attente",
     "error": "Erreur",
     "completed": "Terminé",
+    "files_missing": "Fichiers manquants",
     "metadata": "Récupération des métadonnées",
     "moving": "Déplacement des fichiers",
     "waiting_check": "En attente de vérification",
