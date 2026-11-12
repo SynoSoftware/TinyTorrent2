@@ -214,7 +214,7 @@ try {
     $inno = Get-Download 'https://github.com/jrsoftware/issrc/releases/download/is-7_1_0/innosetup-7.1.0-x64.exe' 'innosetup-7.1.0-x64.exe' 'Pyrsys B.V.'
     $compilerDir = Join-Path $cache 'inno-7.1.0'
     $target = (Get-Item -LiteralPath $artifacts).Target
-    if ($target) { $compilerDir = Join-Path $target[0] 'installer/tools/inno-7.1.0' }
+    if ($target) { $compilerDir = Join-Path @($target)[0] 'installer/tools/inno-7.1.0' }
     $compiler = Join-Path $compilerDir 'ISCC.exe'
     if (-not (Test-Path -LiteralPath $compiler)) {
         Write-Host 'Preparing portable Inno Setup...'
