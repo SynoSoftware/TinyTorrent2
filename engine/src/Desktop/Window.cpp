@@ -696,7 +696,7 @@ void Window::ShowStartError(Toasts::Failure failure)
 {
     failure.actions.push_back(
         Toasts::Retry(strings_, strings_.Text("notification", "retry_tip"), [this] { Open(); }));
-    failure.actions.push_back(Toasts::OpenFolder(strings_, [] { return WindowExecutable().parent_path(); },
+    failure.actions.push_back(Toasts::OpenFolder(strings_, WindowExecutable().parent_path(),
         strings_.Text("notification", "open_folder_tip")));
     toasts_.Report(std::move(failure));
 }

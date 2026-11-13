@@ -99,8 +99,9 @@ public:
     // The buttons that failures and prompts offer, so each looks and reads the
     // same wherever it shows.
     static Popup::Action Retry(Strings const& strings, std::wstring tooltip, std::function<void()> run);
-    // `folder` runs at the click, so a torrent's folder is the one it has
-    // then; an empty path shows nothing.
+    // An empty path shows nothing. The function form reads the folder at the
+    // click, so a torrent's folder is the one it has then.
+    static Popup::Action OpenFolder(Strings const& strings, std::filesystem::path folder, std::wstring tooltip);
     static Popup::Action OpenFolder(Strings const& strings, std::function<std::filesystem::path()> folder,
         std::wstring tooltip);
     static Popup::Action Exit(Strings const& strings, std::wstring tooltip, std::function<void()> run);

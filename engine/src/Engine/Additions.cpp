@@ -57,8 +57,9 @@ void Engine::State::Add(Preview& preview, Addition::Choices choices, std::functi
 {
     UpdatePreview(preview);
     // A preview opened before the removal began is confirmed here.
-    if (EndDuplicate(preview.InfoHashes(), completion))
+    if (auto ended = DuplicateEnd(preview.InfoHashes()))
     {
+        completion(std::move(ended->first), std::move(ended->second));
         return;
     }
     if (!IsAbsolute(choices.destination))
@@ -518,26 +519,27 @@ void Engine::State::On(lt::add_torrent_alert const& alert)
         return;
     }
     auto id = found->first;
-    auto end = [this, &id](Outcome outcome, Added added) { Abandon(id, std::move(outcome), std::move(added)); };
-    if (!EndDuplicate(alert.params.info_hashes, end))
+    if (auto ended = DuplicateEnd(alert.params.info_hashes))
+    {
+        Abandon(id, std::move(ended->first), std::move(ended->second));
+    }
+    else
     {
         Abandon(id, {ErrorCode::AddFailed, alert.error.message()});
     }
 }
 
-bool Engine::State::EndDuplicate(lt::info_hash_t const& hashes, std::function<void(Outcome, Added)> const& end)
+std::optional<std::pair<Outcome, Added>> Engine::State::DuplicateEnd(lt::info_hash_t const& hashes)
 {
     if (Removing(hashes))
     {
-        end({ErrorCode::TorrentRemoving}, {});
-        return true;
+        return std::pair<Outcome, Added>{{ErrorCode::TorrentRemoving}, {}};
     }
     if (auto duplicate = FindDuplicate(hashes))
     {
-        end({}, {AdditionKind::Duplicate, *duplicate});
-        return true;
+        return std::pair<Outcome, Added>{{}, {AdditionKind::Duplicate, *duplicate}};
     }
-    return false;
+    return std::nullopt;
 }
 
 void Engine::State::On(lt::storage_moved_alert const& alert)

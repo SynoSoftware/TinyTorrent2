@@ -1,5 +1,4 @@
 #include "Desktop/Tray.h"
-#include "Desktop/Acrylic.h"
 #include "Resources.h"
 #include <algorithm>
 #include <shellapi.h>
@@ -270,7 +269,7 @@ void Tray::Rename(TrayItem item, std::wstring text)
 int Tray::Margin() const
 {
     auto dpi = GetDpiForWindow(broadcast_);
-    return GetSystemMetricsForDpi(SM_CXMENUCHECK, dpi) + Scale(rowPadding, dpi);
+    return GetSystemMetricsForDpi(SM_CXMENUCHECK, dpi) + MulDiv(rowPadding, dpi, USER_DEFAULT_SCREEN_DPI);
 }
 
 BOOL Tray::Measure(MEASUREITEMSTRUCT& item)
@@ -286,7 +285,7 @@ BOOL Tray::Measure(MEASUREITEMSTRUCT& item)
     SIZE size{};
     GetTextExtentPoint32W(dc, row->text.c_str(), static_cast<int>(row->text.size()), &size);
     item.itemWidth = size.cx + Margin() * 2;
-    item.itemHeight = std::max<LONG>(size.cy + Scale(rowPadding, dpi),
+    item.itemHeight = std::max<LONG>(size.cy + MulDiv(rowPadding, dpi, USER_DEFAULT_SCREEN_DPI),
         GetSystemMetricsForDpi(SM_CYMENU, dpi));
     SelectObject(dc, previous);
     ReleaseDC(broadcast_, dc);

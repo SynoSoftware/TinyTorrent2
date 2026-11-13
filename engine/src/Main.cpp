@@ -192,7 +192,7 @@ void ShowRefusal(tt::Strings const& strings, tt::desktop::Refusal refusal)
     }
     if (refusal.folder)
     {
-        failure.actions.push_back(Toasts::OpenFolder(strings, [folder = *refusal.folder] { return folder; },
+        failure.actions.push_back(Toasts::OpenFolder(strings, *refusal.folder,
             strings.Text("notification", "open_folder_tip")));
     }
     popup.Show(failure.Content(strings, icon.get()));

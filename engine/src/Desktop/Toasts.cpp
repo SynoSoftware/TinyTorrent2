@@ -363,7 +363,7 @@ Popup::Content Toasts::Message(Toast const& toast) const
         if (!toast.detail.empty())
             content.body = ErrorText(strings_, toast.detail) + L"\n" + content.body;
         content.location = Popup::Location{strings_.Text("notification", "download_folder"), Wide(toast.folder)};
-        content.actions = {OpenFolder(strings_, [folder = Wide(toast.folder)] { return folder; },
+        content.actions = {OpenFolder(strings_, Wide(toast.folder),
             strings_.Text("notification", "files_folder_tip"))};
     }
     // Files deleted or moved outside TinyTorrent wait for the person's
@@ -385,7 +385,7 @@ Popup::Content Toasts::Message(Toast const& toast) const
         content.title = strings_.Text("notification", "followed");
         content.body = strings_.Format("notification", "followed_body", {Wide(toast.name)});
         content.location = Popup::Location{strings_.Text("notification", "download_folder"), Wide(toast.folder)};
-        content.actions = {OpenFolder(strings_, [folder = Wide(toast.folder)] { return folder; },
+        content.actions = {OpenFolder(strings_, Wide(toast.folder),
             strings_.Text("notification", "files_folder_tip"))};
     }
     // Every torrent that waits for the person shares one notice, so one Retry
@@ -462,7 +462,7 @@ Popup::Content Toasts::Message(Toast const& toast) const
         }
         else if (!toast.folder.empty())
         {
-            content.actions = {OpenFolder(strings_, [folder = Wide(toast.folder)] { return folder; },
+            content.actions = {OpenFolder(strings_, Wide(toast.folder),
                 strings_.Text("notification", "files_folder_tip"))};
         }
         // Retry answers an error that the engine stopped retrying. A removed
@@ -560,6 +560,11 @@ Popup::Action Toasts::OpenFolder(Strings const& strings, std::function<std::file
                 ShowFolder(path);
             }
         }, .closes = false, .automationId = L"OpenFolder"};
+}
+
+Popup::Action Toasts::OpenFolder(Strings const& strings, std::filesystem::path folder, std::wstring tooltip)
+{
+    return OpenFolder(strings, [folder = std::move(folder)] { return folder; }, std::move(tooltip));
 }
 
 // Syno.Segoe.Power, as the tray's Exit shows.

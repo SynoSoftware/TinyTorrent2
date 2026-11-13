@@ -1263,11 +1263,10 @@ public:
     void PrepareAddition(std::string const& id, lt::torrent_handle handle);
     void CommitAddition(std::string const& id);
     void Abandon(std::string id, Outcome outcome, Added added = {});
-    // Ends an addition of content the list holds, through `end`: refused
-    // with torrent_removing while that torrent is being removed, or as that
-    // torrent's duplicate. Returns false, and calls nothing, for content the
-    // list does not hold.
-    bool EndDuplicate(lt::info_hash_t const& hashes, std::function<void(Outcome, Added)> const& end);
+    // How an addition of content the list holds ends: refused with
+    // torrent_removing while that torrent is being removed, or as that
+    // torrent's duplicate. Nothing for content the list does not hold.
+    std::optional<std::pair<Outcome, Added>> DuplicateEnd(lt::info_hash_t const& hashes);
     std::optional<std::string> MovingAddition(lt::torrent_handle const& handle) const;
     void RecoverAdditions();
     void On(lt::add_torrent_alert const& alert);
