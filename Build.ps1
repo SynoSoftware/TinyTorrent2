@@ -96,6 +96,13 @@ function Get-Source([string[]] $Excluded) {
     $inputs = @('.', ':(exclude)docs', ':(exclude)*.md', ':(exclude)installer') + $Excluded
     $listed = @(git -C $repository ls-files --cached --others --exclude-standard -- @inputs)
     if ($LASTEXITCODE -ne 0 -or $listed.Count -eq 0) { throw 'Git could not describe the checkout.' }
+    # TableView is its own repository, linked at lib/TableView, so this
+    # checkout's git ignores its files and its own git lists them.
+    if ($Excluded -notcontains ':(exclude)lib/TableView') {
+        $table = @(git -C (Join-Path $repository 'lib/TableView') ls-files --cached --others --exclude-standard -- . ':(exclude)docs' ':(exclude)*.md')
+        if ($LASTEXITCODE -ne 0 -or $table.Count -eq 0) { throw 'Git could not describe lib/TableView.' }
+        $listed += $table | ForEach-Object { "lib/TableView/$_" }
+    }
     $files = $listed + 'secrets/keys.json' |
         Where-Object { Test-Path -LiteralPath (Join-Path $repository $_) -PathType Leaf } | Sort-Object -Unique
     $blobs = @($files | git -C $repository hash-object --stdin-paths)

@@ -83,6 +83,17 @@ public sealed partial class Inspector
     /// </summary>
     internal event EventHandler? PeersWithdrawn;
 
+    // The table withdrew its rows and takes only a new list as the person's
+    // change, so the next rows reach it as a new list even when they are the
+    // same peers.
+    private bool _withdrawn;
+
+    private void WithdrawPeers()
+    {
+        _withdrawn = true;
+        PeersWithdrawn?.Invoke(this, EventArgs.Empty);
+    }
+
     internal MapModel Map => field ??= new MapModel(this);
 
     /// <summary>Changes when a peer's location does, the one peer fact the map's selection marks read.</summary>
@@ -125,7 +136,7 @@ public sealed partial class Inspector
             if (_places == value || _places is not null && value is not null && _places.SetEquals(value))
                 return;
             _places = value;
-            PeersWithdrawn?.Invoke(this, EventArgs.Empty);
+            WithdrawPeers();
             Map.RefreshPlaces();
             Filter();
         }
@@ -210,9 +221,11 @@ public sealed partial class Inspector
         var peers = _peers;
         var places = _places;
         var previous = ShownPeers;
+        var withdrawn = _withdrawn;
         if (places is null || peers is null)
         {
             ShownPeers = peers;
+            _withdrawn = false;
             if (!ReferenceEquals(previous, peers))
                 NotifyShownPeers();
         }
@@ -236,7 +249,7 @@ public sealed partial class Inspector
                 IReadOnlyList<Peer> found = all
                     .Where(peer => peer.Location is { } location && chosen.Contains(PeerPlace.Of(location, cities)))
                     .ToArray();
-                return previous is not null && previous.SequenceEqual(found) ? previous : found;
+                return !withdrawn && previous is not null && previous.SequenceEqual(found) ? previous : found;
             });
             searched = true;
             var waiting = _finding != version;
@@ -254,6 +267,7 @@ public sealed partial class Inspector
         if (searched || !ReferenceEquals(ShownPeers, shown))
         {
             ShownPeers = shown;
+            _withdrawn = false;
             NotifyShownPeers();
             if (!IsCurrent())
                 return;
@@ -548,7 +562,7 @@ public sealed partial class Inspector
         if (!IsCurrent(context) || joining.IsCanceled)
             return false;
         if (release)
-            PeersWithdrawn?.Invoke(this, EventArgs.Empty);
+            WithdrawPeers();
         _viewSwarms = swarms;
         Peers = await joining;
         ShowCounts();
@@ -558,7 +572,7 @@ public sealed partial class Inspector
     /// <summary>Forgets the shown peers; the swarms stay for a return to their torrents.</summary>
     private void ForgetView()
     {
-        PeersWithdrawn?.Invoke(this, EventArgs.Empty);
+        WithdrawPeers();
         _viewSwarms = [];
         Peers = null;
     }

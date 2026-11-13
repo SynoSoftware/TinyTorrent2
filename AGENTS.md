@@ -65,7 +65,9 @@ permanent design, code, and review cost that the user never sees.
 - Before changing the engine's popup, its buttons or another engine-drawn
   control, read [engine instructions](engine/AGENTS.md).
 - Before changing the table library, its development hosts, or its tooling, read
-  [TableView instructions](lib/TableView/AGENTS.md).
+  [TableView instructions](lib/TableView/AGENTS.md). `lib\TableView` is a junction
+  to `C:\SynoSoftware\TableView`, a separate git repository that this one
+  ignores, so TableView changes are committed there.
 - Before writing, changing, deleting, choosing, or running tests, read
   [testing](docs/agents/testing.md). It decides whether a test is worth writing.
 - Before planning work that other agents will do, briefing them, or checking

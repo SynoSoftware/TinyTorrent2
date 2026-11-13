@@ -97,7 +97,8 @@ has three folders:
   a finished plan read as current misleads; git history keeps it.
 
 TableView's contract, source map, glossary,
-and control history stay beside the library in `lib/TableView/`. Folder-specific
+and control history stay beside the library in its own repository, linked at
+`lib/TableView/`. Folder-specific
 `AGENTS.md` files contain local guidance and inherit the root rules. Keep licence
 notices with their assets or dependencies. Link between these owners rather
 than keeping copies in both locations.

@@ -9,6 +9,9 @@ TestResults/
 *.log
 *.dmp
 
+# TableView is its own repository, linked here as a junction to ..\TableView
+/lib/TableView
+
 # Local credentials for development, such as supplier API keys
 /secrets/
 

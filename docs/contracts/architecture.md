@@ -598,8 +598,8 @@ Broader platform lists in individual C# projects do not add release targets.
 | Project | Role | Project dependency |
 | --- | --- | --- |
 | [Engine](../../engine/src/Engine.vcxproj) | Native transfer state, persistence, pipe, tray, splash and lifetime. | libtorrent and native dependencies from `3rdParty/`; no WinUI or .NET. |
-| [TinyTorrent](../../app/src/TinyTorrent.csproj) | On-demand product window, display and draft state, Library and subtitles. | TableView, WinUI and .NET; one pipe to Engine. |
-| [TableView](../../lib/TableView/src/TableView.csproj) | Reusable `Table` control, templates, and English text. | WinUI and Glyphs; no torrent application dependency. |
+| [TinyTorrent](../../app/src/TinyTorrent.csproj) | On-demand product window, display and draft state, Library and subtitles. | TableView, Glyphs, WinUI and .NET; one pipe to Engine. |
+| [TableView](../../lib/TableView/src/TableView.csproj) | Reusable `Table` control, templates, and English text. | WinUI; no torrent application dependency. |
 | [Glyphs](../../lib/Glyphs/src/Glyphs.csproj) | Names for the glyphs of Windows' icon font, and the flag font. | WinUI. |
 | [TableViewSample](../../lib/TableView/sample/TableViewSample.csproj) | Desktop demonstrations and diagnostic probes. | TableView. |
 | [TableViewTests](../../lib/TableView/tests/TableViewTests.csproj) | Desktop MSTest host for control behavior. | TableView. |
@@ -609,7 +609,7 @@ Broader platform lists in individual C# projects do not add release targets.
 | `engine/src/` | The native engine project. |
 | `engine/inc/` | The native project's headers. Includes name a header from this root, such as `Engine/State.h`. |
 | `app/` | The WinUI product host and its instructions. |
-| `lib/TableView/` | The only TableView: the library in `src/`, focused verification in `tests/`, and a demonstration host in `sample/`. [TableView.slnx](../../lib/TableView/TableView.slnx) holds only these, with Glyphs. |
+| `lib/TableView/` | The only TableView: the library in `src/`, focused verification in `tests/`, and a demonstration host in `sample/`. It is a junction to the separate [TableView repository](https://github.com/SynoSoftware/TableView) checked out at `..\TableView`, which this repository ignores. [TableView.slnx](../../lib/TableView/TableView.slnx) holds only these. |
 | `lib/Glyphs/` | Names for the glyphs of Windows' icon font, and the flag font, for any WinUI project. |
 | `resources/` | Product branding: the application icon and logo. |
 | `artifacts/` | Generated output, kept outside source inputs to prevent recursive copies. |
