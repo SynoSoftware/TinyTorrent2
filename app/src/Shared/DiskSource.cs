@@ -25,6 +25,10 @@ internal sealed class DiskSource : IAsyncDisposable
     private readonly BackgroundWork _work;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly object _gate = new();
+
+    // Switching on and off runs one at a time, so the saved option is the
+    // last choice: Disable waits for the running refresh before it saves.
+    private readonly SemaphoreSlim _switching = new(1, 1);
     private readonly Timer _timer;
     private CancellationTokenSource _generation;
     private Task? _running;
@@ -55,6 +59,11 @@ internal sealed class DiskSource : IAsyncDisposable
 
     internal event EventHandler? Changed;
     internal event EventHandler? Published;
+
+    // The torrents that list a file the person's check found gone. The
+    // engine owns a torrent's files, so it is asked to look for them, and
+    // its answer decides their rows.
+    internal event EventHandler<IReadOnlyList<string>>? TorrentFilesGone;
 
     internal DiskState State { get; private set; } = new(DiskStatus.Off);
 
@@ -140,11 +149,19 @@ internal sealed class DiskSource : IAsyncDisposable
 
     internal async Task Enable()
     {
-        await _sources.EnableDiscovery(_lifetime.Token).ConfigureAwait(false);
-        lock (_gate)
+        await _switching.WaitAsync(_lifetime.Token).ConfigureAwait(false);
+        try
         {
-            _enabled = true;
-            State = new(DiskStatus.Current);
+            await _sources.EnableDiscovery(_lifetime.Token).ConfigureAwait(false);
+            lock (_gate)
+            {
+                _enabled = true;
+                State = new(DiskStatus.Current);
+            }
+        }
+        finally
+        {
+            _switching.Release();
         }
         Changed?.Invoke(this, EventArgs.Empty);
         Trigger(automatic: false);
@@ -152,25 +169,33 @@ internal sealed class DiskSource : IAsyncDisposable
 
     internal async Task Disable()
     {
-        Task? running;
-        lock (_gate)
+        await _switching.WaitAsync(_lifetime.Token).ConfigureAwait(false);
+        try
         {
-            _enabled = false;
-            _waiting = false;
-            _present.Clear();
-            State = new(DiskStatus.Off);
-            Schedule();
-            Restart();
-            running = _running;
+            Task? running;
+            lock (_gate)
+            {
+                _enabled = false;
+                _waiting = false;
+                _present.Clear();
+                State = new(DiskStatus.Off);
+                Schedule();
+                Restart();
+                running = _running;
+            }
+            Changed?.Invoke(this, EventArgs.Empty);
+            if (running is not null)
+            {
+                await running.ConfigureAwait(false);
+            }
+            if (await _sources.DisableDiscovery(_lifetime.Token).ConfigureAwait(false))
+            {
+                Published?.Invoke(this, EventArgs.Empty);
+            }
         }
-        Changed?.Invoke(this, EventArgs.Empty);
-        if (running is not null)
+        finally
         {
-            await running.ConfigureAwait(false);
-        }
-        if (await _sources.DisableDiscovery(_lifetime.Token).ConfigureAwait(false))
-        {
-            Published?.Invoke(this, EventArgs.Empty);
+            _switching.Release();
         }
     }
 
@@ -201,7 +226,7 @@ internal sealed class DiskSource : IAsyncDisposable
         return true;
     }
 
-    // The folder's files return as new entries at the next refresh.
+    // The folder's files return at the next refresh, with their matches.
     internal async Task Unhide(string folder)
     {
         lock (_gate)
@@ -296,8 +321,6 @@ internal sealed class DiskSource : IAsyncDisposable
         try
         {
             var hidden = await _sources.ReadHidden(run.Token).ConfigureAwait(false);
-            var absent = await _sources.ReadAbsent(run.Token).ConfigureAwait(false);
-            var returning = Task.Run(() => Returned(absent, run.Token), run.Token);
             GozlerAnswer answer;
             IReadOnlyList<GozlerVolume> volumes = [];
             try
@@ -311,24 +334,12 @@ internal sealed class DiskSource : IAsyncDisposable
             }
             catch (GozlerException failure)
             {
-                // A file that returned comes back although gozler failed.
-                var back = await returning.ConfigureAwait(false);
-                if (
-                    back.Count > 0
-                    && await _sources
-                        .AcceptDisk(new DiskChanges { Returned = back }, run.Token)
-                        .ConfigureAwait(false)
-                )
-                {
-                    Published?.Invoke(this, EventArgs.Empty);
-                }
                 Report(failure.State);
                 run.Operation.Outcome = WorkOutcome.Failed;
                 run.Operation.Error = failure;
                 return;
             }
-            var returned = await returning.ConfigureAwait(false);
-            var changed = await Accept(answer.Json, volumes, returned, run.Token).ConfigureAwait(false);
+            var changed = await Accept(answer.Json, volumes, run.Token).ConfigureAwait(false);
             var unready = volumes.Where(volume => volume.Readiness != VolumeReadiness.Ready).ToArray();
             Report(
                 new DiskState(
@@ -370,14 +381,13 @@ internal sealed class DiskSource : IAsyncDisposable
     internal async Task<bool> Accept(
         byte[] json,
         IReadOnlyList<GozlerVolume> volumes,
-        IReadOnlyList<long> returned,
         CancellationToken cancellation
     )
     {
         var items = Items(json);
         lock (_gate)
         {
-            if (returned.Count == 0 && _accepted is not null && items.Span.SequenceEqual(_accepted))
+            if (_accepted is not null && items.Span.SequenceEqual(_accepted))
             {
                 return false;
             }
@@ -414,20 +424,32 @@ internal sealed class DiskSource : IAsyncDisposable
             }
         }
         PairMoves(removed, added, updated);
-        // A torrent may still list a moved file at its old path; a path the
-        // person's check finds gone leaves Library there too.
+        // A torrent may still list a removed file, or a moved file at its old
+        // path. The engine owns a torrent's files, so it is asked to look.
+        var gone = removed.Select(file => file.File.Path).ToList();
         var before = saved.ToDictionary(file => file.Index, file => file.File.Path);
-        var vacated = new List<string>();
         foreach (var (index, file) in updated)
         {
             var old = before[index];
             if (!StringComparer.OrdinalIgnoreCase.Equals(old, file.Path) && Exists(old) == false)
             {
-                vacated.Add(old);
+                gone.Add(old);
+            }
+        }
+        // Asked before the jobs save, because a refresh that ends after its
+        // removal is saved would never ask again: the next one no longer
+        // holds the file. The torrent's own row decides the location
+        // whether or not the disk file is saved yet.
+        if (gone.Count > 0)
+        {
+            var torrents = await _sources.ReadTorrents(gone, cancellation).ConfigureAwait(false);
+            if (torrents.Count > 0)
+            {
+                TorrentFilesGone?.Invoke(this, torrents);
             }
         }
         var changed = false;
-        var jobs = Jobs(added, updated, removed.Select(file => file.Index).ToList(), returned, vacated);
+        var jobs = Jobs(added, updated, removed.Select(file => file.Index).ToList());
         for (var job = 0; job < jobs.Count; job++)
         {
             changed |= await _sources
@@ -560,17 +582,14 @@ internal sealed class DiskSource : IAsyncDisposable
             Modified = current.Modified ?? saved.Modified,
         };
 
-    // Splits the changes into jobs of at most JobSize files. The old paths of
-    // moved files go into the last job, after every move is saved.
+    // Splits the changes into jobs of at most JobSize files.
     private static List<DiskChanges> Jobs(
         List<DiskFile> added,
         List<(int, DiskFile)> updated,
-        List<int> removed,
-        IReadOnlyList<long> returned,
-        IReadOnlyList<string> vacated
+        List<int> removed
     )
     {
-        var jobs = new List<DiskChanges> { new() { Returned = returned } };
+        var jobs = new List<DiskChanges> { new() };
         foreach (var chunk in removed.Chunk(JobSize))
         {
             Pack(job => job with { Removed = [.. job.Removed, .. chunk] }, chunk.Length);
@@ -583,7 +602,6 @@ internal sealed class DiskSource : IAsyncDisposable
         {
             Pack(job => job with { Added = [.. job.Added, .. chunk] }, chunk.Length);
         }
-        jobs[^1] = jobs[^1] with { Vacated = vacated };
         return jobs;
 
         void Pack(Func<DiskChanges, DiskChanges> add, int count)
@@ -595,26 +613,6 @@ internal sealed class DiskSource : IAsyncDisposable
             }
             jobs[^1] = add(jobs[^1]);
         }
-    }
-
-    // The absent locations whose file the person's check finds again. They
-    // are checked before gozler's answer is used, so a file that returns in
-    // a folder that gozler does not report still comes back.
-    private static IReadOnlyList<long> Returned(
-        IReadOnlyList<(long Entry, string Path)> absent,
-        CancellationToken cancellation
-    )
-    {
-        var returned = new List<long>();
-        foreach (var (entry, path) in absent)
-        {
-            cancellation.ThrowIfCancellationRequested();
-            if (Exists(path) == true)
-            {
-                returned.Add(entry);
-            }
-        }
-        return returned;
     }
 
     private static List<DiskFile> Read(byte[] json)

@@ -1923,7 +1923,7 @@
   "discovery": {
     "title": "Media discovery",
     "option": "Discover media for Library",
-    "option_hint": "Finds media on fixed drives with gozler, which uses memory for its index; off removes these files from Library.",
+    "option_hint": "Finds media on fixed drives with gozler, whose index uses about 400 MB of memory for 2.4 million files; off removes these files from Library.",
     "summary": "{0} · {1}",
     "gozler": "gozler",
     "notinstalled": "gozler is not installed.",
@@ -1947,6 +1947,8 @@
     "refresh": "Refresh files",
     "hide": "Hide folder from Library",
     "hide_done": "{0} is hidden from Library.",
+    "hidden_toast": "Folder hidden from Library",
+    "undo": "Undo",
     "hide_full": "Library already hides {0:N0} folders, the most it can. Remove one in Settings, then try again.",
     "hidden": "Hidden folders",
     "hidden_hint": "Hide a folder from a file's menu in Library.",
@@ -1965,7 +1967,7 @@
     "install_tip": "Download gozler's setup from GitHub, check it and run it",
     "downloading": "Downloading gozler…",
     "running": "Waiting for gozler's setup to finish…",
-    "failure_unavailable": "This copy of TinyTorrent has no gozler download. Install gozler from its GitHub page.",
+    "failure_unavailable": "This copy of TinyTorrent has no gozler download. Install gozler from {0}.",
     "failure_download": "gozler couldn't be downloaded.",
     "failure_damaged": "The download is damaged, so it was deleted and not run.",
     "failure_declined": "Windows did not give permission. gozler is not installed."

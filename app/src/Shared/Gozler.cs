@@ -17,6 +17,9 @@ internal static class Gozler
     // is used as it is, because later releases only add fields.
     internal static readonly Version ExpectedVersion = new(0, 5, 10);
 
+    // Where a person installs gozler by hand.
+    internal const string Releases = "https://github.com/SynoSoftware/gozler/releases";
+
     private const string IdentityOption = "--file-id";
 
     // The fields of a result that name its file.

@@ -74,16 +74,19 @@ The gozler facts this feature relies on:
 options, because the engine has no use for it.
 
 - Settings shows the option, what it needs (gozler, and the memory gozler
-  uses), that it covers fixed drives, and the gozler state under it. Below that
-  it lists the hidden folders, each with Remove.
+  uses: about 400 MB for 2.4 million indexed files on the owner's PC), that it
+  covers fixed drives, and the gozler state under it. Below that it lists the
+  hidden folders, each with Remove.
 - Library's empty state, "No files yet", has a button that switches the option
   on, so a person without torrents finds it where they look for their files. No
   other prompt offers it, because a prompt the person did not ask for needs a
   remembered answer and its own design.
-- Switching the option off withdraws the disk contribution, as removing a
-  torrent withdraws its contribution. Files that only gozler reported leave
-  Library with their stored facts; files that a torrent also lists stay, and
-  the torrents alone decide them again. The option's description says so.
+- Switching the option off withdraws the disk contribution. Files that only
+  gozler reported leave Library; files that a torrent also lists stay, and the
+  torrents alone decide them again. The option's description says so. Unlike
+  a removed torrent, each withdrawn file keeps its matches
+  ([withdrawn files](#withdrawn-files)), because a person who switches the
+  option off to free gozler's memory must not lose the matches they corrected.
 
 ## Running gozler.exe
 
@@ -212,12 +215,15 @@ person can remove a folder's files from Library with one command.
   and each folder above it, nearest first, so one choice hides a whole game or
   a whole drive.
 - Choosing a folder saves it and withdraws the disk files under it in the same
-  database job, so their rows leave at once with their stored facts. No
-  confirmation is asked, because Settings undoes the choice.
+  database job, so their rows leave at once. Each file keeps its matches
+  ([withdrawn files](#withdrawn-files)).
+- A toast names the folder and offers Undo, because one click can hide a whole
+  drive and Settings is far from Library. No confirmation is asked, because
+  Undo and Settings both undo the choice completely.
 - Every later query leaves the folder out. A hidden folder inside another
   hidden folder is not sent.
-- Settings lists the hidden folders, each with Remove. Removing one starts a
-  refresh, and its files return as new entries.
+- Settings lists the hidden folders, each with Remove. Removing one, or Undo,
+  starts a refresh, and the folder's files return with their matches.
 - The list holds as many folders as fit in one query beside the fixed terms
   (`Gozler.HiddenLimit`); the command says so when it is full.
 - A hidden folder does not hide a file that a torrent lists, because the
@@ -244,8 +250,7 @@ person can remove a folder's files from Library with one command.
 
 ## One refresh
 
-1. **Ask gozler.** The [absent locations](#absent-locations) are checked again
-   at the same time.
+1. **Ask gozler.**
 2. **The same bytes as the last accepted answer end the refresh.** Nothing is
    parsed or written.
 3. **Read the saved disk files** in one short database read.
@@ -299,7 +304,7 @@ check says so**, the [File presence](../../../CONTEXT.md) rule.
 | Situation | Library behavior |
 | --- | --- |
 | A file that only gozler reported is deleted | Its entry and stored facts are removed. |
-| A file that a torrent also lists is deleted | The disk claim is removed and the location is saved as absent, so the row leaves Library although the torrent still lists the file. |
+| A file that a torrent also lists is deleted | The disk claim is removed and the engine is asked to look ([torrent files found gone](#torrent-files-found-gone)). |
 | A file goes to the Recycle Bin | It is gone. Restoring it makes a new entry; a match the person corrected by hand must be made again. |
 | One hard link disappears | That location is removed; the others stay. |
 | Rename, or move on the same volume | The same entry, by its file ID. |
@@ -308,26 +313,40 @@ check says so**, the [File presence](../../../CONTEXT.md) rule.
 | TinyTorrent moves, renames or deletes a torrent's files | The torrent's rows change at once; the disk rows follow at the next refresh. |
 | gozler stops showing a file that exists | The row stays with its last saved facts. |
 
-## Absent locations
+## Torrent files found gone
 
 **A file that the person's own check finds gone leaves Library, also when a
 torrent still lists it,** because with discovery on every other deleted file
 leaves Library, and a row that stays and only fails to open reads as a defect.
-The fact is saved with the location (`locations.absent`), so the row stays out
-after the window opens again.
 
-- `current_files` leaves an absent location out. It is the one projection that
-  decides what Library lists and what file work may read, so no other reader
-  tests the fact. The torrent's stored facts stay, because it still lists the
-  file.
-- Each refresh checks the absent locations again before it uses gozler's
-  answer, and a location whose file exists loses the fact. The check does not
-  depend on gozler's answer, so a file that returns in a folder gozler does not
-  report, such as a hidden folder, still comes back.
-- The fact ends when the location loses its last contributor, and when the
-  option is switched off.
+- The engine owns a torrent's files, so Library does not decide alone. When
+  the check finds gone a file that a torrent lists, or the old path of a disk
+  file that moved while a torrent still lists it there, Library sends the
+  engine `look` for those torrents.
+- The engine follows a payload that moved, or holds the lost files in the
+  torrent's [lost-files question](../engine.md#lost-files). The reply makes
+  Library read those torrents' files again, and a file whose `on_disk` is
+  false is not finished, so its row leaves. The engine's answer is the one
+  fact, so Torrents and Library never disagree about the file.
+- Until the reply, the row stays with the torrent's claim.
 - A torrent's file that gozler never reported, such as one on a network share,
   is never checked.
+
+## Withdrawn files
+
+Hide and switching the option off withdraw disk files, but the person did not
+delete them, so they keep what the person decided about them.
+
+- Each withdrawn file's volume, file ID and number are saved in
+  `withdrawn_disk_files`, and cleanup keeps its identifications.
+- When gozler reports a file with that volume and file ID again, it takes back
+  its number, so its matches apply again. A file with several hard links gives
+  the number to the first link only.
+- Its file facts and work in progress are not kept; facts are read again when
+  the file is displayed, because the file may have changed meanwhile.
+- A withdrawn file deleted before it returns keeps its row. Such rows are a few
+  dozen bytes each and grow only with files the person withdrew, so no
+  mechanism removes them.
 
 ## How disk files join the catalogue
 
@@ -342,7 +361,8 @@ both write through it, and each file's row is derived by one writer.
   files of a torrent that does not exist.
 - **A disk file's number comes from a saved counter (`disk_numbers`) when it
   is first seen,** and is never used again, so stored facts of a withdrawn
-  file that are still kept never pass to a new one. The number stays with the
+  file that are still kept never pass to a new one. Only the same file, by its
+  volume and file ID, takes a withdrawn number back. The number stays with the
   file through a rename or a move, so identifications and file facts keep
   working unchanged.
 - **Saved for each disk file,** in `disk_files`: its volume, its file ID and

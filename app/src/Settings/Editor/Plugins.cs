@@ -149,19 +149,9 @@ public sealed partial class Editor
         ShowMedia();
     }
 
-    // Its files return as new entries at the next refresh.
     internal async Task Unhide(string folder)
     {
-        if (_owner.Disk is not { } disk)
-            return;
-        try
-        {
-            await disk.Unhide(folder);
-        }
-        catch (Exception error)
-        {
-            _owner.Notifications.Report(error, "failed_settings", () => folder, null);
-        }
+        await _owner.UnhideFolder(folder);
         await ReadHidden();
     }
 

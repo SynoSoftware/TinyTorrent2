@@ -19,7 +19,9 @@ internal sealed partial class Database
             DELETE FROM identifications WHERE NOT EXISTS (
                 SELECT 1 FROM pending_origins p WHERE p.origin=identifications.origin)
             AND NOT EXISTS (SELECT 1 FROM collected_files f
-                WHERE f.origin=identifications.origin AND f.file_index=identifications.file_index);
+                WHERE f.origin=identifications.origin AND f.file_index=identifications.file_index)
+            AND NOT EXISTS (SELECT 1 FROM withdrawn_disk_files w
+                WHERE w.origin=identifications.origin AND w.file_index=identifications.file_index);
             DELETE FROM file_facts WHERE NOT EXISTS (
                 SELECT 1 FROM pending_origins p WHERE p.origin=file_facts.origin)
             AND NOT EXISTS (SELECT 1 FROM collected_files f

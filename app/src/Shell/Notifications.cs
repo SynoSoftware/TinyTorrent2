@@ -266,6 +266,23 @@ public sealed class Notifications
         await _owner.OpenTorrent(torrent, true);
     }
 
+    // One click can hide a whole drive from Library, so the toast undoes it
+    // with one click too, and closes with it.
+    internal void ShowHidden(string folder)
+    {
+        var toast = new Toast.Hidden(folder);
+        toast.Action = new RelayCommand(
+            async () =>
+            {
+                Toasts.Remove(toast);
+                await _owner.UnhideFolder(folder);
+            },
+            () => _owner.Disk is not null
+        );
+        Show(toast);
+        Announce(_text.Format("discovery", "hide_done", folder));
+    }
+
     internal void ShowOutcome(string group, string key, string subject)
     {
         var toast = new Toast.Outcome(group, key, subject);
@@ -534,6 +551,12 @@ public sealed class Notifications
                 followed.ActionText = _text.Get("commands", "open_folder");
                 followed.ActionTip = _text.Get("notifications", "files_folder_tip");
                 followed.ActionGlyph = Syno.Segoe.FolderOpen;
+                break;
+            case Toast.Hidden hidden:
+                hidden.Title = _text.Get("discovery", "hidden_toast");
+                hidden.ActionText = _text.Get("discovery", "undo");
+                hidden.ActionTip = _text.Get("discovery", "remove_tip");
+                hidden.ActionGlyph = Syno.Segoe.Undo2;
                 break;
             case Toast.Completion completion:
                 completion.Title = _text.Get("notifications", "finished");
@@ -860,6 +883,16 @@ public abstract class Toast : INotifyPropertyChanged
         }
 
         internal string Name { get; }
+    }
+
+    // A folder the person hid from Library, which the toast can show again.
+    internal sealed class Hidden : Toast
+    {
+        internal Hidden(string folder)
+            : base(InfoBarSeverity.Informational, Lifetime)
+        {
+            Subject = folder;
+        }
     }
 
     // A result the person asked for, such as a passed check. It closes by

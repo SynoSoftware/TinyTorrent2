@@ -309,7 +309,9 @@ data-source contributions.
 
 **Contribution**: the files one data source reports for one origin, such as
 one torrent. Library removes its stored facts when it observes that contribution's
-withdrawal or reconciles after reconnecting.
+withdrawal or reconciles after reconnecting. A disk file that Hide or switching
+discovery off withdrew keeps its matches, and takes them back when gozler reports
+it again.
 
 **Library catalogue**: the last reported file lists retained for browsing, including
 files whose current location or completion has not yet been confirmed.

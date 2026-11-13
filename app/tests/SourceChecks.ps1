@@ -286,7 +286,7 @@ INSERT INTO video_choices VALUES('tmdb','161','movie','Ocean''s Eleven',NULL,200
             })
         }
         function Accept($Disk, $Json, $Volumes = (Volumes @())) {
-            return Invoke-Value $Disk 'Accept' @($Json, $Volumes, [long[]]@(), $cancel)
+            return Invoke-Value $Disk 'Accept' @($Json, $Volumes, $cancel)
         }
         function Listed([string] $Path) {
             return [long](Sql 'SELECT COUNT(*) FROM library_rows WHERE path=$path COLLATE PATH;' @{ '$path' = $Path } $diskConnection)
@@ -356,8 +356,8 @@ INSERT INTO identifications SELECT origin,file_index,'tmdb','movie/9',1,17000000
         Invoke-Value $diskSources 'Replace' @($torrent, $listedFiles, $cancel) | Out-Null
         Require ((Listed $shared) -eq 1) "A torrent's finished file was not listed."
 
-        # A torrent's file renamed outside TinyTorrent leaves no row at its old
-        # path, which would not open.
+        # A torrent's file renamed outside TinyTorrent: the disk file follows
+        # it, and the torrent keeps its old path until the engine's look.
         $before = Join-Path $media 'Before.2022.mkv'
         $after = Join-Path $media 'After.2022.mkv'
         [IO.File]::WriteAllBytes($before, [byte[]]::new(100))
@@ -367,11 +367,12 @@ INSERT INTO identifications SELECT origin,file_index,'tmdb','movie/9',1,17000000
         Invoke-Value $diskSources 'Replace' @($torrent, $listedFiles, $cancel) | Out-Null
         Move-Item -LiteralPath $before $after
         Accept $disk (Answer @(@($movie, 100, '1', $volume), @($subtitle, 100, '2', $volume), @($shared, 100, '3', $volume), @($after, 100, '6', $volume))) | Out-Null
-        Require ((Listed $after) -eq 1 -and (Listed $before) -eq 0) "A torrent's file renamed outside TinyTorrent stayed listed at its old path."
+        Require ((Listed $after) -eq 1) "A torrent's file renamed outside TinyTorrent was not listed at its new path."
 
         # A drive that is not connected, or that gozler is still indexing,
-        # loses nothing, while a file deleted on a connected drive leaves,
-        # also when a torrent lists it.
+        # loses nothing, while a file deleted on a connected drive leaves. A
+        # torrent that lists the deleted file is found, so the engine is
+        # asked to look for it.
         $absentVolume = '\\?\Volume{00000000-0000-0000-0000-000000000000}\'
         $indexingVolume = '\\?\Volume{00000000-0000-0000-0000-000000000001}\'
         $offline = 'Q:\Away\Offline.2019.mkv'
@@ -382,7 +383,7 @@ INSERT INTO identifications SELECT origin,file_index,'tmdb','movie/9',1,17000000
         Accept $disk (Answer @(@($movie, 100, '1', $volume), @($subtitle, 100, '2', $volume)) $true) (Volumes @(,@($indexingVolume, 'R:\', 'Indexing'))) | Out-Null
         Require ((Listed $offline) -eq 1) 'A drive that is not connected lost its files.'
         Require ((Listed $indexing) -eq 1) 'A drive that gozler is still indexing lost its files.'
-        Require ((Listed $shared) -eq 0) 'A deleted file that a torrent lists stayed in Library.'
+        Require (@(Invoke-Value $diskSources 'ReadTorrents' @([string[]]@($shared), $cancel)) -contains 'torrent') 'The torrent that lists a deleted file was not found for the engine to look.'
         $diskDatabase.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null
         $diskDatabase = New-Value 'Shared.Storage.Database' @($diskData)
         $diskSources = New-Value 'Shared.FileSources' @($diskDatabase)
@@ -390,7 +391,6 @@ INSERT INTO identifications SELECT origin,file_index,'tmdb','movie/9',1,17000000
         Invoke-Value $diskSources 'Reconcile' @((New-Values 'Shared.Contribution' @($torrent)), $cancel) | Out-Null
         Invoke-Value $diskSources 'Replace' @($torrent, $listedFiles, $cancel) | Out-Null
         $diskConnection = $diskDatabase.GetType().GetField('_connection', $flags).GetValue($diskDatabase)
-        Require ((Listed $shared) -eq 0) 'A deleted file that a torrent lists returned when the window opened again.'
 
         # gozler has not answered since the window opened, and that holds no
         # subtitle move or deletion for torrents.
@@ -411,11 +411,17 @@ INSERT INTO identifications SELECT origin,file_index,'tmdb','movie/9',1,17000000
         $terms = $gozler.GetMethod('Terms', $staticFlags).Invoke($null, @(,[string[]]@($hidden))).Item1
         Require ($terms -contains ('!"' + $hidden + '\*"')) 'The query does not leave a hidden folder out.'
 
-        # Switching the option off withdraws the disk files and the absent
-        # fact; the torrents alone decide again.
+        # Showing the folder again brings its files back with the match the
+        # person chose, so Undo and Remove in Settings undo a hide.
+        Invoke-Value $disk 'Unhide' @($hidden) | Out-Null
+        Require (Accept $disk (Answer @(@($movie, 100, '1', $volume), @($subtitle, 100, '2', $volume)))) "A shown-again folder's files were not saved."
+        Require ((Sql 'SELECT title FROM library_rows WHERE path=$path COLLATE PATH;' @{ '$path' = $movie } $diskConnection) -eq 'Matched title') 'A file that returned from a hidden folder lost the match the person chose.'
+
+        # Switching the option off withdraws the disk files, and the torrents
+        # alone decide again; the matches the person chose are kept.
         Invoke-Value $disk 'Disable' @() | Out-Null
         Require ((Listed $offline) -eq 0) 'Switching discovery off left disk files in Library.'
-        Require ([long](Sql 'SELECT COUNT(*) FROM locations WHERE absent=1;' @{} $diskConnection) -eq 0) 'Switching discovery off kept a location absent.'
+        Require ([long](Sql "SELECT COUNT(*) FROM identifications WHERE video_id='movie/9';" @{} $diskConnection) -eq 1) 'Switching discovery off deleted a match the person chose.'
     }
     finally {
         $diskDatabase.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null

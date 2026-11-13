@@ -43,6 +43,20 @@ internal sealed partial class Database
             );
             INSERT INTO disk_numbers VALUES(1,0);
             """,
+        // 12: Library asks the engine to look for a torrent's lost files
+        // instead of saving them as absent, and a disk file that Hide or
+        // switching discovery off withdrew keeps its number and its matches
+        // until it is reported again.
+        """
+            ALTER TABLE locations DROP COLUMN absent;
+            CREATE TABLE withdrawn_disk_files (
+                volume TEXT NOT NULL, file_id TEXT NOT NULL,
+                origin TEXT NOT NULL, file_index INTEGER NOT NULL,
+                PRIMARY KEY(volume,file_id)
+            );
+            -- Cleanup looks each kept match up by its file.
+            CREATE INDEX withdrawn_disk_files_file ON withdrawn_disk_files(origin,file_index);
+            """,
     ];
 
     private static int Version => Baseline + Migrations.Length;
@@ -230,7 +244,6 @@ internal sealed partial class Database
         JOIN contributions s USING (origin)
         LEFT JOIN file_reads c USING (origin)
         LEFT JOIN disk_reads d USING (origin)
-        WHERE l.absent=0
         GROUP BY l.entry_id;
         -- The identification that decides each Library entry: the latest
         -- explicit choice of its files, including Clear, else the latest

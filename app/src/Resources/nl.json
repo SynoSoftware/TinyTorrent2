@@ -1923,7 +1923,7 @@
   "discovery": {
     "title": "Media detecteren",
     "option": "Media voor de bibliotheek detecteren",
-    "option_hint": "Vindt media op vaste stations met gozler, dat geheugen gebruikt voor zijn index; uit haalt ze uit de bibliotheek.",
+    "option_hint": "Vindt media op vaste stations met gozler, waarvan de index ongeveer 400 MB geheugen gebruikt voor 2,4 miljoen bestanden; uit haalt ze uit de bibliotheek.",
     "summary": "{0} · {1}",
     "gozler": "gozler",
     "notinstalled": "gozler is niet geïnstalleerd.",
@@ -1947,6 +1947,8 @@
     "refresh": "Bestanden vernieuwen",
     "hide": "Map verbergen in bibliotheek",
     "hide_done": "{0} is verborgen in de bibliotheek.",
+    "hidden_toast": "Map verborgen in de bibliotheek",
+    "undo": "Ongedaan maken",
     "hide_full": "De bibliotheek verbergt al {0:N0} mappen, het maximum. Verwijder er een in Instellingen en probeer het opnieuw.",
     "hidden": "Verborgen mappen",
     "hidden_hint": "Verberg een map via het menu van een bestand in de bibliotheek.",
@@ -1965,7 +1967,7 @@
     "install_tip": "Het installatieprogramma van gozler downloaden van GitHub, controleren en uitvoeren",
     "downloading": "gozler downloaden…",
     "running": "Wachten tot de installatie van gozler klaar is…",
-    "failure_unavailable": "Deze kopie van TinyTorrent bevat geen download van gozler. Installeer gozler via de GitHub-pagina.",
+    "failure_unavailable": "Deze kopie van TinyTorrent bevat geen download van gozler. Installeer gozler via {0}.",
     "failure_download": "gozler kon niet worden gedownload.",
     "failure_damaged": "De download is beschadigd en is daarom verwijderd en niet uitgevoerd.",
     "failure_declined": "Windows gaf geen toestemming. gozler is niet geïnstalleerd."

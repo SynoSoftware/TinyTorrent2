@@ -71,15 +71,36 @@ internal sealed class LibrarySource : IAsyncDisposable
                 _work = Task.Run(Run);
     }
 
-    // A successful command that adds, removes, moves or verifies torrents, or
-    // changes file priorities, can change the files of any torrent. The
-    // listed files stay confirmed while every torrent is read again from a
-    // snapshot taken after the command. Published lets Library show what the
-    // read that Restart ended saved but did not report.
+    // Asks the engine to look for the files of torrents that list a file the
+    // person's own check found gone. The engine holds a lost file in the
+    // torrent's question or follows a moved payload, and the reply reads the
+    // torrents' files again, so its answer decides their rows.
+    internal async Task Look(IReadOnlyList<string> torrentIds)
+    {
+        if (_lifetime.IsCancellationRequested)
+            return;
+        try
+        {
+            await _client
+                .Send("look", new { torrent_ids = torrentIds }, Requester.Window)
+                .ConfigureAwait(false);
+        }
+        catch (Exception error)
+        {
+            // The engine also looks before its next check of the torrent.
+            System.Diagnostics.Debug.WriteLine(error);
+        }
+    }
+
+    // A successful command that adds, removes, moves, verifies or looks for
+    // torrents, or changes file priorities, can change the files of any
+    // torrent. The listed files stay confirmed while every torrent is read
+    // again from a snapshot taken after the command. Published lets Library
+    // show what the read that Restart ended saved but did not report.
     private void Reread(PipeClient.CommandReply reply)
     {
         var changesFiles =
-            reply.Command is "add" or "remove" or "delete_files" or "move" or "verify"
+            reply.Command is "add" or "remove" or "delete_files" or "move" or "verify" or "look"
             || reply.Command == "edit"
                 && reply.Arguments.TryGetProperty("torrent_id", out _)
                 && reply.Arguments.TryGetProperty("changes", out var changes)

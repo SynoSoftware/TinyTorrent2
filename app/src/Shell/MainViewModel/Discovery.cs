@@ -47,6 +47,25 @@ public sealed partial class MainViewModel
         }
     }
 
+    /// <summary>
+    /// Shows a hidden folder's files in Library again: Settings' Remove and
+    /// the Undo of the toast that Hide shows. They return at the next
+    /// refresh, with the matches they had.
+    /// </summary>
+    internal async Task UnhideFolder(string folder)
+    {
+        if (Disk is not { } disk)
+            return;
+        try
+        {
+            await disk.Unhide(folder);
+        }
+        catch (Exception error)
+        {
+            Notifications.Report(error, "failed_settings", () => folder, null);
+        }
+    }
+
     // What resolves a disk state, in Settings and in Library's message.
     // Retry follows a repair or an update made in gozler, and a drive that
     // gozler cannot keep current changes only when it is asked again.

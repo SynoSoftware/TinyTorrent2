@@ -1926,7 +1926,7 @@
   "discovery": {
     "title": "Detecção de mídia",
     "option": "Detectar mídia para a Biblioteca",
-    "option_hint": "Encontra mídia nas unidades fixas com o gozler, que indexa na memória; desativado, ela sai da Biblioteca.",
+    "option_hint": "Encontra mídia nas unidades fixas com o gozler, cujo índice ocupa cerca de 400 MB de memória para 2,4 milhões de arquivos; desativado, ela sai da Biblioteca.",
     "summary": "{0} · {1}",
     "gozler": "gozler",
     "notinstalled": "O gozler não está instalado.",
@@ -1950,6 +1950,8 @@
     "refresh": "Atualizar arquivos",
     "hide": "Ocultar pasta da Biblioteca",
     "hide_done": "{0} está oculta na Biblioteca.",
+    "hidden_toast": "Pasta oculta na Biblioteca",
+    "undo": "Desfazer",
     "hide_full": "A Biblioteca já oculta {0:N0} pastas, o máximo possível. Remova uma em Configurações e tente novamente.",
     "hidden": "Pastas ocultas",
     "hidden_hint": "Oculte uma pasta pelo menu de um arquivo na Biblioteca.",
@@ -1968,7 +1970,7 @@
     "install_tip": "Baixar o instalador do gozler do GitHub, verificá-lo e executá-lo",
     "downloading": "Baixando o gozler…",
     "running": "Aguardando o instalador do gozler terminar…",
-    "failure_unavailable": "Esta cópia do TinyTorrent não inclui o download do gozler. Instale o gozler pela página dele no GitHub.",
+    "failure_unavailable": "Esta cópia do TinyTorrent não inclui o download do gozler. Instale o gozler a partir de {0}.",
     "failure_download": "Não foi possível baixar o gozler.",
     "failure_damaged": "O download está danificado, por isso foi excluído e não foi executado.",
     "failure_declined": "O Windows não deu permissão. O gozler não está instalado."

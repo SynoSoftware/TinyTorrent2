@@ -351,11 +351,12 @@ internal sealed class FileSources(Database database)
                 command.CommandText = Database.Reconcile;
                 command.ExecuteNonQuery();
                 command.CommandText = """
+                    INSERT OR IGNORE INTO withdrawn_disk_files(volume,file_id,origin,file_index)
+                        SELECT volume,file_id,origin,file_index FROM disk_files;
                     DELETE FROM source_files WHERE origin IN
                         (SELECT origin FROM contributions WHERE data_source='disk');
                     DELETE FROM contributions WHERE data_source='disk';
                     DELETE FROM locations WHERE entry_id NOT IN (SELECT entry_id FROM source_files);
-                    UPDATE locations SET absent=0 WHERE absent=1;
                     """;
                 var changed = command.ExecuteNonQuery() != 0;
                 command.CommandText = "DELETE FROM disk_reads;" + Database.Cleanup;
@@ -398,21 +399,32 @@ internal sealed class FileSources(Database database)
             cancellation
         );
 
-    // The locations the person's own check found gone; each refresh checks
-    // them again.
-    internal Task<IReadOnlyList<(long Entry, string Path)>> ReadAbsent(
+    // The torrents that list a file at one of these paths, so the engine
+    // can be asked to look for the files the person's check found gone.
+    internal Task<IReadOnlyList<string>> ReadTorrents(
+        IReadOnlyCollection<string> paths,
         CancellationToken cancellation
     ) =>
-        database.Run<IReadOnlyList<(long Entry, string Path)>>(
+        database.Run<IReadOnlyList<string>>(
             connection =>
             {
                 using var command = connection.CreateCommand();
-                command.CommandText = "SELECT entry_id,path FROM locations WHERE absent=1;";
-                using var reader = command.ExecuteReader();
-                var locations = new List<(long, string)>();
-                while (reader.Read())
-                    locations.Add((reader.GetInt64(0), reader.GetString(1)));
-                return locations;
+                command.CommandText = """
+                    SELECT f.origin FROM locations l JOIN source_files f USING(entry_id)
+                    JOIN contributions c USING(origin)
+                    WHERE l.path=$path AND c.data_source='torrent';
+                    """;
+                var path = command.Parameters.Add("$path", SqliteType.Text);
+                var torrents = new HashSet<string>();
+                foreach (var gone in paths)
+                {
+                    cancellation.ThrowIfCancellationRequested();
+                    path.Value = gone;
+                    using var reader = command.ExecuteReader();
+                    while (reader.Read())
+                        torrents.Add(reader.GetString(0));
+                }
+                return [.. torrents];
             },
             cancellation
         );
@@ -435,29 +447,17 @@ internal sealed class FileSources(Database database)
                     """;
                 var changed = command.ExecuteNonQuery() != 0;
                 var subtitles = false;
-                if (changes.Removed.Count + changes.Updated.Count + changes.Returned.Count > 0)
+                if (changes.Removed.Count + changes.Updated.Count > 0)
                 {
                     // Share saved choices before a removal or a move separates
                     // the files that held them.
                     command.CommandText = Database.Reconcile;
                     changed |= command.ExecuteNonQuery() != 0;
                 }
-                using var location = connection.CreateCommand();
-                location.CommandText = "UPDATE locations SET absent=0 WHERE entry_id=$entry AND absent=1;";
-                var entry = location.Parameters.Add("$entry", SqliteType.Integer);
-                foreach (var returned in changes.Returned)
-                {
-                    entry.Value = returned;
-                    changed |= location.ExecuteNonQuery() != 0;
-                }
-                // A torrent may still list a removed file. Its location then
-                // stays, saved as absent, so the row stays out of Library.
+                // A torrent that still lists a removed file keeps its row
+                // until the engine's look finds the file gone.
                 using var removal = connection.CreateCommand();
                 removal.CommandText = """
-                    UPDATE locations SET absent=1 WHERE entry_id=(SELECT entry_id FROM source_files
-                        WHERE origin=$disk AND file_index=$index)
-                        AND EXISTS(SELECT 1 FROM source_files o WHERE o.entry_id=locations.entry_id
-                            AND o.origin<>$disk);
                     DELETE FROM source_files WHERE origin=$disk AND file_index=$index RETURNING path;
                     """;
                 removal.Parameters.AddWithValue("$disk", Disk);
@@ -523,22 +523,25 @@ internal sealed class FileSources(Database database)
                     changed |= stale.ExecuteNonQuery() != 0;
                     changed |= Save(index, file);
                 }
-                // A torrent may still list a moved file at its old path.
-                using var vacated = connection.CreateCommand();
-                vacated.CommandText = "UPDATE locations SET absent=1 WHERE path=$path AND absent=0;";
-                var old = vacated.Parameters.Add("$path", SqliteType.Text);
-                foreach (var path in changes.Vacated)
-                {
-                    old.Value = path;
-                    changed |= vacated.ExecuteNonQuery() != 0;
-                }
                 using var numbers = connection.CreateCommand();
                 numbers.CommandText = "UPDATE disk_numbers SET next=next+1 RETURNING next-1;";
+                // A file that Hide or switching discovery off withdrew takes
+                // back its number, and with it the matches it kept.
+                using var withdrawn = connection.CreateCommand();
+                withdrawn.CommandText = """
+                    DELETE FROM withdrawn_disk_files WHERE volume=$volume AND file_id=$id
+                    RETURNING file_index;
+                    """;
+                var withdrawnVolume = withdrawn.Parameters.Add("$volume", SqliteType.Text);
+                var withdrawnId = withdrawn.Parameters.Add("$id", SqliteType.Text);
                 foreach (var file in changes.Added)
                 {
                     cancellation.ThrowIfCancellationRequested();
                     subtitles |= FileName.IsSubtitle(file.Path);
-                    changed |= Save(Convert.ToInt32(numbers.ExecuteScalar()), file);
+                    withdrawnVolume.Value = file.Volume;
+                    withdrawnId.Value = file.Id;
+                    var number = withdrawn.ExecuteScalar() ?? numbers.ExecuteScalar();
+                    changed |= Save(Convert.ToInt32(number), file);
                 }
                 if (changes.Confirms)
                 {
@@ -607,6 +610,9 @@ internal sealed class FileSources(Database database)
                 command.CommandText = Database.Reconcile;
                 command.ExecuteNonQuery();
                 command.CommandText = """
+                    INSERT OR IGNORE INTO withdrawn_disk_files(volume,file_id,origin,file_index)
+                        SELECT volume,file_id,origin,file_index FROM disk_files
+                        WHERE origin=$disk AND file_index=$index;
                     DELETE FROM source_files WHERE origin=$disk AND file_index=$index;
                     """;
                 var index = command.Parameters.Add("$index", SqliteType.Integer);
@@ -806,11 +812,5 @@ internal sealed record DiskChanges
     internal IReadOnlyList<DiskFile> Added { get; init; } = [];
     internal IReadOnlyList<(int Index, DiskFile File)> Updated { get; init; } = [];
     internal IReadOnlyList<int> Removed { get; init; } = [];
-
-    // Absent locations whose file the person's check found again.
-    internal IReadOnlyList<long> Returned { get; init; } = [];
-
-    // The old paths of moved files that the person's check found gone.
-    internal IReadOnlyList<string> Vacated { get; init; } = [];
     internal bool Confirms { get; init; }
 }

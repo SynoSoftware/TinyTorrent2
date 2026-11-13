@@ -267,6 +267,7 @@ internal sealed class Features
                     _ = RefreshSource();
                 }
             );
+        disk.TorrentFilesGone += (_, torrents) => _ = source.Look(torrents);
         _ = Start(disk);
     }
 

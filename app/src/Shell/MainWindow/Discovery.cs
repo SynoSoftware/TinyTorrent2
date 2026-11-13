@@ -86,7 +86,8 @@ public sealed partial class MainWindow
         };
     }
 
-    // Settings undoes the choice, so it asks nothing.
+    // The toast's Undo and Settings undo the choice, and the files return
+    // with their matches, so it asks nothing.
     private async Task HideFolder(string folder)
     {
         if (Model.Disk is not { } disk)
@@ -94,7 +95,7 @@ public sealed partial class MainWindow
         try
         {
             if (await disk.Hide(folder))
-                Model.Notifications.Announce(Model.Text.Format("discovery", "hide_done", folder));
+                Model.Notifications.ShowHidden(folder);
             else
                 Model.Notifications.Report(
                     new InvalidOperationException("The list of hidden folders is full."),
@@ -119,7 +120,8 @@ public sealed partial class MainWindow
             setup.Begin();
             var body = new TextBlock { TextWrapping = TextWrapping.Wrap };
             var progress = new ProgressBar();
-            var status = new TextBlock { TextWrapping = TextWrapping.Wrap };
+            // Selectable, so the address that a failure names can be copied.
+            var status = new TextBlock { TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
             AutomationProperties.SetLiveSetting(status, AutomationLiveSetting.Polite);
             var dialog = new Dialog
             {
@@ -205,10 +207,12 @@ public sealed partial class MainWindow
     // A setup that leaves no service reads as Settings says it.
     private string Failure(InstallStage.Failed failed)
     {
-        var message =
-            failed.Reason == InstallFailure.NotInstalled
-                ? Model.Text.Get("discovery", "notinstalled")
-                : Model.Text.Get("gozler", "failure_" + failed.Reason.ToString().ToLowerInvariant());
+        var message = failed.Reason switch
+        {
+            InstallFailure.NotInstalled => Model.Text.Get("discovery", "notinstalled"),
+            InstallFailure.Unavailable => Model.Text.Format("gozler", "failure_unavailable", Gozler.Releases),
+            _ => Model.Text.Get("gozler", "failure_" + failed.Reason.ToString().ToLowerInvariant()),
+        };
         return failed.Detail is { } detail
             ? Model.Text.Format("errors", "detail", message, detail)
             : message;

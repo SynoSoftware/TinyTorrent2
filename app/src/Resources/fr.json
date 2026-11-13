@@ -1926,7 +1926,7 @@
   "discovery": {
     "title": "Détection des médias",
     "option": "Détecter les médias pour la Bibliothèque",
-    "option_hint": "Trouve les médias des disques fixes avec gozler, qui indexe en mémoire ; désactivé, ils quittent la Bibliothèque.",
+    "option_hint": "Trouve les médias des disques fixes avec gozler, dont l’index occupe environ 400 Mo de mémoire pour 2,4 millions de fichiers ; désactivé, ils quittent la Bibliothèque.",
     "summary": "{0} · {1}",
     "gozler": "gozler",
     "notinstalled": "gozler n’est pas installé.",
@@ -1950,6 +1950,8 @@
     "refresh": "Actualiser les fichiers",
     "hide": "Masquer le dossier de la Bibliothèque",
     "hide_done": "{0} est masqué dans la Bibliothèque.",
+    "hidden_toast": "Dossier masqué dans la Bibliothèque",
+    "undo": "Annuler",
     "hide_full": "La Bibliothèque masque déjà {0:N0} dossiers, le maximum possible. Retirez-en un dans les paramètres, puis réessayez.",
     "hidden": "Dossiers masqués",
     "hidden_hint": "Masquez un dossier depuis le menu d’un fichier dans la Bibliothèque.",
@@ -1968,7 +1970,7 @@
     "install_tip": "Télécharger le programme d’installation de gozler depuis GitHub, le vérifier et l’exécuter",
     "downloading": "Téléchargement de gozler…",
     "running": "En attente de la fin de l’installation de gozler…",
-    "failure_unavailable": "Cette copie de TinyTorrent ne contient pas le téléchargement de gozler. Installez gozler depuis sa page GitHub.",
+    "failure_unavailable": "Cette copie de TinyTorrent ne contient pas le téléchargement de gozler. Installez gozler depuis {0}.",
     "failure_download": "Impossible de télécharger gozler.",
     "failure_damaged": "Le téléchargement est endommagé. Il a été supprimé et n’a pas été exécuté.",
     "failure_declined": "Windows n’a pas donné l’autorisation. gozler n’est pas installé."

@@ -281,8 +281,9 @@ settings implementation.
 **Owner ruling: data sources establish membership; C# owns SQLite.** Managed
 torrents, and with the option on gozler's answers, decide which files belong.
 A file that the person's own check finds gone leaves Library even when a
-torrent still lists it ([absent locations](library/disk.md#absent-locations),
-owner decision of 11 November 2026). SQLite saves reusable facts and user
+torrent still lists it, once the engine's look confirms it
+([torrent files found gone](library/disk.md#torrent-files-found-gone), owner
+decision of 11 November 2026). SQLite saves reusable facts and user
 decisions and executes local searches over the retained catalogue, whose
 membership the data sources decide. It is never an independent file inventory. Library
 removes a torrent's stored facts when it observes removal or next reconciles,
