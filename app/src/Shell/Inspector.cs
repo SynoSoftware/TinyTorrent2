@@ -154,7 +154,7 @@ public sealed partial class Inspector : INotifyPropertyChanged
             // A torrent that only waits for the answer shows the count beside
             // Review; one that still downloads other files adds it to its
             // progress.
-            if (torrent.State == TorrentState.FilesMissing)
+            if (torrent.AwaitsAnswer)
                 return torrent.MissingText;
             var summary = ProgressSummary(torrent);
             return torrent.Question is null
@@ -1410,14 +1410,9 @@ public sealed partial class Inspector : INotifyPropertyChanged
     /// state and progress style rather than a binding, as one fact, so a
     /// change of them alone reaches the pane.
     /// </summary>
-    internal (bool IsProgressMuted, bool CanRetry, bool IsError, bool Waits)? GeneralState =>
+    internal (bool IsProgressMuted, bool CanRetry, bool IsError, bool AwaitsAnswer)? GeneralState =>
         _target is { } target
-            ? (
-                target.IsProgressMuted,
-                target.CanRetry,
-                target.IsError,
-                target.State == TorrentState.FilesMissing
-            )
+            ? (target.IsProgressMuted, target.CanRetry, target.IsError, target.AwaitsAnswer)
             : null;
 
     /// <summary>

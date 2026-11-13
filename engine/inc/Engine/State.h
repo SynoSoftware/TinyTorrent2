@@ -538,7 +538,9 @@ public:
     Store checks;
     // Builds file trees and finds the files that folder and query choices
     // cover, so a scan of every path of a large torrent never holds up the
-    // engine thread or waits behind a preview source on a slow share.
+    // engine thread or waits behind a preview source on a slow share. It also
+    // asks libtorrent for a torrent's pieces, which the engine thread does not
+    // wait for.
     Store trees;
     // Lists the watched folder, which can wait for a share that does not
     // answer, so that wait holds up nothing else.
@@ -760,10 +762,10 @@ public:
     // save of their question.
     std::map<std::string, std::shared_ptr<Control::Job const>> reloads;
     // A look command's reply, which waits for the look and the search of
-    // each torrent that it lists.
+    // each torrent that it lists, or for FindMoved to name the folder.
     struct Lookout
     {
-        // The folder each torrent follows its files to, or nothing.
+        // The folder each torrent's files moved to, or nothing.
         std::map<std::string, std::optional<std::string>> folders;
         std::size_t pending = 0;
         Reply reply;
@@ -1592,6 +1594,11 @@ public:
     // Ends a torrent's search for the look commands that wait for it, with
     // the folder it follows its files to.
     void EndLookouts(std::string const& id, std::optional<std::string> const& folder);
+    // Answers the look commands that wait for the torrent as soon as its
+    // files' IDs find the folder that its payload moved to on its drive. Open
+    // waits only briefly for that answer, and the follow's own look, reload
+    // and search take a maintenance pass each.
+    void FindMoved(Torrent const& torrent);
     // Drops the pieces of `files` from the resume data, so the torrent
     // downloads those files again without checking the others.
     static void DropPieces(lt::add_torrent_params& params, std::vector<lt::file_index_t> const& files);

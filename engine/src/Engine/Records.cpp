@@ -180,6 +180,34 @@ void Engine::State::EndLookouts(std::string const& id, std::optional<std::string
     }
 }
 
+void Engine::State::FindMoved(Torrent const& torrent)
+{
+    if (torrent.waiting || torrent.records.empty())
+        return;
+    // The files that a look finds lost join the question only at the reload,
+    // so the search here looks for them beside the question's own.
+    VolumeWorker(torrent.facts.savePath).Run(
+        [handle = torrent.handle, kept = torrent.kept, asked = torrent.facts.Asked(), records = torrent.records,
+        folder = torrent.facts.savePath]() mutable -> std::optional<std::string>
+    {
+        std::optional<std::string> moved;
+        if (Reach({folder}, [&]
+        {
+            for (auto file : LostData(handle, kept))
+                asked.files.emplace(file, lt::default_priority);
+            moved = SearchDrive(handle, kept, asked, records).folder;
+        }))
+        {
+            return std::nullopt;
+        }
+        return moved;
+    }, [this, id = torrent.torrentId](std::expected<std::optional<std::string>, StorageOutcome> moved)
+    {
+        if (moved && *moved)
+            EndLookouts(id, *moved);
+    });
+}
+
 void Engine::State::ContinueSearches()
 {
     // A removed torrent's look commands end without a folder.
@@ -326,7 +354,7 @@ void Engine::State::Settle(Torrent& torrent, std::optional<Searched> const& sear
 {
     auto const& id = torrent.torrentId;
     torrent.search = PassPhase::Idle;
-    torrent.searched = torrent.facts.Asked().number;
+    torrent.searched = torrent.facts.Asked().joins;
     auto answer = std::exchange(torrent.answer, std::nullopt);
     // What each search decided, which the snapshot does not show.
     auto recorded = std::count_if(torrent.facts.Asked().files.begin(), torrent.facts.Asked().files.end(),

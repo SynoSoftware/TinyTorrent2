@@ -440,11 +440,12 @@ with the attempted destination in `folder`, retaining the current save path.
 question number the dialog showed, and `answer`, `redownload` or `skip`. The
 engine replies at once and applies the answer to each listed torrent that
 still exists and whose question still has that number, after the search that
-runs before it applies. `look` takes `torrent_ids` and replies, once each
-torrent's look and the search after it ended, with `torrents`, each
-`{torrent_id, folder}`: the folder the torrent follows its files to, or null.
-The window waits at most 2 seconds for it before Open reports a path as not
-found.
+runs before it applies. `look` takes `torrent_ids` and replies with
+`torrents`, each `{torrent_id, folder}`: the folder the torrent's files moved
+to, or null. It replies once each torrent's look and the search after it
+ended, or earlier, as soon as the files' IDs find a payload that moved on its
+drive. The window waits at most 2 seconds for it before Open reports a path as
+not found.
 
 `recovery_required` remains the general unconfirmed-operation code for other
 commands, so file-specific instructions cannot misdirect an Add or priority

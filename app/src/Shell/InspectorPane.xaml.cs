@@ -513,7 +513,7 @@ public sealed partial class InspectorPane : UserControl
             {
                 { CanRetry: true } => "RetryableError",
                 { IsError: true } => "Error",
-                { State: TorrentState.FilesMissing } => "Missing",
+                { AwaitsAnswer: true } => "Missing",
                 _ => "Transferring",
             },
             false

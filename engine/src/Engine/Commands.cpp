@@ -304,7 +304,8 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
             break;
         }
         // The reply waits for each torrent's look and the search after it,
-        // and names the folder of each torrent that follows its files.
+        // or for FindMoved, and names the folder each torrent's files moved
+        // to.
         auto lookout = std::make_shared<Lookout>(Lookout{.reply = reply});
         for (auto const& id : ids)
         {
@@ -319,6 +320,7 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
             Request(torrent.search);
             lookouts[id].push_back(lookout);
             ++lookout->pending;
+            FindMoved(torrent);
         }
         if (lookout->pending == 0)
             lookout->Answer();
@@ -486,7 +488,31 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
             reply(Failure(ErrorCode::AliasConflict, torrent.conflict));
             return;
         }
-        reply(Success(torrent.DescribeFilePage(torrent.Metadata(), offset, paths)));
+        if (auto page = torrent.DescribeFilePage(torrent.Metadata(), offset, paths))
+        {
+            reply(Success(std::move(*page)));
+            break;
+        }
+        // libtorrent answers a query for the pieces on its own thread, which
+        // the engine thread does not wait for.
+        trees.Run([handle = torrent.handle] { return handle.status(lt::torrent_handle::query_pieces).pieces; },
+            [this, id = torrent.torrentId, offset, paths, reply](
+                std::expected<lt::typed_bitfield<lt::piece_index_t>, StorageOutcome> pieces)
+        {
+            auto found = torrents.find(id);
+            if (found == torrents.end())
+            {
+                reply(Failure(ErrorCode::TorrentRemoved));
+                return;
+            }
+            if (!pieces)
+            {
+                reply(Response(pieces.error().ToOutcome(ErrorCode::Overloaded)));
+                return;
+            }
+            auto const& torrent = found->second;
+            reply(Success(*torrent.DescribeFilePage(torrent.Metadata(), offset, paths, *pieces)));
+        });
         break;
     }
     case Command::Tree:

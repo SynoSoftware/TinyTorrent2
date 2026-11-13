@@ -206,63 +206,77 @@ void Engine::State::On(lt::torrent_checked_alert const& alert)
     // of the question whose every piece it verified is back. While the
     // engine keeps an add's pieces, this ends libtorrent's judgement of the
     // resume data instead, which leaves skipped files out.
-    auto const& asked = torrent->facts.Asked().files;
     auto metadata = alert.handle.torrent_file();
     if (!metadata || torrent->kept)
         return;
-    auto pieces = alert.handle.status(lt::torrent_handle::query_pieces).pieces;
-    // A file whose piece failed while every file that the piece covers is
-    // wanted changed its own bytes, so its record goes. One whose failed
-    // pieces all reach a skipped file keeps it, because that file may be gone:
-    // the files of the question are skipped, and so are the files the person
-    // skipped, which a deletion leaves out of the question.
-    auto const& priorities = torrent->facts.Priorities();
-    auto reachesSkipped = [&](lt::file_index_t self, std::int64_t piece)
+    // libtorrent answers a query for the pieces on its own thread, which the
+    // engine thread does not wait for. A handle replaced meanwhile reports
+    // its own check.
+    trees.Run([handle = alert.handle] { return handle.status(lt::torrent_handle::query_pieces).pieces; },
+        [this, handle = alert.handle, metadata](std::expected<lt::typed_bitfield<lt::piece_index_t>, StorageOutcome> read)
     {
-        lt::piece_index_t index(static_cast<int>(piece));
-        for (auto const& slice : metadata->map_block(index, 0, metadata->piece_size(index)))
-        {
-            auto item = static_cast<std::size_t>(static_cast<int>(slice.file_index));
-            if (slice.file_index != self && !metadata->layout().pad_file_at(slice.file_index) &&
-                (asked.contains(slice.file_index) || (item < priorities.size() && priorities[item] == lt::dont_download)))
-                return true;
-        }
-        return false;
-    };
-    auto dropped = std::erase_if(torrent->records, [&](auto const& entry)
-    {
-        if (asked.contains(entry.first) || Complete(*metadata, entry.first, pieces))
-            return false;
-        auto range = Pieces(*metadata, entry.first);
-        for (auto piece = range.first; piece < range.end; ++piece)
-        {
-            if ((piece >= pieces.size() || !pieces.get_bit(lt::piece_index_t(static_cast<int>(piece)))) &&
-                !reachesSkipped(entry.first, piece))
-                return true;
-        }
-        return false;
-    });
-    torrent->recordsUnsaved |= dropped != 0;
-    Request(torrent->recording);
-    if (asked.empty())
-        return;
-    std::vector<lt::file_index_t> verified;
-    for (auto const& [file, priority] : asked)
-    {
-        if (Complete(*metadata, file, pieces))
-            verified.push_back(file);
-    }
-    if (verified.empty())
-        return;
-    changes.Queue([this, id = torrent->torrentId, verified]
-    {
-        if (!torrents.contains(id))
+        auto torrent = Find(handle);
+        if (!torrent || torrent->kept)
             return;
-        CommitFacts({id}, [verified](std::string const&, Facts& facts) { facts.Revise(Facts::Found{verified}); },
-            [this, id](Outcome, auto const&)
+        if (!read)
         {
-            if (auto found = torrents.find(id); found != torrents.end())
-                found->second.ApplyIntent();
+            log.Write("record", torrent->torrentId, read.error().detail);
+            return;
+        }
+        auto const& pieces = *read;
+        auto const& asked = torrent->facts.Asked().files;
+        // A file whose piece failed while every file that the piece covers is
+        // wanted changed its own bytes, so its record goes. One whose failed
+        // pieces all reach a skipped file keeps it, because that file may be
+        // gone: the files of the question are skipped, and so are the files
+        // the person skipped, which a deletion leaves out of the question.
+        auto const& priorities = torrent->facts.Priorities();
+        auto reachesSkipped = [&](lt::file_index_t self, std::int64_t piece)
+        {
+            lt::piece_index_t index(static_cast<int>(piece));
+            for (auto const& slice : metadata->map_block(index, 0, metadata->piece_size(index)))
+            {
+                auto item = static_cast<std::size_t>(static_cast<int>(slice.file_index));
+                if (slice.file_index != self && !metadata->layout().pad_file_at(slice.file_index) &&
+                    (asked.contains(slice.file_index) ||
+                    (item < priorities.size() && priorities[item] == lt::dont_download)))
+                    return true;
+            }
+            return false;
+        };
+        auto dropped = std::erase_if(torrent->records, [&](auto const& entry)
+        {
+            if (asked.contains(entry.first) || Complete(*metadata, entry.first, pieces))
+                return false;
+            auto range = Pieces(*metadata, entry.first);
+            for (auto piece = range.first; piece < range.end; ++piece)
+            {
+                if ((piece >= pieces.size() || !pieces.get_bit(lt::piece_index_t(static_cast<int>(piece)))) &&
+                    !reachesSkipped(entry.first, piece))
+                    return true;
+            }
+            return false;
+        });
+        torrent->recordsUnsaved |= dropped != 0;
+        Request(torrent->recording);
+        std::vector<lt::file_index_t> verified;
+        for (auto const& [file, priority] : asked)
+        {
+            if (Complete(*metadata, file, pieces))
+                verified.push_back(file);
+        }
+        if (verified.empty())
+            return;
+        changes.Queue([this, id = torrent->torrentId, verified]
+        {
+            if (!torrents.contains(id))
+                return;
+            CommitFacts({id}, [verified](std::string const&, Facts& facts) { facts.Revise(Facts::Found{verified}); },
+                [this, id](Outcome, auto const&)
+            {
+                if (auto found = torrents.find(id); found != torrents.end())
+                    found->second.ApplyIntent();
+            });
         });
     });
 }
@@ -426,7 +440,7 @@ void Engine::State::UpdateProblems()
         // the question. A stopped torrent counts when the person starts it;
         // one torrent is named, several are counted.
         if (!torrent.facts.Asked().files.empty() && torrent.facts.intent != Intent::Paused &&
-            torrent.searched == torrent.facts.Asked().number && !torrent.answer && !torrent.waitingMove &&
+            torrent.searched == torrent.facts.Asked().joins && !torrent.answer && !torrent.waitingMove &&
             torrent.PathWork() != PathWork::Move)
         {
             if (!missing)

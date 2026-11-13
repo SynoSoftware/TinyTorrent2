@@ -576,9 +576,12 @@ person gave it and the unfinished name; Skip makes it an ordinary skipped
 file. Checking such a file in Files is Redownload for that file. The started
 torrents whose question waits for the person once a search settled it form one
 condition, which waits two minutes as every condition does; a later search of
-the same question, as a look asks for, keeps the notice, and a stopped torrent
-counts when it starts. The window's look request runs a look and a search for
-its torrents, and its reply names the folder each one follows to.
+the same question, as a look asks for, and an answer for some of its files
+keep the notice, and a stopped torrent counts when it starts. The window's
+look request runs a look and a search for its torrents, and its reply names
+the folder each one's files moved to. A payload that moved on its drive is
+named as soon as its files' IDs find it, because Open waits only briefly and
+the follow's look, reload and search take a maintenance pass each.
 
 <a id="mark-of-the-web"></a>Mark each payload file as downloaded from the internet when it completes while
 its torrent is downloading, by writing the internet zone to the file's

@@ -98,6 +98,10 @@ struct Facts
         // Rises at each change, so an answer acts only on the question that
         // the person saw.
         std::uint64_t number = 0;
+        // Rises only when files join, so a search that saw the question
+        // still covers it after the person answers for some of its files.
+        // Not saved: each start searches every question again.
+        std::uint64_t joins = 0;
         std::map<lt::file_index_t, lt::download_priority_t> files;
 
         bool operator==(Question const&) const = default;
@@ -712,7 +716,7 @@ struct Torrent
     // starts again at `searchAt`.
     PassPhase search = PassPhase::Idle;
     std::chrono::steady_clock::time_point searchAt{};
-    // The number of the question that a search last settled. A search of the
+    // The question's `joins` when a search last settled it. A search of the
     // same question again, as a look asks for, keeps its notice.
     std::optional<std::uint64_t> searched;
     // Files of the question that the last search found back in their place
@@ -880,7 +884,10 @@ struct Torrent
     // One `files` reply: the page of files that starts at `offset`, each with
     // its index, size, padding, pieces and chosen priority and, with `paths`,
     // its path and its current name on disk once its names are read.
-    Json DescribeFilePage(std::shared_ptr<lt::torrent_info const> const& metadata, int offset, bool paths) const;
+    // `on_disk` can need libtorrent's pieces, which only a worker may wait
+    // for: without `pieces`, a page that needs them is nothing.
+    std::optional<Json> DescribeFilePage(std::shared_ptr<lt::torrent_info const> const& metadata, int offset,
+        bool paths, std::optional<lt::typed_bitfield<lt::piece_index_t>> const& pieces = std::nullopt) const;
     // The file's current name on disk, or null until its names are read.
     Json DiskPath(lt::file_index_t index) const;
     // `shown` is the torrent's Classify. `queue` is the torrent's place in the

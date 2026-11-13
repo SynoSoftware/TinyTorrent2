@@ -77,6 +77,10 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
             )
             : string.Empty;
 
+    // Nothing but the question's files is left to download, so the torrent
+    // waits only for the person's answer, whether it is started or stopped.
+    public bool AwaitsAnswer => Question is not null && Completed >= Size;
+
     // The status column names a waiting job by its short label; StatusTip
     // says that it waits, and counts the files of a question.
     public string Status =>
@@ -438,6 +442,7 @@ public sealed class Torrent(string torrentId, Strings strings, Func<string, stri
         (new(nameof(CanRetry)), Fields.CanRetry),
         (new(nameof(IsStopped)), Fields.IsStopped),
         (new(nameof(Question)), Fields.Question),
+        (new(nameof(AwaitsAnswer)), Fields.Question | Fields.Size | Fields.Completed),
         (new(nameof(SizeText)), Fields.Size),
         (new(nameof(DownloadedText)), Fields.Downloaded),
         (new(nameof(UploadedText)), Fields.Uploaded),

@@ -447,6 +447,7 @@ void Facts::Revise(Change const& change)
         if (joined)
         {
             ++question_.number;
+            ++question_.joins;
             repairs_ = repairs_ || lost->finished;
         }
     }
@@ -1573,7 +1574,8 @@ Json DescribePieces(Torrent const& torrent, std::shared_ptr<lt::torrent_info con
 }
 }
 
-Json Torrent::DescribeFilePage(std::shared_ptr<lt::torrent_info const> const& metadata, int offset, bool paths) const
+std::optional<Json> Torrent::DescribeFilePage(std::shared_ptr<lt::torrent_info const> const& metadata, int offset,
+    bool paths, std::optional<lt::typed_bitfield<lt::piece_index_t>> const& pieces) const
 {
     Json data = {{"torrent_id", torrentId}, {"offset", offset}, {"file_count", metadata ? metadata->num_files() : 0},
         {"files", Json::array()}};
@@ -1589,19 +1591,28 @@ Json Torrent::DescribeFilePage(std::shared_ptr<lt::torrent_info const> const& me
     // and every piece of it is verified or it has its record: the reload
     // drops the pieces that a lost file shares with its neighbours, whose own
     // bytes stay.
-    auto have = kept ? *kept : waiting ? waiting->params.have_pieces : handle.status(lt::torrent_handle::query_pieces).pieces;
+    auto const* have = kept ? &*kept : waiting ? &waiting->params.have_pieces : pieces ? &*pieces : nullptr;
     std::set<lt::file_index_t> lost(control.Lost().begin(), control.Lost().end());
     auto const& asked = facts.Asked().files;
     for (int item = offset; item < storage.num_files() && files.size() < filePage && names < filePageNames; ++item)
     {
         lt::file_index_t index(item);
-        auto pieces = Pieces(*metadata, index);
+        auto range = Pieces(*metadata, index);
         bool missing = asked.contains(index);
+        bool onDisk = false;
+        if (!missing && !lost.contains(index))
+        {
+            if (records.contains(index))
+                onDisk = true;
+            else if (!have)
+                return std::nullopt;
+            else
+                onDisk = Complete(*metadata, index, *have);
+        }
         Json file = {{"index", item}, {"size", storage.file_size(index)}, {"padding", storage.pad_file_at(index)},
-            {"first_piece", pieces.first}, {"end_piece", pieces.end},
+            {"first_piece", range.first}, {"end_piece", range.end},
             {"priority", static_cast<std::uint8_t>(ChosenPriority(storage, index, masks))}, {"missing", missing},
-            {"on_disk", !missing && !lost.contains(index) &&
-                (records.contains(index) || Complete(*metadata, index, have))}};
+            {"on_disk", onDisk}};
         if (paths)
         {
             auto path = storage.file_path(index);

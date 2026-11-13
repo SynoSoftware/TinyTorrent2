@@ -2575,8 +2575,10 @@ try {
             $null = New-Item -ItemType Directory -Path $moved
             Move-Item -LiteralPath $folder -Destination $moved
             # The engine names the folder where it really is, past the
-            # artifacts junction.
+            # artifacts junction, within the 2 seconds that Open waits.
+            $timer = [Diagnostics.Stopwatch]::StartNew()
             $looked = Send-Command @{ command = 'look'; torrent_ids = @($torrentId) }
+            Assert ($timer.Elapsed.TotalSeconds -lt 2) "The look named the moved folder after $($timer.Elapsed.TotalSeconds) s, later than Open waits"
             $target = $looked.data.torrents[0].folder
             Assert ($looked.ok -and $target -and (Split-Path $target -Leaf) -eq 'moved' -and
                 (Test-Path -LiteralPath (Join-Path $target 'missing\a.bin'))) `
