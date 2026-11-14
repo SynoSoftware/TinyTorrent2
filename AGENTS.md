@@ -192,9 +192,15 @@ do not define this product.
 
 ## Code style
 
-The test for every change: an engineer new to the feature finds what an
-operation does, where its rules live, and how its data changes by reading the
-code, without a map of the architecture.
+Write every change as one part of one system, and judge it yourself from two
+points of view. As an engineer new to the feature, you find what an operation
+does, where its rules live, and how its data changes by reading the code,
+without a map of the architecture. As a systems programmer, you follow the
+work from the input to the result, across every owner on its path, because
+each owner can look correct alone while the path does the same work twice.
+Each part of the code, each step the machine takes, and each object it makes
+or keeps is one the result needs. The result is what the person gets, and how
+quickly and smoothly they get it.
 
 1. **Correctness first.** Simplicity never justifies weaker behavior, so
    correctness wins any conflict with the principles below. Work that makes
@@ -203,9 +209,9 @@ code, without a map of the architecture.
    - **Work follows the change.** Code that runs for every update, frame,
      input or item does work sized by what changed or by what is on screen,
      and keeps what did not change, because work sized by the whole list
-     grows with the list at every owner on the path. Work of that size stays
-     off the UI thread and out of a frame, which answer the person and keep
-     motion even.
+     grows with the list at every owner on the path. Whole-list work that the
+     result still needs stays off the UI thread and out of a frame, which
+     answer the person and keep motion even.
    - **Owner ruling: every stage that redoes work an earlier stage already
      did, or makes an object only to drop it, is fixed; the collector is the
      evidence, not the target.** Dropped objects grow memory, and WinUI
@@ -240,11 +246,10 @@ code, without a map of the architecture.
      sends or changes shared state says so in its name.
 3. **One responsibility, one owner, one implementation.** Every behavior has
    one authoritative location, and related logic sits together in it, because
-   two copies of a rule are free to drift. An owner owns a rule, not a copy of
-   the data, because a copy for each owner or thread is made again at every
-   update. Each piece of data has one copy, which its owner keeps between
-   updates. Other owners and threads read the same objects, which do not
-   change once shared, and an update replaces only the objects that changed.
+   two copies of a rule are free to drift. Data has one owner, which keeps it
+   between updates; everything else borrows it, as in Rust. No compiler checks
+   a borrow here, so what another thread reads is immutable once shared; an
+   update replaces what changed in it.
    - Commands and gestures for the same operation call the same
      implementation. When the change exposes two implementations of one rule,
      move their direct callers to the established owner in the same change.
@@ -252,10 +257,7 @@ code, without a map of the architecture.
      owner. A small boundary has few members and still carries what the next
      owner needs: the owner that knows a fact passes it, such as what changed
      or what the person chose, because an owner that receives only the whole
-     result works that fact out again. Count the work of a path as a whole,
-     from the input or the update to the result, across every owner on it,
-     because each owner can be correct while the path does the same work
-     twice.
+     result works that fact out again.
    - Validation, invariants, transactions and error handling each have one
      owner where data enters or leaves. Code inside that boundary trusts the
      result; a second check needs a reason you can name, such as untrusted
