@@ -240,7 +240,11 @@ code, without a map of the architecture.
      sends or changes shared state says so in its name.
 3. **One responsibility, one owner, one implementation.** Every behavior has
    one authoritative location, and related logic sits together in it, because
-   two copies of a rule are free to drift.
+   two copies of a rule are free to drift. An owner owns a rule, not a copy of
+   the data, because a copy for each owner or thread is made again at every
+   update. Each piece of data has one copy, which its owner keeps between
+   updates. Other owners and threads read the same objects, which do not
+   change once shared, and an update replaces only the objects that changed.
    - Commands and gestures for the same operation call the same
      implementation. When the change exposes two implementations of one rule,
      move their direct callers to the established owner in the same change.
@@ -257,8 +261,9 @@ code, without a map of the architecture.
      result; a second check needs a reason you can name, such as untrusted
      input from a website.
    - Store facts and decisions; derive display values and other computed state
-     when read. Keep a stored derived value only where it is read more often
-     than its inputs change, and name it as derived.
+     when read. Keep a derived value, named as derived, where it is read more
+     often than its inputs change or where deriving it again walks a whole
+     list, so work follows the change.
 4. **Minimal architecture that works.** Every layer, interface, abstraction,
    dependency and file earns its place by removing more complexity than it
    adds, because each one is another thing a reader holds or opens.
