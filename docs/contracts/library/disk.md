@@ -45,8 +45,8 @@ second file index.
   2026), which works against TinyTorrent's promise to be light. For the same
   reason the feature is opt-in.
 - **gozler gains what TinyTorrent needs from it.** A fact that only gozler has
-  is added to gozler's answer, not guessed in TinyTorrent. With `--file-id`
-  (gozler 0.5.10), each result names its file by `volume`, the volume's GUID
+  is added to gozler's answer, not guessed in TinyTorrent. With `--file-id`,
+  each result names its file by `volume`, the volume's GUID
   path as `--status` reports it, and `file_id`, 32 hexadecimal digits that
   every hard link of the file shares. So a file renamed or moved on its volume
   stays the same Library entry and keeps the matches the person corrected.
@@ -56,6 +56,7 @@ The gozler facts this feature relies on:
 | Fact | Consequence |
 | --- | --- |
 | `--json` output is for scripts; later releases add fields. | Library reads the fields it needs and ignores the rest. |
+| An option it does not know ends the call with exit 6. | A gozler without `--file-id` is [older than needed](#what-the-person-sees); no version is compared. |
 | The Windows service `gozler` runs `gozlerd.exe`; setup puts `gozler.exe` beside it. | Library finds `gozler.exe` through the service. A stopped service is the person's state. |
 | It indexes fixed NTFS and ReFS volumes only. | Files on removable drives, network shares and FAT or exFAT volumes are never found. Settings says "fixed drives". |
 | A result's `size` and dates can be missing, which means unknown, not zero. | An unknown size or date keeps the saved value. |
@@ -105,10 +106,8 @@ options, because the engine has no use for it.
   person controls: Refresh, Retry, or showing Library again. Exit 7 is the one
   exception: it is tried again after 5 seconds, 3 tries in all, because the
   service's pipe may open soon. Exit 8 is never tried again.
-- **One call per refresh.** A second call follows only an answer that needs it:
-  `--status` after an incomplete answer, and `--server-version` after a failed
-  call, to tell "older than needed" from other failures. A gozler that works is
-  never asked its version, and a newer gozler is used as it is.
+- **One call per refresh.** A second call follows only an incomplete answer:
+  `--status`, which names the volumes that are not ready.
 - **Use what came back.** An incomplete answer (exit 2, or `volumes_incomplete`)
   is used and labelled incomplete, never turned into an error.
 
@@ -126,12 +125,12 @@ the same words.
 | No answer in time | The 30-second deadline. | gozler did not answer in 30 seconds. | Retry. |
 | A drive is being indexed | Exit 2, and `--status` shows a volume being built or scanned again. | Library shows the files found so far and names the drive. | Asked again 10 seconds after each such answer while Library is shown, until the volume is ready or Library is hidden. |
 | gozler cannot keep a drive current | Exit 2, and `--status` shows a volume whose live updates stopped or whose index failed. | Library's list for that drive may be out of date, and gozler's window says why. | No automatic retry, because the cause does not end by itself. |
-| Older than needed | After a failed call, `--server-version` reports less than the needed version, or exits 6. | The installed and the needed version, and that gozler updates itself. | No install offer. |
-| Other failure | Exit 1, 3, 4, 5 or 6. | gozler could not answer; stderr goes to the debug log. | Retry. |
+| Older than needed | Exit 6: this gozler does not know an option that Library passes, such as `--file-id`. | This version of gozler is too old, and gozler updates itself. | No install offer. |
+| Other failure | Exit 1, 3, 4 or 5. | gozler could not answer; stderr goes to the debug log. | Retry. |
 
-The needed version is `Gozler.ExpectedVersion`, the one owner that the install
-record also reads. It rises only when TinyTorrent starts to use something
-newer.
+**Owner ruling (15 November 2026):** TinyTorrent asks for the gozler options
+it uses, never for a release number, because the owner numbers gozler's
+releases.
 
 ## Installing gozler
 
@@ -160,8 +159,8 @@ Windows shows its permission prompt, whether the setup asks as it starts or
 from its own process.
 
 `installer/Build.ps1` writes one download record into the published folder:
-gozler's version, the URL of `gozler-<version>-x64-Setup.exe` on its GitHub
-release, its SHA-256 and its size. It downloads the asset and compares its hash
+the version, URL, SHA-256 and size of `gozler-<version>-x64-Setup.exe` on
+gozler's latest GitHub release. It downloads the asset and compares its hash
 with the `digest` GitHub gives the asset. The app downloads over HTTPS,
 compares the SHA-256 with the record and deletes a file that differs; a file
 with no record is never run. gozler releases are unsigned, so this check is

@@ -749,10 +749,6 @@ internal sealed record DiskState(DiskStatus Status)
     // The drives that gozler is indexing or cannot keep current.
     internal IReadOnlyList<string> Drives { get; init; } = [];
 
-    // The installed gozler's version when it is older than TinyTorrent
-    // needs, when gozler could report it.
-    internal string? Version { get; init; }
-
     // A failure ends only by the person's action, so nothing retries it by
     // itself.
     internal bool IsFailure =>
@@ -771,17 +767,6 @@ internal sealed record DiskState(DiskStatus Status)
         Status switch
         {
             DiskStatus.Off => string.Empty,
-            DiskStatus.Older when Version is { } version => text.Format(
-                "discovery",
-                "older",
-                version,
-                Gozler.ExpectedVersion.ToString(3)
-            ),
-            DiskStatus.Older => text.Format(
-                "discovery",
-                "older_unknown",
-                Gozler.ExpectedVersion.ToString(3)
-            ),
             DiskStatus.Indexing or DiskStatus.OutOfDate => text.Format(
                 "discovery",
                 Status.ToString().ToLowerInvariant(),
@@ -793,10 +778,9 @@ internal sealed record DiskState(DiskStatus Status)
     public bool Equals(DiskState? other) =>
         other is not null
         && Status == other.Status
-        && Version == other.Version
         && Drives.SequenceEqual(other.Drives);
 
-    public override int GetHashCode() => HashCode.Combine(Status, Version);
+    public override int GetHashCode() => Status.GetHashCode();
 }
 
 internal enum DiskStatus

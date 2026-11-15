@@ -18,12 +18,10 @@ a translation lacks, that English lacks, or whose placeholders differ, and asks
 whether to release anyway. Any answer other than `y` stops the release.
 
 Next, still before the build number, the command pins the gozler setup that
-Library's install prompt downloads: the version that `Gozler.ExpectedVersion`
-names in `app/src/Shared/Gozler.cs`, from that version's GitHub release. It
-checks the download against the SHA-256 digest GitHub gives the asset and
-writes `gozler.json`, with the URL, hash and size, beside the published
-executables. The app runs no gozler setup without it. While that release is not
-published, the command stops.
+Library's install prompt downloads: the setup of gozler's latest GitHub
+release. It checks the download against the SHA-256 digest GitHub gives the
+asset and writes `gozler.json`, with the URL, hash and size, beside the
+published executables. The app runs no gozler setup without it.
 
 The shared version lives in `Directory.Build.props`. Each run reserves the next
 build number before preparing tools or compiling: `0.9.0.1`, `0.9.0.2`, and so

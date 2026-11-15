@@ -13,10 +13,6 @@ namespace Syno.TinyTorrent.Shared;
 /// </summary>
 internal static class Gozler
 {
-    // The release that names each file by its volume and ID. A newer gozler
-    // is used as it is, because later releases only add fields.
-    internal static readonly Version ExpectedVersion = new(0, 5, 10);
-
     // Where a person installs gozler by hand.
     internal const string Releases = "https://github.com/SynoSoftware/gozler/releases";
 
@@ -89,7 +85,7 @@ internal static class Gozler
                     await Task.Delay(Pause, cancellation).ConfigureAwait(false);
                     continue;
                 default:
-                    throw await Explain(reply, cancellation).ConfigureAwait(false);
+                    throw Explain(reply);
             }
         }
     }
@@ -99,7 +95,7 @@ internal static class Gozler
         var reply = await Run(["--json", "--status"], cancellation).ConfigureAwait(false);
         if (reply.Code is not (0 or 2))
         {
-            throw await Explain(reply, cancellation).ConfigureAwait(false);
+            throw Explain(reply);
         }
         using var status = JsonDocument.Parse(reply.Output);
         var volumes = new List<GozlerVolume>();
@@ -173,7 +169,7 @@ internal static class Gozler
         static string Excluded(string folder) => $"!\"{FileSources.Folder(folder)}*\"";
     }
 
-    private static async Task<GozlerException> Explain(Reply reply, CancellationToken cancellation)
+    private static GozlerException Explain(Reply reply)
     {
         switch (reply.Code)
         {
@@ -183,32 +179,10 @@ internal static class Gozler
                 return new(new DiskState(DiskStatus.Stopped));
         }
         Debug.WriteLine($"gozler exited with {reply.Code}: {reply.Errors}");
-        // A failed call is the only time the version is asked, so a gozler
-        // that works is never questioned.
-        var answer = await Run(["--json", "--server-version"], cancellation).ConfigureAwait(false);
-        if (answer.Code == 6)
-        {
-            return new(new DiskState(DiskStatus.Older), reply.Errors);
-        }
-        if (answer.Code == 0 && ReadVersion(answer.Output) is { } version && version < ExpectedVersion)
-        {
-            return new(new DiskState(DiskStatus.Older) { Version = version.ToString() }, reply.Errors);
-        }
-        return new(new DiskState(DiskStatus.Failed), reply.Errors);
-    }
-
-    // The answer is a JSON string such as "gozlerd 0.5.9".
-    private static Version? ReadVersion(byte[] output)
-    {
-        try
-        {
-            var text = JsonSerializer.Deserialize<string>(output);
-            return Version.TryParse(text?.Split(' ').LastOrDefault(), out var version) ? version : null;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
+        // Exit 6 names an option that this gozler does not know, such as
+        // --file-id in a gozler released before it. Library needs the
+        // options, not a release number, so no version is compared.
+        return new(new DiskState(reply.Code == 6 ? DiskStatus.Older : DiskStatus.Failed), reply.Errors);
     }
 
     // Runs gozler.exe directly, never through a shell, with each argument

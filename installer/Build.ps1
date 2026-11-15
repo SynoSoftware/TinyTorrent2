@@ -89,28 +89,20 @@ function Get-Download([string] $Url, [string] $Name, [string] $Publisher) {
     return $saved
 }
 
-# The app downloads gozler's setup only as this record pins it: the version
-# that Gozler.ExpectedVersion names, the setup's URL on gozler's GitHub
-# release, its SHA-256 and its size. gozler releases are unsigned, so the
-# hash is checked against the digest GitHub gives the asset. Setup.iss does
-# not use the record.
+# The app downloads gozler's setup only as this record pins it: the setup's
+# URL on gozler's latest GitHub release, its SHA-256 and its size. gozler
+# releases are unsigned, so the hash is checked against the digest GitHub
+# gives the asset. Setup.iss does not use the record.
 function Write-GozlerRecord {
-    $source = Get-Content -LiteralPath (Join-Path $repository 'app/src/Shared/Gozler.cs') -Raw
-    if ($source -notmatch 'ExpectedVersion\s*=\s*new\((\d+),\s*(\d+),\s*(\d+)\)') {
-        throw 'Gozler.ExpectedVersion could not be read from app/src/Shared/Gozler.cs.'
-    }
-    $gozler = "$($Matches[1]).$($Matches[2]).$($Matches[3])"
-    $name = "gozler-$gozler-x64-Setup.exe"
     try {
-        $published = Invoke-RestMethod "https://api.github.com/repos/SynoSoftware/gozler/releases/tags/v$gozler" `
+        $published = Invoke-RestMethod 'https://api.github.com/repos/SynoSoftware/gozler/releases/latest' `
             -Headers @{ Accept = 'application/vnd.github+json' } -TimeoutSec 60
     }
     catch {
-        if ($_.Exception.Response.StatusCode -eq 404) {
-            throw "gozler $gozler is not published on GitHub yet. Publish its release, then generate the installer again."
-        }
-        throw "GitHub did not answer about gozler $gozler`: $($_.Exception.Message)"
+        throw "GitHub did not answer about gozler's latest release: $($_.Exception.Message)"
     }
+    $gozler = $published.tag_name -replace '^v', ''
+    $name = "gozler-$gozler-x64-Setup.exe"
     $asset = $published.assets | Where-Object name -eq $name | Select-Object -First 1
     if (-not $asset) { throw "The GitHub release of gozler $gozler has no $name." }
     if ($asset.digest -notmatch '^sha256:([0-9A-Fa-f]{64})$') {
