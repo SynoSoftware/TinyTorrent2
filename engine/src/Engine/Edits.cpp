@@ -430,8 +430,11 @@ void Engine::State::CommitEdit(std::string const& id, std::vector<ResolvedChoice
             std::exchange(torrent.priorityCompletion, nullptr)({});
         }
         // Changing which files download can move data between files, so it
-        // waits for the torrent's busy files; the choice is already saved.
-        if (hasPriorities && torrent.FilesBusy())
+        // waits for the torrent's busy files; the choice is already saved. It
+        // also waits for names to be prepared, because libtorrent creates a
+        // file as soon as it downloads again, under the name it has then.
+        if (hasPriorities &&
+            (torrent.FilesBusy() || (torrent.status.has_metadata && torrent.namePhase != NamePhase::Ready)))
         {
             torrent.prioritiesPending = true;
             completion({});

@@ -1524,10 +1524,10 @@ public:
     // no reload is wanted and no file work uses the files. Part of the
     // maintenance pass.
     void ContinueLooks();
-    // Gives what a look found to the storage control, and to the check, the
-    // answer and the hold that waited for it. Nothing when its folder did
-    // not answer or its worker failed.
-    void EndLook(std::string const& id, lt::torrent_handle const& handle,
+    // Gives what a look of `folder` found to the storage control, and to the
+    // check, the answer and the hold that waited for it. Nothing when its
+    // folder did not answer or its worker failed.
+    void EndLook(std::string const& id, lt::torrent_handle const& handle, std::string const& folder,
         std::optional<std::vector<lt::file_index_t>> lost);
     // libtorrent judged the pieces that a held add claimed: it kept every
     // one, so the hold ends, or it discarded them and queued a check of

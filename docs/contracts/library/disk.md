@@ -126,7 +126,7 @@ the same words.
 | A drive is being indexed | Exit 2, and `--status` shows a volume being built or scanned again. | Library shows the files found so far and names the drive. | Asked again 10 seconds after each such answer while Library is shown, until the volume is ready or Library is hidden. |
 | gozler cannot keep a drive current | Exit 2, and `--status` shows a volume whose live updates stopped or whose index failed. | Library's list for that drive may be out of date, and gozler's window says why. | No automatic retry, because the cause does not end by itself. |
 | Older than needed | Exit 6: this gozler does not know an option that Library passes, such as `--file-id`. | This version of gozler is too old, and gozler updates itself. | No install offer. |
-| Other failure | Exit 1, 3, 4 or 5. | gozler could not answer; stderr goes to the debug log. | Retry. |
+| Other failure | Exit 1, 3, 4 or 5, or an answer in a shape this version does not read. | gozler could not answer; stderr goes to the debug log. | Retry. |
 
 **Owner ruling (15 November 2026):** TinyTorrent asks for the gozler options
 it uses, never for a release number, because the owner numbers gozler's
@@ -224,7 +224,9 @@ person can remove a folder's files from Library with one command.
 - Settings lists the hidden folders, each with Remove. Removing one, or Undo,
   starts a refresh, and the folder's files return with their matches.
 - The list holds as many folders as fit in one query beside the fixed terms
-  (`Gozler.HiddenLimit`); the command says so when it is full.
+  (`Gozler.HiddenLimit`); the command says so when it is full. A folder that
+  a hidden folder already holds needs no room: its files are hidden already,
+  so a full list saves nothing for it.
 - A hidden folder does not hide a file that a torrent lists, because the
   torrent's own claim lists it, so the command is not offered on such a file.
 

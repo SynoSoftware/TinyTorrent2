@@ -552,12 +552,13 @@ The engine looks for lost files, on the drive's worker, before every check of
 every file can start, because the check discards the pieces that show which
 files held data. Recheck waits for a look and for the reload of what it found.
 An answer that ends a storage failure waits for one look, unless a reload is
-already wanted, because clearing the error lets the fork check every file of a
-seed whose write failed. A move of files looks at its sources and saves the
+wanted before that look starts, because clearing the error lets the fork check
+every file of a seed whose write failed. A look that a reload, a move or other
+path work overtakes runs again after it. A move of files looks at its sources and saves the
 question before it places files. An add whose resume data claims pieces holds
 the torrent, keeping those pieces, until libtorrent has judged them: once
 libtorrent has every one the hold ends; otherwise the engine looks, judged by
-the kept pieces, and the reload adds the torrent again from them without the
+the kept pieces, once a minute while the folder does not answer, and the reload adds the torrent again from them without the
 lost files' pieces, so the check of every file never runs. Name preparation
 at an add is that add's look, and a lost file keeps its name. While the engine
 keeps pieces, checkpoints and reloads use them. The restore of a torrent

@@ -6,6 +6,10 @@ namespace Syno.TinyTorrent.Torrents;
 
 internal sealed class LibrarySource : IAsyncDisposable
 {
+    // The engine refuses a look that lists more torrents than its
+    // torrentLimit, so a larger set is asked in parts.
+    private const int LookLimit = 10_000;
+
     private readonly PipeClient _client;
     private readonly FileSources _sources;
     private readonly CancellationTokenSource _lifetime = new();
@@ -81,8 +85,11 @@ internal sealed class LibrarySource : IAsyncDisposable
             return;
         try
         {
-            await _client
-                .Send("look", new { torrent_ids = torrentIds }, Requester.Window)
+            await Task.WhenAll(
+                    torrentIds
+                        .Chunk(LookLimit)
+                        .Select(part => _client.Send("look", new { torrent_ids = part }, Requester.Window))
+                )
                 .ConfigureAwait(false);
         }
         catch (Exception error)

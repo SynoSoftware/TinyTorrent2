@@ -647,7 +647,7 @@ internal sealed partial class PipeClient : IDisposable
 
     private static void CheckVersion(NamedPipeClientStream pipe, JsonElement hello)
     {
-        if (hello.TryGetProperty("version", out var version) && version.GetInt32() == 39)
+        if (hello.TryGetProperty("version", out var version) && version.GetInt32() == 40)
             return;
         throw new VersionException(EngineProcess.Executable(pipe));
     }

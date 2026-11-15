@@ -108,8 +108,13 @@ internal sealed class GozlerSetup(MainViewModel owner, ProviderHttp http) : IDra
                 ((IProgress<WorkProgress>)progress).Report,
                 work.Token
             );
+            // Open without write or delete sharing from the check until the
+            // setup ends, so the program that Windows runs as administrator
+            // is the one checked.
+            using var held = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
             if (!await Release.Matches(path, pinned.Sha256, work.Token))
             {
+                held.Dispose();
                 File.Delete(path);
                 Stage = new InstallStage.Failed(InstallFailure.Damaged);
                 return;

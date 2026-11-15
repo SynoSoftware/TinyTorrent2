@@ -8,7 +8,7 @@ namespace Syno.TinyTorrent.Torrents;
 // The question about lost files: one answer, Redownload or Skip, for every
 // checked torrent. Each row keeps the question it showed when the dialog
 // opened, and the answer sends that question's number, so the engine leaves
-// alone a file that became missing later.
+// alone a torrent whose question changed since.
 public sealed class MissingDraft : FileDraft
 {
     // The names a tooltip lists before it counts the rest.
@@ -112,7 +112,7 @@ public sealed class MissingDraft : FileDraft
 
     internal bool Contains(Torrent torrent) => Owner.Contains(torrent);
 
-    // A snapshot can end a row's question, which its row then shows.
+    // A snapshot can end or change a row's question, which its row then shows.
     internal override void Refresh()
     {
         foreach (var question in _questions.Values)
@@ -189,9 +189,9 @@ public sealed class MissingDraft : FileDraft
 public sealed record QuestionFolder(string Folder, ShownQuestion[] Questions);
 
 // One torrent's question as the dialog showed it when it opened. A question
-// that ends while the dialog is open keeps its row, so rows never move under
-// the person: its check box turns off and is disabled, and its count reads
-// Found.
+// that ends or changes while the dialog is open keeps its row, so rows never
+// move under the person: its check box turns off and is disabled, and the
+// count of a question that ended reads Found.
 public sealed class ShownQuestion : INotifyPropertyChanged
 {
     private static readonly PropertyChangedEventArgs Everything = new(string.Empty);
@@ -199,6 +199,7 @@ public sealed class ShownQuestion : INotifyPropertyChanged
     private readonly Strings _text;
     private bool _checked = true;
     private IReadOnlyList<string> _names = [];
+    private (bool Asked, bool Found, bool Editable)? _shown;
 
     internal ShownQuestion(MissingDraft draft, Strings text, Torrent torrent, Question question)
     {
@@ -213,8 +214,10 @@ public sealed class ShownQuestion : INotifyPropertyChanged
     internal Question Question { get; }
     public bool ShowsCheck => _draft.ShowsChecks;
 
-    // The answer reaches only a torrent that still has a question.
-    private bool IsAsked => _draft.Contains(Torrent) && Torrent.Question is not null;
+    // The answer reaches only a torrent that still has the question shown.
+    private bool IsAsked =>
+        _draft.Contains(Torrent) && Torrent.Question?.Number == Question.Number;
+    private bool IsFound => _draft.Contains(Torrent) && Torrent.Question is null;
     public bool CanCheck => IsAsked && _draft.CanEdit;
     public bool IsChecked
     {
@@ -230,7 +233,7 @@ public sealed class ShownQuestion : INotifyPropertyChanged
 
     // A torrent removed meanwhile keeps its count; the engine ignores it.
     public string CountText =>
-        _draft.Contains(Torrent) && Torrent.Question is null
+        IsFound
             ? _text.Get("missing", "found")
             : _text.Format(
                 "units",
@@ -255,8 +258,19 @@ public sealed class ShownQuestion : INotifyPropertyChanged
     internal void ShowNames(IReadOnlyList<string> names)
     {
         _names = names;
-        Refresh();
+        PropertyChanged?.Invoke(this, Everything);
     }
 
-    internal void Refresh() => PropertyChanged?.Invoke(this, Everything);
+    // Rebinds the row only when it shows another state, so a snapshot or a
+    // click on another row leaves it alone.
+    internal void Refresh()
+    {
+        var shown = (IsAsked, IsFound, _draft.CanEdit);
+        if (shown == _shown)
+        {
+            return;
+        }
+        _shown = shown;
+        PropertyChanged?.Invoke(this, Everything);
+    }
 }

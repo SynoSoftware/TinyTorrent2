@@ -323,10 +323,7 @@ internal sealed partial class VideoLookup
     )
     {
         var catalog = context.Option.ProviderId;
-        var language = context.Option.IsLocalized ? context.Language : null;
-        var request = new LookupRequest(
-            RequestKey.Create(catalog, "detail", [path, language ?? string.Empty])
-        );
+        var (request, language) = Detail(context, path);
         var since = context.Scope == FetchScope.New ? 0 : context.Command?.Accepted ?? 0;
         if (
             await store
@@ -400,6 +397,18 @@ internal sealed partial class VideoLookup
             .ConfigureAwait(false);
         if (!HasTitle(video.Title))
         {
+            // Read saved the answer that gave the title before the provider
+            // read it, so that answer is removed and held as unusable, as an
+            // answer that cannot be read is.
+            if (video.Records.FirstOrDefault() is { } record)
+            {
+                var (detail, language) = Detail(context, record.Path);
+                await store.RejectRecord(detail, record, language).ConfigureAwait(false);
+                throw new RequestBlockedException(new(RequestBlockKind.Unusable))
+                {
+                    Request = detail.Key,
+                };
+            }
             throw new VideoException(VideoFailure.InvalidResult);
         }
         video = video with
@@ -431,6 +440,17 @@ internal sealed partial class VideoLookup
         {
             throw new VideoException(VideoFailure.InvalidResult, error);
         }
+    }
+
+    // The request for one resource of a description, and the language its
+    // answer is saved in.
+    private static (LookupRequest Request, string? Language) Detail(Context context, string path)
+    {
+        var language = context.Option.IsLocalized ? context.Language : null;
+        var request = new LookupRequest(
+            RequestKey.Create(context.Option.ProviderId, "detail", [path, language ?? string.Empty])
+        );
+        return (request, language);
     }
 
     // A title has 1 to 300 characters. A choice without one is not listed, and a

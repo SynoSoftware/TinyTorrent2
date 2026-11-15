@@ -316,6 +316,7 @@ void Engine::State::Execute(Json const& request, std::string const& connectionId
             auto& torrent = found->second;
             if (torrent.look == LookPhase::Idle || torrent.look == LookPhase::Looked)
                 torrent.look = LookPhase::Wanted;
+            torrent.lookAt = {};
             torrent.searchAt = {};
             Request(torrent.search);
             lookouts[id].push_back(lookout);
@@ -1078,6 +1079,7 @@ void Engine::State::Answer(Torrent& torrent, FailureAnswer answer)
         torrent.answering = answer;
         if (torrent.look != LookPhase::Running)
             torrent.look = LookPhase::Wanted;
+        torrent.lookAt = {};
         torrent.ApplyIntent();
         return;
     }

@@ -409,13 +409,25 @@ void Engine::State::Probe(std::string const& folder, std::vector<Attempt> attemp
 
 void Engine::State::ContinueLooks()
 {
+    auto now = std::chrono::steady_clock::now();
     for (auto& [id, torrent] : torrents)
     {
+        // A reload wanted since the person's answer saves the question before
+        // any check can run. The look waits for that reload, which waits for
+        // the answer, so the answer applies now.
+        if (torrent.look == LookPhase::Wanted && torrent.control.AwaitsReload())
+        {
+            if (auto answer = std::exchange(torrent.answering, std::nullopt))
+            {
+                Steer(torrent, Control::Answered{*answer});
+                torrent.ApplyIntent();
+            }
+        }
         // The look waits while a job of the storage control or file work uses
         // the files, and while a reload is wanted, which saves the question
         // before any check can run.
-        if (torrent.look != LookPhase::Wanted || torrent.waiting || torrent.control.Running() ||
-            torrent.control.AwaitsReload() || torrent.FileWork())
+        if (torrent.look != LookPhase::Wanted || now < torrent.lookAt || torrent.waiting ||
+            torrent.control.Running() || torrent.control.AwaitsReload() || torrent.FileWork())
         {
             continue;
         }
@@ -427,14 +439,15 @@ void Engine::State::ContinueLooks()
             if (Reach({folder}, [&] { lost = LostData(handle, kept); }))
                 return std::nullopt;
             return lost;
-        }, [this, id, handle = torrent.handle](std::expected<std::optional<LostFiles>, StorageOutcome> lost)
+        }, [this, id, handle = torrent.handle, folder](std::expected<std::optional<LostFiles>, StorageOutcome> lost)
         {
-            EndLook(id, handle, lost ? std::move(*lost) : std::nullopt);
+            EndLook(id, handle, folder, lost ? std::move(*lost) : std::nullopt);
         });
     }
 }
 
-void Engine::State::EndLook(std::string const& id, lt::torrent_handle const& handle, std::optional<LostFiles> lost)
+void Engine::State::EndLook(std::string const& id, lt::torrent_handle const& handle, std::string const& folder,
+    std::optional<LostFiles> lost)
 {
     // During Exit the driver takes no event, so a look's result would leave
     // the kept pieces unsaved; the next start looks again.
@@ -445,17 +458,27 @@ void Engine::State::EndLook(std::string const& id, lt::torrent_handle const& han
     }
     auto& torrent = found->second;
     // A reload that ran or runs since the look started replaces the pieces
-    // the look judged, so the driver looks again after it.
+    // the look judged, and a move or other path work moves the files it
+    // read, so the driver looks again after it.
     auto running = torrent.control.Running();
-    if (torrent.handle != handle || (running && running->kind == JobKind::Reload))
+    if (torrent.handle != handle || (running && running->kind == JobKind::Reload) || torrent.PathWork() ||
+        !SameFolder(torrent.facts.savePath, folder))
     {
         torrent.look = LookPhase::Wanted;
         return;
     }
-    // A held add waits for a look whose folder answered; the check and the
-    // answer that waited go on either way.
-    torrent.look = !lost && torrent.kept ? LookPhase::Wanted :
-        torrent.needsRecheck ? LookPhase::Looked : LookPhase::Idle;
+    // A held add waits for a look whose folder answered, so a folder that
+    // does not answer is looked at again a minute later, as its root's probe
+    // is; the check and the answer that waited go on either way.
+    if (!lost && torrent.kept)
+    {
+        torrent.look = LookPhase::Wanted;
+        torrent.lookAt = std::chrono::steady_clock::now() + rootProbe;
+    }
+    else
+    {
+        torrent.look = torrent.needsRecheck ? LookPhase::Looked : LookPhase::Idle;
+    }
     if (lost && !lost->empty())
     {
         Steer(torrent, Control::Looked{std::move(*lost)});

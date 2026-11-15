@@ -444,7 +444,8 @@ runs before it applies. `look` takes `torrent_ids` and replies with
 `torrents`, each `{torrent_id, folder}`: the folder the torrent's files moved
 to, or null. It replies once each torrent's look and the search after it
 ended, or earlier, as soon as the files' IDs find a payload that moved on its
-drive. The window waits at most 2 seconds for it before Open reports a path as
+drive. A torrent that a storage failure holds answers null within a second, because
+its look and search wait until the drive is back or the person answers. The window waits at most 2 seconds for it before Open reports a path as
 not found.
 
 `recovery_required` remains the general unconfirmed-operation code for other
@@ -484,9 +485,9 @@ isolation guarantee; an extra token would not create a stronger boundary.
 
 ## Wire representation
 
-Protocol version 39 uses a four-byte little-endian UTF-8 JSON frame length,
+Protocol version 40 uses a four-byte little-endian UTF-8 JSON frame length,
 bounded to 16 MiB. The endpoint is `TinyTorrent.<logon SID>`; each connecting
-client first receives `{type:"hello",version:39,session_id:"...",data_directory:"..."}`. The absolute data directory
+client first receives `{type:"hello",version:40,session_id:"...",data_directory:"..."}`. The absolute data directory
 keeps the same store for explicit Restart, which starts the engine beside the
 window rather than a path a pipe peer reports. Requests are
 `{request_id:signed-64-bit-integer,command:string,...}`. Replies repeat `request_id` and have

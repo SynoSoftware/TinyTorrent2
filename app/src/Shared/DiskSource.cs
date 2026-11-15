@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 
 namespace Syno.TinyTorrent.Shared;
 
@@ -200,13 +201,16 @@ internal sealed class DiskSource : IAsyncDisposable
     }
 
     // Returns false when the list is full: one gozler query holds every
-    // hidden folder beside its fixed terms.
+    // hidden folder beside its fixed terms. A folder that a hidden folder
+    // already holds has its files hidden, so it needs no room.
     internal async Task<bool> Hide(string folder)
     {
         var hidden = await _sources.ReadHidden(_lifetime.Token).ConfigureAwait(false);
         if (hidden.Count >= HiddenLimit)
         {
-            return false;
+            return hidden.Any(other =>
+                FolderComparer.Instance.Equals(other, folder) || FolderComparer.Instance.Contains(other, folder)
+            );
         }
         // A refresh that read the hidden folders before this job would save
         // the folder's files again, so it is ended before and after it.
@@ -367,6 +371,14 @@ internal sealed class DiskSource : IAsyncDisposable
         }
         catch (Exception error)
         {
+            // The failed work's notice names any failure. One that is not the
+            // database's, such as an answer in a shape this version does not
+            // read, is gozler's, so the state says so and only the person's
+            // Retry asks again.
+            if (error is not SqliteException)
+            {
+                Report(new DiskState(DiskStatus.Failed));
+            }
             run.Operation.Error = error;
             System.Diagnostics.Debug.WriteLine(error);
         }

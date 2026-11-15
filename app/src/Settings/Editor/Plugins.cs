@@ -149,11 +149,11 @@ public sealed partial class Editor
         ShowMedia();
     }
 
-    internal async Task Unhide(string folder)
-    {
-        await _owner.UnhideFolder(folder);
-        await ReadHidden();
-    }
+    internal Task Unhide(string folder) => _owner.UnhideFolder(folder);
+
+    // Settings' Remove and the Undo of the toast that Hide shows both change
+    // the list, so their shared unhide reads it again while Plugins is shown.
+    internal Task RefreshHidden() => _pluginsVisible ? ReadHidden() : Task.CompletedTask;
 
     private async Task ReadHidden()
     {

@@ -144,6 +144,26 @@ internal sealed partial class Store
             return true;
         });
 
+    // Removes a saved answer whose description is unusable and holds its
+    // request as unusable, so only Retry or a reset asks for it again. An
+    // answer that a saved description still uses stays.
+    internal Task RejectRecord(LookupRequest request, VideoRecord record, string? language) =>
+        database.Run(connection =>
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                DELETE FROM video_records WHERE catalog_id=$catalog AND path=$path AND language=$language
+                    AND NOT EXISTS(SELECT 1 FROM video_references r
+                        WHERE r.catalog_id=$catalog AND r.path=$path AND r.language=$language);
+                """;
+            command.Parameters.AddWithValue("$catalog", request.Key.ProviderId);
+            command.Parameters.AddWithValue("$path", record.Path);
+            command.Parameters.AddWithValue("$language", Stored(language));
+            command.ExecuteNonQuery();
+            RequestPolicy.Record(connection, request, RequestOutcome.Unusable);
+            return true;
+        });
+
     internal Task<VideoInformation?> Saved(
         VideoTarget target,
         string language,

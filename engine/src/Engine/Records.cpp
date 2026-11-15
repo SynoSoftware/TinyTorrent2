@@ -242,6 +242,13 @@ void Engine::State::ContinueSearches()
         if (torrent.FileWork() || torrent.control.Running() || torrent.control.AwaitsReload() ||
             torrent.look == LookPhase::Wanted || torrent.look == LookPhase::Running || torrent.waitingMove)
         {
+            // A storage failure holds the look and the search until its drive
+            // is back or the person answers, so the torrent's look commands
+            // end now without a folder.
+            if (torrent.control.Storage())
+            {
+                EndLookouts(id, std::nullopt);
+            }
             continue;
         }
         if (torrent.facts.Asked().files.empty())
@@ -439,7 +446,15 @@ void Engine::State::Seek(Torrent& torrent, std::map<lt::file_index_t, std::files
     std::map<lt::file_index_t, std::int64_t> sizes;
     for (auto const& [file, relative] : moved)
     {
-        records.emplace(file, torrent.records.at(file));
+        // A check, a download, an edit or a move can drop a record while the
+        // search runs, so the search runs again on the records left.
+        auto record = torrent.records.find(file);
+        if (record == torrent.records.end())
+        {
+            torrent.search = PassPhase::Wanted;
+            return;
+        }
+        records.emplace(file, record->second);
         sizes.emplace(file, metadata->layout().file_size(file));
     }
     finder.Run([wanted, stop = exitStop.get_token()]() -> std::optional<Gozler::Answer>
@@ -508,16 +523,12 @@ void Engine::State::EndSeek(std::string const& id, Sought const& sought)
     if (found == torrents.end())
         return;
     auto& torrent = found->second;
-    if (torrent.search == PassPhase::Again)
+    // A request since the search started, or a change of the question or the
+    // folder that this result predates, makes the search run again.
+    if (torrent.search == PassPhase::Again || torrent.facts.Asked().number != sought.number ||
+        !SameFolder(torrent.facts.savePath, sought.origin))
     {
         torrent.search = PassPhase::Wanted;
-        return;
-    }
-    // A result that arrives after the question or the folder changed is
-    // discarded; the change asks for its own search.
-    if (torrent.facts.Asked().number != sought.number || !SameFolder(torrent.facts.savePath, sought.origin))
-    {
-        Settle(torrent, Searched{});
         return;
     }
     // While gozler still builds a volume's index, as after Windows starts, a

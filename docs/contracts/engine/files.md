@@ -776,7 +776,8 @@ passes. The search ends with gozler's answer, at once when the service is
 stopped or missing, and after the deadline or the third try. While gozler
 still builds or scans again the index of a volume, as after Windows starts, a
 search that followed nothing asks again a minute later. A result that arrives
-after the question or the torrent's folder changed is discarded. The engine
+after the question or the torrent's folder changed is discarded, and the
+search runs again. The engine
 runs gozler itself, because it works while the window is closed, which is the
 usual state while torrents seed; it never installs or starts gozler.
 

@@ -226,10 +226,18 @@ internal sealed partial class Database : IAsyncDisposable
                         command.ExecuteNonQuery();
                         command.CommandText = "PRAGMA foreign_key_check;";
                         using var broken = command.ExecuteReader();
+                        // A file that the migrations leave with a broken
+                        // reference is damaged for this version, so it gets
+                        // the same recovery and is not migrated again at
+                        // every call.
                         if (broken.Read())
-                            throw new InvalidOperationException(
+                        {
+                            System.Diagnostics.Debug.WriteLine(
                                 $"A migration to revision {Version} broke a reference in {broken.GetString(0)}."
                             );
+                            _incompatible = true;
+                            throw new DatabaseVersionException();
+                        }
                     }
                     command.CommandText = Projection + Triggers;
                     command.ExecuteNonQuery();

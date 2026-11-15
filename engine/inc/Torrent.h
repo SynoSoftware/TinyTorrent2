@@ -700,6 +700,8 @@ struct Torrent
     // verification keeps the pieces it clears, which its add does not claim.
     std::optional<lt::typed_bitfield<lt::piece_index_t>> kept;
     LookPhase look = LookPhase::Idle;
+    // A look whose folder did not answer starts again at `lookAt`.
+    std::chrono::steady_clock::time_point lookAt{};
     // The person's answer that ends a storage failure, while it waits for a
     // look: libtorrent's check after the error clears must find the lost
     // files in the question.

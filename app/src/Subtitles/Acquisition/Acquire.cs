@@ -836,22 +836,25 @@ internal sealed partial class Acquisition
     {
         if (!CanFind)
             return;
-        await TakeForPerson(_lifetime.Token).ConfigureAwait(false);
+        // Stop ends Find's own work too, so a batch the person stopped is
+        // never accepted, also when Stop comes while Find waits for the
+        // operation. The stop is its own source, so a configuration change
+        // that also arrives never hides it.
+        var stop = new CancellationTokenSource();
+        lock (_requestSync)
+            _finding = stop;
         var requests = CancellationToken.None;
-        CancellationTokenSource? stop = null;
         CancellationTokenSource? work = null;
+        var taken = false;
         try
         {
+            await TakeForPerson(_lifetime.Token).ConfigureAwait(false);
+            taken = true;
             if (!CanFind)
                 return;
-            // Stop ends Find's own work too, so a batch the person stopped is
-            // never accepted. The stop is its own source, so a configuration
-            // change that also arrives never hides it.
+            stop.Token.ThrowIfCancellationRequested();
             lock (_requestSync)
-            {
                 requests = _requests.Token;
-                stop = _finding = new CancellationTokenSource();
-            }
             work = CancellationTokenSource.CreateLinkedTokenSource(requests, stop.Token);
             var cancellation = work.Token;
             var targets = (await Targets(cancellation, entries).ConfigureAwait(false))
@@ -911,7 +914,7 @@ internal sealed partial class Acquisition
         catch (OperationCanceledException)
             when (
                 requests.IsCancellationRequested
-                && stop?.IsCancellationRequested != true
+                && !stop.IsCancellationRequested
                 && !_lifetime.IsCancellationRequested
             )
         {
@@ -931,8 +934,9 @@ internal sealed partial class Acquisition
                 }
             }
             work?.Dispose();
-            stop?.Dispose();
-            ReleaseForPerson();
+            stop.Dispose();
+            if (taken)
+                ReleaseForPerson();
         }
     }
 

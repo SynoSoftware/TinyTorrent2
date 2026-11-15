@@ -106,10 +106,14 @@ public sealed partial class MainWindow
         foreach (var torrent in asked)
             await CaptureReady(torrent, () => torrent.Progress >= 1);
         var files = asked.Select(torrent => Path.Combine(torrent.SavePath, torrent.Name)).ToArray();
-        foreach (var file in files)
-            File.Move(file, file + ".aside");
+        var aside = new List<string>();
         try
         {
+            foreach (var file in files)
+            {
+                File.Move(file, file + ".aside");
+                aside.Add(file);
+            }
             await client.Send("look", new { torrent_ids = ids }, Requester.Window);
             foreach (var torrent in asked)
                 await CaptureReady(torrent, () => torrent.State == TorrentState.FilesMissing);
@@ -136,7 +140,7 @@ public sealed partial class MainWindow
         }
         finally
         {
-            foreach (var file in files)
+            foreach (var file in aside)
                 File.Move(file + ".aside", file);
         }
         await client.Send("session_pause", new { paused = true }, Requester.Window);

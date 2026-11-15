@@ -64,6 +64,7 @@ public sealed partial class MainViewModel
         {
             Notifications.Report(error, "failed_settings", () => folder, null);
         }
+        await Settings.RefreshHidden();
     }
 
     // What resolves a disk state, in Settings and in Library's message.
