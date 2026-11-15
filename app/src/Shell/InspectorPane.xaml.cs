@@ -23,6 +23,7 @@ public sealed partial class InspectorPane : UserControl
     private readonly TurnCallback _facts;
     private bool _tracking;
     private (Torrent Target, int Index)? _fileReveal;
+    private Torrent? _trackersOf;
     public Inspector Model { get; }
     internal event EventHandler? LayoutChanged;
     internal event EventHandler? ViewChanged;
@@ -455,15 +456,30 @@ public sealed partial class InspectorPane : UserControl
         }
         if (TrackerTable is not null && Model.Section == InspectorSection.Trackers)
         {
+            // Another torrent's trackers are the person's change, so the table takes them whole
+            // and fits its columns to them once they stay on screen, even when the two torrents
+            // share a tracker.
+            if (Model.Trackers is not null && Model.Target != _trackersOf)
+            {
+                TrackerTable.Withdraw();
+                _trackersOf = Model.Target;
+            }
             // Trackers come and go by the person's edits, and otherwise only once, when a
             // magnet's metadata arrives, so their arrivals and removals do not wait.
-            if (TrackerTable.ItemsSource is IReadOnlyList<Tracker> shown && Model.Trackers is { } next)
+            else if (
+                TrackerTable.ItemsSource is IReadOnlyList<Tracker> shown
+                && Model.Trackers is { } next
+            )
                 TrackerTable.Release([.. shown.Except(next), .. next.Except(shown)]);
             TrackerTable.ItemsSource = Model.Trackers;
             ShowArrival(TrackerTable, NoTrackers, Model.Trackers is not null);
         }
-        if (_files is not null && Model.Section == InspectorSection.Files)
-            _files.Model = Model.Files;
+        if (
+            _files is not null
+            && Model.Section == InspectorSection.Files
+            && _files.Model != Model.Files
+        )
+            _files.Show(Model.Files);
         if (Speed is not null && Model.Section == InspectorSection.Speed)
             Speed.Samples = Model.History;
         if (Model.Section == InspectorSection.Pieces)

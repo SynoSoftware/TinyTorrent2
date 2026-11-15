@@ -95,6 +95,17 @@ public sealed partial class FileBrowser : UserControl
         browser.RefreshActions();
     }
 
+    /// <summary>
+    /// Show another torrent's files. They are the person's change, so the table takes them whole
+    /// and fits its columns to them once they stay on screen, even when the two torrents share
+    /// paths.
+    /// </summary>
+    internal void Show(FileSelection model)
+    {
+        Files.Withdraw();
+        Model = model;
+    }
+
     internal void RefreshText()
     {
         Bindings.Update();
