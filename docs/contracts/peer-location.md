@@ -285,7 +285,12 @@ shows all of its land before any arc. The border pieces that this first
 picture shows take their first stroke without the budget, so it shows the
 borders with the land. Tracing the world takes about 0.1 s on
 the worker, once per map. Retracing at another detail checks the budget at each
-checkpoint before continuing. A complete
+checkpoint before continuing. When one drawing holds both the land and the
+arcs, the land takes the budget before any arc work, the selected arcs
+included: routes change with the rates and at every rest, so a guide almost
+always waits for refinement, and land drawn after the guides would keep its
+overview detail. Separate land and arc drawings each have a budget of their
+own. A complete
 old outline stays visible until its replacement is complete; nearby strokes are
 prepared within the same budget. A native tessellation call runs to completion.
 Superseded work releases its native resources on detail, meridian/device change

@@ -1086,52 +1086,6 @@ internal sealed class MapRenderer : IDisposable
         ).Grown(new Vector2(2) / scale);
         if (draw is not null)
             MoveWindow(visible);
-        if (arcDrawing is not null)
-        {
-            foreach (var route in _routes)
-            {
-                cancellation.ThrowIfCancellationRequested();
-                if (route.Arc is null || route.Scale >= _viewport.ViewScale
-                    || !(Reaches(route, -1) || Reaches(route, 0) || Reaches(route, 1)))
-                    continue;
-                // A zoom passes the next power of two within a fraction of a second, so a guide
-                // refined while the view moves is soon refined again, and refining made those
-                // drawings 3 to 4 times longer.
-                if (Moving)
-                {
-                    _restWaits = true;
-                    break;
-                }
-                if (!MayRebuild())
-                    break;
-                // Retain finer guides when zooming out; only visible routes refine.
-                var detail = MathF.Pow(2, MathF.Ceiling(MathF.Log2(_viewport.ViewScale)));
-                var arc = Arc(route.Path, detail, out _, out var segments);
-                route.Refine(arc, segments, detail);
-                _strokes++;
-            }
-        }
-        // Prioritise the selected routes before map drawing uses its rebuild budget.
-        if (arcDrawing is not null && _model.Origin is { } source)
-        {
-            foreach (var selected in _routes)
-            {
-                if (!highlight.IsMarked(selected.Destination))
-                {
-                    continue;
-                }
-                cancellation.ThrowIfCancellationRequested();
-                if (
-                    selected.Arc is null
-                    || !(Reaches(selected, -1) || Reaches(selected, 0) || Reaches(selected, 1))
-                )
-                    continue;
-                var paint = PaintOf(selected, source);
-                paint.Line(2);
-                var colour = highlight.Selection is null ? ink : selected.Destination.Downloads ? down : up;
-                paint.Core(highlight.Colour(colour, selected.Destination.Key));
-            }
-        }
         // The drawn strengths start the next fade, so each part records only what it draws.
         if (arcDrawing is not null)
         {
@@ -1228,6 +1182,53 @@ internal sealed class MapRenderer : IDisposable
             }
             if (arcDrawing is not null)
             {
+                // When this drawing holds the land too, the land has taken the rebuild budget
+                // first. Routes change with the rates and at every rest, so a guide almost always
+                // waits for refinement, and land drawn after the guides would keep its coarser
+                // detail.
+                foreach (var route in _routes)
+                {
+                    cancellation.ThrowIfCancellationRequested();
+                    if (route.Arc is null || route.Scale >= _viewport.ViewScale
+                        || !(Reaches(route, -1) || Reaches(route, 0) || Reaches(route, 1)))
+                        continue;
+                    // A zoom passes the next power of two within a fraction of a second, so a guide
+                    // refined while the view moves is soon refined again, and refining made those
+                    // drawings 3 to 4 times longer.
+                    if (Moving)
+                    {
+                        _restWaits = true;
+                        break;
+                    }
+                    if (!MayRebuild())
+                        break;
+                    // Retain finer guides when zooming out; only visible routes refine.
+                    var detail = MathF.Pow(2, MathF.Ceiling(MathF.Log2(_viewport.ViewScale)));
+                    var arc = Arc(route.Path, detail, out _, out var segments);
+                    route.Refine(arc, segments, detail);
+                    _strokes++;
+                }
+                // Prioritise the selected routes before the other arcs use the rebuild budget.
+                if (_model.Origin is { } source)
+                {
+                    foreach (var selected in _routes)
+                    {
+                        if (!highlight.IsMarked(selected.Destination))
+                        {
+                            continue;
+                        }
+                        cancellation.ThrowIfCancellationRequested();
+                        if (
+                            selected.Arc is null
+                            || !(Reaches(selected, -1) || Reaches(selected, 0) || Reaches(selected, 1))
+                        )
+                            continue;
+                        var paint = PaintOf(selected, source);
+                        paint.Line(2);
+                        var colour = highlight.Selection is null ? ink : selected.Destination.Downloads ? down : up;
+                        paint.Core(highlight.Colour(colour, selected.Destination.Key));
+                    }
+                }
                 // Routes lie within 180° of the origin, which is the map's centre.
                 Span<int> turns = stackalloc int[3];
                 var count = 0;
