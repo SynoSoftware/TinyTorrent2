@@ -42,6 +42,7 @@
     "location_torrents_other": "{0} torrents cannot access their download location.",
     "completed": "Download finished",
     "added": "Torrent added",
+    "adding": "Adding torrent…",
     "duplicate": "Torrent already added",
     "magnet": "Magnet link",
     "error": "Transfer needs attention",

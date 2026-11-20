@@ -42,6 +42,7 @@
     "location_torrents_other": "{0} torrents hebben geen toegang tot hun downloadlocatie.",
     "completed": "Download voltooid",
     "added": "Torrent toegevoegd",
+    "adding": "Torrent toevoegen…",
     "duplicate": "Torrent al toegevoegd",
     "magnet": "Magnetlink",
     "error": "Overdracht vereist aandacht",

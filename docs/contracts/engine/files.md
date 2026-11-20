@@ -790,8 +790,10 @@ reports every file as missing and each would get the unfinished suffix.
 A listed torrent's preparation runs on its drive's worker, and an addition's
 on a worker of its own for that drive, so an absent share holds only the jobs
 of that share and an addition never waits behind another torrent's work.
-Deletions, moves and give-backs run on workers of their own, so no
-preparation waits behind them. An addition
+An addition chooses its names once, before libtorrent adds it, because
+choosing them after would wait for its file check, which runs behind the other
+torrents' disk work on that drive. Deletions, moves and give-backs run on
+workers of their own, so no preparation waits behind them. An addition
 whose folder does not answer joins the list with its names unprepared and
 waits in the same way, and so does an addition whose names, new folder or
 renames are still being prepared when Exit starts; an

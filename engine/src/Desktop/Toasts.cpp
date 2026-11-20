@@ -188,6 +188,31 @@ void Toasts::Queue(Toast toast)
     }
 }
 
+void Toasts::ShowAdding(std::string const& source)
+{
+    if (headless_ || !IsOn(ToastKind::Added) || !CanInterrupt())
+    {
+        return;
+    }
+    Show({.title = strings_.Text("notification", "adding"), .body = SourceName(source), .select = commands_.open},
+        Setting::NotifyAdded);
+    adding_ = true;
+}
+
+// The person saw the addition start, so its result shows in that popup even
+// when the result's own switch is off, and there even while the window is
+// open. While the person uses its More menu, the result queues instead, so
+// the menu does not close under the pointer.
+void Toasts::FinishAdding(Toast result)
+{
+    if (std::exchange(adding_, false) && popup_.IsOpen() && !popup_.IsMenuOpen())
+    {
+        Show(result.kind == ToastKind::AddFailed ? Problems(result, 1) : Message(result), Switch(result.kind));
+        return;
+    }
+    Queue(std::move(result));
+}
+
 void Toasts::Report(Failure failure)
 {
     if (headless_)
@@ -295,6 +320,15 @@ void Toasts::Notify()
     }
 }
 
+std::optional<ULONGLONG> Toasts::Due() const
+{
+    if (batches_.empty())
+    {
+        return std::nullopt;
+    }
+    return std::ranges::min_element(batches_, {}, [](auto const& batch) { return batch.second.due; })->second.due;
+}
+
 Popup::Content Toasts::Failure::Content(Strings const& strings, HICON errorIcon) const
 {
     return {.title = title.value_or(strings.Text("notification", "failure")),
@@ -306,6 +340,7 @@ Popup::Content Toasts::Failure::Content(Strings const& strings, HICON errorIcon)
 void Toasts::ShowFailure(Failure failure)
 {
     shownCondition_.reset();
+    adding_ = false;
     auto content = failure.Content(strings_, errorIcon_);
     content.select = failure.opens ? commands_.open : nullptr;
     shownFailure_ = std::move(failure);
@@ -324,6 +359,7 @@ void Toasts::Ask(Popup::Prompt prompt, std::optional<Setting> setting)
     }
     shownFailure_.reset();
     shownCondition_.reset();
+    adding_ = false;
     std::vector<Popup::MenuItem> menu;
     if (setting && prompt.answer.enabled)
     {
@@ -484,8 +520,7 @@ Popup::Content Toasts::Problems(Toast const& first, unsigned count) const
     auto toast = first;
     if (toast.kind == ToastKind::AddFailed)
     {
-        toast.name = Utf8(IsMagnet(first.name) ? strings_.Text("notification", "magnet") :
-            std::filesystem::path(Wide(first.name)).filename().wstring());
+        toast.name = Utf8(SourceName(first.name));
     }
     auto content = Message(toast);
     content.icon = errorIcon_;
@@ -498,6 +533,16 @@ Popup::Content Toasts::Problems(Toast const& first, unsigned count) const
         content.actions.clear();
     }
     return content;
+}
+
+std::wstring Toasts::SourceName(std::string const& source) const
+{
+    if (!IsMagnet(source))
+    {
+        return std::filesystem::path(Wide(source)).filename().wstring();
+    }
+    auto name = MagnetName(source);
+    return name.empty() ? strings_.Text("notification", "magnet") : Wide(name);
 }
 
 std::wstring Toasts::ErrorText(Strings const& strings, std::string const& code, bool explained)
@@ -586,15 +631,19 @@ Popup::Action Toasts::ForceExit(Strings const& strings, std::function<void()> ru
 // window the person just closed would undo their action.
 void Toasts::ShowBackground()
 {
-    if (answering_ || popup_.IsPersistent() || popup_.IsMenuOpen())
-    {
-        return;
-    }
-    if (AcceptsNotifications())
+    if (CanInterrupt())
     {
         Show({.title = strings_.Text("notification", "background"),
             .body = strings_.Text("tray", "background")}, Setting::NotifyBackground);
     }
+}
+
+// A failure that waits shows first, and a popup that stays or that the person
+// uses keeps its place.
+bool Toasts::CanInterrupt() const
+{
+    return !answering_ && !popup_.IsPersistent() && !popup_.IsMenuOpen() && failures_.empty() &&
+        AcceptsNotifications();
 }
 
 void Toasts::Show(Popup::Content content, std::optional<Setting> setting)
@@ -603,6 +652,7 @@ void Toasts::Show(Popup::Content content, std::optional<Setting> setting)
         return;
     shownFailure_.reset();
     shownCondition_.reset();
+    adding_ = false;
     SetMenu(content, setting);
     popup_.Show(std::move(content));
 }

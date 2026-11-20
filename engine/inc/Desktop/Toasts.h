@@ -79,6 +79,12 @@ public:
     // Shows a toast whose switch is on in the window when it uses one, and
     // otherwise in a popup. A headless engine writes it to the debug output.
     void Queue(Toast toast);
+    // Shows at once, while the Added switch is on, that a direct addition of
+    // `source` has started, so the person sees their action land.
+    void ShowAdding(std::string const& source);
+    // The addition's Added, Duplicate or AddFailed toast replaces the Adding
+    // notice while that still shows; otherwise it queues.
+    void FinishAdding(Toast result);
     // A failure with the code of one that waits replaces it, and one that is
     // on screen is not shown again. A headless engine writes it to the debug
     // output.
@@ -86,6 +92,9 @@ public:
     // Shows the first failure, or else the batch of toasts that is due first,
     // once the shown popup has closed.
     void Notify();
+    // When the next batch of toasts is due, in GetTickCount64 time; none
+    // while no batch waits.
+    std::optional<ULONGLONG> Due() const;
     void Close();
     // Shows a failure at once, even while Windows holds notifications back,
     // because it answers something the person just did.
@@ -124,12 +133,17 @@ private:
         ULONGLONG due;
     };
     void ShowBackground();
+    // Whether a toast shown at once may replace the shown popup.
+    bool CanInterrupt() const;
     void Show(Popup::Content content, std::optional<Setting> setting);
     void SetMenu(Popup::Content& content, std::optional<Setting> setting);
     Popup::MenuItem OptOut(Setting setting, std::wstring label, std::shared_ptr<Answer> answer = {});
     void TurnOff(std::vector<Setting> switches, std::function<void(bool saved)> completion = {});
     Popup::Content Message(Toast const& toast) const;
     Popup::Content Problems(Toast const& first, unsigned count) const;
+    // A source as the person knows it: a torrent file's name, or a magnet
+    // link's display name, or else Magnet link.
+    std::wstring SourceName(std::string const& source) const;
     // The code's sentence. A code without one gets the generic sentence,
     // unless `explained`, because a detail follows that says what failed.
     static std::wstring ErrorText(Strings const& strings, std::string const& code, bool explained = false);
@@ -147,6 +161,8 @@ private:
     // The failure that the open popup shows; none while it shows a toast.
     std::optional<Failure> shownFailure_;
     std::optional<std::string> shownCondition_;
+    // The open popup shows the Adding notice.
+    bool adding_ = false;
     // Keeps other toasts behind the prompt until its caller consumes the answer.
     std::shared_ptr<Answer> answering_;
     Popup popup_;

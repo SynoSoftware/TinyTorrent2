@@ -73,6 +73,9 @@ inline void NormaliseMagnet(std::string& source)
     }
 }
 
+// The display name a magnet link carries; empty when it carries none in UTF-8.
+std::string MagnetName(std::string const& source);
+
 struct MoveRecovery
 {
     std::vector<std::string> torrentIds;

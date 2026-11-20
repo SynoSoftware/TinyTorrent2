@@ -13,6 +13,9 @@ namespace
 constexpr UINT dispatch = WM_APP + 1;
 constexpr UINT wake = WM_APP + 2;
 constexpr UINT_PTR tickTimer = 1;
+// Fires when the next batch of toasts is due, so it shows without waiting for
+// a tick.
+constexpr UINT_PTR toastTimer = 2;
 
 constexpr std::pair<std::string_view, Command> commands[] = {
     {"registration", Command::Registration},
@@ -266,6 +269,11 @@ LRESULT Application::Handle(UINT message, WPARAM first, LPARAM second)
         if (first == tickTimer)
         {
             OnTimer();
+        }
+        else if (first == toastTimer)
+        {
+            KillTimer(owner_.get(), toastTimer);
+            Tick();
         }
         return 0;
     case WM_ENDSESSION:
@@ -646,6 +654,11 @@ void Application::Tick()
         toasts_->Queue(std::move(toast));
     }
     toasts_->Notify();
+    auto now = GetTickCount64();
+    if (auto due = toasts_->Due(); due && *due > now)
+    {
+        SetTimer(owner_.get(), toastTimer, static_cast<UINT>(*due - now), nullptr);
+    }
     ticking_ = false;
 }
 
@@ -751,6 +764,7 @@ void Application::AddSources()
         return;
     }
     adding_ = true;
+    toasts_->ShowAdding(incoming_.front().sources.front());
     engine_->Add(incoming_.front().sources.front(), [this](Outcome outcome, Added added)
     {
         FinishSource(outcome, added);
@@ -765,13 +779,13 @@ void Application::FinishSource(Outcome const& outcome, Added const& added)
     {
         // The toast shows the code's sentence, then the detail when there
         // is one.
-        toasts_->Queue({.kind = ToastKind::AddFailed, .name = source, .detail = outcome.detail,
+        toasts_->FinishAdding({.kind = ToastKind::AddFailed, .name = source, .detail = outcome.detail,
             .code = ToString(*outcome.error)});
     }
     else
     {
         auto kind = added.kind == AdditionKind::Duplicate ? ToastKind::Duplicate : ToastKind::Added;
-        toasts_->Queue({.kind = kind, .name = engine_->Name(added.torrentId), .torrentId = added.torrentId});
+        toasts_->FinishAdding({.kind = kind, .name = engine_->Name(added.torrentId), .torrentId = added.torrentId});
     }
     activation.sources.erase(activation.sources.begin());
     if (activation.sources.empty())

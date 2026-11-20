@@ -42,6 +42,7 @@
     "location_torrents_other": "{0} torrents no pueden acceder a su ubicación de descarga.",
     "completed": "Descarga terminada",
     "added": "Torrent añadido",
+    "adding": "Añadiendo torrent…",
     "duplicate": "Torrent ya añadido",
     "magnet": "Enlace magnet",
     "error": "La transferencia necesita atención",

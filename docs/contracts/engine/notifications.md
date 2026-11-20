@@ -61,7 +61,12 @@ window:
 - **Finished.** Clicking a single notification opens the torrent's current
   folder; a combined one opens the application.
 - **Added.** A direct addition, such as a double-click on a torrent file, added
-  the torrent.
+  the torrent. Adding torrent… and the source's name, a magnet link's display
+  name included, show as soon as each addition starts, so the person sees
+  their action land. The same popup then changes in place to its result:
+  added, already added, or could not be added. That result stays in the popup
+  even while the window is open, because the person is looking there. While
+  the person uses the popup's More menu, the result waits until it closes.
 - **Files missing.** Started torrents whose files were deleted or moved outside
   TinyTorrent, and whose [question](../engine.md#lost-files) waits for the
   person once the search for the files ended, share one notice under Notify

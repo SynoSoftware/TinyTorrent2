@@ -170,6 +170,8 @@ void Engine::State::StartAddition(Addition& pending)
             auto& addition = found->second;
             if (prepared)
                 addition.params = std::move(*prepared);
+            // A magnet without metadata has no names to choose yet.
+            addition.named = prepared && addition.params.ti;
             addition.params.userdata = &addition;
             session->async_add_torrent(addition.params);
         });
@@ -182,6 +184,15 @@ void Engine::State::PrepareAddition(std::string const& id, lt::torrent_handle ha
     addition.handle = handle;
     ApplyPolicy(handle);
     addition.phase = AdditionPhase::Naming;
+    // Names chosen before the add reached libtorrent with the torrent.
+    // Choosing them again would wait for the torrent's file check, which
+    // queues behind every other torrent's disk work on that drive.
+    if (addition.named && !DeletingOrRenaming(RootOf(addition.facts.savePath)))
+    {
+        SaveAddition(id, handle);
+        return;
+    }
+    addition.named = false;
     auto params = addition.params;
     if (!params.ti)
         params.ti = handle.torrent_file();

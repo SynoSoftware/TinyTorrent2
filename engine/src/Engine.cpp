@@ -1,6 +1,7 @@
 #include "Engine.h"
 #include "Engine/State.h"
 #include <Windows.h>
+#include <libtorrent/magnet_uri.hpp>
 #include <wincrypt.h>
 #include <cwchar>
 #include <system_error>
@@ -30,6 +31,21 @@ std::string Utf8(std::wstring const& value)
     WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, value.data(),
         static_cast<int>(value.size()), text.data(), size, nullptr, nullptr);
     return text;
+}
+
+std::string MagnetName(std::string const& source)
+{
+    lt::error_code error;
+    auto params = lt::parse_magnet_uri(source, error);
+    if (error)
+    {
+        return {};
+    }
+    // Percent-encoding lets a display name hold bytes that are not UTF-8,
+    // which Wide refuses.
+    bool text = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, params.name.data(),
+        static_cast<int>(params.name.size()), nullptr, 0) != 0;
+    return text ? params.name : std::string();
 }
 
 std::wstring Wide(std::string const& value)

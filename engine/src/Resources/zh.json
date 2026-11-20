@@ -42,6 +42,7 @@
     "location_torrents_other": "{0} 个下载任务无法访问其下载位置。",
     "completed": "下载完成",
     "added": "已添加种子",
+    "adding": "正在添加种子…",
     "duplicate": "种子已添加过",
     "magnet": "磁力链接",
     "error": "传输任务需要处理",
