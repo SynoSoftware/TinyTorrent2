@@ -12,6 +12,7 @@ Light on memory. Free. Open source.
 
 **[Download for Windows](https://github.com/SynoSoftware/TinyTorrent2/releases/latest)**
 · Windows 10 (version 1809) or later, 64-bit
+· [TinyTorrent website](https://synapse.sr/tinytorrent)
 
 [^telemetry]: TinyTorrent adds no analytics and turns off Windows crash
     reporting for itself. Microsoft's Windows App SDK may still collect usage
