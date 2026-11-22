@@ -271,11 +271,32 @@ still indexes these folders, for every program, by its own Include settings.
 - **The tree shows gozler's view, not the file system's,** because Library
   finds media only through gozler, so a folder gozler does not index can
   never give Library a file. The drives are the mounts that `gozler --status`
-  lists. A folder asks gozler for its subfolders when it first opens, off the
-  UI thread:
-  `gozler.exe <own-access option> -parent FOLDER /ad -attributes -n all -tsv`.
-  Tab-separated output, because the 25,662 folders of `C:\Windows\WinSxS`
-  take 252 ms that way and 1,057 ms as JSON.
+  lists. **A folder that opens reads one level ahead,** off the UI thread, in
+  one call: its subfolders when they are not read yet, and the subfolders of
+  each of them, so every row it shows already knows whether it has
+  subfolders and opens at once, as gozler's own tree does:
+  `gozler.exe <own-access option> -path FOLDER /ad depth:FROM..TO -attributes -size -n all -tsv`.
+  gozler's depth counts the folders above an entry, the drive's root
+  included, so the subfolders of `C:\` are 1 deep. Only a folder the person
+  opened shows a progress ring; one read ahead shows none. Tab-separated
+  output, because the 25,662 folders of `C:\Windows\WinSxS` take 252 ms that
+  way and 1,057 ms as JSON. Released gozler walks every entry below FOLDER
+  for this query; [gozler#166](https://github.com/SynoSoftware/gozler/issues/166)
+  stops the walk at the depth asked for, with the same command and output.
+- **Name, Size, Files and Folders sort the tree,** as a click on their
+  headers does in every table. Size is the total of the files below a
+  folder, and Files and Folders count the files and folders below it, all
+  from the read's `-size`, `--files` and `--folders` columns, which gozler
+  keeps in memory. **Owner ruling: these values come only from that one read
+  per opened folder, never from a gozler call per folder,** because each
+  `-get-folder-size` walks every entry below its folder in a process of its
+  own, and scrolling would start one for each row. A value gozler does not
+  give leaves its cell empty, as File Explorer leaves a folder's Size, with
+  no error, and **an empty value sorts last in both directions** (owner
+  ruling), as gozler sorts an unknown size. `--files` and `--folders` arrive
+  with [gozler#165](https://github.com/SynoSoftware/gozler/issues/165); a
+  gozler without them answers with exit 6, which reads as an older gozler
+  and offers Update.
 - **The tree** opens each drive one level deep and along the path to each
   choice, so every choice is in view. Every folder opens, however many
   subfolders it has: once the folders of `C:\Windows\WinSxS` are listed, the

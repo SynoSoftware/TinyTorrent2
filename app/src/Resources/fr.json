@@ -531,6 +531,8 @@
   "columns": {
     "name": "Nom",
     "size": "Taille",
+    "files": "Fichiers",
+    "folders": "Dossiers",
     "progress": "Progression",
     "status": "État",
     "down": "Réception",

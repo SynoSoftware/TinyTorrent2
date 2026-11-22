@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shell;
 
@@ -31,10 +32,10 @@ public sealed class FolderTree : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 
     /// <summary>
-    /// Raised on the UI thread with a folder whose subfolders have arrived,
-    /// so the page names it to the table, which reads them on its worker.
+    /// Raised on the UI thread with the folders whose subfolders have arrived,
+    /// so the page names them to the table, which reads them on its worker.
     /// </summary>
-    internal event EventHandler<FolderNode>? Filled;
+    internal event EventHandler<IReadOnlyList<FolderNode>>? Filled;
 
     public IReadOnlyList<FolderNode> Roots { get; private set; } = [];
 
@@ -147,16 +148,46 @@ public sealed class FolderTree : INotifyPropertyChanged
     // Stops reading folders when the page closes.
     internal void Close() => _open.Cancel();
 
+    // An open folder reads its subfolders when they are not read yet, and the
+    // subfolders of each of them, so every row it shows knows whether it has
+    // subfolders and opens at once, as gozler's own tree does.
     internal void Expand(FolderNode folder, bool expanded)
     {
         folder.IsExpanded = expanded;
-        if (expanded && folder.State == FolderState.Unloaded)
+        if (!expanded)
+        {
+            if (folder.State == FolderState.Loading)
+                folder.State = FolderState.Unloaded;
+            return;
+        }
+        if (folder.State == FolderState.Unloaded)
         {
             folder.State = FolderState.Loading;
-            _ = Load(folder);
+            _ = Load(folder, []);
         }
-        else if (!expanded && folder.State == FolderState.Loading)
-            folder.State = FolderState.Unloaded;
+        else if (folder.State == FolderState.Loaded)
+        {
+            FolderNode[] ahead = [.. folder.Children.Where(child => child.State == FolderState.Unloaded)];
+            foreach (var child in ahead)
+                child.State = FolderState.Loading;
+            if (ahead.Length > 0)
+                _ = Load(folder, ahead);
+            OpenPartial(folder);
+        }
+    }
+
+    // A folder on the way to a choice opens, so every choice is in view. Only a
+    // folder with a choice inside asks the choices about each subfolder, so
+    // the 25,662 of C:\Windows\WinSxS cost nothing.
+    private void OpenPartial(FolderNode folder)
+    {
+        if (Choices.Check(folder.Path) is not null)
+            return;
+        foreach (var child in folder.Children)
+        {
+            if (!child.IsExpanded && Choices.Check(child.Path) is null)
+                Expand(child, true);
+        }
     }
 
     /// <summary>
@@ -172,20 +203,20 @@ public sealed class FolderTree : INotifyPropertyChanged
         return await _main.ChangeFolders(choices => choices.Set(folder.Path, shown), folder.Path) is not null;
     }
 
-    private async Task Load(FolderNode folder)
+    // Reads `folder`'s subfolders when `ahead` is empty, or else the
+    // subfolders of each folder of `ahead`, and shows them.
+    private async Task Load(FolderNode folder, IReadOnlyList<FolderNode> ahead)
     {
         var cancellation = _open.Token;
         var choices = Choices;
         // Read here, because the language can change on the UI thread while
         // the worker runs.
         var unlisted = Text.Get("discovery", "not_indexed");
-        (List<FolderNode> Folders, List<FolderNode> Partial, bool Incomplete, bool Missing) found;
+        var reading = ahead.Count == 0;
+        Found read;
         try
         {
-            found = await Task.Run(
-                () => List(folder.Path, folder.IsIndexed, choices, unlisted, cancellation),
-                cancellation
-            );
+            read = await Task.Run(() => Read(folder, ahead, choices, unlisted, cancellation), cancellation);
         }
         catch (OperationCanceledException)
         {
@@ -194,51 +225,111 @@ public sealed class FolderTree : INotifyPropertyChanged
         catch (GozlerException error)
         {
             // A folder gozler cannot answer for shows no subfolders, and the
-            // header says why.
+            // header says why. A folder read ahead is read again when it opens.
             _failure ??= error.State;
             Changed(nameof(Summary));
-            found = (new List<FolderNode>(), new List<FolderNode>(), false, false);
+            read = new([], new Dictionary<FolderNode, List<FolderNode>>(), Incomplete: false, Missing: false);
+            foreach (var child in ahead)
+            {
+                if (child.State == FolderState.Loading)
+                    child.State = FolderState.Unloaded;
+            }
         }
-        if (cancellation.IsCancellationRequested || folder.State != FolderState.Loading)
+        if (cancellation.IsCancellationRequested)
             return;
-        if (found.Incomplete && _indexing.Add(Path.GetPathRoot(folder.Path)!.TrimEnd('\\')))
+        if (read.Incomplete && _indexing.Add(Path.GetPathRoot(folder.Path)!.TrimEnd('\\')))
             Changed(nameof(Summary));
-        // A folder removed since its parent was listed says so on its own row.
-        if (found.Missing)
-            folder.Detail = unlisted;
-        folder.Fill(found.Folders);
-        Filled?.Invoke(this, folder);
-        foreach (var child in found.Partial)
+        List<FolderNode> filled = [];
+        if (reading && folder.State == FolderState.Loading)
         {
-            Expand(child, true);
+            // A folder removed since its parent was listed says so on its own row.
+            if (read.Missing)
+                folder.Detail = unlisted;
+            folder.Fill(read.Folders);
+            filled.Add(folder);
         }
+        foreach (var (child, children) in read.Ahead)
+        {
+            if (child.State != FolderState.Loading)
+                continue;
+            child.Fill(children);
+            filled.Add(child);
+        }
+        if (filled.Count == 0)
+            return;
+        Filled?.Invoke(this, filled);
+        // A folder opened while it was read reads the level below it now.
+        foreach (var opened in filled.Where(node => node.IsExpanded))
+            Expand(opened, true);
     }
 
-    // The subfolders of `folder` that gozler indexes, in name order, and the
-    // partial ones among them, which hold a choice and open on the way to it.
-    // Only a folder with a choice inside asks the choices about each
-    // subfolder, so the 24,408 of C:\Windows\WinSxS cost nothing past their
-    // listing. File Explorer hides hidden folders by default, so they are left
-    // out unless a choice is at or inside one. A junction or a symbolic link
-    // is listed but never opens, because it leads elsewhere and gozler finds
-    // the files at their own path. A choice inside a folder gozler no longer
-    // lists keeps a row on its way, so it can be cleared. gozler is not asked
-    // about a folder it did not list, because it has nothing to list there.
-    private async Task<(List<FolderNode> Folders, List<FolderNode> Partial, bool Incomplete, bool Missing)> List(
-        string folder,
-        bool indexed,
+    // Reads, in one gozler call, the subfolders of `folder` and of each of
+    // them when `ahead` is empty, or else the subfolders of each folder of
+    // `ahead`, and makes their rows. A row read with its parent comes filled,
+    // so it shows whether it has subfolders and opens at once.
+    private async Task<Found> Read(
+        FolderNode folder,
+        IReadOnlyList<FolderNode> ahead,
         FolderChoices choices,
         string unlisted,
         CancellationToken cancellation
     )
     {
-        var listing = indexed
-            ? await Gozler.Folders(folder, cancellation).ConfigureAwait(false)
+        var reading = ahead.Count == 0;
+        var depth = Depth(folder.Path);
+        // gozler is not asked about a folder it did not list, because it has
+        // nothing to list there.
+        var listing = folder.IsIndexed
+            ? await Gozler.Folders(folder.Path, reading ? depth : depth + 1, depth + 1, cancellation)
+                .ConfigureAwait(false)
             : new GozlerFolders([], Incomplete: false);
+        // -path follows folder links and answers with the rows below each
+        // link's real target, so a folder can come twice and rows can lie
+        // outside `folder`. Each folder takes only the rows whose parent it is,
+        // once.
+        var below = listing
+            .Folders.DistinctBy(entry => entry.Path, StringComparer.OrdinalIgnoreCase)
+            .ToLookup(entry => Path.GetDirectoryName(entry.Path) ?? string.Empty, StringComparer.OrdinalIgnoreCase);
+        var children = reading ? List(folder.Path, below[folder.Path], choices, unlisted) : [];
+        foreach (var child in children)
+        {
+            if (child.State == FolderState.Unloaded)
+                child.Fill(List(child.Path, below[child.Path], choices, unlisted));
+        }
+        var filled = ahead.ToDictionary(child => child, child => List(child.Path, below[child.Path], choices, unlisted));
+        return new(children, filled, listing.Incomplete, listing.Missing);
+    }
+
+    // gozler's depth of the subfolders of `folder`: the folders above them,
+    // the drive's root included, so the subfolders of C:\ are 1 deep. Only a
+    // drive's root ends with a separator.
+    private static int Depth(string folder) =>
+        folder.Count(c => c == '\\') + (Path.EndsInDirectorySeparator(folder) ? 0 : 1);
+
+    // A read's rows: the folder's own subfolders, and those of each folder read ahead.
+    private sealed record Found(
+        List<FolderNode> Folders,
+        IReadOnlyDictionary<FolderNode, List<FolderNode>> Ahead,
+        bool Incomplete,
+        bool Missing
+    );
+
+    // The rows of `folder`'s subfolders in `entries`, in name order. File
+    // Explorer hides hidden folders by default, so they are left out unless a
+    // choice is at or inside one. A junction or a symbolic link is listed but
+    // never opens, because it leads elsewhere and gozler finds the files at
+    // their own path. A choice inside a folder gozler no longer lists keeps a
+    // row on its way, so it can be cleared.
+    private List<FolderNode> List(
+        string folder,
+        IEnumerable<GozlerFolder> entries,
+        FolderChoices choices,
+        string unlisted
+    )
+    {
         var holds = choices.Check(folder) is null;
-        var found = new List<FolderNode>(listing.Folders.Count);
-        var partial = new List<FolderNode>();
-        foreach (var entry in listing.Folders)
+        var found = new List<FolderNode>();
+        foreach (var entry in entries)
         {
             if (
                 entry.Attributes.HasFlag(FileAttributes.Hidden)
@@ -252,28 +343,23 @@ public sealed class FolderTree : INotifyPropertyChanged
                 entry.Path,
                 Path.GetFileName(entry.Path),
                 entry.Attributes.HasFlag(FileAttributes.ReparsePoint) ? FolderState.Loaded : FolderState.Unloaded
-            );
-            found.Add(node);
-            if (holds && choices.Check(node.Path) is null)
+            )
             {
-                partial.Add(node);
-            }
+                Size = entry.Size,
+                Files = entry.Files,
+                Folders = entry.Folders,
+            };
+            found.Add(node);
         }
         if (holds)
-            AddUnlisted(folder, choices, unlisted, found, partial);
+            AddUnlisted(folder, choices, unlisted, found);
         found.Sort((left, right) => StringComparer.CurrentCultureIgnoreCase.Compare(left.Name, right.Name));
-        return (found, partial, listing.Incomplete, listing.Missing);
+        return found;
     }
 
     // A row for each subfolder on the way to a choice that gozler did not
     // list, marked as not in gozler's index.
-    private void AddUnlisted(
-        string folder,
-        FolderChoices choices,
-        string unlisted,
-        List<FolderNode> found,
-        List<FolderNode> partial
-    )
+    private void AddUnlisted(string folder, FolderChoices choices, string unlisted, List<FolderNode> found)
     {
         var listed = found.Select(node => node.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var inside = Path.EndsInDirectorySeparator(folder) ? folder.Length : folder.Length + 1;
@@ -285,10 +371,7 @@ public sealed class FolderTree : INotifyPropertyChanged
             var path = end < 0 ? choice.Path : choice.Path[..end];
             if (!listed.Add(path))
                 continue;
-            var node = new FolderNode(this, path, Path.GetFileName(path)) { Detail = unlisted, IsIndexed = false };
-            found.Add(node);
-            if (choices.Check(path) is null)
-                partial.Add(node);
+            found.Add(new FolderNode(this, path, Path.GetFileName(path)) { Detail = unlisted, IsIndexed = false });
         }
     }
 
@@ -339,6 +422,7 @@ public sealed class FolderNode : INotifyPropertyChanged
 {
     private readonly FolderTree _tree;
     private FolderState _state;
+    private bool _expanded;
 
     // A drive that is not connected and a link have nothing to list, so they
     // start Loaded.
@@ -368,11 +452,34 @@ public sealed class FolderNode : INotifyPropertyChanged
     // folder for its subfolders makes nothing.
     public IReadOnlyList<FolderNode> Children { get; private set; } = [];
 
-    public bool IsExpanded { get; internal set; }
-    public bool IsLoading => _state == FolderState.Loading;
+    public bool IsExpanded
+    {
+        get => _expanded;
+        internal set
+        {
+            _expanded = value;
+            PropertyChanged?.Invoke(this, new(nameof(IsLoading)));
+        }
+    }
+
+    // Only a folder the person opened shows that it is read, not one read ahead.
+    public bool IsLoading => _state == FolderState.Loading && _expanded;
 
     // Checked, cleared, or partial (null) when a folder inside it differs.
     public bool? Check => _tree.Choices.Check(Path);
+
+    // The total size of the files below the folder and how many files and
+    // folders lie below it, as gozler's listing gave them, each null when it
+    // gave none.
+    public long? Size { get; init; }
+    public long? Files { get; init; }
+    public long? Folders { get; init; }
+
+    // Empty while a value is not known, as File Explorer leaves a folder's Size.
+    public string SizeText => Size is { } bytes ? _tree.Text.Bytes(bytes) : string.Empty;
+    public string FilesText => Files is { } files ? files.ToString("N0", CultureInfo.CurrentCulture) : string.Empty;
+    public string FoldersText =>
+        Folders is { } folders ? folders.ToString("N0", CultureInfo.CurrentCulture) : string.Empty;
 
     public override string ToString() => Name;
 
@@ -393,6 +500,12 @@ public sealed class FolderNode : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new(string.Empty));
     }
 
-    /// <summary>Shows the check box of the choices as last saved.</summary>
-    internal void Refresh() => PropertyChanged?.Invoke(this, new(nameof(Check)));
+    /// <summary>Shows the check box of the choices as last saved, and the numbers in the current language.</summary>
+    internal void Refresh()
+    {
+        PropertyChanged?.Invoke(this, new(nameof(Check)));
+        PropertyChanged?.Invoke(this, new(nameof(SizeText)));
+        PropertyChanged?.Invoke(this, new(nameof(FilesText)));
+        PropertyChanged?.Invoke(this, new(nameof(FoldersText)));
+    }
 }

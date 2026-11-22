@@ -27,6 +27,11 @@ internal static class Gozler
     // without.
     private const string OwnAccessOption = "--my-permissions";
 
+    // The folder tree's Files and Folders columns: how many files and folders
+    // lie below each folder, which gozler keeps in memory as it keeps sizes.
+    private const string FilesOption = "--files";
+    private const string FoldersOption = "--folders";
+
     // The gozler release whose setup the install prompt downloads, written by
     // hand: the owner moves it to a newer release that Library has been tried
     // with. An installed gozler is judged by the options it knows, never by
@@ -77,6 +82,7 @@ internal static class Gozler
     // identity. An answer that may miss files is still used.
     internal static async Task<GozlerAnswer> Search(FolderChoices folders, CancellationToken cancellation)
     {
+        await RequireOptions(cancellation).ConfigureAwait(false);
         var arguments = Arguments(folders);
         for (var attempt = 1; ; attempt++)
         {
@@ -97,13 +103,20 @@ internal static class Gozler
         }
     }
 
-    // The folders directly in `parent` that gozler indexes, with their
-    // attributes. Tab-separated output, because a folder of 25,662 folders
-    // takes 252 ms that way and 1,057 ms as JSON. An answer that may miss
-    // folders is still used.
-    internal static async Task<GozlerFolders> Folders(string parent, CancellationToken cancellation)
+    // The folders below `folder` that gozler indexes, from `from` to `to`
+    // folders deep, with their attributes and sizes, in one call. gozler
+    // counts the drive's root, so the subfolders of C:\ are 1 deep.
+    // Tab-separated output, because a folder of 25,662 folders takes 252 ms
+    // that way and 1,057 ms as JSON. An answer that may miss folders is still
+    // used.
+    internal static async Task<GozlerFolders> Folders(string folder, int from, int to, CancellationToken cancellation)
     {
-        string[] arguments = [OwnAccessOption, "-parent", parent, "/ad", "-attributes", "-n", "all", "-tsv"];
+        await RequireOptions(cancellation).ConfigureAwait(false);
+        string[] arguments =
+        [
+            OwnAccessOption, "-path", folder, "/ad", $"depth:{from}..{to}", "-attributes", "-size", FilesOption,
+            FoldersOption, "-n", "all", "-tsv",
+        ];
         for (var attempt = 1; ; attempt++)
         {
             var reply = await Run(arguments, cancellation).ConfigureAwait(false);
@@ -112,8 +125,8 @@ internal static class Gozler
                 case 0:
                 case 2:
                     return new(ReadFolders(reply.Output), Incomplete: reply.Code == 2);
-                // The folder is gone since its parent was listed. It fails only
-                // itself, not gozler's answer for every other folder.
+                // The folder is gone since it was listed. It fails only itself,
+                // not gozler's answer for every other folder.
                 case 4:
                     return new([], Incomplete: false, Missing: true);
                 // The service's pipe may not be open yet.
@@ -126,12 +139,19 @@ internal static class Gozler
         }
     }
 
-    // Each line after the header is the folder's FILE_ATTRIBUTE_* number, a
-    // tab and its path, in UTF-8. Windows allows no tab in a name.
+    // The header row names the columns, which follow the order of their
+    // options, with Filename last. Each later line holds a folder's
+    // FILE_ATTRIBUTE_* number, its size in bytes, the files and folders below
+    // it, each empty when gozler does not know it, and its path, separated by
+    // tabs, in UTF-8. Windows allows no tab in a name.
     private static IReadOnlyList<GozlerFolder> ReadFolders(byte[] output)
     {
         var folders = new List<GozlerFolder>();
-        var lines = output.AsSpan();
+        ReadOnlySpan<byte> lines = output;
+        // Where Attributes, Size, Files, Folders and Filename are in a line.
+        Span<int> at = stackalloc int[5];
+        at.Fill(-1);
+        Span<Range> cells = stackalloc Range[at.Length];
         var header = true;
         while (!lines.IsEmpty)
         {
@@ -139,20 +159,61 @@ internal static class Gozler
             var line = end < 0 ? lines : lines[..end];
             lines = end < 0 ? [] : lines[(end + 1)..];
             line = line.TrimEnd((byte)'\r');
-            var tab = line.IndexOf((byte)'\t');
-            if (header || tab < 0)
+            var count = 0;
+            foreach (var cell in line.Split((byte)'\t'))
+            {
+                if (count < cells.Length)
+                    cells[count] = cell;
+                count++;
+            }
+            if (header)
             {
                 header = false;
+                for (var index = 0; index < Math.Min(count, cells.Length); index++)
+                {
+                    if (ColumnOf(line[cells[index]]) is >= 0 and var column)
+                        at[column] = index;
+                }
                 continue;
             }
-            if (System.Buffers.Text.Utf8Parser.TryParse(line[..tab], out int attributes, out _))
-                folders.Add(new(Encoding.UTF8.GetString(line[(tab + 1)..]), (FileAttributes)attributes));
+            if (count > cells.Length || at[0] < 0 || at[4] < 0)
+                continue;
+            if (System.Buffers.Text.Utf8Parser.TryParse(line[cells[at[0]]], out int attributes, out _))
+                folders.Add(
+                    new(
+                        Encoding.UTF8.GetString(line[cells[at[4]]]),
+                        (FileAttributes)attributes,
+                        Number(line, cells, at[1]),
+                        Number(line, cells, at[2]),
+                        Number(line, cells, at[3])
+                    )
+                );
         }
         return folders;
     }
 
-    // Whether this gozler knows every option that Search sends, without a
-    // search. gozler reads its options before it asks the service, so
+    private static int ColumnOf(ReadOnlySpan<byte> name) =>
+        name.SequenceEqual("Attributes"u8) ? 0
+        : name.SequenceEqual("Size"u8) ? 1
+        : name.SequenceEqual("Files"u8) ? 2
+        : name.SequenceEqual("Folders"u8) ? 3
+        : name.SequenceEqual("Filename"u8) ? 4
+        : -1;
+
+    // The whole number in a line's cell, or null when the cell is empty or
+    // the column is missing.
+    private static long? Number(ReadOnlySpan<byte> line, ReadOnlySpan<Range> cells, int column)
+    {
+        if (column < 0)
+            return null;
+        var cell = line[cells[column]];
+        return System.Buffers.Text.Utf8Parser.TryParse(cell, out long value, out var used) && used == cell.Length
+            ? value
+            : null;
+    }
+
+    // Whether this gozler knows every option that Search and the folder tree
+    // send, without a search. gozler reads its options before it asks the service, so
     // --version ends the call right after them. The answer is kept for the
     // gozler.exe it came from: a setup that replaces the file changes its
     // write time, and the next call asks the new one. A gozler that cannot
@@ -170,7 +231,8 @@ internal static class Gozler
         Reply reply;
         try
         {
-            reply = await Run([.. Arguments(probe), "--version"], cancellation).ConfigureAwait(false);
+            reply = await Run([.. Arguments(probe), FilesOption, FoldersOption, "--version"], cancellation)
+                .ConfigureAwait(false);
         }
         catch (GozlerException)
         {
@@ -179,6 +241,15 @@ internal static class Gozler
         var knows = reply.Code != 6;
         _probed = new(program, written, knows);
         return knows;
+    }
+
+    // Every call that uses gozler's options checks first that gozler knows
+    // all of them, so a gozler is either used fully or shown as too old: no
+    // feature works while another asks for an update.
+    private static async Task RequireOptions(CancellationToken cancellation)
+    {
+        if (!await KnowsOptions(cancellation).ConfigureAwait(false))
+            throw new GozlerException(new DiskState(DiskStatus.Older));
     }
 
     // A record, so a thread reads either the old answer or the new one.
@@ -378,7 +449,15 @@ internal sealed record GozlerVolume(string Volume, IReadOnlyList<string> Mounts,
 
 internal sealed record GozlerAnswer(byte[] Json, bool Incomplete);
 
-internal readonly record struct GozlerFolder(string Path, FileAttributes Attributes);
+// The total size of the files below the folder and how many files and
+// folders lie below it, each null when gozler does not give it.
+internal readonly record struct GozlerFolder(
+    string Path,
+    FileAttributes Attributes,
+    long? Size,
+    long? Files,
+    long? Folders
+);
 
 internal sealed record GozlerFolders(IReadOnlyList<GozlerFolder> Folders, bool Incomplete, bool Missing = false);
 

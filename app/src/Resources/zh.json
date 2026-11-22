@@ -531,6 +531,8 @@
   "columns": {
     "name": "名称",
     "size": "大小",
+    "files": "文件",
+    "folders": "文件夹",
     "progress": "进度",
     "status": "状态",
     "down": "下载速度",

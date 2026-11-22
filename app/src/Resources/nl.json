@@ -531,6 +531,8 @@
   "columns": {
     "name": "Naam",
     "size": "Grootte",
+    "files": "Bestanden",
+    "folders": "Mappen",
     "progress": "Voortgang",
     "status": "Status",
     "down": "Download",

@@ -47,10 +47,14 @@ public sealed partial class FoldersPage : UserControl
                 node => node.IsExpanded,
                 (node, expanded) => Model.Expand(node, expanded),
                 node => node.State is FolderState.Unloaded or FolderState.Loading
-            );
+            )
+            .SortKey(NameColumn, node => node.Name, StringComparer.CurrentCultureIgnoreCase)
+            .SortKey(SizeColumn, node => node.Size, emptyLast: true)
+            .SortKey(FilesColumn, node => node.Files, emptyLast: true)
+            .SortKey(FoldersColumn, node => node.Folders, emptyLast: true);
         // The table reads only the folder named, so a folder of 25,662
         // subfolders costs the table nothing for the rest of the tree.
-        Model.Filled += (_, folder) => Tree.RefreshView([folder]);
+        Model.Filled += (_, folders) => Tree.RefreshView(folders);
         Tree.RealizedItemsChanged += (_, items) =>
         {
             if (!_checksBehind)
@@ -123,6 +127,7 @@ public sealed partial class FoldersPage : UserControl
     private void OnText(object? sender, EventArgs args)
     {
         RefreshText();
+        RefreshChecks();
         ShowPlaces();
     }
 
@@ -177,6 +182,9 @@ public sealed partial class FoldersPage : UserControl
         PageHeader.Title = _main.Text.Get("discovery", "shows");
         AutomationProperties.SetName(Tree, _main.Text.Get("discovery", "tree"));
         NameColumn.DisplayName = _main.Text.Get("discovery", "folder");
+        SizeColumn.DisplayName = _main.Text.Get("columns", "size");
+        FilesColumn.DisplayName = _main.Text.Get("columns", "files");
+        FoldersColumn.DisplayName = _main.Text.Get("columns", "folders");
         PlacesTitle.Text = _main.Text.Get("discovery", "places");
     }
 

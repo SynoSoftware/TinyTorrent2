@@ -531,6 +531,8 @@
   "columns": {
     "name": "Name",
     "size": "Size",
+    "files": "Files",
+    "folders": "Folders",
     "progress": "Progress",
     "status": "Status",
     "down": "Download",

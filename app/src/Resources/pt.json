@@ -531,6 +531,8 @@
   "columns": {
     "name": "Nome",
     "size": "Tamanho",
+    "files": "Arquivos",
+    "folders": "Pastas",
     "progress": "Progresso",
     "status": "Status",
     "down": "Download",

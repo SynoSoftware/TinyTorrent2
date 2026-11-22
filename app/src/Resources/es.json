@@ -531,6 +531,8 @@
   "columns": {
     "name": "Nombre",
     "size": "Tamaño",
+    "files": "Archivos",
+    "folders": "Carpetas",
     "progress": "Progreso",
     "status": "Estado",
     "down": "Descarga",

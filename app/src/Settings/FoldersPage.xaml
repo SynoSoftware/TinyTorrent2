@@ -61,7 +61,7 @@
           PreviewKeyDown="OnTreeKey"
         >
           <table:Table.Columns>
-            <table:Column x:Name="NameColumn" Id="name" Width="520" CellAlignment="Stretch">
+            <table:Column x:Name="NameColumn" Id="name" Width="320" CellAlignment="Stretch">
               <table:Column.CellTemplate>
                 <DataTemplate x:DataType="settings:FolderNode">
                   <Grid ColumnSpacing="8" ToolTipService.ToolTip="{x:Bind Path}">
@@ -113,6 +113,27 @@
                       TextWrapping="NoWrap"
                     />
                   </Grid>
+                </DataTemplate>
+              </table:Column.CellTemplate>
+            </table:Column>
+            <table:Column x:Name="SizeColumn" Id="size" Width="110" CanShrink="False" CellAlignment="Right">
+              <table:Column.CellTemplate>
+                <DataTemplate x:DataType="settings:FolderNode">
+                  <TextBlock Text="{x:Bind SizeText, Mode=OneWay}" VerticalAlignment="Center" />
+                </DataTemplate>
+              </table:Column.CellTemplate>
+            </table:Column>
+            <table:Column x:Name="FilesColumn" Id="files" Width="90" CanShrink="False" CellAlignment="Right">
+              <table:Column.CellTemplate>
+                <DataTemplate x:DataType="settings:FolderNode">
+                  <TextBlock Text="{x:Bind FilesText, Mode=OneWay}" VerticalAlignment="Center" />
+                </DataTemplate>
+              </table:Column.CellTemplate>
+            </table:Column>
+            <table:Column x:Name="FoldersColumn" Id="folders" Width="90" CanShrink="False" CellAlignment="Right">
+              <table:Column.CellTemplate>
+                <DataTemplate x:DataType="settings:FolderNode">
+                  <TextBlock Text="{x:Bind FoldersText, Mode=OneWay}" VerticalAlignment="Center" />
                 </DataTemplate>
               </table:Column.CellTemplate>
             </table:Column>
