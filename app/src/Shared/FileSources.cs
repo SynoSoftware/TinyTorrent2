@@ -34,7 +34,7 @@ internal sealed class FileSources(Database database)
             {
                 using var command = connection.CreateCommand();
                 command.CommandText = """
-                    SELECT r.origin, r.name, r.complete, r.settled, r.save_path, r.stamp
+                    SELECT r.origin, r.name, r.complete, r.settled, r.save_path, r.stamp, r.downloaded
                     FROM file_reads r LEFT JOIN contributions c USING(origin)
                     WHERE r.checked=0 OR (r.complete=0 AND r.checked<$active) OR r.checked<$idle
                     ORDER BY r.checked<>0, c.origin IS NOT NULL AND c.stamp=r.stamp,
@@ -53,6 +53,7 @@ internal sealed class FileSources(Database database)
                     {
                         SavePath = reader.GetString(4),
                         Stamp = reader.GetString(5),
+                        Downloaded = reader.GetBoolean(6),
                     }
                     : null;
             },
@@ -100,19 +101,22 @@ internal sealed class FileSources(Database database)
                 var origin = insert.Parameters.Add("$origin", SqliteType.Text);
                 using var update = connection.CreateCommand();
                 update.CommandText = """
-                    INSERT INTO file_reads (origin, name, complete, settled, save_path, stamp)
-                    VALUES ($origin, $name, $complete, $settled, $path, $stamp)
+                    INSERT INTO file_reads (origin, name, complete, settled, downloaded, save_path, stamp)
+                    VALUES ($origin, $name, $complete, $settled, $downloaded, $path, $stamp)
                     ON CONFLICT(origin) DO UPDATE SET name=excluded.name,
-                        complete=excluded.complete, settled=excluded.settled, save_path=excluded.save_path,
+                        complete=excluded.complete, settled=excluded.settled,
+                        downloaded=excluded.downloaded, save_path=excluded.save_path,
                         checked=CASE WHEN stamp=excluded.stamp THEN checked ELSE 0 END,
                         collected=CASE WHEN stamp=excluded.stamp THEN collected ELSE 0 END,
                         stamp=excluded.stamp
-                    WHERE stamp<>excluded.stamp OR name<>excluded.name;
+                    WHERE stamp<>excluded.stamp OR name<>excluded.name
+                        OR downloaded<>excluded.downloaded;
                     """;
                 update.Parameters.Add("$origin", SqliteType.Text);
                 update.Parameters.Add("$name", SqliteType.Text);
                 update.Parameters.Add("$complete", SqliteType.Integer);
                 update.Parameters.Add("$settled", SqliteType.Integer);
+                update.Parameters.Add("$downloaded", SqliteType.Integer);
                 update.Parameters.Add("$path", SqliteType.Text);
                 update.Parameters.Add("$stamp", SqliteType.Text);
                 foreach (var contribution in contributions)
@@ -124,6 +128,7 @@ internal sealed class FileSources(Database database)
                     update.Parameters["$name"].Value = contribution.Name;
                     update.Parameters["$complete"].Value = contribution.Complete;
                     update.Parameters["$settled"].Value = contribution.Settled;
+                    update.Parameters["$downloaded"].Value = contribution.Downloaded;
                     update.Parameters["$path"].Value = contribution.SavePath;
                     update.Parameters["$stamp"].Value = contribution.Stamp;
                     update.ExecuteNonQuery();
@@ -525,7 +530,7 @@ internal sealed class FileSources(Database database)
                 }
                 using var numbers = connection.CreateCommand();
                 numbers.CommandText = "UPDATE disk_numbers SET next=next+1 RETURNING next-1;";
-                // A file that Hide or switching discovery off withdrew takes
+                // A file that a left-out folder or switching discovery off withdrew takes
                 // back its number, and with it the matches it kept.
                 using var withdrawn = connection.CreateCommand();
                 withdrawn.CommandText = """
@@ -588,25 +593,79 @@ internal sealed class FileSources(Database database)
             cancellation
         );
 
-    // Saves the folder and withdraws the disk files under it in one job, so
-    // their rows leave at once. Files that a torrent lists stay.
-    internal Task<bool> Hide(string folder, CancellationToken cancellation) =>
+    internal Task<FolderChoices> ReadFolders(CancellationToken cancellation) =>
+        database.Run(connection => ReadFolders(connection), cancellation);
+
+    private static FolderChoices ReadFolders(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT path,shown FROM library_folders;";
+        using var reader = command.ExecuteReader();
+        var choices = new List<FolderChoice>();
+        while (reader.Read())
+            choices.Add(new(reader.GetString(0), reader.GetBoolean(1)));
+        return new(choices);
+    }
+
+    /// <summary>
+    /// Applies <paramref name="change"/> to the saved choices and withdraws the
+    /// disk files that it leaves out, in one job, so their rows leave at once
+    /// and two changes never overwrite each other. Files that a torrent lists
+    /// stay. Saves nothing when the choices would not change.
+    /// <paramref name="saving"/> runs in the job just before it saves, so no
+    /// job queued after it still sees the old choices.
+    /// </summary>
+    internal Task<FolderChange> ChangeFolders(
+        Func<FolderChoices, FolderChoices> change,
+        CancellationToken cancellation,
+        Action? saving = null
+    ) =>
         database.Run(
             connection =>
             {
+                var before = ReadFolders(connection);
+                var after = change(before);
+                if (after.All.SequenceEqual(before.All))
+                    return new FolderChange(before, before, Withdrew: false);
+                saving?.Invoke();
                 using var command = connection.CreateCommand();
-                command.CommandText = "INSERT OR IGNORE INTO hidden_folders VALUES($folder);";
-                command.Parameters.AddWithValue("$folder", folder);
+                command.CommandText = "DELETE FROM library_folders;";
                 command.ExecuteNonQuery();
-                command.CommandText = "SELECT file_index,path FROM source_files WHERE origin=$disk;";
+                command.CommandText = "INSERT INTO library_folders VALUES($path,$shown);";
+                var path = command.Parameters.Add("$path", SqliteType.Text);
+                var shown = command.Parameters.Add("$shown", SqliteType.Integer);
+                foreach (var choice in after.All)
+                {
+                    path.Value = choice.Path;
+                    shown.Value = choice.Shown;
+                    command.ExecuteNonQuery();
+                }
+                // Only a file at or inside a folder that the change leaves out
+                // can leave, and the location index finds the files inside a
+                // folder, so a change reads no other file.
+                string[] leaving = [.. FolderChange.Flips(after, before)];
+                if (leaving.Length == 0)
+                    return new FolderChange(before, after, Withdrew: false);
+                command.Parameters.Clear();
+                command.CommandText = """
+                    SELECT f.file_index,f.path FROM locations l
+                    JOIN source_files f ON f.entry_id=l.entry_id AND f.origin=$disk
+                    WHERE l.path>=$low AND l.path<$high;
+                    """;
                 command.Parameters.AddWithValue("$disk", Disk);
-                var hidden = new List<int>();
-                using (var reader = command.ExecuteReader())
+                var low = command.Parameters.AddWithValue("$low", string.Empty);
+                var high = command.Parameters.AddWithValue("$high", string.Empty);
+                var withdrawn = new HashSet<int>();
+                foreach (var folder in leaving)
+                {
+                    (low.Value, high.Value) = PathRange(folder);
+                    using var reader = command.ExecuteReader();
                     while (reader.Read())
-                        if (FolderComparer.Instance.Contains(folder, reader.GetString(1)))
-                            hidden.Add(reader.GetInt32(0));
-                if (hidden.Count == 0)
-                    return false;
+                        if (!after.Shows(reader.GetString(1)))
+                            withdrawn.Add(reader.GetInt32(0));
+                }
+                if (withdrawn.Count == 0)
+                    return new FolderChange(before, after, Withdrew: false);
                 command.CommandText = Database.Reconcile;
                 command.ExecuteNonQuery();
                 command.CommandText = """
@@ -616,7 +675,7 @@ internal sealed class FileSources(Database database)
                     DELETE FROM source_files WHERE origin=$disk AND file_index=$index;
                     """;
                 var index = command.Parameters.Add("$index", SqliteType.Integer);
-                foreach (var file in hidden)
+                foreach (var file in withdrawn)
                 {
                     index.Value = file;
                     command.ExecuteNonQuery();
@@ -626,34 +685,7 @@ internal sealed class FileSources(Database database)
                     + Database.Reconcile
                     + Database.Cleanup;
                 command.ExecuteNonQuery();
-                return true;
-            },
-            cancellation
-        );
-
-    internal Task Unhide(string folder, CancellationToken cancellation) =>
-        database.Run(
-            connection =>
-            {
-                using var command = connection.CreateCommand();
-                command.CommandText = "DELETE FROM hidden_folders WHERE path=$folder;";
-                command.Parameters.AddWithValue("$folder", folder);
-                return command.ExecuteNonQuery();
-            },
-            cancellation
-        );
-
-    internal Task<IReadOnlyList<string>> ReadHidden(CancellationToken cancellation) =>
-        database.Run<IReadOnlyList<string>>(
-            connection =>
-            {
-                using var command = connection.CreateCommand();
-                command.CommandText = "SELECT path FROM hidden_folders ORDER BY path;";
-                using var reader = command.ExecuteReader();
-                var folders = new List<string>();
-                while (reader.Read())
-                    folders.Add(reader.GetString(0));
-                return folders;
+                return new FolderChange(before, after, Withdrew: true);
             },
             cancellation
         );
@@ -783,6 +815,9 @@ internal sealed class FileSources(Database database)
 
 internal sealed record Contribution(string Origin, string Name, bool Complete, bool Settled)
 {
+    // The engine received data for the torrent. A torrent whose data was
+    // already on disk completes without it.
+    internal bool Downloaded { get; init; }
     internal string SavePath { get; init; } = string.Empty;
     internal string Stamp { get; init; } = string.Empty;
 }

@@ -227,7 +227,7 @@ public sealed partial class MainWindow
             Command("properties", Model.Library.Properties, Syno.Segoe.Info),
             OriginActions.Create(Model.Library),
             .. MetadataActions.Menu(Model.Library, Model.DownloadSubtitles),
-            .. (Discovers ? [HideFolderMenu()] : Array.Empty<MenuEntry>()),
+            .. (Discovers ? [LeaveOutMenu()] : Array.Empty<MenuEntry>()),
         ];
 
     private IEnumerable<MenuEntry> LibraryViewMenu()

@@ -9,10 +9,12 @@ namespace Syno.TinyTorrent.Library;
 internal sealed partial class Store
 {
     // The sweep skips a file that will never be downloaded, because it never
-    // shows in Library.
+    // shows in Library. An online provider also takes a file that the IMDb
+    // data matched by itself, because its information is richer.
     private static string Eligible =>
         $"""
-            NOT EXISTS(SELECT 1 FROM entry_identifications i WHERE i.entry_id=f.entry_id)
+            NOT EXISTS(SELECT 1 FROM entry_identifications i WHERE i.entry_id=f.entry_id
+                AND NOT (i.explicit=0 AND i.catalog_id='{Imdb.Provider.CatalogId}' AND i.catalog_id<>$catalog))
             AND (f.wanted=1 OR f.complete=1)
             AND NOT EXISTS(SELECT 1 FROM source_files m JOIN video_attempts a USING(origin,file_index)
                 WHERE m.entry_id=f.entry_id AND a.catalog_id=$catalog AND a.evidence=m.name
@@ -282,13 +284,16 @@ internal sealed partial class Store
                     + ");";
                 if (Convert.ToInt64(command.ExecuteScalar()) == 0)
                     return null;
-                // A batch answer for a file another provider identified adds
-                // to that title instead of replacing the identification.
-                long? addsTo = null;
-                if (target.Kind is LookupKind.Batch or LookupKind.Refresh)
+                // An answer for a file another provider identified must name
+                // the same title. It takes over a match the IMDb data made by
+                // itself, because online information is richer, and only adds
+                // to any other.
+                long? knownTitle = null;
+                var takesOver = false;
+                if (target.Kind is LookupKind.Batch or LookupKind.Refresh or LookupKind.Automatic)
                 {
                     command.CommandText = """
-                        SELECT i.catalog_id,v.imdb_id FROM entry_identifications i
+                        SELECT i.catalog_id,v.imdb_id,i.explicit FROM entry_identifications i
                         JOIN video_information v ON v.catalog_id=i.catalog_id AND v.video_id=i.video_id
                         WHERE i.entry_id=$entry;
                         """;
@@ -297,7 +302,8 @@ internal sealed partial class Store
                     {
                         if (reader.IsDBNull(1))
                             return null;
-                        addsTo = reader.GetInt64(1);
+                        knownTitle = reader.GetInt64(1);
+                        takesOver = reader.GetString(0) == Imdb.Provider.CatalogId && !reader.GetBoolean(2);
                     }
                 }
                 command.CommandText = """
@@ -342,7 +348,8 @@ internal sealed partial class Store
                 return new VideoAttempt(target, requestId, choice, decided, language)
                 {
                     Explicit = explicitChoice,
-                    AddsTo = addsTo,
+                    KnownTitle = knownTitle,
+                    TakesOver = takesOver,
                 };
             },
             cancellation
@@ -427,7 +434,7 @@ internal sealed partial class Store
                 command.ExecuteNonQuery();
                 if (accepted && video is not null)
                 {
-                    if (attempt.AddsTo is null)
+                    if (attempt.KnownTitle is null || attempt.TakesOver)
                         SaveIdentification(
                             connection,
                             attempt.Target.Entry.EntryId,
@@ -533,9 +540,16 @@ internal sealed record VideoAttempt(
     internal RequestKey? BlockedRequest { get; init; }
 
     /// <summary>
-    /// The IMDb number of another provider's identification, which the attempt
-    /// only adds to: it saves a video with this number and keeps the
-    /// identification.
+    /// The IMDb number of another provider's identification, which the
+    /// attempt's answer must name.
     /// </summary>
-    internal long? AddsTo { get; init; }
+    internal long? KnownTitle { get; init; }
+
+    /// <summary>
+    /// Whether an answer for <see cref="KnownTitle"/> replaces that
+    /// identification, as it does a match the IMDb data made by itself.
+    /// Otherwise the answer only adds to it: it saves a video with this number
+    /// and keeps the identification.
+    /// </summary>
+    internal bool TakesOver { get; init; }
 }

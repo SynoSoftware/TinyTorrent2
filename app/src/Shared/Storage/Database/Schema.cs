@@ -57,6 +57,20 @@ internal sealed partial class Database
             -- Cleanup looks each kept match up by its file.
             CREATE INDEX withdrawn_disk_files_file ON withdrawn_disk_files(origin,file_index);
             """,
+        // 13: the person chooses which folders' media Library shows, as
+        // shown or left out, instead of only hiding folders. Windows' and
+        // programs' own folders, which the query always left out, become
+        // left-out choices the person can change; default_folders() gives
+        // them for this PC.
+        """
+            CREATE TABLE library_folders (
+                path TEXT COLLATE PATH NOT NULL PRIMARY KEY,
+                shown INTEGER NOT NULL CHECK(shown IN (0,1))
+            );
+            INSERT OR IGNORE INTO library_folders SELECT value,0 FROM json_each(default_folders());
+            INSERT OR IGNORE INTO library_folders SELECT path,0 FROM hidden_folders;
+            DROP TABLE hidden_folders;
+            """,
     ];
 
     private static int Version => Baseline + Migrations.Length;
@@ -214,7 +228,7 @@ internal sealed partial class Database
         CREATE TEMP TABLE file_reads (
             origin TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, complete INTEGER NOT NULL,
             settled INTEGER NOT NULL, collected INTEGER NOT NULL DEFAULT 0,
-            save_path TEXT NOT NULL, stamp TEXT NOT NULL, checked INTEGER NOT NULL DEFAULT 0
+            downloaded INTEGER NOT NULL DEFAULT 0, save_path TEXT NOT NULL, stamp TEXT NOT NULL, checked INTEGER NOT NULL DEFAULT 0
         );
         -- The disk contribution once this connection accepted an answer from
         -- gozler: its File confirmation. The torrents' is in file_reads.

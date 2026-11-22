@@ -46,9 +46,6 @@ public sealed partial class SettingsPage : UserControl
     public event EventHandler? ProxyRequested;
     internal event EventHandler<SubtitleSupplier>? SupplierRequested;
     internal event EventHandler<ProviderSetup>? KeyRequested;
-
-    /// <summary>Automatic downloading needs the selected provider's data installed.</summary>
-    internal event EventHandler? AutomaticDataRequested;
     internal event EventHandler<DataDownload>? UpdateRequested;
     internal event EventHandler<DataDownload>? DeleteRequested;
     public event EventHandler? ConnectionRequested;
@@ -173,9 +170,7 @@ public sealed partial class SettingsPage : UserControl
     private void OnAutomaticDownload(object sender, RoutedEventArgs args)
     {
         var requirement = Main.Library.ChooseAutomaticDownload(AutomaticDownload.IsOn);
-        if (requirement == ProviderRequirement.Data)
-            AutomaticDataRequested?.Invoke(this, EventArgs.Empty);
-        else if (requirement == ProviderRequirement.Key && Main.Library.ChosenProvider is { } option)
+        if (requirement == ProviderRequirement.Key && Main.Library.ChosenProvider is { } option)
             KeyRequested?.Invoke(this, new(option, true));
     }
 
@@ -236,10 +231,6 @@ public sealed partial class SettingsPage : UserControl
         if (args.PropertyName is nameof(Editor.SubtitleCoverage) or "")
         {
             RefreshSubtitleCoverage();
-        }
-        if (args.PropertyName is nameof(Editor.HiddenFolders) or "")
-        {
-            ShowHiddenFolders();
         }
     }
 
@@ -326,7 +317,7 @@ public sealed partial class SettingsPage : UserControl
             choice.SelectedItem = item;
         }
         RefreshHome();
-        ShowHiddenFolders();
+        RefreshFoldersLink();
         (SubtitlesContent?.Content as SubtitleSettings)?.RefreshText();
         _automatic?.Refresh();
         AlignCategory();
@@ -341,13 +332,12 @@ public sealed partial class SettingsPage : UserControl
             return;
         var index = Array.IndexOf(CategoryItems, item);
         var target = new SettingTarget(index < 0 ? null : (SettingsCategory)index);
-        if (Main.Navigation.Current != WindowPage.Connection && item == (_category ?? HomeCategory))
+        if (Main.Navigation.Parent is null && item == (_category ?? HomeCategory))
             return;
         _refreshing = true;
-        Categories.SelectedItem =
-            Main.Navigation.Current == WindowPage.Connection
-                ? LimitsCategory
-                : _category ?? HomeCategory;
+        Categories.SelectedItem = Main.Navigation.Parent is { } parent
+            ? CategoryItems[(int)parent]
+            : _category ?? HomeCategory;
         _refreshing = false;
         if (await Main.Navigation.SelectCategory(target.Category))
             FocusTarget(target);
@@ -369,14 +359,16 @@ public sealed partial class SettingsPage : UserControl
             return;
         }
         if (
-            Main.Navigation.Current == WindowPage.Connection
-            && args.InvokedItemContainer == LimitsCategory
-            && await Main.Navigation.SelectCategory(SettingsCategory.Limits)
+            Main.Navigation.Parent is { } parent
+            && args.InvokedItemContainer == CategoryItems[(int)parent]
+            && await Main.Navigation.SelectCategory(parent)
         )
-            FocusTarget(new(SettingsCategory.Limits));
+            FocusTarget(new(parent));
     }
 
-    internal void ShowConnection(ConnectionPage? page, bool animate = true)
+    // Shows a child page, such as Connection setup, with its parent category
+    // selected in the sidebar, or the categories again when `page` is null.
+    internal void ShowChild(UserControl? page, bool animate = true)
     {
         ClearOutline();
         if (page is not null)
@@ -389,7 +381,9 @@ public sealed partial class SettingsPage : UserControl
         else
             _pages.Replace(content);
         _refreshing = true;
-        Categories.SelectedItem = page is null ? _category ?? HomeCategory : LimitsCategory;
+        Categories.SelectedItem = Main.Navigation.Parent is { } parent && page is not null
+            ? CategoryItems[(int)parent]
+            : _category ?? HomeCategory;
         _refreshing = false;
         RefreshSubtitles();
     }
@@ -523,6 +517,7 @@ public sealed partial class SettingsPage : UserControl
                 row.DeleteRequested += (_, download) => DeleteRequested?.Invoke(this, download);
             }
             CityRow.Show(Main.Geolocation.Download, Model.Text);
+            RefreshFoldersLink();
             var subtitles = new SubtitleSettings(
                 Model.Text,
                 Main.Features.RetrySubtitles,
@@ -799,6 +794,7 @@ public sealed partial class SettingsPage : UserControl
             "language" => Languages,
             "theme" => _themes?.Choices,
             "media_discovery" => MediaSwitch,
+            "library_folders" => FoldersLink,
             "video_provider" => ProviderChoice,
             "video_information" => AutomaticDownload,
             "subtitle_automatic"

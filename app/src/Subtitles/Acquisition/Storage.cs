@@ -125,10 +125,13 @@ internal sealed partial class Acquisition
 
     // The torrents whose completion search is not decided yet and whose files
     // are complete, at rest and read.
-    private const string Finished = """
+    private const string Completed = """
         SELECT n.origin FROM new_origins n JOIN file_reads r USING(origin)
         WHERE r.complete=1 AND r.settled=1 AND r.collected=1
         """;
+
+    // The completed torrents that the engine downloaded.
+    private const string Finished = Completed + " AND r.downloaded=1";
 
     // Every torrent's movies, and the disk movies of entries and of subtitle
     // work the person started. Disk movies get no automatic work, so work over
@@ -400,7 +403,10 @@ internal sealed partial class Acquisition
     // Makes each finished torrent in the snapshot known, eligible or not, so
     // its completion search is decided once: switching on, adding a language
     // or reopening later searches nothing for it. A finished torrent without
-    // videos has nothing to search. Stale torrents stay undecided.
+    // videos has nothing to search. A torrent that completed without
+    // downloading, because its data was already on disk, gets no search, so
+    // adding many such torrents does not start a search for each. Stale
+    // torrents stay undecided.
     private static void Decide(
         SqliteConnection connection,
         Target[] targets,
@@ -424,6 +430,7 @@ internal sealed partial class Acquisition
             $"""
             INSERT OR IGNORE INTO known_torrents SELECT origin FROM ({Finished}) finished
             WHERE NOT EXISTS(SELECT 1 FROM collected_files c WHERE c.origin=finished.origin AND c.kind=$video);
+            INSERT OR IGNORE INTO known_torrents {Completed} AND r.downloaded=0;
             DELETE FROM new_origins WHERE origin IN (SELECT origin FROM known_torrents);
             """,
             ("$video", (int)FileKind.Video)

@@ -3,7 +3,8 @@
 Part of the [search protection contract](../search-protection.md). Read its
 shared ownership, identity, admission, pacing and persistence rules first.
 
-Reset and operation-drain changes also follow the [IMDb reset ordering](local.md#imdb-datasets-and-local-answers),
+Reset leaves the dataset downloads alone; an operation drain that ends a
+dataset command follows the [IMDb drain ordering](local.md#imdb-datasets-and-local-answers),
 because a dataset command must drain before Library's execution gates are taken.
 
 **Owner ruling: an individual item has one Fetch entry, labelled Force fetch
@@ -86,8 +87,8 @@ provider; it is not rematched and an explicit choice is not replaced. A
 different match is never applied silently. Library's batch groups videos by the
 chosen provider's last answer: Not checked yet uses New's protection, Not found
 last time uses Missing's, and Already checked uses All's. For a video another
-provider identified, the answer adds to the same IMDb title and never replaces
-the identification.
+provider identified, the answer must name the same IMDb title. It takes over a
+match the IMDb data made by itself and only adds to any other.
 
 Subtitle batch admission is scope-aware: New respects local protection and the
 cap; Missing and All explicitly include and retry locally blocked work. Capped
@@ -95,8 +96,10 @@ requests are not excluded from every scope.
 
 Settings > Plugins owns **Reset search protection**. Reset all clears all local
 blocks and the associated cap/backoff history across Library and Subtitles; a
-provider-specific reset applies the same operation to that provider. Reset starts
-no search and deletes no movie information, subtitles or user decisions.
+provider-specific reset applies the same operation to that provider. The list
+names the online providers and subtitle suppliers, the sources that search.
+Reset starts no search, deletes no movie information, subtitles or user
+decisions, and leaves the dataset downloads alone.
 
 | Action | Changes | Preserves |
 | --- | --- | --- |

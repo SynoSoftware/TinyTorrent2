@@ -137,7 +137,7 @@ public sealed partial class Scheduler : UserControl
         {
             var row = new SettingsExpander
             {
-                Padding = new Thickness(16, 0, 16, 0),
+                Padding = (Thickness)Application.Current.Resources["SectionPadding"],
                 Header = new PeriodHeader(),
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
@@ -203,8 +203,7 @@ public sealed partial class Scheduler : UserControl
             Trimming.SetShowsToolTip(When, true);
             Trimming.SetShowsToolTip(Behavior, true);
             MinHeight = 68;
-            ColumnSpacing = 24;
-            ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) });
+            ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             ColumnDefinitions.Add(
                 new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }
             );
@@ -215,6 +214,8 @@ public sealed partial class Scheduler : UserControl
                     Glyph = Syno.Segoe.Clock,
                     FontSize = (double)Application.Current.Resources["TinyTorrentHeaderIconSize"],
                     VerticalAlignment = VerticalAlignment.Center,
+                    Width = 20,
+                    Margin = (Thickness)Application.Current.Resources["IconMargin"],
                 }
             );
             var labels = new StackPanel

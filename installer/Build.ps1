@@ -89,47 +89,6 @@ function Get-Download([string] $Url, [string] $Name, [string] $Publisher) {
     return $saved
 }
 
-# The app downloads gozler's setup only as this record pins it: the setup's
-# URL on gozler's latest GitHub release, its SHA-256 and its size. gozler
-# releases are unsigned, so the hash is checked against the digest GitHub
-# gives the asset. Setup.iss does not use the record.
-function Write-GozlerRecord {
-    try {
-        $published = Invoke-RestMethod 'https://api.github.com/repos/SynoSoftware/gozler/releases/latest' `
-            -Headers @{ Accept = 'application/vnd.github+json' } -TimeoutSec 60
-    }
-    catch {
-        throw "GitHub did not answer about gozler's latest release: $($_.Exception.Message)"
-    }
-    $gozler = $published.tag_name -replace '^v', ''
-    $name = "gozler-$gozler-x64-Setup.exe"
-    $asset = $published.assets | Where-Object name -eq $name | Select-Object -First 1
-    if (-not $asset) { throw "The GitHub release of gozler $gozler has no $name." }
-    if ($asset.digest -notmatch '^sha256:([0-9A-Fa-f]{64})$') {
-        throw "GitHub gives no SHA-256 digest for $name."
-    }
-    $digest = $Matches[1].ToLowerInvariant()
-    $file = Join-Path $cache $name
-    if (-not (Test-Path -LiteralPath $file) -or (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $digest) {
-        Write-Host "Downloading $name..."
-        Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "$file.download" -TimeoutSec 180 -UseBasicParsing
-        Move-Item -LiteralPath "$file.download" -Destination $file -Force
-    }
-    $hash = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($hash -ne $digest) {
-        Remove-Item -LiteralPath $file
-        throw "The downloaded $name does not match the digest GitHub gives it. The installer was not generated."
-    }
-    $record = [ordered]@{
-        version = $gozler
-        url = $asset.browser_download_url
-        sha256 = $hash
-        size = (Get-Item -LiteralPath $file).Length
-    }
-    [IO.File]::WriteAllText((Join-Path $publish 'gozler.json'), ($record | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
-    Write-Host "gozler: $gozler"
-}
-
 function Get-Lane {
     $processes = @(Get-CimInstance Win32_Process | Where-Object {
         $_.Name -in 'MSBuild.exe', 'dotnet.exe' -and $_.CommandLine -notmatch '/nodemode:'
@@ -235,7 +194,6 @@ try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     Write-Host 'Generating TinyTorrent installer' -ForegroundColor Cyan
     Check-Catalogues
-    Write-GozlerRecord
     $releaseVersion = Reserve-Version (Join-Path $repository 'Directory.Build.props') $Version
     Write-Host "Version: $releaseVersion"
     Add-Type -Path (Join-Path $PSScriptRoot 'Icons.cs')
@@ -372,9 +330,7 @@ try {
         }
     })
     @{
-        DotNet = $framework.version
         Windows = $windowsPackages
-        Engine = "$engine.exe"
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $session 'requirements.json') -Encoding UTF8
 
     $licenses = Join-Path $publish 'licenses'
@@ -408,12 +364,18 @@ try {
         }
     }
 
+    # Setup's "View what's new" opens this file in Notepad, so the Markdown marks go.
+    $notes = (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'WhatsNew.md') -Raw -Encoding UTF8) -replace '(?m)^#+ ', '' -replace '[*`]', ''
+    [IO.File]::WriteAllText((Join-Path $publish 'WhatsNew.txt'), $notes, [Text.UTF8Encoding]::new($true))
+    # Setup's plugin tree counts these with the plugins it adds; Setup.iss leaves out the same files.
+    $appBytes = (Get-ChildItem -LiteralPath $publish -File -Recurse | Where-Object { $_.Extension -notin '.pdb', '.xml' } | Measure-Object -Property Length -Sum).Sum
+
     $installerName = "TinyTorrent-$releaseVersion-x64-Setup"
     $minimum = ([version] $metadata.TargetPlatformMinVersion).ToString(3)
     $compilerArgs = @('/Qp', "/DAppVersion=$releaseVersion", "/DMinWindows=$minimum",
         "/DAppPublisher=$($metadata.Company)",
         "/DEngineName=$engine", "/DSourceDir=$publish", "/DRuntimeDir=$session", "/DOutputDir=$session",
-        "/DDotNetUrl=$($dotnet.Url)", "/DDotNetHash=$($dotnet.Hash)",
+        "/DDotNetVersion=$($framework.version)", "/DAppBytes=$appBytes", "/DDotNetDownloadBytes=$((Get-Item -LiteralPath $dotnet.File).Length)", "/DDotNetUrl=$($dotnet.Url)", "/DDotNetHash=$($dotnet.Hash)",
         "/DWindowsUrl=$($windows.Url)", "/DWindowsHash=$($windows.Hash)")
     if ($Certificate) {
         $sdkBin = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin'

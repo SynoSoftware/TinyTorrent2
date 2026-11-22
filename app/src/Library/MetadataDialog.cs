@@ -91,7 +91,7 @@ internal sealed class MetadataDialog : UserControl, IDraft
         _library = library;
         _entry = entry;
         // The source applies to this dialog only and starts at the one the person chose.
-        _sources = library.DownloadProviders;
+        _sources = library.OnlineProviders;
         _source = new ComboBox
         {
             ItemsSource = _sources.Select(option => option.Name).ToArray(),

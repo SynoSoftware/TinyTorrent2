@@ -126,24 +126,24 @@ do not define this product.
   [focused review passes](docs/agents/compilation.md#focused-review-passes). They trace
   behavior, simplify ownership and recheck corrections, because one broad review
   can miss defects and the fixes can introduce others.
-- **Owner ruling: compile and measure last.** Before compiling, launching a
-  built executable, or handling a build failure, read
-  [compilation](docs/agents/compilation.md). Each build costs minutes of the owner's
-  15 W laptop, which agents share, and a five-pair performance round costs
-  about 15 minutes more, so a task builds or runs a round only when nothing
-  else can answer its remaining questions, and then once for all of them.
-  Every change that is ready joins one build and one round; the changes are
-  measured apart only when that round shows a regression.
-- **Owner ruling: finish the requested work, including its validation.** An
-  implementation or fix authorizes the focused tests and application
-  inspection its open questions need; a review reads code and names a question
-  reading cannot settle as unverified. Validation is complete when every open
-  question has an answer; when source review leaves none, source review
-  completes it. Use shared build outputs and choose checks under
-  [testing](docs/agents/testing.md), including its separately restricted checks.
-  Respect explicit user restrictions and protect the owner's data and running
-  applications. Close what you launched and report the evidence and any
-  remaining gaps.
+- **Owner ruling: the owner starts every build and test run.** A task builds,
+  compiles, runs tests or runs a performance round only when the owner asks
+  for it; a step in a plan is not that request. Each build costs minutes of
+  the owner's 15 W laptop, which agents share, and a five-pair performance
+  round costs about 15 minutes more, so the owner decides when one is worth
+  it. Before compiling, launching a built executable, or handling a build
+  failure, read [compilation](docs/agents/compilation.md). Every change that
+  is ready joins one build and one round; the changes are measured apart only
+  when that round shows a regression.
+- **Owner ruling: finish at source review, and name what is unverified.**
+  Implementation work and reviews end at source review. The report names each
+  question that only a build or a test run can settle, such as a compile
+  error or a test result, as unverified, so the owner can decide whether a
+  build is worth its minutes. For a check the owner asks for, use shared
+  build outputs and choose checks under [testing](docs/agents/testing.md),
+  including its separately restricted checks. Respect explicit user
+  restrictions and protect the owner's data and running applications. Close
+  what you launched and report the evidence and any remaining gaps.
 - **Owner ruling: no redundant verification; every check answers an open
   question.** An open question is a behavioral or visual result of this change
   that code review, compiler guarantees and documented platform behavior cannot

@@ -78,7 +78,7 @@ internal static class MetadataActions
     private static IEnumerable<MenuEntry> Providers(Browser browser)
     {
         var row = browser.Selected;
-        return browser.DownloadProviders.Select(option =>
+        return browser.OnlineProviders.Select(option =>
             new MenuCommand(
                 option.Name,
                 Segoe.Database,

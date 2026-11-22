@@ -1,0 +1,146 @@
+<UserControl
+  x:Class="Syno.TinyTorrent.Settings.FoldersPage"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:settings="using:Syno.TinyTorrent.Settings"
+  xmlns:table="using:Syno.TableView"
+  xmlns:icons="using:Syno"
+>
+  <Grid RowSpacing="16">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+    <StackPanel
+      Spacing="8"
+      Margin="24,16,24,0"
+      MaxWidth="{StaticResource TinyTorrentSettingsWidth}"
+    >
+      <BreadcrumbBar
+        x:Name="Hierarchy"
+        ItemClicked="OnHierarchy"
+        VerticalAlignment="Center"
+        IsTabStop="True"
+        AutomationProperties.HeadingLevel="Level1"
+      >
+        <BreadcrumbBar.Resources>
+          <Thickness x:Key="BreadcrumbBarChevronPadding">8,0</Thickness>
+          <x:Double x:Key="BreadcrumbBarChevronFontSize">16</x:Double>
+        </BreadcrumbBar.Resources>
+        <BreadcrumbBar.ItemTemplate>
+          <DataTemplate>
+            <TextBlock Text="{Binding}" Style="{StaticResource TinyTorrentPageTitleTextStyle}" />
+          </DataTemplate>
+        </BreadcrumbBar.ItemTemplate>
+      </BreadcrumbBar>
+      <settings:Header x:Name="PageHeader" Artwork="ms-appx:///Assets/Settings/plugins.png" />
+    </StackPanel>
+    <!-- The tree scrolls by itself inside a bounded height, so it creates
+         rows only for the folders in view. -->
+    <Grid
+      x:Name="Body"
+      Grid.Row="1"
+      Margin="24,0,24,24"
+      MaxWidth="{StaticResource TinyTorrentSettingsWidth}"
+      ColumnSpacing="16"
+      RowSpacing="16"
+      SizeChanged="OnBodySize"
+    >
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition x:Name="TreeColumn" Width="3*" />
+        <ColumnDefinition x:Name="PlacesColumn" Width="2*" />
+      </Grid.ColumnDefinitions>
+      <Grid.RowDefinitions>
+        <RowDefinition Height="*" />
+        <RowDefinition x:Name="PlacesRow" Height="0" />
+      </Grid.RowDefinitions>
+      <Border Style="{StaticResource TinyTorrentSettingsCardStyle}" Padding="20,20,20,8">
+        <table:Table
+          x:Name="Tree"
+          ItemsSource="{x:Bind Model.Roots, Mode=OneWay}"
+          PreviewKeyDown="OnTreeKey"
+        >
+          <table:Table.Columns>
+            <table:Column x:Name="NameColumn" Id="name" Width="520" CellAlignment="Stretch">
+              <table:Column.CellTemplate>
+                <DataTemplate x:DataType="settings:FolderNode">
+                  <Grid ColumnSpacing="8" ToolTipService.ToolTip="{x:Bind Path}">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <!-- Not a tab stop: Space on the row does what a click
+                         does, so the keyboard has one stop per folder. -->
+                    <CheckBox
+                      MinWidth="0"
+                      IsTabStop="False"
+                      IsChecked="{x:Bind Check, Mode=OneWay}"
+                      Tag="{x:Bind}"
+                      Click="OnCheck"
+                      AutomationProperties.Name="{x:Bind Name}"
+                    />
+                    <FontIcon
+                      Grid.Column="1"
+                      FontFamily="{x:Bind icons:Segoe.Font}"
+                      Glyph="{x:Bind Glyph}"
+                      FontSize="{StaticResource TinyTorrentInlineIconSize}"
+                      Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                      AutomationProperties.AccessibilityView="Raw"
+                    />
+                    <TextBlock
+                      Grid.Column="2"
+                      Text="{x:Bind Name}"
+                      Style="{StaticResource TinyTorrentIdentityTextStyle}"
+                      VerticalAlignment="Center"
+                      TextTrimming="CharacterEllipsis"
+                    />
+                    <ProgressRing
+                      Grid.Column="3"
+                      Width="{StaticResource TinyTorrentInlineIconSize}"
+                      Height="{StaticResource TinyTorrentInlineIconSize}"
+                      IsActive="{x:Bind IsLoading, Mode=OneWay}"
+                      Visibility="{x:Bind IsLoading, Mode=OneWay}"
+                      AutomationProperties.AccessibilityView="Raw"
+                    />
+                    <TextBlock
+                      Grid.Column="3"
+                      Text="{x:Bind Detail, Mode=OneWay}"
+                      Visibility="{x:Bind HasDetail, Mode=OneWay}"
+                      Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                      VerticalAlignment="Center"
+                      TextWrapping="NoWrap"
+                    />
+                  </Grid>
+                </DataTemplate>
+              </table:Column.CellTemplate>
+            </table:Column>
+          </table:Table.Columns>
+        </table:Table>
+      </Border>
+      <Border
+        x:Name="PlacesCard"
+        Grid.Column="1"
+        Style="{StaticResource TinyTorrentSettingsCardStyle}"
+        Padding="0"
+      >
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+          </Grid.RowDefinitions>
+          <TextBlock
+            x:Name="PlacesTitle"
+            Margin="20,20,20,12"
+            Style="{StaticResource TinyTorrentGroupTitleTextStyle}"
+            AutomationProperties.HeadingLevel="Level2"
+          />
+          <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel x:Name="Places" Padding="20,0,20,8" />
+          </ScrollViewer>
+        </Grid>
+      </Border>
+    </Grid>
+  </Grid>
+</UserControl>

@@ -14,6 +14,7 @@ public sealed partial class MainWindow
 {
     private SettingsPage? _settingsPage;
     private ConnectionPage? _connectionPage;
+    private FoldersPage? _foldersPage;
     private AboutPage? _aboutPage;
     private CreditsPage? _creditsPage;
     private readonly Motion _motion = new();
@@ -92,6 +93,8 @@ public sealed partial class MainWindow
                     return;
                 if (destination == WindowPage.Settings && previous == WindowPage.Connection)
                     _settingsPage?.FocusConnection();
+                else if (destination == WindowPage.Settings && previous == WindowPage.Folders)
+                    _settingsPage?.FocusFolders();
                 else if (destination == WindowPage.About && previous == WindowPage.Credits)
                     _aboutPage?.FocusCredits();
                 else if (
@@ -134,7 +137,7 @@ public sealed partial class MainWindow
     }
 
     private Task ReturnToSettings() =>
-        Model.Navigation.Current == WindowPage.Connection ? GoBack() : Task.CompletedTask;
+        Model.Navigation.Parent is not null ? GoBack() : Task.CompletedTask;
 
     private async Task ShowConnection()
     {
@@ -150,6 +153,23 @@ public sealed partial class MainWindow
             {
                 if (Model.Navigation.Current == WindowPage.Connection)
                     _connectionPage?.FocusHeading();
+            }
+        );
+    }
+
+    private async Task ShowFolders()
+    {
+        if (
+            Model.Navigation.Current != WindowPage.Settings
+            || !await Model.Navigation.Navigate(WindowPage.Folders)
+        )
+            return;
+        DispatcherQueue.TryEnqueue(
+            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+            () =>
+            {
+                if (Model.Navigation.Current == WindowPage.Folders)
+                    _foldersPage?.FocusHeading();
             }
         );
     }
@@ -228,16 +248,12 @@ public sealed partial class MainWindow
                 await ShowSupplier(supplierId);
             _settingsPage.KeyRequested += async (_, setup) =>
                 await ShowKey(setup.Provider, setup.EnableAutomaticDownload);
-            _settingsPage.AutomaticDataRequested += async (_, _) =>
-            {
-                if (Model.Library.Download is { } download)
-                    await ConfirmDownload(download, Model.PrepareAutomaticDownload);
-            };
             _settingsPage.UpdateRequested += async (_, download) =>
                 await ConfirmDownload(download, () => Model.DownloadData(download));
             _settingsPage.DeleteRequested += async (_, download) =>
                 await ConfirmDataDeletion(download);
             _settingsPage.ConnectionRequested += async (_, _) => await ShowConnection();
+            _settingsPage.FoldersRequested += async (_, _) => await ShowFolders();
             _settingsPage.ResetRequested += async (_, _) => await ConfirmReset();
             _settingsPage.LayoutChanged += (_, _) => UpdateChrome();
         }
@@ -280,11 +296,21 @@ public sealed partial class MainWindow
                     _connectionPage.ParentRequested += async (_, _) =>
                         await ShowSettings(new(SettingsCategory.Limits));
                 }
-                settings.ShowConnection(_connectionPage, animate);
+                settings.ShowChild(_connectionPage, animate);
+            }
+            else if (Model.Navigation.Current == WindowPage.Folders)
+            {
+                if (_foldersPage is null)
+                {
+                    _foldersPage = new FoldersPage(Model);
+                    _foldersPage.ParentRequested += async (_, _) =>
+                        await ShowSettings(new(SettingsCategory.Plugins));
+                }
+                settings.ShowChild(_foldersPage, animate);
             }
             else
             {
-                settings.ShowConnection(null, animate);
+                settings.ShowChild(null, animate);
                 settings.Navigate(Model.Navigation.Settings ?? new(), animate: animate);
             }
         }

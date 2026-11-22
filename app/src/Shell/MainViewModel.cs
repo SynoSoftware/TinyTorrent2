@@ -390,6 +390,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             if (!IsClosing && !Features.IsClosed)
                 Notifications.ShowWorkResult(result);
         };
+        // Settings watches the setup from its constructor.
+        GozlerSetup = new GozlerSetup(this, _providerHttp);
         Settings = new Editor(this, _client);
         AddDraft = new AddDraft(this, _client, strings);
         MoveDraft = new MoveDraft(this, _client);
@@ -470,8 +472,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IDisposable
             Features.Repair,
             () => _connected && Features.Failure is not null
         );
-        GozlerSetup = new GozlerSetup(this, _providerHttp);
         DiscoverMedia = new RelayCommand(() => SwitchDiscovery(true), () => Disk is not null);
+        UpdateGozler = new RelayCommand(
+            () =>
+            {
+                RequestGozler(discover: Disk is { State.Status: not DiskStatus.Off });
+                return Task.CompletedTask;
+            },
+            () => Disk is not null
+        );
         RefreshDiscovery = new RelayCommand(
             () => Disk?.Refresh(),
             () => Disk is { State.Status: not DiskStatus.Off }

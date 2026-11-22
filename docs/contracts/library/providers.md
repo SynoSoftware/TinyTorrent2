@@ -5,12 +5,24 @@ membership and SQLite rules before the sections here that the change affects.
 
 ## Identification and early enrichment
 
-Choose one provider: TMDB, Wikidata, OMDb, MDBList or IMDb.
+Video information comes from two kinds of provider. **Owner ruling: the IMDb
+data identifies videos whenever it is installed, and online providers run in
+the background only when the person turns that on.** The IMDb data is a local
+SQLite copy, so its lookups cost nothing and send no requests: there is no
+setting for it, and the person chooses it by downloading it. An online
+provider sends requests for every video it looks up, so its automatic
+downloads start Off; started on a disk with many movies they would send a
+request for each one.
+
+The person chooses one online provider: TMDB, Wikidata, OMDb or MDBList.
 Default provider selection is exclusive, so changing it cancels automatic
 work belonging to the previous provider. Accepted manual work keeps its chosen
-provider and continues. Each selected provider uses the same background
-identification workflow; TMDB also supports series and episodes, and the others
-support movies only.
+provider and continues. The background sweep asks the online provider first,
+while its automatic downloads are on, and then the IMDb data for the files it
+did not identify. Both use the same identification workflow; TMDB and the IMDb
+data also support series and episodes, and the others support movies only.
+An earlier version saved IMDb as a provider; Library starts that choice as the
+first online provider with automatic downloads off.
 
 The providers differ in what they return:
 
@@ -126,9 +138,11 @@ Every label and note takes one line. A request that did not complete counts as n
 checked yet starts checked, and it respects local protection; Not found last
 time asks again, and Already checked refreshes the provider's answer. An empty
 group is disabled. Another provider's match never moves a video between groups.
-A confident answer for a video that another provider identified adds this
-provider's ratings and title facts when both name the same IMDb ID, and keeps
-the identification; another title is no answer. The dialog says that
+A confident answer for a video that another provider identified must name the
+same IMDb ID; another title is no answer. It takes over a match the IMDb data
+made by itself, because the online information is richer and Library keeps one
+match per file. Any other match it keeps, and adds this provider's ratings and
+title facts to the title. The dialog says that
 information from other sources is kept, and counts the selected videos the
 provider cannot check: extras and other unsearchable names, videos whose
 information the person cleared, and videos whose match has no IMDb ID to compare.
@@ -200,9 +214,9 @@ from downloaded data, `Dataset`. The provider ID persists the selection and
 qualifies stored information, such as `imdb` or `tmdb`. It is an
 implementation-owned stable string, because removing a provider must not
 require changing central enum ordinals. A saved provider ID that no option
-matches durably turns downloading off with no selected provider, rather than
-refusing to start; silently falling back to another provider would change the
-person's disclosed network behavior.
+matches, IMDb included, durably turns downloading off and shows the first
+online provider, rather than refusing to start; silently downloading from
+another provider would change the person's disclosed network behavior.
 
 Library owns what every provider shares. It chooses the key, the person's own
 or else the built-in one, and passes it to the option's `Create`. It decides
@@ -312,7 +326,9 @@ data uses.
 
 The background sweep takes each video file on screen that has no saved
 decision, no attempt in this session and no remembered no-match answer from
-the provider under the file's current name. A file that scrolls away before
+the provider under the file's current name. The online provider also takes a
+file that the IMDb data matched by itself, and takes over that match when it
+names the same IMDb ID. A file that scrolls away before
 its turn waits until it shows again. Opening the database returns earlier failures,
 search-limit stops and unusable pages to the sweep; only the provider's own
 no-match answer is permanent. Automatic and batch lookups search the provider
@@ -400,7 +416,9 @@ a movie match never establishes timing compatibility.
 ## Privacy and provider release requirements
 
 Normal browsing and typing stay local. Automatic video information downloads
-start Off. The Download automatically switch starts them; choosing a provider or
+start Off, in the app and in the installer, whose "Download video information
+automatically" box a typical installation leaves clear. The Download
+automatically switch, or that box, starts them; choosing a provider or
 editing its credentials leaves that switch unchanged. There is no confirmation
 dialog and no per-file consent, because the choice is already the person's
 decision, as with Windows' own online settings. Choosing another provider in
@@ -411,10 +429,12 @@ Fetch and Refresh remain available, and accepted manual work continues. Cached i
 remains usable only as permitted by the applicable terms; source entries and
 filename search remain usable regardless.
 
-Settings presents Provider and Download automatically as separate rows in the
-Video information group, like supplier access and automatic subtitles. Provider
-selection, credentials and dataset management remain available in both switch
-states; Off stops only automatic work and shows no disabled-feature notice.
+Settings presents Online provider and Download automatically as separate rows
+in the Video information group, like supplier access and automatic subtitles.
+Online provider lists only the online providers; the IMDb data has its own
+row. Provider selection, credentials and dataset management remain available
+in both switch states; Off stops only automatic work and shows no
+disabled-feature notice.
 The provider's information button opens its disclosure, the
 inputs it receives, and links to its privacy policy and terms, in the same
 flyout as the subtitle supplier's. For a provider that takes an API key, a key
@@ -422,18 +442,17 @@ button beside it opens the [account dialog](../architecture.md#third-party-provi
 where the person enters their own key or, when the release has one, keeps the
 built-in key. Saving credentials preserves automatic download intent. Turning
 automatic downloads on with no usable key opens that dialog: Save stores the key
-and starts automatic downloads; Cancel leaves them off. Turning them on for IMDb
-before its data is installed asks to download it. Download installs the data and
-starts automatic downloads when it finishes, unless the person chose another
-setting meanwhile; Cancel leaves them off. Downloading or updating the data from
-its own row leaves the switch unchanged. The IMDb data row shows the data's size and date and
-offers Download or Update and Delete data, whichever provider is chosen,
-because every provider's movies use its ratings. While the data downloads, the
-row shows its progress and a button that stops it. Providers can be selected and
-configured while unavailable. Requests still need the provider's data or key,
-while saved information and other providers remain usable. Library's Settings
-button opens the provider row; Settings search
-has separate destinations for Provider and Download automatically.
+and starts automatic downloads; Cancel leaves them off. Downloading or
+updating the IMDb data leaves the switch unchanged. The IMDb data row shows the
+data's size and date and offers Download or Update and Delete data, whichever
+provider is chosen, because it identifies videos and every provider's movies
+use its ratings. Before the data is installed, the row says so: "Identifies
+movies and series and shows their IMDb ratings, without online requests." While
+the data downloads, the row shows its progress and a button that stops it.
+Providers can be selected and configured while unavailable. Requests still need
+the provider's key, while saved information and other providers remain usable.
+Library's Settings button opens the provider row; Settings search has separate
+destinations for Online provider and Download automatically.
 
 Send only the matching inputs a request needs. Do not upload a Library
 inventory, absolute paths, torrent info hashes, trackers, peers or movie bytes.

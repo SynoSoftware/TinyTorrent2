@@ -69,7 +69,10 @@ search the window closed before deciding, gets this search when the window
 next connects, because subtitle work runs only in the window. The search is decided
 once per torrent, whatever its videos and languages: a torrent that finished
 while the switch was Off, or a language added or a supplier fixed later, starts
-no search for it. [Configuration](subtitles/configuration.md#configuration)
+no search for it. Finishing means the engine downloaded data for the torrent:
+a torrent added with its data already on disk, or removed and added again,
+completes without a search, so importing many seeding torrents does not spend
+the supplier's daily quota for days. [Configuration](subtitles/configuration.md#configuration)
 owns the details.
 
 Normal operation has no dialogs, notifications, torrent columns or inspector

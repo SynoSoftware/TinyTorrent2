@@ -9,6 +9,9 @@ namespace Syno.TinyTorrent.Shared.Network;
 internal sealed partial class RequestPolicy(Database database)
 {
     internal const int DefaultLimit = 5;
+
+    /// <summary>The operation of a downloaded dataset's whole transfer, such as the IMDb data.</summary>
+    internal const string DatasetOperation = "dataset";
     private readonly SemaphoreSlim _settings = new(1);
     private bool _initialized;
     internal int Limit { get; private set; } = DefaultLimit;
@@ -157,16 +160,25 @@ internal sealed partial class RequestPolicy(Database database)
             """;
         command.Parameters.AddWithValue("$provider", (object?)providerId ?? DBNull.Value);
         command.ExecuteNonQuery();
-        ClearBackoff(connection, providerId);
+        // A dataset download is not a search: an explicit Download or Update
+        // already tries once past its backoff, so a reset leaves it alone and
+        // never has to stop a running download.
+        ClearBackoff(connection, providerId, datasets: false);
     }
 
-    internal static void ClearBackoff(SqliteConnection connection, string? providerId = null)
+    internal static void ClearBackoff(
+        SqliteConnection connection,
+        string? providerId = null,
+        bool datasets = true
+    )
     {
         using var command = connection.CreateCommand();
         command.CommandText =
-            "DELETE FROM request_holds WHERE reason=$backoff AND ($provider IS NULL OR provider_id=$provider);";
+            "DELETE FROM request_holds WHERE reason=$backoff AND ($provider IS NULL OR provider_id=$provider)"
+            + (datasets ? ";" : " AND operation<>$dataset;");
         command.Parameters.AddWithValue("$provider", (object?)providerId ?? DBNull.Value);
         command.Parameters.AddWithValue("$backoff", (int)RequestBlockKind.Backoff);
+        command.Parameters.AddWithValue("$dataset", DatasetOperation);
         command.ExecuteNonQuery();
     }
 

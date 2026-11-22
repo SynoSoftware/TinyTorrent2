@@ -618,15 +618,6 @@ public sealed partial class MainViewModel
 
     internal Task DownloadData(DataDownload download) => AnnounceData(download, download.Start());
 
-    /// <summary>
-    /// Downloads the data of the provider the person chose, which the
-    /// installed data selects.
-    /// </summary>
-    internal Task PrepareAutomaticDownload() =>
-        Library.Download is { } download
-            ? AnnounceData(download, Library.PrepareAutomaticDownload())
-            : Task.CompletedTask;
-
     private async Task AnnounceData(DataDownload download, Task<bool> installed)
     {
         if (await installed)
@@ -641,7 +632,7 @@ public sealed partial class MainViewModel
             ProtectionScope[] scopes =
             [
                 new(null, Text.Get("request_protection", "reset_all")),
-                .. Library.Providers.Select(provider => new ProtectionScope(
+                .. Library.OnlineProviders.Select(provider => new ProtectionScope(
                     provider.ProviderId,
                     provider.Name
                 )),

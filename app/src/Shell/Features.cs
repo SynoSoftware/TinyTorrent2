@@ -276,6 +276,12 @@ internal sealed class Features
         try
         {
             await disk.Start();
+            // The installer's choices change Library's and subtitles' saved
+            // settings, so they wait until both have read them. A start that
+            // failed reports itself, and the choices it can still take apply.
+            await Task.WhenAll(Library.Started, _subtitlesStarting ?? Task.CompletedTask)
+                .ConfigureAwait(ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
+            await SetupChoices.Apply(_owner);
         }
         catch (OperationCanceledException) { }
         catch (Exception error) when (ReferenceEquals(disk, _disk))
@@ -643,10 +649,8 @@ internal sealed class Features
                     new WorkExecution.Finishing()
                 )
             );
-            // The reset clears what a running download writes, so the download
-            // ends first, as the IMDb download does inside SuspendProtection.
-            if (providerId is null)
-                await Geolocation.Download.Interrupt();
+            // The reset leaves the dataset downloads' protection alone, so a
+            // running download goes on.
             await Library.SuspendProtection(
                 () =>
                     subtitles.Suspend(() =>
@@ -658,7 +662,7 @@ internal sealed class Features
                             return true;
                         })
                     ),
-                providerId is null || providerId == Library.DataProvider?.ProviderId
+                includeDataset: false
             );
             operation.Outcome = WorkOutcome.Completed;
         }

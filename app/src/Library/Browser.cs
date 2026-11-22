@@ -113,6 +113,9 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
         && _failure is null
         && _starting is { IsCompletedSuccessfully: true };
     public string Failure => _failure is null ? string.Empty : Text.Error(_failure);
+
+    /// <summary>Ends when Library has read its saved provider choice, or failed to.</summary>
+    internal Task Started => _starting ?? Task.CompletedTask;
     internal bool HasFailure => _failure is not null;
     internal Exception? FailureCause => _failure;
     internal bool CanShowTorrent => IsAvailable && _readiness != LibraryReadiness.Offline;
@@ -217,7 +220,10 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
             ? Text.Format("library", "dollars", Text.Compact(takings))
             : string.Empty;
     public bool IsAutomaticDownloadEnabled => _videos?.IsAutomaticDownloadEnabled == true;
-    private string? LookupCatalog => Option?.ProviderId;
+    // The catalogue whose misses show as not found: the IMDb data while it is
+    // installed, because the sweep asks it last, else the online provider.
+    private string? LookupCatalog =>
+        (DataProvider is { Dataset.IsInstalled: true } local ? local : Option)?.ProviderId;
     public string DownloadLabel => Text.Get("library", "download_information");
     public string FetchMetadataLabel => Text.Get("library", "fetch_metadata");
     public string FetchMetadataGlyph => Segoe.Download;
@@ -397,7 +403,7 @@ public sealed partial class Browser : INotifyPropertyChanged, IDisposable, IAsyn
                     (
                         Option is { IsOnline: true } current
                             ? current
-                            : DownloadProviders.FirstOrDefault()
+                            : OnlineProviders.FirstOrDefault()
                     ) is
                     { } option
                 )

@@ -11,7 +11,7 @@ public sealed partial class MainViewModel
 
     internal GozlerSetup GozlerSetup { get; }
 
-    /// <summary>Raised when switching discovery on needs gozler installed first.</summary>
+    /// <summary>Raised to open gozler's install prompt.</summary>
     internal event EventHandler? GozlerRequested;
 
     /// <summary>
@@ -20,8 +20,25 @@ public sealed partial class MainViewModel
     /// </summary>
     internal ICommand DiscoverMedia { get; }
 
+    /// <summary>
+    /// Opens gozler's prompt to update an installed gozler that is too old:
+    /// Settings and the message bar's Update.
+    /// </summary>
+    internal ICommand UpdateGozler { get; }
+
     /// <summary>Asks gozler again: Library's Refresh files and each Retry.</summary>
     internal ICommand RefreshDiscovery { get; }
+
+    /// <summary>
+    /// Opens gozler's install prompt. After the installation, discovery
+    /// switches on only when the request says so: the installer's plugin
+    /// tree can install gozler alone.
+    /// </summary>
+    internal void RequestGozler(bool discover)
+    {
+        GozlerSetup.Discovers = discover;
+        GozlerRequested?.Invoke(this, EventArgs.Empty);
+    }
 
     /// <summary>
     /// Switches discovery on or off. While gozler is not installed, switching
@@ -37,7 +54,7 @@ public sealed partial class MainViewModel
             if (!on)
                 await disk.Disable();
             else if (Gozler.Locate() == GozlerProgram.NotInstalled)
-                GozlerRequested?.Invoke(this, EventArgs.Empty);
+                RequestGozler(discover: true);
             else
                 await disk.Enable();
         }
@@ -48,32 +65,85 @@ public sealed partial class MainViewModel
     }
 
     /// <summary>
-    /// Shows a hidden folder's files in Library again: Settings' Remove and
-    /// the Undo of the toast that Hide shows. They return at the next
-    /// refresh, with the matches they had.
+    /// The saved folder choices as last read or changed, for Settings; null
+    /// while they are not read or Library's database is closed.
     /// </summary>
-    internal async Task UnhideFolder(string folder)
+    internal FolderChoices? Folders { get; private set; }
+
+    // The disk source whose database Folders came from.
+    private DiskSource? _foldersSource;
+
+    internal async Task ReadFolders()
+    {
+        var disk = Disk;
+        // Set now, so a disk change while the read runs starts no second read.
+        _foldersSource = disk;
+        FolderChoices? folders = null;
+        if (disk is not null)
+        {
+            try
+            {
+                folders = await disk.ReadFolders();
+            }
+            catch (Exception error)
+            {
+                System.Diagnostics.Debug.WriteLine($"Folder choices not read: {error.Message}");
+            }
+        }
+        if (ReferenceEquals(disk, Disk))
+            ShowFolders(disk, folders);
+    }
+
+    /// <summary>
+    /// Saves a change of the folder choices: a check box in Library folders,
+    /// Library's Leave folder out and its Undo. Gives what it did, or null
+    /// when it failed, which it reports.
+    /// </summary>
+    internal async Task<FolderChange?> ChangeFolders(Func<FolderChoices, FolderChoices> change, string subject)
     {
         if (Disk is not { } disk)
-            return;
+            return null;
         try
         {
-            await disk.Unhide(folder);
+            var result = await disk.ChangeFolders(change);
+            if (ReferenceEquals(disk, Disk))
+                ShowFolders(disk, result.After);
+            return result;
         }
         catch (Exception error)
         {
-            Notifications.Report(error, "failed_settings", () => folder, null);
+            Notifications.Report(error, "failed_settings", () => subject, null);
+            return null;
         }
-        await Settings.RefreshHidden();
+    }
+
+    /// <summary>
+    /// Library's Leave folder out. One click can leave a whole drive out, so
+    /// the toast's Undo puts back the choices it replaced with one click too.
+    /// </summary>
+    internal async Task LeaveOut(string folder)
+    {
+        var result = await ChangeFolders(choices => choices.Set(folder, shown: false), folder);
+        if (result is not null)
+            Notifications.ShowLeftOut(folder, result.Before.Within(folder));
+    }
+
+    private void ShowFolders(DiskSource? disk, FolderChoices? folders)
+    {
+        _foldersSource = disk;
+        Folders = folders;
+        Changed(nameof(Folders));
     }
 
     // What resolves a disk state, in Settings and in Library's message.
-    // Retry follows a repair or an update made in gozler, and a drive that
-    // gozler cannot keep current changes only when it is asked again.
+    // An older gozler needs the update, because asking again changes nothing.
+    // Retry follows a repair made in gozler, and a drive that gozler cannot
+    // keep current changes only when it is asked again.
     internal static DiskRecovery Recovery(DiskState state) =>
         state.Status switch
         {
             DiskStatus.NotInstalled => DiskRecovery.Install,
+            DiskStatus.Older => DiskRecovery.Update,
             DiskStatus.OutOfDate => DiskRecovery.Retry,
             _ when state.IsFailure => DiskRecovery.Retry,
             _ => DiskRecovery.None,
@@ -106,6 +176,12 @@ public sealed partial class MainViewModel
                     Syno.Segoe.Download,
                     Text.Get("discovery", "install_tip")
                 ),
+                DiskRecovery.Update => new StatusAction(
+                    UpdateGozler,
+                    Text.Get("gozler", "update"),
+                    Syno.Segoe.Download,
+                    Text.Get("discovery", "update_tip")
+                ),
                 DiskRecovery.Retry => new StatusAction(
                     RefreshDiscovery,
                     Text.Get("inspector", "retry"),
@@ -121,7 +197,12 @@ public sealed partial class MainViewModel
     {
         Library.CanDiscover = Disk is { State.Status: DiskStatus.Off };
         ((RelayCommand)DiscoverMedia).Refresh();
+        ((RelayCommand)UpdateGozler).Refresh();
         ((RelayCommand)RefreshDiscovery).Refresh();
         Changed(nameof(Disk));
+        // Choices that were read come from the database that Library opened
+        // again or closed.
+        if (Folders is not null && !ReferenceEquals(_foldersSource, Disk))
+            _ = ReadFolders();
     }
 }

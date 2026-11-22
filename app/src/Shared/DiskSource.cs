@@ -71,8 +71,6 @@ internal sealed class DiskSource : IAsyncDisposable
     // Whether the saved option has been read, so State says what it holds.
     internal bool IsStarted { get; private set; }
 
-    internal static int HiddenLimit => Gozler.HiddenLimit;
-
     internal async Task Start()
     {
         var enabled = await _sources.ReadDiscovery(_lifetime.Token).ConfigureAwait(false);
@@ -200,49 +198,45 @@ internal sealed class DiskSource : IAsyncDisposable
         }
     }
 
-    // Returns false when the list is full: one gozler query holds every
-    // hidden folder beside its fixed terms. A folder that a hidden folder
-    // already holds has its files hidden, so it needs no room.
-    internal async Task<bool> Hide(string folder)
+    /// <summary>
+    /// Saves a change of the folder choices. The files it leaves out leave
+    /// Library at once, and the files it shows again return at the refresh it
+    /// starts, with their matches.
+    /// </summary>
+    internal async Task<FolderChange> ChangeFolders(Func<FolderChoices, FolderChoices> change)
     {
-        var hidden = await _sources.ReadHidden(_lifetime.Token).ConfigureAwait(false);
-        if (hidden.Count >= HiddenLimit)
-        {
-            return hidden.Any(other =>
-                FolderComparer.Instance.Equals(other, folder) || FolderComparer.Instance.Contains(other, folder)
-            );
-        }
-        // A refresh that read the hidden folders before this job would save
-        // the folder's files again, so it is ended before and after it.
-        lock (_gate)
-        {
-            Restart();
-        }
-        var changed = await _sources.Hide(folder, _lifetime.Token).ConfigureAwait(false);
-        lock (_gate)
-        {
-            Restart();
-        }
-        if (changed)
+        // A refresh that read the choices before this job would save the
+        // files it leaves out again. Its later database jobs run after this
+        // one, so the job ends it as it saves; a change that saves nothing
+        // leaves it running.
+        var result = await _sources
+            .ChangeFolders(
+                change,
+                _lifetime.Token,
+                saving: () =>
+                {
+                    lock (_gate)
+                    {
+                        Restart();
+                    }
+                }
+            )
+            .ConfigureAwait(false);
+        if (result.Withdrew)
         {
             Published?.Invoke(this, EventArgs.Empty);
         }
-        return true;
-    }
-
-    // The folder's files return at the next refresh, with their matches.
-    internal async Task Unhide(string folder)
-    {
-        lock (_gate)
+        if (result.Returns)
         {
-            Restart();
+            Trigger(automatic: false);
         }
-        await _sources.Unhide(folder, _lifetime.Token).ConfigureAwait(false);
-        Trigger(automatic: false);
+        return result;
     }
 
-    // Ends the running refresh, whose answer was asked with the old hidden
-    // folders or option, so it saves nothing; a new one follows it when the
+    internal Task<FolderChoices> ReadFolders() => _sources.ReadFolders(_lifetime.Token);
+
+    // Ends the running refresh, whose answer was asked with the old folder
+    // choices or option, so it saves nothing; a new one follows it when the
     // caller triggers. The caller holds _gate.
     private void Restart()
     {
@@ -252,8 +246,6 @@ internal sealed class DiskSource : IAsyncDisposable
         _generation.Dispose();
         _generation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
     }
-
-    internal Task<IReadOnlyList<string>> ReadHiddenFolders() => _sources.ReadHidden(_lifetime.Token);
 
     // An automatic trigger does not retry a failure: after one, only the
     // person's Refresh or Retry, or showing Library again, asks gozler.
@@ -324,12 +316,12 @@ internal sealed class DiskSource : IAsyncDisposable
         run.Operation.ReportsSuccess = false;
         try
         {
-            var hidden = await _sources.ReadHidden(run.Token).ConfigureAwait(false);
+            var folders = await _sources.ReadFolders(run.Token).ConfigureAwait(false);
             GozlerAnswer answer;
             IReadOnlyList<GozlerVolume> volumes = [];
             try
             {
-                answer = await Gozler.Search(hidden, run.Token).ConfigureAwait(false);
+                answer = await Gozler.Search(folders, run.Token).ConfigureAwait(false);
                 // gozler exits 2 whenever volumes_incomplete is set.
                 if (answer.Incomplete)
                 {

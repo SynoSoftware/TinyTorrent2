@@ -106,7 +106,7 @@ try {
     $path = Join-Path $directory 'Example.2024.mkv'
     $file = New-Value 'Shared.SourceFile' @(0, $path, $path, [long]100) @{ Complete = $true; Wanted = $true }
     $files = New-Values 'Shared.SourceFile' @($file)
-    $first = New-Value 'Shared.Contribution' @('first', 'First', $true, $true) @{ SavePath = $directory; Stamp = 'one' }
+    $first = New-Value 'Shared.Contribution' @('first', 'First', $true, $true) @{ SavePath = $directory; Stamp = 'one'; Downloaded = $true }
     $second = New-Value 'Shared.Contribution' @('second', 'Second', $true, $true) @{ SavePath = $directory; Stamp = 'one' }
     Invoke-Value $sources 'Reconcile' @((New-Values 'Shared.Contribution' @($first)), $cancel) | Out-Null
     Invoke-Value $sources 'Replace' @($first, $files, $cancel) | Out-Null
@@ -403,19 +403,33 @@ INSERT INTO identifications SELECT origin,file_index,'tmdb','movie/9',1,17000000
         }
         finally { $diskSubtitles.DisposeAsync().AsTask().GetAwaiter().GetResult() | Out-Null }
 
-        # A hidden folder's files leave at once, and every later query leaves
-        # the folder out.
-        $hidden = Join-Path $media 'Renamed'
-        Require (Invoke-Value $disk 'Hide' @($hidden)) 'A folder could not be hidden.'
-        Require ((Listed $movie) -eq 0 -and (Listed $subtitle) -eq 0) "A hidden folder's files stayed in Library."
-        $terms = $gozler.GetMethod('Terms', $staticFlags).Invoke($null, @(,[string[]]@($hidden))).Item1
-        Require ($terms -contains ('!"' + $hidden + '\*"')) 'The query does not leave a hidden folder out.'
+        # A left-out folder's files leave at once, and every later query
+        # leaves the folder out. The change runs on the database's thread,
+        # where a script block cannot run, so it is a compiled expression.
+        $leftOut = Join-Path $media 'Renamed'
+        $choicesType = $assembly.GetType('Syno.TinyTorrent.Shared.FolderChoices', $true)
+        function Change([string] $Folder, [bool] $Shown) {
+            $choices = [Linq.Expressions.Expression]::Parameter($choicesType, 'choices')
+            $call = [Linq.Expressions.Expression]::Call($choices, $choicesType.GetMethod('Set', $flags),
+                [Linq.Expressions.Expression]::Constant($Folder), [Linq.Expressions.Expression]::Constant($Shown))
+            $delegate = [Linq.Expressions.Expression]::GetFuncType([type[]]@($choicesType, $choicesType))
+            $change = [Linq.Expressions.Expression]::Lambda($delegate, $call, $choices).Compile()
+            return Invoke-Value $disk 'ChangeFolders' @($change)
+        }
+        Change $leftOut $false | Out-Null
+        Require ((Listed $movie) -eq 0 -and (Listed $subtitle) -eq 0) "A left-out folder's files stayed in Library."
+        $arguments = @($gozler.GetMethod('Arguments', $staticFlags).Invoke($null, @(Invoke-Value $disk 'ReadFolders' @())))
+        # Every profile's AppData is left out first, so the folder's own pair is looked for.
+        $pair = @(for ($at = 0; $at -lt $arguments.Count - 1; $at++) {
+            if ($arguments[$at] -eq '--leave-out' -and $arguments[$at + 1] -eq $leftOut) { $at }
+        })
+        Require ($pair.Count -eq 1) 'The query does not leave a left-out folder out.'
 
         # Showing the folder again brings its files back with the match the
-        # person chose, so Undo and Remove in Settings undo a hide.
-        Invoke-Value $disk 'Unhide' @($hidden) | Out-Null
+        # person chose, so Undo and the folder's check box undo leaving it out.
+        Change $leftOut $true | Out-Null
         Require (Accept $disk (Answer @(@($movie, 100, '1', $volume), @($subtitle, 100, '2', $volume)))) "A shown-again folder's files were not saved."
-        Require ((Sql 'SELECT title FROM library_rows WHERE path=$path COLLATE PATH;' @{ '$path' = $movie } $diskConnection) -eq 'Matched title') 'A file that returned from a hidden folder lost the match the person chose.'
+        Require ((Sql 'SELECT title FROM library_rows WHERE path=$path COLLATE PATH;' @{ '$path' = $movie } $diskConnection) -eq 'Matched title') 'A file that returned from a left-out folder lost the match the person chose.'
 
         # Switching the option off withdraws the disk files, and the torrents
         # alone decide again; the matches the person chose are kept.
@@ -1418,8 +1432,7 @@ public sealed class CityFailure {
             Require ($progress.GetType().GetProperty('Total', $flags).GetValue($progress) -eq 1) 'The metadata batch did not accept its file.'
             # Reload runs the replacement on a worker thread, where a script block has no runspace.
             $replace = [Linq.Expressions.Expression]::Lambda([Action], [Linq.Expressions.Expression]::Empty()).Compile()
-            $enable = [Linq.Expressions.Expression]::Lambda([Func[bool]], [Linq.Expressions.Expression]::Constant($true)).Compile()
-            Invoke-Value $videos 'Reload' @($option, $replace, $enable) | Out-Null
+            Invoke-Value $videos 'Reload' @($option, $replace) | Out-Null
             Require ([object]::ReferenceEquals($accepted, $batchField.GetValue($videos)) -and $queued.Count -eq 1) 'Enabling a newly installed dataset discarded an accepted API batch.'
             Invoke-Value $videos 'DisableAutomaticDownload' @() | Out-Null
             Require ([object]::ReferenceEquals($accepted, $batchField.GetValue($videos)) -and $queued.Count -eq 1) 'Switching automatic downloads off discarded an accepted manual batch.'
@@ -1533,7 +1546,7 @@ public sealed class CityFailure {
         Require ((Sql "SELECT COUNT(*) FROM subtitle_outputs WHERE path=`$path AND language='en';" @{ '$path' = $nestedCaption }) -eq 1) 'Discovery did not walk arbitrary subfolders inside the mapped content folder.'
         $laterCaption = Join-Path $movedFolder 'French.srt'
         [IO.File]::WriteAllText($laterCaption, 'French fixture')
-        $first = New-Value 'Shared.Contribution' @('first', 'First', $true, $true) @{ SavePath = $directory; Stamp = 'two' }
+        $first = New-Value 'Shared.Contribution' @('first', 'First', $true, $true) @{ SavePath = $directory; Stamp = 'two'; Downloaded = $true }
         Invoke-Value $sources 'Reconcile' @((New-Values 'Shared.Contribution' @($first)), $cancel) | Out-Null
         Invoke-Value $sources 'Replace' @($first, (New-Values 'Shared.SourceFile' @($movedFile)), $cancel) | Out-Null
         Invoke-Value $inventory 'Reconcile' @() | Out-Null
@@ -1751,7 +1764,7 @@ INSERT INTO subtitle_output_sources(path,language,origin,file_index,movie_path) 
     catch { $blocked = $_.Exception.GetBaseException().GetType().Name -eq 'RequestBlockedException' }
     Require $blocked 'An accepted force command bypassed the new hold created by its own failed attempt.'
     $connection = $database.GetType().GetField('_connection', $flags).GetValue($database)
-    $assembly.GetType('Syno.TinyTorrent.Shared.Network.RequestPolicy').GetMethod('ClearBackoff', $staticFlags).Invoke($null, @($connection, $null)) | Out-Null
+    $assembly.GetType('Syno.TinyTorrent.Shared.Network.RequestPolicy').GetMethod('ClearBackoff', $staticFlags).Invoke($null, @($connection, $null, $true)) | Out-Null
     Require ((Sql 'SELECT COUNT(*) FROM request_holds WHERE reason=3;') -eq 0 -and
         (Sql 'SELECT COUNT(*) FROM request_holds WHERE provider_id=''opensubtitles'' AND identity=''saved-account'' AND reason=4;') -eq 2 -and
         (Sql 'SELECT total FROM request_counts WHERE provider_id=''opensubtitles'' AND question_id=''persistent-fixture'';') -eq 3 -and

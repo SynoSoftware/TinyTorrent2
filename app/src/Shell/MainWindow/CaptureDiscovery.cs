@@ -16,7 +16,7 @@ public sealed partial class MainWindow
     // Disk discovery's surfaces with seeded states. The journey never runs
     // gozler: the disk source keeps its option off in memory, so no refresh
     // starts, and the states it shows are set on it directly. The install
-    // prompt is closed without its primary button, so nothing downloads.
+    // prompt is closed without its primary button, so nothing asks GitHub.
     private async Task CaptureDiscovery(List<object> outcomes, List<string> completed)
     {
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
@@ -67,37 +67,18 @@ public sealed partial class MainWindow
                 _interaction?.Dialog ?? throw new InvalidOperationException("The install prompt did not open.");
             try
             {
-                if (setup.Stage is not InstallStage.Failed { Reason: InstallFailure.Unavailable })
+                if (setup.Stage is not InstallStage.Ready || !dialog.IsPrimaryButtonEnabled)
                 {
-                    throw new InvalidOperationException(
-                        $"The install prompt opened in {setup.Stage}; the capture build must have no gozler.json."
-                    );
-                }
-                await Keep("discovery-install-unavailable-" + suffix, dialog.Content as FrameworkElement);
-                // The first state, as a release build with its pinned record
-                // shows it. The address cannot resolve, so even a press of
-                // Install could download nothing.
-                var pinned = typeof(GozlerSetup).GetNestedType("Pinned", BindingFlags.NonPublic)!;
-                typeof(GozlerSetup)
-                    .GetField("_pinned", flags)!
-                    .SetValue(
-                        setup,
-                        Activator.CreateInstance(
-                            pinned,
-                            new Uri("https://capture.invalid/gozler-x64-Setup.exe"),
-                            new string('0', 64),
-                            4_718_592L
-                        )
-                    );
-                typeof(GozlerSetup)
-                    .GetProperty(nameof(GozlerSetup.Stage), flags)!
-                    .SetValue(setup, new InstallStage.Ready());
-                _interaction!.RefreshText!();
-                if (!dialog.IsPrimaryButtonEnabled)
-                {
-                    throw new InvalidOperationException("The install prompt did not offer Install.");
+                    throw new InvalidOperationException($"The install prompt opened in {setup.Stage}, not ready to install.");
                 }
                 await Keep("discovery-install-" + suffix, dialog.Content as FrameworkElement);
+                // The answer while gozler's release is not out yet, set
+                // directly, because Install would ask GitHub.
+                typeof(GozlerSetup)
+                    .GetProperty(nameof(GozlerSetup.Stage), flags)!
+                    .SetValue(setup, new InstallStage.Failed(InstallFailure.NotReleased));
+                await CaptureLayout();
+                await Keep("discovery-install-notreleased-" + suffix, dialog.Content as FrameworkElement);
             }
             finally
             {
@@ -121,10 +102,10 @@ public sealed partial class MainWindow
         // the source's own option stays off, so it never asks gozler.
         var sources = (FileSources)typeof(DiskSource).GetField("_sources", flags)!.GetValue(disk)!;
         await sources.EnableDiscovery(CancellationToken.None);
-        string[] hidden = [@"D:\Games\Old installers", @"E:\Backups"];
-        foreach (var folder in hidden)
+        string[] leftOut = [@"D:\Games\Old installers", @"E:\Backups"];
+        foreach (var folder in leftOut)
         {
-            await sources.Hide(folder, CancellationToken.None);
+            await sources.ChangeFolders(choices => choices.Set(folder, shown: false), CancellationToken.None);
         }
         var file = new DiskFile(
             @"D:\Media\Films\Night Train (1998)\Night.Train.1998.1080p.mkv",
@@ -158,7 +139,6 @@ public sealed partial class MainWindow
             var suffix = await Prepare(language, theme);
 
             var page = await ShowMedia();
-            await CaptureReady(Model.Settings, () => Model.Settings.HiddenFolders.Count == hidden.Length);
             await CaptureLayout();
             if (!Model.Settings.DiscoversMedia)
             {
@@ -172,12 +152,12 @@ public sealed partial class MainWindow
                 Model.Library,
                 () => Model.Library.Selected is { } selected && Model.Library.HasOrigins(selected.Entry.EntryId)
             );
-            var hide = await LibraryMenuReady();
+            var leave = await LibraryMenuReady();
             var library = Expand(FrameworkElementAutomationPeer.CreatePeerForElement(TorrentMenu));
             try
             {
                 await CaptureLayout();
-                var submenu = Expand(FrameworkElementAutomationPeer.CreatePeerForElement(hide));
+                var submenu = Expand(FrameworkElementAutomationPeer.CreatePeerForElement(leave));
                 try
                 {
                     await Keep("discovery-library-menu-" + suffix);
@@ -205,7 +185,7 @@ public sealed partial class MainWindow
             {
                 journey = "disk discovery",
                 gozler = gozler.ToString(),
-                hidden,
+                leftOut,
                 file = file.Path,
                 installStages = stages.Distinct().ToArray(),
                 downloaded = stages.Any(stage => stage is nameof(InstallStage.Downloading) or nameof(InstallStage.Running)),
@@ -270,7 +250,7 @@ public sealed partial class MainWindow
             await CaptureLayout();
         }
 
-        // The Library menu fills after the row's origins are read; Hide folder
+        // The Library menu fills after the row's origins are read; Leave folder out
         // is enabled only then. Its text also proves the fill follows the
         // current language.
         async Task<MenuFlyoutSubItem> LibraryMenuReady()
@@ -281,19 +261,19 @@ public sealed partial class MainWindow
                 await CaptureLayout();
                 var refresh = TorrentMenu.Items.OfType<MenuFlyoutItem>()
                     .Any(item => item.Command == Model.RefreshDiscovery);
-                var text = Model.Text.Get("discovery", "hide");
+                var text = Model.Text.Get("discovery", "leave_out");
                 if (
                     refresh
                     && TorrentMenu.Items.OfType<MenuFlyoutSubItem>().FirstOrDefault(item => item.Text == text)
-                        is { IsEnabled: true, Items.Count: 4 } hide
+                        is { IsEnabled: true, Items.Count: 4 } leave
                 )
                 {
-                    return hide;
+                    return leave;
                 }
                 if (waiting.Elapsed > TimeSpan.FromSeconds(20))
                 {
                     throw new InvalidOperationException(
-                        "The Library menu did not offer Refresh files and Hide folder for the disk file."
+                        "The Library menu did not offer Refresh files and Leave folder out for the disk file."
                     );
                 }
                 await Task.Delay(20);

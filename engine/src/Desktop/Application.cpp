@@ -132,6 +132,7 @@ Application::Application(std::filesystem::path directory, std::wstring sid, bool
     }
     type.lpfnWndProc = Broadcast;
     // Message-only windows do not receive Explorer's restart broadcast.
+    // installer/Setup.iss finds this class to tell whether an engine runs.
     type.lpszClassName = L"TinyTorrent.Broadcast";
     RegisterClassW(&type);
     broadcast_.reset(CreateWindowExW(WS_EX_TOOLWINDOW, type.lpszClassName, productName, 0, 0, 0, 0, 0,

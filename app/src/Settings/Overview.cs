@@ -41,8 +41,7 @@ public sealed class Overview : INotifyPropertyChanged
         };
     }
 
-    public SettingsCategory? Category => _main.Navigation.Current == WindowPage.Connection
-        ? SettingsCategory.Limits : _main.Navigation.Settings?.Category;
+    public SettingsCategory? Category => _main.Navigation.Parent ?? _main.Navigation.Settings?.Category;
     public string PageTitle => Category is { } category ? _settings.Text.Get(category) : string.Empty;
     // The captions live here rather than in the category states, because a
     // setter does not update its target while its state stays active, so a
@@ -56,7 +55,6 @@ public sealed class Overview : INotifyPropertyChanged
             _main.LimitsIndex < 0 ? "weekly_schedule"
                 : _main.FollowsSchedule ? "schedule_active" : "schedule_inactive"),
         SettingsCategory.Network => _settings.SelectedAdapter?.Text ?? Strings.NoValue,
-        SettingsCategory.Plugins => _settings.Text.Get("library", "title"),
         _ => string.Empty,
     };
     public string FirstLabel => Caption(Category switch
@@ -90,7 +88,6 @@ public sealed class Overview : INotifyPropertyChanged
         // The inactive title and the Current limits fact already say what applies.
         SettingsCategory.Schedule => _main.FollowsSchedule ? _main.ScheduleSummary : string.Empty,
         SettingsCategory.Network => _main.IsConnected ? _main.IncomingStatus : Strings.NoValue,
-        SettingsCategory.Plugins => _main.Library.Status,
         null => _settings.Text.Format("settings", "home_activity",
             _main.Torrents.Count(torrent => torrent.Matches(TorrentFilter.Downloading)),
             _main.Torrents.Count(torrent => torrent.Matches(TorrentFilter.Seeding))),

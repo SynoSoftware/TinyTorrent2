@@ -15,7 +15,17 @@ internal sealed class Navigation(Func<WindowPage, Task<bool>> prepare) : INotify
 
     internal WindowPage Current => _history[^1].Page;
     internal SettingTarget? Settings => _history[^1].Settings;
-    internal WindowPage Page => Current == WindowPage.Connection ? WindowPage.Settings : Current;
+    internal WindowPage Page => Parent is null ? Current : WindowPage.Settings;
+
+    // The Settings category whose child page is shown, which the sidebar
+    // keeps selected; null on any other page.
+    internal SettingsCategory? Parent =>
+        Current switch
+        {
+            WindowPage.Connection => SettingsCategory.Limits,
+            WindowPage.Folders => SettingsCategory.Plugins,
+            _ => null,
+        };
     internal WindowPage Workspace => _history.Last(item => IsWorkspace(item.Page)).Page;
     internal bool HasBack => _history.Count > 1;
     internal bool CanGoBack => HasBack && !_pending;

@@ -27,7 +27,7 @@ contract with the same authority.
 | Identification, provider requests, saved metadata, credentials or privacy | [Identification and providers](library/providers.md) |
 | Page navigation, table configurations, filters, Inspector or prototype review | [Presentation and interaction](library/presentation.md) |
 | Initialization, synchronization, background work, closing, performance or validation | [Lifecycle and validation](library/lifecycle.md) |
-| Disk discovery, gozler, hidden folders, file presence or absent locations | [Disk discovery](library/disk.md) |
+| Disk discovery, gozler, Library folders, file presence or absent locations | [Disk discovery](library/disk.md) |
 
 ## Purpose and experience
 
@@ -218,7 +218,7 @@ Membership withdrawal follows confirmed torrent removal, including removal
 whose payload cleanup is still pending. Cached video information never delays
 or prevents removal. Library needs no retention-before-removal transaction.
 
-There is no separate Remove from Library command. Hide folder from Library
+There is no separate Remove from Library command. Leave folder out of Library
 removes disk files only, so torrent membership still explains the membership of
 every torrent file.
 

@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Text.Json;
 using Syno.TinyTorrent.Shared;
 using Syno.TinyTorrent.Shared.Network;
 
@@ -8,28 +7,25 @@ namespace Syno.TinyTorrent.Shell;
 
 /// <summary>
 /// The draft of gozler's install prompt, and the one download, check and run
-/// of gozler's setup. TinyTorrent runs only the setup that its build pinned,
-/// and runs it with its own wizard, because a silent setup lets nobody see
-/// every file and that choice decides which folders Library can see.
+/// of gozler's setup. Only when the person selects Install, TinyTorrent asks
+/// GitHub for the gozler release that it names, and runs only that release's
+/// setup, checked against the SHA-256 that GitHub gives it, because gozler's
+/// releases are unsigned. The setup runs with its own wizard, because a
+/// silent setup lets nobody see every file and that choice decides which
+/// folders Library can see.
 /// </summary>
 internal sealed class GozlerSetup(MainViewModel owner, ProviderHttp http) : IDraft
 {
-    // installer/Build.ps1 writes the pinned download beside the executables.
-    private const string RecordName = "gozler.json";
-
     // ERROR_CANCELLED: the person declined Windows' permission prompt.
     private const int Declined = 1223;
 
-    private static readonly JsonSerializerOptions Options = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
-
-    private Pinned? _pinned;
     private InstallStage _stage = new InstallStage.Ready();
     private CancellationTokenSource? _work;
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    // Whether discovery switches on after the installation; each request sets it.
+    internal bool Discovers { get; set; } = true;
 
     internal InstallStage Stage
     {
@@ -41,11 +37,7 @@ internal sealed class GozlerSetup(MainViewModel owner, ProviderHttp http) : IDra
         }
     }
 
-    /// <summary>The setup's download size, or null when this build pinned none.</summary>
-    internal long? Size => _pinned?.Size;
-
-    public bool CanSubmit =>
-        _pinned is not null && Stage is InstallStage.Ready or InstallStage.Failed;
+    public bool CanSubmit => Stage is InstallStage.Ready or InstallStage.Failed;
 
     public bool HasDraft => false;
 
@@ -54,21 +46,12 @@ internal sealed class GozlerSetup(MainViewModel owner, ProviderHttp http) : IDra
 
     public ClosePolicy ClosePolicy => new ClosePolicy.Discard();
 
-    /// <summary>Reads the pinned download as the prompt opens.</summary>
-    internal void Begin()
-    {
-        _pinned = Read();
-        Stage = _pinned is null
-            ? new InstallStage.Failed(InstallFailure.Unavailable)
-            : new InstallStage.Ready();
-    }
-
     // The installation continues while the dialog stays open, so Cancel can
     // stop its download. The Installed stage closes the dialog.
     public Task<bool> Submit()
     {
-        if (CanSubmit && _pinned is { } pinned)
-            _ = Install(pinned);
+        if (CanSubmit)
+            _ = Install();
         return Task.FromResult(false);
     }
 
@@ -80,7 +63,7 @@ internal sealed class GozlerSetup(MainViewModel owner, ProviderHttp http) : IDra
 
     public void Stop() => _work?.Cancel();
 
-    private async Task Install(Pinned pinned)
+    private async Task Install()
     {
         using var work = new CancellationTokenSource();
         _work = work;
@@ -93,6 +76,11 @@ internal sealed class GozlerSetup(MainViewModel owner, ProviderHttp http) : IDra
         try
         {
             Stage = new InstallStage.Downloading(new WorkProgress.Unknown());
+            if (await Find(work.Token) is not { } published)
+            {
+                Stage = new InstallStage.Failed(InstallFailure.NotReleased);
+                return;
+            }
             var folder = Path.Combine(Path.GetTempPath(), "TinyTorrent-gozler");
             try
             {
@@ -100,10 +88,10 @@ internal sealed class GozlerSetup(MainViewModel owner, ProviderHttp http) : IDra
             }
             catch (DirectoryNotFoundException) { }
             Directory.CreateDirectory(folder);
-            var path = Path.Combine(folder, Path.GetFileName(pinned.Url.LocalPath));
+            var path = Path.Combine(folder, Path.GetFileName(published.Url.LocalPath));
             await Release.Download(
                 http,
-                pinned.Url,
+                published.Url,
                 path,
                 ((IProgress<WorkProgress>)progress).Report,
                 work.Token
@@ -112,7 +100,7 @@ internal sealed class GozlerSetup(MainViewModel owner, ProviderHttp http) : IDra
             // setup ends, so the program that Windows runs as administrator
             // is the one checked.
             using var held = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-            if (!await Release.Matches(path, pinned.Sha256, work.Token))
+            if (!await Release.Matches(path, published.Sha256, work.Token))
             {
                 held.Dispose();
                 File.Delete(path);
@@ -126,15 +114,23 @@ internal sealed class GozlerSetup(MainViewModel owner, ProviderHttp http) : IDra
                 Stage = new InstallStage.Failed(InstallFailure.Declined);
                 return;
             }
-            // A cancelled wizard and a failed installation both leave no
-            // service, while the setup's exit code says neither reliably.
+            // A cancelled wizard and a failed installation leave no service,
+            // or keep the older gozler of an update, while the setup's exit
+            // code says none of these reliably.
             if (Gozler.Locate() == GozlerProgram.NotInstalled)
             {
                 Stage = new InstallStage.Failed(InstallFailure.NotInstalled);
                 return;
             }
+            // Starting the program takes a moment, which the UI thread must not wait for.
+            if (!await Task.Run(() => Gozler.KnowsOptions(work.Token)))
+            {
+                Stage = new InstallStage.Failed(InstallFailure.Older);
+                return;
+            }
             Stage = new InstallStage.Installed();
-            await owner.SwitchDiscovery(true);
+            if (Discovers)
+                await owner.SwitchDiscovery(true);
         }
         catch (Exception error) when (work.IsCancellationRequested)
         {
@@ -181,35 +177,29 @@ internal sealed class GozlerSetup(MainViewModel owner, ProviderHttp http) : IDra
         return true;
     }
 
-    private static Pinned? Read()
+    // The setup of gozler's SetupRelease, or null while GitHub has no such
+    // release or its setup, because gozler's release workflow publishes the
+    // release before it uploads the setup.
+    private async Task<Setup?> Find(CancellationToken cancellation)
     {
-        try
+        var version = Gozler.SetupRelease.ToString(3);
+        using var release = await Release.Tagged(http, Gozler.Repository, "v" + version, cancellation);
+        if (release is null)
         {
-            var pinned = JsonSerializer.Deserialize<Pinned>(
-                File.ReadAllText(Path.Combine(AppContext.BaseDirectory, RecordName)),
-                Options
-            );
-            return pinned is { Url.IsAbsoluteUri: true, Sha256.Length: 64, Size: > 0 }
-                ? pinned
-                : null;
-        }
-        catch (Exception error)
-            when (error
-                    is FileNotFoundException
-                        or DirectoryNotFoundException
-                        or IOException
-                        or UnauthorizedAccessException
-                        or JsonException
-            )
-        {
-            Debug.WriteLine($"No pinned gozler download: {error.Message}");
             return null;
         }
+        // gozler's release build gives its setup this name.
+        var name = $"gozler-{version}-x64-Setup.exe";
+        var url = Release.Asset(release.RootElement, name);
+        var sha256 = Release.Digest(release.RootElement, name);
+        if (url is null || sha256 is null)
+        {
+            return null;
+        }
+        return new Setup(url, sha256);
     }
 
-    // The download that installer/Build.ps1 pinned: its URL on gozler's
-    // GitHub release, its SHA-256 and its size.
-    private sealed record Pinned(Uri Url, string Sha256, long Size);
+    private sealed record Setup(Uri Url, string Sha256);
 }
 
 /// <summary>Where gozler's installation stands, which its prompt shows.</summary>

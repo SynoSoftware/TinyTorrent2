@@ -17,8 +17,6 @@ namespace Syno.TinyTorrent.Shell;
 /// </summary>
 internal sealed class Updates
 {
-    private const string LatestRelease =
-        "https://api.github.com/repos/" + App.Repository + "/releases/latest";
     private readonly ProviderHttp _http;
     private readonly BackgroundWork _work;
     private readonly PipeClient _client;
@@ -152,13 +150,13 @@ internal sealed class Updates
                 operation.Outcome = WorkOutcome.Cancelled;
                 return;
             }
-            using var release = await FetchRelease(work.Token);
+            using var release = await Release.Latest(_http, App.Repository, work.Token);
             if (!CanCheck || automatic && !_setting.IsOn)
             {
                 operation.Outcome = WorkOutcome.Cancelled;
                 return;
             }
-            if (!System.Version.TryParse(Tag(release.RootElement), out var version))
+            if (!System.Version.TryParse(Release.Tag(release.RootElement), out var version))
                 throw new UpdateException(UpdateFailure.Unavailable);
             version = new Version(
                 version.Major,
@@ -234,11 +232,11 @@ internal sealed class Updates
         {
             if (!CanCheck)
                 throw new UpdateException(UpdateFailure.Unavailable);
-            using var release = await FetchRelease(cancellation);
+            using var release = await Release.Latest(_http, App.Repository, cancellation);
             // installer/Build.ps1 gives the installer this name.
-            var name = $"TinyTorrent-{Tag(release.RootElement)}-x64-Setup.exe";
+            var name = $"TinyTorrent-{Release.Tag(release.RootElement)}-x64-Setup.exe";
             var installer =
-                Asset(release.RootElement, name)
+                Release.Asset(release.RootElement, name)
                 ?? throw new UpdateException(UpdateFailure.Missing);
             var folder = Path.Combine(Path.GetTempPath(), "TinyTorrent-update");
             try
@@ -330,7 +328,8 @@ internal sealed class Updates
             return;
         }
         var checksum =
-            Asset(release, name + ".sha256") ?? throw new UpdateException(UpdateFailure.Missing);
+            Release.Asset(release, name + ".sha256")
+            ?? throw new UpdateException(UpdateFailure.Missing);
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             await Release.Locate(_http, checksum, cancellation)
@@ -341,43 +340,6 @@ internal sealed class Updates
         var expected = Encoding.ASCII.GetString(reply.Bytes).Split(' ', 2)[0].Trim();
         if (!await Release.Matches(path, expected, cancellation))
             throw new UpdateException(UpdateFailure.Checksum);
-    }
-
-    private async Task<JsonDocument> FetchRelease(CancellationToken cancellation)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Get, LatestRelease);
-        request.Headers.Accept.ParseAdd("application/vnd.github+json");
-        request.Headers.Add("X-GitHub-Api-Version", "2026-03-10");
-        var reply = await _http.Send(request, ProviderHttp.JsonLimit, cancellation);
-        if (reply.Status != HttpStatusCode.OK)
-            throw new HttpRequestException("The update check was refused.", null, reply.Status);
-        return JsonDocument.Parse(reply.Bytes);
-    }
-
-    // The release's version as its tag spells it, without the leading v.
-    private static string? Tag(JsonElement release) =>
-        release.TryGetProperty("tag_name", out var tag) && tag.ValueKind == JsonValueKind.String
-            ? tag.GetString()?.TrimStart('v', 'V')
-            : null;
-
-    private static Uri? Asset(JsonElement release, string name)
-    {
-        if (
-            !release.TryGetProperty("assets", out var assets)
-            || assets.ValueKind != JsonValueKind.Array
-        )
-            return null;
-        foreach (var asset in assets.EnumerateArray())
-            if (
-                asset.TryGetProperty("name", out var assetName)
-                && assetName.ValueKind == JsonValueKind.String
-                && assetName.GetString() == name
-                && asset.TryGetProperty("browser_download_url", out var url)
-                && url.ValueKind == JsonValueKind.String
-                && Uri.TryCreate(url.GetString(), UriKind.Absolute, out var location)
-            )
-                return location;
-        return null;
     }
 
     private async Task SaveCheck(ReleaseCheck check)

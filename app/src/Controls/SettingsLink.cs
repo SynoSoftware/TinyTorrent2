@@ -17,17 +17,23 @@ public sealed partial class SettingsLink : Button
     };
     private string _descriptionText = string.Empty;
     private string _summary = string.Empty;
+    // The icon column and gap of a SettingsSection header, so a link's text
+    // lines up with the cards around it.
     private readonly FontIcon _icon = new()
     {
         FontFamily = Segoe.Font,
         FontSize = (double)Application.Current.Resources["TinyTorrentHeaderIconSize"],
         VerticalAlignment = VerticalAlignment.Center,
+        Width = 20,
+        Margin = (Thickness)Application.Current.Resources["IconMargin"],
+        Visibility = Visibility.Collapsed,
     };
     private readonly FontIcon _ending = new()
     {
         FontFamily = Segoe.Font,
         FontSize = (double)Application.Current.Resources["TinyTorrentChevronIconSize"],
         Glyph = Segoe.ChevronRight,
+        Margin = new(14, 0, 0, 0),
     };
 
     public string Header
@@ -77,10 +83,15 @@ public sealed partial class SettingsLink : Button
         AutomationProperties.SetHelpText(this, text);
     }
 
+    /// <summary>The icon; without one, as a link inside a section's rows, the text starts where a row's does.</summary>
     public string Glyph
     {
         get => _icon.Glyph;
-        set => _icon.Glyph = value;
+        set
+        {
+            _icon.Glyph = value;
+            _icon.Visibility = value.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        }
     }
 
     public string EndGlyph
@@ -94,10 +105,8 @@ public sealed partial class SettingsLink : Button
         Style = (Style)Application.Current.Resources["TinyTorrentSettingsLinkStyle"];
         Trimming.SetShowsToolTip(_header, true);
         Trimming.SetShowsToolTip(_description, true);
-        // The icon column and gap of a SettingsSection header, so a link's
-        // text lines up with the cards around it.
-        var content = new Grid { ColumnSpacing = 24 };
-        content.ColumnDefinitions.Add(new() { Width = new(20) });
+        var content = new Grid();
+        content.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         content.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
         content.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var text = new StackPanel { Spacing = 4, Children = { _header, _description } };

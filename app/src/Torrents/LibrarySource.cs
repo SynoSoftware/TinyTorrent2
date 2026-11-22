@@ -372,6 +372,7 @@ internal sealed class LibrarySource : IAsyncDisposable
                 is not (TorrentState.Checking or TorrentState.WaitingCheck);
         var path = row.GetProperty("save_path").GetString()!;
         var complete = row.GetProperty("complete").GetBoolean();
+        var downloaded = row.GetProperty("downloaded").GetInt64() > 0;
         var origin = row.GetProperty("torrent_id").GetString()!;
         var name = row.GetProperty("name").GetString()!;
         var size = row.GetProperty("size").GetInt64();
@@ -384,12 +385,14 @@ internal sealed class LibrarySource : IAsyncDisposable
                 && contribution.SavePath == path
                 && contribution.Complete == complete
                 && contribution.Settled == settled
+                && contribution.Downloaded == downloaded
             )
                 return previous;
         }
         return (
             new Contribution(origin, name, complete, settled)
             {
+                Downloaded = downloaded,
                 SavePath = path,
                 Stamp = JsonSerializer.Serialize(
                     new

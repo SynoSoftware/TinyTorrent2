@@ -14,7 +14,8 @@ public sealed record Entry(long EntryId, string Path, string Name, long Size)
     internal string? CatalogId { get; init; }
     public bool HasMetadata => CatalogId is not null;
 
-    // The selected provider searched for the file and found no match.
+    // The provider that answers last, as Browser.LookupCatalog names it,
+    // searched for the file and found no match.
     public bool IsUnmatched { get; init; }
     public int? Year { get; init; }
     public Ratings Ratings { get; init; } = new();
@@ -59,7 +60,7 @@ internal sealed record Query(string Text, LibraryConfiguration Configuration)
 {
     internal bool IncludesFacets { get; init; }
 
-    // The selected provider's catalogue, or null when no provider is selected.
+    // The catalogue whose misses show as not found, or null when there is none.
     internal string? CatalogId { get; init; }
     internal IReadOnlyDictionary<string, string> Filters =>
         Configurations.GetValueOrDefault(Configuration) ?? new Dictionary<string, string>();

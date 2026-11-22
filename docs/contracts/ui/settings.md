@@ -87,7 +87,8 @@ settings cover both downloading and uploading.
 with artwork and two compact facts with Segoe icons at the end.** The artwork
 stays visible on every tab. Summary text is optional: General, Appearance and
 Advanced omit the generic product name and version, because they add no context
-to those settings. Plugins summarises Library and its status.
+to those settings. Plugins omits it too, because the page holds the city data as
+well as Library's plugins, so a Library title would name only part of it.
 The shared header component owns its artwork, title, subtitle, fact controls,
 tooltips, accessibility and responsive layout. Pages supply text and values;
 they do not assemble the header's visual tree. Removing summary text never
@@ -144,11 +145,15 @@ Native add/remove transitions close the card and move the remaining categories
 into place without a layout jump.
 
 Use 24-DIP gaps between major tasks, 8-DIP gaps between sibling cards in either
-direction, 8 DIPs from an external section heading to its card, and 16-DIP
-horizontal card insets. Related rows share themed separators, no exterior row
-gaps, a compact 52-DIP minimum or 64 DIPs with a description. Trailing controls
-align to the actual right inset. Card headers, icon-led rows and Settings links
-share one geometry: a 20-DIP icon column and a 24-DIP gap to their text. A
+direction, and 8 DIPs from an external section heading to its card. Card
+geometry follows Windows Settings: a card is inset 16 DIPs, and a header icon
+is 20 DIPs wide with 2 DIPs before it and 20 after it, so card headers,
+icon-led rows and Settings links start their text 58 DIPs in. An open
+section's rows start there too and end 44 DIPs from the right, left of the
+section's chevron; a link row among them ends 16 DIPs from the right, so its
+chevron lines up with the section's. Related rows share themed separators, no
+exterior row gaps, a compact 52-DIP minimum or 64 DIPs with a description.
+Trailing controls align to the actual right inset. A
 switch row shows On or Off beside its switch, from its setting. A folder
 setting's editor is its path and Browse; the path takes the row's accessible
 help, as every other editor does, and Browse's tooltip names the folder it
@@ -195,9 +200,17 @@ and proxy cards; advanced groups contain encryption, peer connections,
 discovery and incoming connections. Library settings use collapsed Media
 discovery, Video information, Subtitles and Search protection expanders to keep
 their controls out of the overview until needed. Media discovery holds the
-[disk discovery](../library/disk.md#the-option) option, gozler's
-state with Install or Retry where they apply, and the hidden folders, each with
-Remove. Video information includes the IMDb data row.
+[disk discovery](../library/disk.md#the-option) option and a gozler row. Its
+summary is On or Off, and names gozler's state only when that state is not
+"installed". Installed is shown only for a gozler that knows the options Library
+sends, which Settings checks without a search. The gozler row says what gozler is and the memory it uses, and on
+the right shows Installed, Install, Update or Retry; a state that needs the person's
+attention replaces the row's description. The card's last row, Library folders,
+is a link with a chevron, as Windows Settings puts a clickable row in an
+expander, and opens [Library folders](#library-folders). It has no
+description: the page it opens says what it does. Back from that page opens
+the card and returns focus to the row.
+Video information includes the IMDb data row.
 Subtitles uses native task tabs: Preferences holds supplier access, wanted
 languages, automatic subtitles and additional matches. Wanted languages expands
 the language-selection controls; additional matches is a direct setting row.
@@ -221,8 +234,9 @@ and automatic-download state, and the current search limit. City data is a
 standalone icon-led card, matching Network's standalone cards; it needs neither
 a separate Map heading nor an expander for one entry. The Database expander
 keeps its existing presentation.
-Video information separates Provider from the Download
-automatically switch; configuring a provider, its credentials or its data does
+Video information separates Online provider, which lists only the online
+services, from the Download automatically switch; the IMDb data is chosen by
+downloading it in its own row. Configuring a provider, its credentials or its data does
 not change automatic download intent. Provider configuration supports manual
 requests independently of automatic work, so its controls stay available in
 either switch state. The switch's neutral description states its background work.
@@ -315,11 +329,34 @@ Theme selection retains its
 accent outline and checkmark. Sidebar category selection replaces the current
 Settings visit, so Back does not retrace every peer category. Related links keep
 their return destination and scroll position; breadcrumbs describe hierarchy.
-Connection setup alone is a child page, with Speed limits > Connection setup.
-It keeps the same Settings sidebar visible with Speed limits selected; the
-retained caller category and scroll position still govern Back.
+Connection setup and Library folders are child pages, with Speed limits >
+Connection setup and Plugins > Library folders. Each keeps the same Settings
+sidebar visible with its parent category selected (`Navigation.Parent`); the
+retained caller category and scroll position still govern Back, which returns
+focus to the link that opened the page.
 Related Schedule and Queue links select their real categories and reveal the
 weekly map or Queue.
+
+## Library folders
+
+Library folders follows Windows' Indexing Options in the form of a Windows 11
+Settings page; [disk discovery](../library/disk.md#library-folders) owns its
+rule. The breadcrumb and the shared header come first; the header names the
+page and says how many folders are left out, followed by gozler's state when
+gozler cannot answer or is still indexing a drive. Below them, a card holds only the
+tree, whose Folder column header labels it; check boxes in a tree need no
+hint, as in Indexing Options. The tree is a TableView with a hierarchy, as
+Add's file tree is, so it creates rows only for the folders in view. Each row
+has a check box, checked, cleared or partial,
+then the folder's icon and name, and "Not connected" for a drive with choices
+that gozler does not index or "Not in Gozler's index" for a folder with
+choices that gozler does not list or a folder removed since it was listed. The check box is not a tab stop: Space on a row does what a
+click on its box does, so the keyboard has one stop per folder. A Summary card,
+with its title and no description, lists the places Library shows, one row
+each with the folders left out inside it. The cards sit side by side when both fit and stack otherwise, with the
+summary below the tree at most a third of the height; the tree always scrolls
+inside a bounded height. Each click saves at once, as Windows' settings do, so
+the page has no Apply, Cancel or unsaved state.
 
 ## Connection setup
 

@@ -17,12 +17,6 @@ the engine, TableView and the app with its `en.json`. It lists each message that
 a translation lacks, that English lacks, or whose placeholders differ, and asks
 whether to release anyway. Any answer other than `y` stops the release.
 
-Next, still before the build number, the command pins the gozler setup that
-Library's install prompt downloads: the setup of gozler's latest GitHub
-release. It checks the download against the SHA-256 digest GitHub gives the
-asset and writes `gozler.json`, with the URL, hash and size, beside the
-published executables. The app runs no gozler setup without it.
-
 The shared version lives in `Directory.Build.props`. Each run reserves the next
 build number before preparing tools or compiling: `0.9.0.1`, `0.9.0.2`, and so
 on. The engine, UI, installer, and filename all use that same number. The command
@@ -58,6 +52,12 @@ To move to another product version:
 
 That starts at `0.2.0.1`; subsequent runs continue incrementing its build number.
 
+Before each release, replace `installer/WhatsNew.md` with the release's notes;
+the same text is the GitHub release description. The command installs it as
+`WhatsNew.txt`, without the Markdown marks, and after an upgrade Setup's last
+page offers **View what's new**, unchecked. That page also offers **Open
+TinyTorrent**, checked, unless Windows needs a restart first.
+
 The command builds Release x64 for the engine and publishes the product UI. It
 uses a free artifacts lane when an application or another build occupies the
 default output. It packages a fresh publish directory, checks that both
@@ -91,6 +91,12 @@ installer. Runtime installers and shared runtime files are not bundled in the
 release. Internet access is needed when a prerequisite is missing; Microsoft
 prerequisite installers can request administrator approval. Cancelling or a
 failed runtime check stops setup before application files are replaced.
+While it checks the runtimes, installs one or waits for a running TinyTorrent
+to exit, Setup shows a page that names the step. It checks .NET and the
+running engine in its own code; only the Windows App Runtime check starts
+PowerShell (`Requirements.ps1`), because Windows lists app packages only
+through `Get-AppxPackage`, which takes seconds. That check starts as soon as
+Setup opens and runs while the person reads the first page.
 Setup checks the installed components again after each Microsoft installer runs;
 when Windows needs a restart to finish a prerequisite, Setup offers that restart
 before application files are replaced.
@@ -99,8 +105,17 @@ the Windows App Runtime uses Microsoft's
 [Hybrid CRT](https://github.com/microsoft/WindowsAppSDK/blob/main/docs/Coding-Guidelines/HybridCRT.md).
 
 First installation offers torrent/link handling and optional sign-in startup.
-Upgrades preserve those choices, request the engine's coordinated Exit, and
-resume background transfers if TinyTorrent was running. Setup asks the installed
+Inno Setup's setup-type list defaults to "Typical installation" (automatic
+subtitles on, automatic video information off, media discovery on when gozler
+is installed already, and no downloads) on a first installation, and to
+keeping the current features on an upgrade. Its custom type
+shows a tree with Behavior (automatic subtitles, automatic video information,
+media discovery) and Features (gozler, IMDb ratings, city data) that opens with
+what the installed app has: Setup reads three
+settings from the Library database with Windows' own `winsqlite3.dll` and
+checks the data files. Sizes count only what is missing. Setup only records
+the boxes the person changed; the app applies them at its next start. Upgrades request the engine's coordinated
+Exit and resume background transfers if TinyTorrent was running. Setup asks the installed
 engine to exit before replacing it, so shutdown uses that release's pipe protocol.
 If that executable is missing or cannot start, Setup uses its bundled engine to
 request Exit instead. A refused Exit still stops installation to protect unfinished

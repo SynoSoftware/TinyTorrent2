@@ -7,9 +7,9 @@
 >
   <StackPanel Spacing="8">
     <Border x:Name="ModeCard" Style="{StaticResource TinyTorrentSettingsCardStyle}">
-      <Grid ColumnSpacing="24">
+      <Grid>
         <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="20" />
+          <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
         <FontIcon
@@ -17,6 +17,8 @@
           Glyph="{x:Bind icons:Segoe.SlidersHorizontal}"
           FontSize="{StaticResource TinyTorrentHeaderIconSize}"
           VerticalAlignment="Center"
+          Width="20"
+          Margin="{StaticResource IconMargin}"
         />
         <controls:SettingsRow
           x:Name="ModeRow"

@@ -51,10 +51,10 @@ public sealed partial class MainWindow
     }
 
     // A file that a torrent lists stays in Library by the torrent's own
-    // claim, so only a file that no torrent lists can be hidden. Its folder
-    // comes first, then each folder above it, so one choice hides a game or a
-    // whole drive.
-    private MenuSubmenu HideFolderMenu()
+    // claim, so only a file that no torrent lists offers this. Its folder
+    // comes first, then each folder above it, so one choice leaves out a game
+    // or a whole drive.
+    private MenuSubmenu LeaveOutMenu()
     {
         var folders = new List<string>();
         if (
@@ -70,14 +70,16 @@ public sealed partial class MainWindow
             )
                 folders.Add(folder);
         }
+        // The toast's Undo and Settings undo the choice, and the files return
+        // with their matches, so it asks nothing.
         return new MenuSubmenu(
-            Model.Text.Get("discovery", "hide"),
+            Model.Text.Get("discovery", "leave_out"),
             Segoe.CircleOff,
             [
                 .. folders.Select(folder => new MenuCommand(
                     folder,
                     Segoe.Folder,
-                    new RelayCommand(() => HideFolder(folder), () => Model.Disk is not null)
+                    new RelayCommand(() => Model.LeaveOut(folder), () => Model.Disk is not null)
                 )),
             ]
         )
@@ -86,38 +88,16 @@ public sealed partial class MainWindow
         };
     }
 
-    // The toast's Undo and Settings undo the choice, and the files return
-    // with their matches, so it asks nothing.
-    private async Task HideFolder(string folder)
-    {
-        if (Model.Disk is not { } disk)
-            return;
-        try
-        {
-            if (await disk.Hide(folder))
-                Model.Notifications.ShowHidden(folder);
-            else
-                Model.Notifications.Report(
-                    new InvalidOperationException("The list of hidden folders is full."),
-                    "failed_hide",
-                    () => folder,
-                    () => Model.Text.Format("discovery", "hide_full", DiskSource.HiddenLimit)
-                );
-        }
-        catch (Exception error)
-        {
-            Model.Notifications.Report(error, "failed_hide", () => folder, null);
-        }
-    }
-
     // The prompt stays open while gozler's setup runs, and closes when gozler
-    // is installed. Cancel stops a download, not a running setup.
+    // is installed. Cancel stops a download, not a running setup. An installed
+    // gozler that is too old gets the same prompt in the words of an update;
+    // the refresh that follows shows whether the update worked.
     private async Task InstallGozler()
     {
         var setup = Model.GozlerSetup;
+        var updating = Gozler.Locate() == GozlerProgram.Installed;
         await Interact(async interaction =>
         {
-            setup.Begin();
             var body = new TextBlock { TextWrapping = TextWrapping.Wrap };
             var progress = new ProgressBar();
             // Selectable, so the address that a failure names can be copied.
@@ -163,10 +143,16 @@ public sealed partial class MainWindow
                     InstallStage.Failed failed => Failure(failed),
                     _ => string.Empty,
                 };
+                // Until the owner publishes the release that TinyTorrent
+                // names, asking again fails the same way, so only Close stays.
+                var unreleased = stage is InstallStage.Failed { Reason: InstallFailure.NotReleased };
                 dialog.PrimaryButtonText =
-                    stage is InstallStage.Failed { Reason: not InstallFailure.Unavailable }
-                        ? Model.Text.Get("inspector", "retry")
-                        : Model.Text.Get("gozler", "install");
+                    unreleased ? string.Empty
+                    : stage is InstallStage.Failed ? Model.Text.Get("inspector", "retry")
+                    : Model.Text.Get("gozler", updating ? "update" : "install");
+                dialog.CloseButtonText = unreleased
+                    ? Model.Text.Get("commands", "close")
+                    : Model.Text.Get("dialog", "cancel");
             }
             void Follow(object? sender, PropertyChangedEventArgs args)
             {
@@ -184,14 +170,9 @@ public sealed partial class MainWindow
                     setup,
                     () =>
                     {
-                        dialog.Title = Model.Text.Get("gozler", "title");
-                        body.Text = Model.Text.Get("gozler", "body");
+                        dialog.Title = Model.Text.Get("gozler", updating ? "update_title" : "title");
+                        body.Text = Model.Text.Get("gozler", updating ? "update_body" : "body");
                         dialog.PrimaryToolTip = Model.Text.Get("gozler", "install_tip");
-                        dialog.Footer = setup.Size is { } size
-                            ? new DialogFooter.Detail(
-                                Model.Text.Format("gozler", "source", Model.Text.Bytes(size))
-                            )
-                            : null;
                         Show();
                     }
                 );
@@ -204,13 +185,20 @@ public sealed partial class MainWindow
         });
     }
 
-    // A setup that leaves no service reads as Settings says it.
+    // A setup that leaves no service, or a gozler still too old, reads as
+    // Settings says it.
     private string Failure(InstallStage.Failed failed)
     {
         var message = failed.Reason switch
         {
             InstallFailure.NotInstalled => Model.Text.Get("discovery", "notinstalled"),
-            InstallFailure.Unavailable => Model.Text.Format("gozler", "failure_unavailable", Gozler.Releases),
+            InstallFailure.Older => Model.Text.Get("discovery", "older"),
+            InstallFailure.NotReleased => Model.Text.Format(
+                "gozler",
+                "failure_notreleased",
+                Gozler.SetupRelease.ToString(3),
+                Gozler.Releases
+            ),
             _ => Model.Text.Get("gozler", "failure_" + failed.Reason.ToString().ToLowerInvariant()),
         };
         return failed.Detail is { } detail

@@ -378,8 +378,8 @@ internal sealed partial class Store(Database database, Imdb.Dataset imdb)
             cancellation
         );
 
-    // Whether the selected provider, $catalog, searched for the row's file
-    // under its current name and found no match.
+    // Whether the provider $catalog searched for the row's file under its
+    // current name and found no match.
     private static string Unmatched =>
         $"""
             EXISTS(SELECT 1 FROM source_files s JOIN video_attempts a USING(origin,file_index)

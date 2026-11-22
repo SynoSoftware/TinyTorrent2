@@ -79,7 +79,7 @@ internal sealed partial class VideoLookup
                 unanswered = true;
             }
             // Another title is no answer for the title the file already has.
-            if (attempt.AddsTo is { } title && video?.ImdbId != title)
+            if (attempt.KnownTitle is { } title && video?.ImdbId != title)
                 video = null;
             outcome =
                 video is not null ? IdentificationOutcome.Matched

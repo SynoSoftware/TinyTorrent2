@@ -973,6 +973,11 @@
       <Style TargetType="MenuBarItem">
         <Setter Property="Margin" Value="4,3,4,5" />
       </Style>
+      <!-- Windows Settings' card geometry: a 20-DIP icon with this margin
+           puts a card's text 58 DIPs in, and an open section's rows start
+           under that text and end left of the section's chevron. -->
+      <Thickness x:Key="IconMargin">2,0,20,0</Thickness>
+      <Thickness x:Key="SectionPadding">58,0,44,0</Thickness>
       <Style x:Key="TinyTorrentSettingsCardStyle" TargetType="Border">
         <Setter Property="controls:SettingsSection.IsCard" Value="True" />
         <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
@@ -1098,7 +1103,7 @@
         </Setter>
       </Style>
       <Style TargetType="controls:SettingsSection">
-        <Setter Property="Padding" Value="16,0" />
+        <Setter Property="Padding" Value="{StaticResource SectionPadding}" />
         <Setter Property="HorizontalAlignment" Value="Stretch" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Setter Property="IsTabStop" Value="False" />
@@ -1115,15 +1120,17 @@
                 AutomationProperties.Name="{TemplateBinding Header}"
               >
                 <controls:SettingsExpander.Header>
-                  <Grid x:Name="HeaderLayout" MinHeight="68" ColumnSpacing="24">
+                  <Grid x:Name="HeaderLayout" MinHeight="68">
                     <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="20" />
+                      <ColumnDefinition Width="Auto" />
                       <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <FontIcon
                       FontFamily="{ThemeResource SegoeFont}"
                       Glyph="{TemplateBinding Glyph}"
                       FontSize="{StaticResource TinyTorrentHeaderIconSize}"
+                      Width="20"
+                      Margin="{StaticResource IconMargin}"
                       VerticalAlignment="Center"
                       AutomationProperties.AccessibilityView="Raw"
                     />
@@ -1237,7 +1244,7 @@
                   <ContentPresenter
                     x:Name="IconPresenter"
                     Content="{TemplateBinding Icon}"
-                    Margin="0,0,12,0"
+                    Margin="{StaticResource IconMargin}"
                     VerticalAlignment="Center"
                     Visibility="Collapsed"
                   />

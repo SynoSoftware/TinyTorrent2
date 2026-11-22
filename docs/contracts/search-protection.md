@@ -16,9 +16,9 @@ and cover the branches that need additional rules:
 | Force fetch, batch scopes, Retry, Reset or operation draining | [Retry and reset](search-protection/reset.md) |
 | IMDb local reads, provider capability, dataset installation/deletion or local answer invalidation | [IMDb datasets and local answers](search-protection/local.md) |
 
-Reset and operation-drain changes also need the IMDb reset ordering in the
-local-data reference, because a dataset command can otherwise deadlock with
-Library's execution gates.
+Changes that drain a dataset command, as a route change does, also need the
+IMDb drain ordering in the local-data reference, because a dataset command can
+otherwise deadlock with Library's execution gates.
 
 ## Decision and scope
 

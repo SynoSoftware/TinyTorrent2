@@ -13,17 +13,30 @@ namespace Syno.TinyTorrent.Shared;
 /// </summary>
 internal static class Gozler
 {
+    internal const string Repository = "SynoSoftware/gozler";
+
     // Where a person installs gozler by hand.
-    internal const string Releases = "https://github.com/SynoSoftware/gozler/releases";
+    internal const string Releases = "https://github.com/" + Repository + "/releases";
 
     private const string IdentityOption = "--file-id";
+
+    // Only the files and folders the person can open, even when an
+    // administrator put the person's account on gozlerd's list of accounts
+    // that see every file: Library and its folder tree offer only what the
+    // person can open. --status lists volumes, not entries, so it goes
+    // without.
+    private const string OwnAccessOption = "--my-permissions";
+
+    // The gozler release whose setup the install prompt downloads, written by
+    // hand: the owner moves it to a newer release that Library has been tried
+    // with. An installed gozler is judged by the options it knows, never by
+    // this number.
+    internal static readonly Version SetupRelease = new(0, 6, 2);
 
     // The fields of a result that name its file.
     internal const string VolumeField = "volume";
     internal const string IdField = "file_id";
 
-    // gozler refuses a query with more terms, counting each ext: value.
-    private const int MaxTerms = 256;
     private const int Tries = 3;
     private static readonly TimeSpan Deadline = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan Pause = TimeSpan.FromSeconds(5);
@@ -33,8 +46,6 @@ internal static class Gozler
     // clause the rule costs 3 terms: inside the media group, gozler would
     // distribute the group and count every extension twice.
     private const string Streams = "!ext:ts;mts|size:>20mb";
-
-    internal static int HiddenLimit { get; } = MaxTerms - Terms([]).Count;
 
     internal static GozlerProgram Locate() => Find(out _);
 
@@ -64,13 +75,9 @@ internal static class Gozler
 
     // Asks for every media file that Library wants, with each file's
     // identity. An answer that may miss files is still used.
-    internal static async Task<GozlerAnswer> Search(
-        IReadOnlyCollection<string> hidden,
-        CancellationToken cancellation
-    )
+    internal static async Task<GozlerAnswer> Search(FolderChoices folders, CancellationToken cancellation)
     {
-        List<string> arguments = ["--json", "-n", "all", "-a-d", "-attributes", IdentityOption];
-        arguments.AddRange(Terms(hidden).Terms);
+        var arguments = Arguments(folders);
         for (var attempt = 1; ; attempt++)
         {
             var reply = await Run(arguments, cancellation).ConfigureAwait(false);
@@ -89,6 +96,95 @@ internal static class Gozler
             }
         }
     }
+
+    // The folders directly in `parent` that gozler indexes, with their
+    // attributes. Tab-separated output, because a folder of 25,662 folders
+    // takes 252 ms that way and 1,057 ms as JSON. An answer that may miss
+    // folders is still used.
+    internal static async Task<GozlerFolders> Folders(string parent, CancellationToken cancellation)
+    {
+        string[] arguments = [OwnAccessOption, "-parent", parent, "/ad", "-attributes", "-n", "all", "-tsv"];
+        for (var attempt = 1; ; attempt++)
+        {
+            var reply = await Run(arguments, cancellation).ConfigureAwait(false);
+            switch (reply.Code)
+            {
+                case 0:
+                case 2:
+                    return new(ReadFolders(reply.Output), Incomplete: reply.Code == 2);
+                // The folder is gone since its parent was listed. It fails only
+                // itself, not gozler's answer for every other folder.
+                case 4:
+                    return new([], Incomplete: false, Missing: true);
+                // The service's pipe may not be open yet.
+                case 7 when attempt < Tries:
+                    await Task.Delay(Pause, cancellation).ConfigureAwait(false);
+                    continue;
+                default:
+                    throw Explain(reply);
+            }
+        }
+    }
+
+    // Each line after the header is the folder's FILE_ATTRIBUTE_* number, a
+    // tab and its path, in UTF-8. Windows allows no tab in a name.
+    private static IReadOnlyList<GozlerFolder> ReadFolders(byte[] output)
+    {
+        var folders = new List<GozlerFolder>();
+        var lines = output.AsSpan();
+        var header = true;
+        while (!lines.IsEmpty)
+        {
+            var end = lines.IndexOf((byte)'\n');
+            var line = end < 0 ? lines : lines[..end];
+            lines = end < 0 ? [] : lines[(end + 1)..];
+            line = line.TrimEnd((byte)'\r');
+            var tab = line.IndexOf((byte)'\t');
+            if (header || tab < 0)
+            {
+                header = false;
+                continue;
+            }
+            if (System.Buffers.Text.Utf8Parser.TryParse(line[..tab], out int attributes, out _))
+                folders.Add(new(Encoding.UTF8.GetString(line[(tab + 1)..]), (FileAttributes)attributes));
+        }
+        return folders;
+    }
+
+    // Whether this gozler knows every option that Search sends, without a
+    // search. gozler reads its options before it asks the service, so
+    // --version ends the call right after them. The answer is kept for the
+    // gozler.exe it came from: a setup that replaces the file changes its
+    // write time, and the next call asks the new one. A gozler that cannot
+    // be asked counts as knowing them, because the next search says what is
+    // wrong with it.
+    internal static async Task<bool> KnowsOptions(CancellationToken cancellation)
+    {
+        var written =
+            Find(out var program) == GozlerProgram.Installed ? File.GetLastWriteTimeUtc(program) : default;
+        if (_probed is { } probed && probed.Program == program && probed.Written == written)
+        {
+            return probed.Knows;
+        }
+        FolderChoices probe = new([new(@"C:\probe", Shown: false), new(@"C:\probe\inner", Shown: true)]);
+        Reply reply;
+        try
+        {
+            reply = await Run([.. Arguments(probe), "--version"], cancellation).ConfigureAwait(false);
+        }
+        catch (GozlerException)
+        {
+            return true;
+        }
+        var knows = reply.Code != 6;
+        _probed = new(program, written, knows);
+        return knows;
+    }
+
+    // A record, so a thread reads either the old answer or the new one.
+    private static Probed? _probed;
+
+    private sealed record Probed(string Program, DateTime Written, bool Knows);
 
     internal static async Task<IReadOnlyList<GozlerVolume>> Status(CancellationToken cancellation)
     {
@@ -122,10 +218,12 @@ internal static class Gozler
         return volumes;
     }
 
-    // The query's terms and how many of gozler's terms they use. Every path
-    // is quoted inside its term: without the quotes, a path with a space
-    // still makes a valid query that matches nothing.
-    internal static (IReadOnlyList<string> Terms, int Count) Terms(IReadOnlyCollection<string> hidden)
+    // Every folder left out is an option, which gozler tests on a file's real
+    // path: a path wildcard would also leave out what a link in the left-out
+    // folder leads to, such as the Public files that ProgramData's junctions
+    // lead to. A path in a term is quoted: without the quotes, a path with a
+    // space still makes a valid query that matches nothing.
+    internal static IReadOnlyList<string> Arguments(FolderChoices folders)
     {
         string[] extensions =
         [
@@ -134,39 +232,53 @@ internal static class Gozler
             .. FileName.SubtitleExtensions,
         ];
         var media = "ext:" + string.Join(';', extensions.Select(extension => extension.TrimStart('.')));
+        List<string> arguments = [OwnAccessOption, "--json", "-n", "all", "-a-d", "-attributes", IdentityOption];
+        // Programs keep their clips in every profile's AppData, which is no
+        // folder a person chooses. It comes before the person's choices,
+        // because of two choices of one folder gozler applies the later.
+        foreach (var appData in AppDataFolders())
+        {
+            arguments.Add("--leave-out");
+            arguments.Add(appData);
+        }
+        foreach (var choice in folders.All)
+        {
+            arguments.Add(choice.Shown ? "--leave-in" : "--leave-out");
+            arguments.Add(choice.Path);
+        }
+        arguments.Add(media);
+        arguments.Add(Streams);
+        // A recycled file is a file that is gone, on whatever drive it was.
+        arguments.Add("!\"*\\$Recycle.Bin\\*\"");
+        return arguments;
+    }
+
+    // Each profile's AppData, listed for each query, so a profile added since
+    // the last one is left out too. A profile list that cannot be read leaves
+    // out no AppData rather than failing Library's whole query.
+    private static IReadOnlyList<string> AppDataFolders()
+    {
         var profiles = Path.GetDirectoryName(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
         );
-        string[] system =
-        [
-            Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
-            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-        ];
-        var left = system
-            .Where(folder => folder.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Select(Excluded)
-            .ToList();
-        if (!string.IsNullOrEmpty(profiles))
+        if (string.IsNullOrEmpty(profiles))
         {
-            left.Add($"!\"{Path.TrimEndingDirectorySeparator(profiles)}\\*\\AppData\\*\"");
+            return [];
         }
-        left.Add("!\"*\\$Recycle.Bin\\*\"");
-        left.AddRange(
-            hidden
-                .Where(folder =>
-                    !hidden.Any(other => other != folder && FolderComparer.Instance.Contains(other, folder))
-                )
-                .Select(Excluded)
-        );
-        List<string> terms = [media, Streams, .. left];
-        // gozler counts each ext: value, each other term, and -a-d.
-        var count = extensions.Length + 3 + left.Count + 1;
-        return (terms, count);
-
-        static string Excluded(string folder) => $"!\"{FileSources.Folder(folder)}*\"";
+        var options = new EnumerationOptions { IgnoreInaccessible = true, AttributesToSkip = 0 };
+        try
+        {
+            return
+            [
+                .. Directory
+                    .EnumerateDirectories(profiles, "*", options)
+                    .Select(profile => Path.Combine(profile, "AppData")),
+            ];
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            return [];
+        }
     }
 
     private static GozlerException Explain(Reply reply)
@@ -180,8 +292,8 @@ internal static class Gozler
         }
         Debug.WriteLine($"gozler exited with {reply.Code}: {reply.Errors}");
         // Exit 6 names an option that this gozler does not know, such as
-        // --file-id in a gozler released before it. Library needs the
-        // options, not a release number, so no version is compared.
+        // --file-id or --leave-out in a gozler released before them. Library
+        // needs the options, not a release number, so no version is compared.
         return new(new DiskState(reply.Code == 6 ? DiskStatus.Older : DiskStatus.Failed), reply.Errors);
     }
 
@@ -265,6 +377,10 @@ internal enum VolumeReadiness
 internal sealed record GozlerVolume(string Volume, IReadOnlyList<string> Mounts, VolumeReadiness Readiness);
 
 internal sealed record GozlerAnswer(byte[] Json, bool Incomplete);
+
+internal readonly record struct GozlerFolder(string Path, FileAttributes Attributes);
+
+internal sealed record GozlerFolders(IReadOnlyList<GozlerFolder> Folders, bool Incomplete, bool Missing = false);
 
 // gozler could not give an answer; the state says what the person sees.
 internal sealed class GozlerException(DiskState state, string? errors = null)

@@ -831,6 +831,47 @@ existing default-app choices without repeating setup prompts. The installer owns
 the engine-targeting shortcut and Installed apps entry, not a second handler writer.
 Optional registration failures do not turn a usable installation into a failed
 one; Settings can retry those choices through the same engine owner.
+
+Every installation and upgrade shows Inno Setup's Select Components page with
+its setup-type list. The first type is the default. On a first installation
+it is "Typical installation", which downloads nothing: it turns on automatic
+subtitle downloads, and media discovery when gozler is installed already. Only
+the custom type downloads gozler, the IMDb data or the city data. It never turns a
+plugin off, so a
+reinstallation keeps what the person turned on before. On an upgrade it is
+"Update TinyTorrent and keep the current features", which changes no plugin.
+Setup calls the plugins "features", the word installers use for optional
+parts; the app keeps its own word.
+The custom type shows the tree of the plugins
+people otherwise find only in Settings, in two groups: Behavior holds the two
+settings, automatic subtitle downloads and media discovery, and Features what
+downloads: gozler, the IMDb data and the city data. Media discovery needs
+gozler, so checking it checks gozler, and clearing gozler clears it; gozler
+can be checked alone. An installed gozler stays checked and grayed out,
+because TinyTorrent never removes it. The tree opens with what
+the installed app has, so each box shows what Settings shows: Setup reads the
+discovery and automatic-subtitle settings read-only from the Library database,
+and checks whether the IMDb and city data files are in the data folder.
+Without a Library database both settings are off, as the app's defaults are,
+and so is a setting Setup cannot read. A `/COMPONENTS` list on Setup's command
+line chooses the custom type and its boxes instead.
+
+TinyTorrent's row has a fixed, grayed-out row for the Microsoft .NET Runtime,
+which says "(installed)" or how much it downloads; the Windows App Runtime has
+no row, because Setup knows whether it is installed only seconds after the
+page opens. Each row shows the disk space its part takes once set up. A part that is on
+this computer says "(installed)"; a part that still has to download says how
+much. The total counts only what is missing: TinyTorrent's files on a first
+installation, and the parts that still have to download. Setup writes only the
+boxes the person changed, as `+name` or `-name` lines, plus `+gozler` for
+gozler alone, to `setup-choices.txt` beside the
+executables. The app reads the file once at its next start, deletes it, and
+does what each plugin's Settings control does: a selected download starts only
+when its data is missing, because the installer is not the place to update,
+and a cleared download deletes its data. A box the person leaves alone changes
+nothing, so no setting returns to its default. Torrent-file handling and
+sign-in startup are offered only on the first installation.
+
 Uninstall requests coordinated Exit, attempts both registration cleanups, and
 removes its program files. Missing program files and failed optional cleanup do
 not trap the user in an installation they cannot remove. It leaves downloads,
@@ -846,7 +887,10 @@ Updates use the same release installer, after the coordinated
 [Exit](engine/lifetime.md#closing-and-shutdown). When TinyTorrent was running before the
 update, the installer starts it again, so downloads do not stay stopped until
 the person remembers to open it. It starts in the tray, or with its window when
-Update now passed `/OPEN=1`, because that person was using the window. If the installed executable cannot start,
+Update now passed `/OPEN=1`, because that person was using the window. Setup's
+last page offers Open TinyTorrent, checked, after every installation and update
+except one that needs a restart, and except when Update now reopened the window.
+A second start brings the running window to the front. If the installed executable cannot start,
 Setup uses the bundled engine to request Exit; a running application's refused
 Exit still stops replacement to protect unfinished input. Windows Restart Manager
 handles remaining file locks. Stage and validate a complete release

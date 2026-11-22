@@ -60,12 +60,14 @@ internal enum UpdateFailure
 // Why gozler's setup did not install gozler.
 internal enum InstallFailure
 {
-    // This build has no pinned download, so it runs no setup.
-    Unavailable,
+    // GitHub has no release of the gozler version that TinyTorrent names.
+    NotReleased,
     Download,
     Damaged,
     Declined,
     NotInstalled,
+    // The installed gozler is still too old, as after a cancelled update.
+    Older,
 }
 
 // The action that resolves a disk discovery state.
@@ -73,6 +75,7 @@ internal enum DiskRecovery
 {
     None,
     Install,
+    Update,
     Retry,
 }
 
@@ -171,6 +174,8 @@ public enum WindowPage
     Library,
     Connection,
     Credits,
+    // Library folders, a child page of Settings' Plugins.
+    Folders,
 }
 
 public enum LibraryConfiguration

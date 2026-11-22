@@ -198,7 +198,7 @@ Library, the menus are:
 | Menu | Items |
 | --- | --- |
 | File | Unchanged. |
-| Library | Open, Open folder, Properties, Show in Torrents; Fetch metadata, Refresh metadata, Download Subtitle; Erase metadata. While [disk discovery](disk.md) is on, Refresh files (F5) and Hide folder from Library, whose submenu offers the file's folder and each folder above it, nearest first, for a file no torrent lists. The row context menu has the same groups and a selection heading. The metadata groups show only while the selection holds a video, because only videos have provider metadata and subtitles. Download Subtitle is a direct action; multiple selections use Download subtitles. Single and multiple selections use the same command owners and Segoe icons. |
+| Library | Open, Open folder, Properties, Show in Torrents; Fetch metadata, Refresh metadata, Download Subtitle; Erase metadata. While [disk discovery](disk.md) is on, Refresh files (F5) and Leave folder out of Library, whose submenu offers the file's folder and each folder above it, nearest first, for a file no torrent lists. The row context menu has the same groups and a selection heading. The metadata groups show only while the selection holds a video, because only videos have provider metadata and subtitles. Download Subtitle is a direct action; multiple selections use Download subtitles. Single and multiple selections use the same command owners and Segoe icons. |
 | View | Filters, Inspector and Toolbar, as on every page; then Videos, Music, Files as choices. |
 | Help | Unchanged. |
 

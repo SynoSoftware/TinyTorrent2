@@ -6,11 +6,12 @@ machine. These rules keep builds rare, one at a time, and used.
 
 ## Compile last
 
-**Owner ruling: delay compilation until nothing else can answer the
-question.** A build started early is repeated after the next edit, so build when
-the work cannot continue without a build's answer. That is usually the end of
-the task. It is earlier only when later edits depend on the answer, such as how
-a WinUI control behaves at run time.
+The [root ruling](../../AGENTS.md#working-rules) lets a task build only when
+the owner asks. **Owner ruling: a build the owner asks for comes last.** A
+build started early is repeated after the next edit, so finish the edits it
+covers first. When later edits depend on a build's answer, such as how a WinUI
+control behaves at run time, name that question and ask the owner for the build
+before you continue.
 
 1. Finish all the requested code and the
    [focused review passes](#focused-review-passes).
@@ -21,10 +22,12 @@ a WinUI control behaves at run time.
 3. List the unanswered questions that need a build. Tests, app inspection and
    captures must pass the [verification gate](testing.md#verification-must-answer-a-question);
    a clear change earns none of these merely because a build is available.
-4. Build once, for that whole list, and run every check on its output.
+4. Report that list as unverified. When the owner asks for a build, build
+   once, for the whole list, and run every check on its output.
 
 When no remaining question needs a build, source review completes verification.
-Otherwise, finish when the build passes and every listed check has a result.
+Otherwise, the work ends with the list reported as unverified; a build the
+owner asked for ends when it passes and every listed check has a result.
 
 ## Build
 

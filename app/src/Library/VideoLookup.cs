@@ -76,18 +76,19 @@ internal sealed partial class VideoLookup(
             var automatic = await store.AutomaticDownload(cancellation).ConfigureAwait(false);
             await policy.Initialize(cancellation).ConfigureAwait(false);
             var keys = await store.Keys(cancellation).ConfigureAwait(false);
-            var option = selected is null
-                ? options.FirstOrDefault()
-                : options.FirstOrDefault(option => option.ProviderId == selected);
-            // An absent saved provider cannot supply automatic downloads.
-            if (automatic && option is null)
+            var saved = selected is null ? null : Online(selected);
+            var option = saved ?? Online(null);
+            // An absent saved provider cannot supply automatic downloads, nor
+            // can IMDb, which an earlier version saved as a provider: its data
+            // now answers whenever it is installed.
+            if (automatic && saved is null)
                 await store.DisableAutomaticDownload(cancellation).ConfigureAwait(false);
             lock (_gate)
             {
                 _keys = keys;
                 Option = option;
                 Provider = option is null ? null : option.Create(Key(option));
-                IsAutomaticDownloadEnabled = automatic && option is not null;
+                IsAutomaticDownloadEnabled = automatic && saved is not null;
                 _language = language;
             }
         });
@@ -100,8 +101,7 @@ internal sealed partial class VideoLookup(
         Change(
             cancellation =>
                 Select(
-                    options.FirstOrDefault(option => option.ProviderId == providerId)
-                        ?? throw new ArgumentOutOfRangeException(nameof(providerId)),
+                    Online(providerId) ?? throw new ArgumentOutOfRangeException(nameof(providerId)),
                     cancellation,
                     enableAutomaticDownload: true
                 ),
@@ -112,12 +112,25 @@ internal sealed partial class VideoLookup(
         Change(
             cancellation =>
                 Select(
-                    options.FirstOrDefault(option => option.ProviderId == providerId)
-                        ?? throw new ArgumentOutOfRangeException(nameof(providerId)),
+                    Online(providerId) ?? throw new ArgumentOutOfRangeException(nameof(providerId)),
                     cancellation
                 ),
             automaticOnly: true
         );
+
+    /// <summary>
+    /// The online provider with <paramref name="providerId"/>, or the first one
+    /// when it is null. Only an online provider is a person's choice; the IMDb
+    /// data answers whenever it is installed.
+    /// </summary>
+    private ProviderOption? Online(string? providerId) =>
+        options.FirstOrDefault(option =>
+            option.IsOnline && (providerId is null || option.ProviderId == providerId)
+        );
+
+    // Callers hold _gate.
+    private ProviderOption? Local =>
+        options.FirstOrDefault(option => option.Dataset is { IsInstalled: true });
 
     private async Task Select(
         ProviderOption option,
@@ -192,11 +205,7 @@ internal sealed partial class VideoLookup(
     /// downloaded data, such as a new IMDb data file replacing the old one.
     /// Clears local attempts so unresolved files can use the new dataset.
     /// </summary>
-    internal Task Reload(
-        ProviderOption option,
-        Action replace,
-        Func<bool>? enableAutomaticDownload = null
-    ) =>
+    internal Task Reload(ProviderOption option, Action replace) =>
         Change(
             async cancellation =>
             {
@@ -206,9 +215,6 @@ internal sealed partial class VideoLookup(
                 lock (_gate)
                     Restart(option);
                 await store.ClearAttempts(option.ProviderId, cancellation).ConfigureAwait(false);
-                if (enableAutomaticDownload?.Invoke() == true)
-                    await Select(option, cancellation, enableAutomaticDownload: true)
-                        .ConfigureAwait(false);
             },
             preserveBatch: true
         );
@@ -371,28 +377,30 @@ internal sealed partial class VideoLookup(
                 CancelContext();
             _connected = connected;
             _language = language;
+            // The online provider asks first, while its automatic downloads are
+            // on; the IMDb data answers the rest whenever it is installed. An
+            // online failure with no retry time waits for Retry or a success,
+            // so scrolling repeats no failing request; a sweep waits out a
+            // failure that has one.
+            var sources = new List<ProviderOption>(2);
             if (
-                !connected
-                || !IsAutomaticDownloadEnabled
-                || Option is not { } option
-                || Requirement(option) != ProviderRequirement.None
-                || _changes.CurrentCount == 0
+                connected
+                && IsAutomaticDownloadEnabled
+                && Option is { } option
+                && Requirement(option) == ProviderRequirement.None
+                && _failure is not { RetryAt: null }
             )
+                sources.Add(option);
+            if (Local is { } local)
+                sources.Add(local);
+            if (sources.Count == 0 || _changes.CurrentCount == 0)
             {
                 CancelSweep();
                 return;
             }
             // A request cancels the sweep itself; the batch lets it finish its
-            // file. Either only keeps it from starting here. A failure with no
-            // retry time waits for Retry or a success, so scrolling repeats no
-            // failing request; a sweep waits out a failure that has one.
-            if (
-                _interactive != 0
-                || _batch is not null
-                || _sweep is not null
-                || _displayed.Count == 0
-                || _failure is { RetryAt: null }
-            )
+            // file. Either only keeps it from starting here.
+            if (_interactive != 0 || _batch is not null || _sweep is not null || _displayed.Count == 0)
                 return;
             // CancelContext ends a waiting sweep on this thread, and the sweep's
             // end calls Refresh before the new context exists. A sweep started
@@ -405,10 +413,14 @@ internal sealed partial class VideoLookup(
                 _context.Token
             );
             _sweep = new(
-                Bind(option, cancellation.Token) with
-                {
-                    Command = _recheck,
-                },
+                sources
+                    .Select(source =>
+                        Bind(source, cancellation.Token) with
+                        {
+                            Command = source == Option ? _recheck : null,
+                        }
+                    )
+                    .ToArray(),
                 cancellation
             );
             Wake();
@@ -1201,25 +1213,35 @@ internal sealed partial class VideoLookup(
         Wake();
     }
 
+    // Takes the first source, in the sweep's order, that has files to identify.
     private async Task<BackgroundWork.Operation?> PrepareSweep(Sweep sweep)
     {
-        var context = sweep.Context;
-        await settled.WaitAsync(context.Token).ConfigureAwait(false);
+        var token = sweep.Context.Token;
+        await settled.WaitAsync(token).ConfigureAwait(false);
         IReadOnlySet<long> displayed;
         lock (_gate)
         {
             _again = false;
             displayed = _displayed;
         }
-        var pending = await store
-            .Pending(context.Option.ProviderId, displayed, context.Token)
-            .ConfigureAwait(false);
+        foreach (var source in sweep.Sources)
+        {
+            var pending = await store
+                .Pending(source.Option.ProviderId, displayed, token)
+                .ConfigureAwait(false);
+            lock (_gate)
+            {
+                // A sweep stopped before this point never shows an operation.
+                token.ThrowIfCancellationRequested();
+                sweep.Context = source;
+                sweep.Pass = new(pending, _cancelled, target => target.Entry.EntryId);
+                if (sweep.Pass.Count > 0)
+                    break;
+            }
+        }
         lock (_gate)
         {
-            // A sweep stopped before this point never shows an operation.
-            context.Token.ThrowIfCancellationRequested();
-            sweep.Pass = new(pending, _cancelled, target => target.Entry.EntryId);
-            if (sweep.Pass.Count == 0)
+            if (sweep.Pass is not { Count: > 0 })
                 return null;
             sweep.Work = new(
                 Work,
@@ -1251,6 +1273,7 @@ internal sealed partial class VideoLookup(
                 ended = true;
                 return;
             }
+            context = sweep.Context;
             if (sweep.RetryAt is { } due && due > DateTimeOffset.UtcNow)
             {
                 lock (_gate)
@@ -1299,6 +1322,7 @@ internal sealed partial class VideoLookup(
             }
             if (pass.IsFinished)
             {
+                NextSource(sweep);
                 operation.Outcome = operation.Error is null
                     ? WorkOutcome.Completed
                     : WorkOutcome.Failed;
@@ -1334,6 +1358,17 @@ internal sealed partial class VideoLookup(
             if (ended)
                 await FinishSweep(sweep).ConfigureAwait(false);
         }
+    }
+
+    // A later source may answer the files this one left, so a finished pass
+    // starts the next sweep at once rather than at the next scroll. A failed
+    // pass does not, because its file can still be pending and would fail again
+    // at once.
+    private void NextSource(Sweep sweep)
+    {
+        if (!ReferenceEquals(sweep.Context, sweep.Sources[^1]))
+            lock (_gate)
+                _again = true;
     }
 
     private static void ReportSweep(Sweep sweep, WorkExecution execution)
@@ -1388,9 +1423,13 @@ internal sealed partial class VideoLookup(
     /// The background sweep, which looks up the pending files on screen
     /// automatically.
     /// </summary>
-    private sealed class Sweep(Context context, CancellationTokenSource cancellation)
+    private sealed class Sweep(IReadOnlyList<Context> sources, CancellationTokenSource cancellation)
     {
-        internal Context Context { get; } = context;
+        /// <summary>The providers to ask, in order; every one has the sweep's token.</summary>
+        internal IReadOnlyList<Context> Sources { get; } = sources;
+
+        /// <summary>The source the sweep took, once it has files; the first until then.</summary>
+        internal Context Context { get; set; } = sources[0];
 
         /// <summary>
         /// The source of the context's token. Cancelling it directly is a stop

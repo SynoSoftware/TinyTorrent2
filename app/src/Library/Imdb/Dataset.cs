@@ -21,7 +21,8 @@ namespace Syno.TinyTorrent.Library.Imdb;
 internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy policy) : IDataset
 {
     // The schema version is part of the name, so a file that an earlier
-    // version of the app built counts as missing.
+    // version of the app built counts as missing. installer/Setup.iss checks
+    // this file to show whether the IMDb data is installed.
     private const string FileName = "imdb-2.db";
 
     // IMDb marks an empty value with \N.
@@ -40,7 +41,7 @@ internal sealed class Dataset(ProviderHttp http, string directory, RequestPolicy
     private static readonly ProviderAccess Access = new(
         Provider.CatalogId,
         RequestKey.Digest(string.Empty),
-        "dataset"
+        RequestPolicy.DatasetOperation
     );
     private static readonly Comparer<EpisodeNumber> BySeries = Comparer<EpisodeNumber>.Create(
         (a, b) =>

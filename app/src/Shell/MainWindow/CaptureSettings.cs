@@ -536,7 +536,7 @@ public sealed partial class MainWindow
                 );
             await CaptureReady(
                 library,
-                () => ReferenceEquals(library.Option, library.Providers[index])
+                () => ReferenceEquals(library.Option, library.OnlineProviders[index])
             );
             await CaptureLayout();
             if (choice.SelectedIndex != index || library.ProviderIndex != index)

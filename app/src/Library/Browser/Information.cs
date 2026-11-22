@@ -14,10 +14,6 @@ public sealed partial class Browser
     private IProvider? _viewProvider;
     private bool _automaticDownload;
     private string? _automaticWait;
-
-    // Installation starts automatic downloads only while the person's
-    // provider choice still applies.
-    private bool _automaticOnInstall;
     private bool _resettingProtection;
 
     // The person's provider choice while its save runs, so a refresh does not
@@ -57,7 +53,8 @@ public sealed partial class Browser
 
     public bool IsFetching => _informationRequest is not null;
     internal IReadOnlyList<ProviderOption> Providers => _videos?.Options ?? [];
-    internal IReadOnlyList<ProviderOption> DownloadProviders =>
+    /// <summary>The providers the person chooses from; the IMDb data answers whenever it is installed.</summary>
+    internal IReadOnlyList<ProviderOption> OnlineProviders =>
         Providers.Where(option => option.IsOnline).ToArray();
 
     /// <summary>The provider whose data the person downloads, or null before Library attaches.</summary>
@@ -118,33 +115,34 @@ public sealed partial class Browser
     internal AccountInput Key(string providerId) =>
         HasKey(providerId) ? new AccountInput.OwnKey(new Secret.Kept()) : new AccountInput.BuiltIn();
 
-    /// <summary>The provider names in <see cref="Providers"/> order, for the Settings choice.</summary>
+    /// <summary>The provider names in <see cref="OnlineProviders"/> order, for the Settings choice.</summary>
     public IReadOnlyList<string> ProviderNames
     {
         get
         {
             // A new list clears the choice's selection, so an equal list is kept.
-            var names = Providers.Select(option => option.Name).ToArray();
+            var names = OnlineProviders.Select(option => option.Name).ToArray();
             if (!_providerNames.SequenceEqual(names))
                 _providerNames = names;
             return _providerNames;
         }
     }
 
-    /// <summary>The chosen provider's index in <see cref="Providers"/>, or -1.</summary>
+    /// <summary>The chosen provider's index in <see cref="OnlineProviders"/>, or -1.</summary>
     public int ProviderIndex =>
-        ChosenProvider is { } option ? Providers.ToList().IndexOf(option) : -1;
+        ChosenProvider is { } option ? OnlineProviders.ToList().IndexOf(option) : -1;
 
     /// <summary>
-    /// Saves the provider at <paramref name="index"/> in <see cref="Providers"/>
+    /// Saves the provider at <paramref name="index"/> in <see cref="OnlineProviders"/>
     /// as the person's Settings choice, unless it is already chosen; a failure
     /// is reported.
     /// </summary>
     internal void ChooseProvider(int index)
     {
-        if (!IsAvailable || index < 0 || index >= Providers.Count || index == ProviderIndex)
+        var online = OnlineProviders;
+        if (!IsAvailable || index < 0 || index >= online.Count || index == ProviderIndex)
             return;
-        _ = ReportFailure(SelectProvider(Providers[index].ProviderId));
+        _ = ReportFailure(SelectProvider(online[index].ProviderId));
     }
 
     /// <summary>Whether automatic download is chosen, including a choice that is still saving.</summary>
@@ -156,10 +154,8 @@ public sealed partial class Browser
 
     /// <summary>
     /// Saves automatic download for <see cref="ChosenProvider"/>. Turning it on
-    /// needs the provider's data and, without a built-in key, the person's own
-    /// key; when one is missing, nothing is saved and this returns what the
-    /// person must supply, or <see cref="ProviderRequirement.None"/> when a data
-    /// download cannot start now.
+    /// needs, without a built-in key, the person's own key; when it is missing,
+    /// nothing is saved and this returns what the person must supply.
     /// </summary>
     internal ProviderRequirement ChooseAutomaticDownload(bool enabled)
     {
@@ -173,9 +169,7 @@ public sealed partial class Browser
         {
             // The switch returns to the saved choice.
             Changed(nameof(AutomaticDownload));
-            return missing == ProviderRequirement.Data && Download is not { CanStart: true }
-                ? ProviderRequirement.None
-                : missing;
+            return missing;
         }
         _ = ReportFailure(
             enabled ? EnableAutomaticDownload(option.ProviderId) : DisableAutomaticDownload()
@@ -204,7 +198,6 @@ public sealed partial class Browser
         Func<VideoLookup, Task> save
     )
     {
-        _automaticOnInstall = false;
         if (_videos is not { } videos)
             return Task.CompletedTask;
         var choice = option is null ? null : new ProviderChoice(option, automaticDownload);
@@ -270,26 +263,6 @@ public sealed partial class Browser
         }
     }
 
-    /// <summary>
-    /// Downloads <see cref="DataProvider"/>'s data, and installation starts
-    /// automatic downloads with the provider unless the person accepts another
-    /// choice before activation. Returns whether the new data is installed.
-    /// </summary>
-    internal async Task<bool> PrepareAutomaticDownload()
-    {
-        if (Download is not { CanStart: true } download)
-            return false;
-        _automaticOnInstall = true;
-        try
-        {
-            return await download.Start();
-        }
-        finally
-        {
-            _automaticOnInstall = false;
-        }
-    }
-
     internal async Task SuspendProtection(Func<Task> apply, bool includeDataset)
     {
         if (_resettingProtection || _videos is not { } videos)
@@ -315,7 +288,7 @@ public sealed partial class Browser
         CancelInformation();
         try
         {
-            await videos.Reload(option, change, () => _automaticOnInstall);
+            await videos.Reload(option, change);
         }
         finally
         {

@@ -19,7 +19,8 @@ RequestPolicy protects remote requests, so it needs no IMDb bypass or special
 exemption. **The plugin contract declares whether a provider supports
 downloading information for an individual movie: `ProviderOption.IsOnline`,
 true for every provider that declares no `Dataset`.** API providers are
-online; IMDb offline declares its dataset. Settings still lists both. The
+online; IMDb offline declares its dataset. Settings' Online provider choice
+lists only the online providers; the IMDb data has its own row. The
 provider chooser, context menus, batch actions and execution admission consume
 this same capability; it is never inferred from the provider's name or from
 whether its data is installed. Library reads the installed dataset locally under
@@ -43,23 +44,29 @@ its ordinary matching owner.
 - Dataset installation and deletion use Library's pause/drain operation instead
   of ending its batch. Queued entries and explicit decisions stay. Installation
   resumes eligible accepted work; deletion leaves work waiting for available
-  data or an explicit Stop, without starting a download. Deletion turns off
-  IMDb automatic lookups.
+  data or an explicit Stop, without starting a download. Deletion ends IMDb
+  lookups, because they run only while the data is installed.
 - Download and Update are explicit Settings commands for the entire dataset.
   Each transfer follows the same search protection, pacing and remote waits
   as other outbound calls. Each explicit Download or Update uses the shared
   recheck command: it may try once past an earlier attention or local backoff
-  hold. It still respects remote waits, allowance and pacing. Reset uses the
-  standard rules; no separate IMDb override exists. A dataset transfer does not
-  charge the movie cap, create per-movie misses, redownload a dataset
-  automatically, or let a remote download hold stop reads of the installed file.
-- Reset for IMDb or all providers first prevents another dataset command from
-  starting, then cancels and drains the whole Download/Build/Install command
-  and its policy writes **before taking Library's change/execution gates**.
-  Otherwise completion can wait for `Reload` while reset waits for completion.
-  The existing download owner checks cancellation before installation;
-  installed data is preserved and the interruption is reported in its existing
-  UI. Reset never restarts the large download. File replacement
+  hold. It still respects remote waits, allowance and pacing. A dataset
+  transfer does not charge the movie cap, create per-movie misses, redownload a
+  dataset automatically, or let a remote download hold stop reads of the
+  installed file.
+- **Reset search protection leaves the dataset downloads alone.** A dataset
+  download is not a search, and explicit Download or Update already gets its
+  one recheck, so Settings' reset list names only the online providers and
+  subtitle suppliers, and Reset all keeps the IMDb and city data downloads'
+  holds and never stops a running download, which takes several minutes and
+  does not restart by itself.
+- A route change, which does end the dataset downloads, first prevents another
+  dataset command from starting, then cancels and drains the whole
+  Download/Build/Install command and its policy writes **before taking
+  Library's change/execution gates**. Otherwise completion can wait for
+  `Reload` while the route change waits for completion. The existing download
+  owner checks cancellation before installation; installed data is preserved
+  and the interruption is reported in its existing UI. File replacement
   remains serialized with Library reads; no database lock is held while
   draining the transfer or importing the data.
 

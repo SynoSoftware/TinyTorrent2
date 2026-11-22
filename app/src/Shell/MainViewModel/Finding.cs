@@ -113,8 +113,8 @@ public sealed partial class MainViewModel
             if (Page == WindowPage.Settings)
             {
                 var category =
-                    Navigation.Current == WindowPage.Connection
-                        ? Text.Get("settings", "connection_setup")
+                    Navigation.Current == WindowPage.Connection ? Text.Get("settings", "connection_setup")
+                    : Navigation.Current == WindowPage.Folders ? Text.Get("discovery", "folders")
                     : Navigation.Settings?.Category is { } shown ? Text.Get(shown)
                     : Text.Get("settings", "home");
                 return Text.Get("commands", "settings") + " · " + category;
@@ -420,6 +420,10 @@ public sealed partial class MainViewModel
         yield return SettingSuggestion(
             new(SettingsCategory.Plugins, "media_discovery"),
             Text.Get("discovery", "option")
+        );
+        yield return SettingSuggestion(
+            new(SettingsCategory.Plugins, "library_folders"),
+            Text.Get("discovery", "folders")
         );
         yield return SettingSuggestion(
             new(SettingsCategory.Plugins, "video_provider"),

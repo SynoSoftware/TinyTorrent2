@@ -525,6 +525,7 @@ public sealed partial class Editor : INotifyPropertyChanged
         );
         ConfirmLookupLimit();
         _owner.PropertyChanged += OnOwner;
+        _owner.GozlerSetup.PropertyChanged += OnGozlerSetup;
         Destination = Add(
             new(Engine, Text, "default_destination", SettingKind.Text, SettingsCategory.Transfers)
         );

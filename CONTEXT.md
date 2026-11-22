@@ -291,13 +291,22 @@ _Avoid_: source alone, which means a torrent file or magnet supplied for additio
 files on the fixed drives that gozler indexes, including changes to their
 locations.
 
-**Hidden folder**: a folder the person removed from disk discovery, so the
-files under it leave Library. A file that a torrent lists stays.
+**Folder choice**: the person's decision that Library shows, or leaves out,
+the media in a folder and everything inside it. The nearest folder choice at
+or above a file decides; a file with none above it is shown. It changes only
+Library: Gozler still indexes the folder.
 
-**gozler**: the person's separate file-search program, with its Windows service
+**Left-out folder**: a folder whose folder choice leaves its media out of
+Library. A shown folder inside it shows again, and a file that a torrent lists
+stays.
+_Avoid_: hidden folder, excluded folder, which name Gozler's own Include
+settings.
+
+**Gozler**: the person's separate file-search program, with its Windows service
 `gozlerd` and its command `gozler.exe`. TinyTorrent runs `gozler.exe --json` for
 disk discovery and to locate moved torrent files. It never replaces an installed
-gozler and never runs a second service.
+Gozler and never runs a second service. Text that people read writes the name
+with a capital G; file, service and repository names keep their lowercase.
 _Avoid_: Find, which is the subtitle batch command.
 
 **File presence**: the observed existence or absence of a file at its location,
@@ -309,7 +318,7 @@ data-source contributions.
 
 **Contribution**: the files one data source reports for one origin, such as
 one torrent. Library removes its stored facts when it observes that contribution's
-withdrawal or reconciles after reconnecting. A disk file that Hide or switching
+withdrawal or reconciles after reconnecting. A disk file that a left-out folder or switching
 discovery off withdrew keeps its matches, and takes them back when gozler reports
 it again.
 
@@ -335,25 +344,31 @@ movie's title, cast and synopsis or a song's artist and album. Within Library,
 the term is metadata; torrent metadata describes the download's contents.
 
 **Video information**: Library metadata about a movie, series or episode,
-from the provider.
+from the IMDb data or an online provider.
 
-**Automatic video information downloads**: background provider work allowed by
-the saved setting. Off stops only this work; saved video information, manual Fetch
-metadata and Refresh metadata remain available, including accepted manual work.
+**Automatic video information downloads**: background work by the online
+provider, allowed by the saved setting, which starts off. Off stops only this
+work; the IMDb data still identifies videos, and saved video information,
+manual Fetch metadata and Refresh metadata remain available, including
+accepted manual work.
 _Avoid_: enabling or disabling video information, Library or the provider.
 
-**Provider**: an online service supplying video information, such as TMDB, or
-IMDb, which answers from IMDb data.
+**Online provider**: an online service supplying video information, such as
+TMDB. Its lookups send requests. Settings calls it Online provider.
 _Avoid_: source, which means a torrent file or magnet.
 
-**Default provider**: the saved provider choice for automatic work and the
-starting choice for Fetch metadata. Selecting it preserves automatic download
-intent. Refresh metadata uses the provider saved with that file's metadata.
+**Default provider**: the saved online provider choice for automatic work and
+the starting choice for Fetch metadata. Selecting it preserves automatic
+download intent. Refresh metadata uses the provider saved with that file's
+metadata.
 
 **IMDb data**: IMDb's movie and TV data, downloaded when the person asks and
-kept on this computer as a replaceable copy. The IMDb provider answers from it
-without sending requests, and movies from every provider show their IMDb rating
-from it.
+kept on this computer as a replaceable copy. While it is installed, it
+identifies videos without sending requests and without a setting, and movies
+from every provider show their IMDb rating from it. The person chooses it by
+downloading it, not in the Online provider choice. An online provider's answer
+for the same title takes over a match the IMDb data made by itself; any other
+match it only adds to.
 _Avoid_: IMDb database, which suggests the person's own saved information.
 
 **Dataset**: reference data that TinyTorrent downloads only when the person

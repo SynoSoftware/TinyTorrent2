@@ -122,10 +122,12 @@ of the effective languages is supported, the configuration is not usable.
 Automatic downloading searches only when a torrent finishes, under the
 [completion ruling](../subtitles.md#outcome). A torrent whose completion search
 is not decided yet is [new](../architecture.md#third-party-provider-access).
-When a new torrent's files are complete, at rest and confirmed, TinyTorrent
-scans its folders for bundled subtitles and decides its completion search: one
-search for each wanted video and wanted language without a subtitle, when the
-switch is On. The torrent is then known, whatever its videos, languages and
+When a new torrent's files are complete, at rest and confirmed, and the engine
+downloaded data for it, TinyTorrent scans its folders for bundled subtitles and
+decides its completion search: one search for each wanted video and wanted
+language without a subtitle, when the switch is On. A new torrent that completes
+without downloading, because its data was already on disk, is decided with no
+scan and no search. The torrent is then known, whatever its videos, languages and
 supplier, so the decision is made once: switching on, adding a language or
 fixing the supplier later starts no search for it. A torrent whose movie moved
 during the scan stays new until the reconciliation that follows the move,

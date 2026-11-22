@@ -270,6 +270,7 @@ public sealed class FileSelection : INotifyPropertyChanged
             return false;
         }
         _keys = null;
+        var children = new List<FileNode>(count);
         foreach (var entry in folders.EnumerateArray())
         {
             cancellation.ThrowIfCancellationRequested();
@@ -280,7 +281,7 @@ public sealed class FileSelection : INotifyPropertyChanged
                     ? FolderState.TooMany
                     : FolderState.Unloaded
             );
-            folder.Add(child);
+            children.Add(child);
             _folders.Add(child.Path, child);
         }
         foreach (var entry in files.EnumerateArray())
@@ -289,10 +290,10 @@ public sealed class FileSelection : INotifyPropertyChanged
             var index = entry.GetProperty("index").GetInt32();
             var child = new FileNode(this, entry.GetProperty("name").GetString()!, folder, index);
             child.Read(entry);
-            folder.Add(child);
+            children.Add(child);
             _files.Add(index, child);
         }
-        folder.Open();
+        folder.Open(children);
         if (folder != _root)
             _opened.Add(folder);
         return true;
@@ -845,10 +846,11 @@ public sealed class FileNode : INotifyPropertyChanged
     // The node and its ancestors.
     internal IEnumerable<FileNode> Lineage() => new[] { this }.Concat(Ancestors());
 
-    internal void Add(FileNode child) => (_children ??= []).Add(child);
-
-    internal void Open()
+    // The table reads children on its worker, so a folder's children are
+    // published whole and never changed after.
+    internal void Open(List<FileNode> children)
     {
+        _children = children;
         _state = FolderState.Loaded;
         IsExpanded = true;
     }

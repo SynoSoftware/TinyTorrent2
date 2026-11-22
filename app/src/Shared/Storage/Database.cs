@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using SQLitePCL;
 
@@ -31,15 +32,17 @@ internal sealed partial class Database : IAsyncDisposable
         });
 
     // Returns each settings row to the defaults a new database gets and
-    // forgets the person's own API keys and hidden folders; Library
-    // information stays.
+    // forgets the person's own API keys; Library information stays. The
+    // caller switches discovery off first, so the default folder choices
+    // leave out no file that is still in Library.
     internal Task ResetSettings() =>
         Run(connection =>
         {
             using var command = connection.CreateCommand();
             command.CommandText = """
                 DELETE FROM provider_keys;
-                DELETE FROM hidden_folders;
+                DELETE FROM library_folders;
+                INSERT INTO library_folders SELECT value,0 FROM json_each(default_folders());
                 DELETE FROM request_settings;
                 INSERT INTO request_settings(singleton) VALUES(1);
                 DELETE FROM library_settings;
@@ -187,6 +190,11 @@ internal sealed partial class Database : IAsyncDisposable
             connection.CreateFunction<string, string>(
                 "title_key",
                 Shared.FileName.TitleKey,
+                isDeterministic: true
+            );
+            connection.CreateFunction(
+                "default_folders",
+                () => JsonSerializer.Serialize(Shared.FolderChoices.Defaults.All.Select(choice => choice.Path)),
                 isDeterministic: true
             );
             using var command = connection.CreateCommand();

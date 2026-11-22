@@ -266,21 +266,21 @@ public sealed class Notifications
         await _owner.OpenTorrent(torrent, true);
     }
 
-    // One click can hide a whole drive from Library, so the toast undoes it
-    // with one click too, and closes with it.
-    internal void ShowHidden(string folder)
+    // Undo puts back the choices at and inside the folder that Leave folder
+    // out replaced, and closes the toast.
+    internal void ShowLeftOut(string folder, IReadOnlyList<FolderChoice> replaced)
     {
-        var toast = new Toast.Hidden(folder);
+        var toast = new Toast.LeftOut(folder);
         toast.Action = new RelayCommand(
             async () =>
             {
                 Toasts.Remove(toast);
-                await _owner.UnhideFolder(folder);
+                await _owner.ChangeFolders(choices => choices.Replace(folder, replaced), folder);
             },
             () => _owner.Disk is not null
         );
         Show(toast);
-        Announce(_text.Format("discovery", "hide_done", folder));
+        Announce(_text.Format("discovery", "left_out_done", folder));
     }
 
     internal void ShowOutcome(string group, string key, string subject)
@@ -552,11 +552,11 @@ public sealed class Notifications
                 followed.ActionTip = _text.Get("notifications", "files_folder_tip");
                 followed.ActionGlyph = Syno.Segoe.FolderOpen;
                 break;
-            case Toast.Hidden hidden:
-                hidden.Title = _text.Get("discovery", "hidden_toast");
-                hidden.ActionText = _text.Get("discovery", "undo");
-                hidden.ActionTip = _text.Get("discovery", "remove_tip");
-                hidden.ActionGlyph = Syno.Segoe.Undo2;
+            case Toast.LeftOut left:
+                left.Title = _text.Get("discovery", "left_out_toast");
+                left.ActionText = _text.Get("discovery", "undo");
+                left.ActionTip = _text.Get("discovery", "undo_tip");
+                left.ActionGlyph = Syno.Segoe.Undo2;
                 break;
             case Toast.Completion completion:
                 completion.Title = _text.Get("notifications", "finished");
@@ -885,10 +885,10 @@ public abstract class Toast : INotifyPropertyChanged
         internal string Name { get; }
     }
 
-    // A folder the person hid from Library, which the toast can show again.
-    internal sealed class Hidden : Toast
+    // A folder the person left out of Library, which the toast can show again.
+    internal sealed class LeftOut : Toast
     {
-        internal Hidden(string folder)
+        internal LeftOut(string folder)
             : base(InfoBarSeverity.Informational, Lifetime)
         {
             Subject = folder;

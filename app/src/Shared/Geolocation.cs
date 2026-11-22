@@ -16,6 +16,7 @@ namespace Syno.TinyTorrent.Shared;
 /// </summary>
 internal sealed class Geolocation : IDataset, IDisposable
 {
+    // installer/Setup.iss checks this file to show whether the city data is installed.
     private const string CityFileName = "dbip-city-lite.mmdb";
     private static readonly string CountryPath = Path.Combine(
         AppContext.BaseDirectory,
@@ -25,7 +26,7 @@ internal sealed class Geolocation : IDataset, IDisposable
     private static readonly ProviderAccess Access = new(
         "dbip",
         RequestKey.Digest(string.Empty),
-        "dataset"
+        RequestPolicy.DatasetOperation
     );
     private readonly ProviderHttp _http;
     private Reader? _countries = Open(CountryPath);
