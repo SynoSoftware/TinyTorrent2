@@ -11,13 +11,14 @@
 
 - Setup can turn features on or off: media discovery, Gozler, IMDb ratings, city data for the peer map, and automatic subtitles. Choose **Custom installation**, or **Update TinyTorrent and change features** when you update. Each box shows what TinyTorrent has now, and the sizes count only what still has to download. A box you leave alone changes nothing.
 - Setup starts faster, and it says what it is doing while it checks the required components and closes TinyTorrent.
-- After an update, select **View what's new** on the last page to read these notes.
+- During an update, select **What's new** on the feature-selection or final page to read these notes in Setup's own window. You can resize or maximize it.
 
 ### Library
 
 - **Refresh files** (F5) asks for the latest files again.
 - When the installed Gozler is too old for Library, **Settings** and Library's message bar offer **Update**.
 - **Library folders** in **Settings** > **Plugins** chooses which folders' media Library shows: clear a folder's check box to leave it out, or clear a drive and select only the folders you want. It changes only Library; Gozler still indexes those folders. **Leave folder out of Library** in a file's menu does the same in one click and offers **Undo**. A left-out folder keeps the matches you made, so its files come back with them.
+- **Library folders** now shows each folder's size, file count and folder count. Select a column heading to sort. Opening a folder reads one level ahead, so its subfolders are ready when you open them. These values use Gozler 0.6.2.
 - A video choice you saved is found again when another copy writes the title differently, for example *Ocean's Eleven* and *Oceans.Eleven*.
 - The Library menus show the metadata commands only when the selection holds a video.
 

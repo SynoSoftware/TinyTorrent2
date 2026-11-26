@@ -51,11 +51,16 @@ To move to another product version:
 ```
 
 That starts at `0.2.0.1`; subsequent runs continue incrementing its build number.
+Pass all four parts, such as `-Version 0.9.9.2`, to build that exact version
+without incrementing it.
 
 Before each release, replace `installer/WhatsNew.md` with the release's notes;
-the same text is the GitHub release description. The command installs it as
-`WhatsNew.txt`, without the Markdown marks, and after an upgrade Setup's last
-page offers **View what's new**, unchecked. That page also offers **Open
+the same text is the GitHub release description. The command converts it to
+rich text for Setup's own **What's new** window, preserving headings, emphasis,
+lists and code. During an upgrade, a button at the bottom left of the feature
+selection and final pages opens the notes. The window starts at 720 by 500,
+centered on Setup, and can be resized or maximized. First installations and
+silent installations show no notes button. The final page also offers **Open
 TinyTorrent**, checked, unless Windows needs a restart first.
 
 The command builds Release x64 for the engine and publishes the product UI. It

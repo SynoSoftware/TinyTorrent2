@@ -1,5 +1,5 @@
 param(
-    [ValidatePattern('^\d+\.\d+\.\d+$')]
+    [ValidatePattern('^\d+\.\d+\.\d+(?:\.\d+)?$')]
     [string] $Version,
     [ValidatePattern('^[A-Fa-f0-9]{40}$')]
     [string] $Certificate = $env:TINYTORRENT_CERTIFICATE
@@ -27,11 +27,16 @@ function Reserve-Version([string] $File, [string] $Base) {
     if ($matches.Count -ne 1) { throw 'Directory.Build.props must define one numeric product Version.' }
     $number = $matches[0].Groups[1]
     $current = [version] $number.Value
-    if (-not $Base) { $Base = $current.ToString(3) }
-    $revision = 0
-    if ($Base -eq $current.ToString(3)) { $revision = [Math]::Max(0, $current.Revision) }
-    if ($revision -ge 65534) { throw 'The build number is exhausted. Choose the next product version with -Version.' }
-    $next = "$Base.$($revision + 1)"
+    if ($Base -and ([version] $Base).Revision -ge 0) {
+        $next = $Base
+    }
+    else {
+        if (-not $Base) { $Base = $current.ToString(3) }
+        $revision = 0
+        if ($Base -eq $current.ToString(3)) { $revision = [Math]::Max(0, $current.Revision) }
+        if ($revision -ge 65534) { throw 'The build number is exhausted. Choose the next product version with -Version.' }
+        $next = "$Base.$($revision + 1)"
+    }
     $source = $source.Remove($number.Index, $number.Length).Insert($number.Index, $next)
     [IO.File]::WriteAllText($File, $source, $encoding)
     return $next
@@ -364,9 +369,34 @@ try {
         }
     }
 
-    # Setup's "View what's new" opens this file in Notepad, so the Markdown marks go.
-    $notes = (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'WhatsNew.md') -Raw -Encoding UTF8) -replace '(?m)^#+ ', '' -replace '[*`]', ''
-    [IO.File]::WriteAllText((Join-Path $publish 'WhatsNew.txt'), $notes, [Text.UTF8Encoding]::new($true))
+    $notes = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'WhatsNew.md') -Raw -Encoding UTF8
+    $rtf = [regex]::Replace($notes, '[\\{}]|[^\x00-\x7F]', {
+        param($match)
+        $character = [int][char]$match.Value
+        if ($character -gt 127) {
+            if ($character -gt 32767) { $character -= 65536 }
+            return '\u{0}?' -f $character
+        }
+        return '\' + $match.Value
+    })
+    $rtf = $rtf -replace '\[([^\]\r\n]+)\]\((https?://[^)\s]+)\)', '$1 ($2)'
+    $rtf = $rtf -replace '`([^`\r\n]+)`', '{\f1 $1}'
+    $rtf = $rtf -replace '\*\*([^*\r\n]+)\*\*', '{\b $1}'
+    $rtf = $rtf -replace '\*([^*\r\n]+)\*', '{\i $1}'
+    $paragraphs = foreach ($line in $rtf -split '\r?\n') {
+        if (-not $line.Trim()) { continue }
+        if ($line -match '^#{1,6} (.+)$') {
+            '\pard\sb180\sa120\b\fs26 ' + $Matches[1] + '\b0\fs22\par'
+        } elseif ($line.StartsWith('- ')) {
+            '\pard\li240\fi-240\tx240\sa120\bullet\tab ' + $line.Substring(2) + '\par'
+        } else {
+            '\pard\sa160 ' + $line + '\par'
+        }
+    }
+    $document = '{\rtf1\ansi\deff0{\fonttbl{\f0 Segoe UI;}{\f1 Consolas;}}' +
+        '\fs22\pard\sa160\b TinyTorrent ' + $releaseVersion + '\b0\par' +
+        ($paragraphs -join "`n") + '}'
+    Set-Content -LiteralPath (Join-Path $session 'WhatsNew.rtf') -Encoding ascii -Value $document
     # Setup's plugin tree counts these with the plugins it adds; Setup.iss leaves out the same files.
     $appBytes = (Get-ChildItem -LiteralPath $publish -File -Recurse | Where-Object { $_.Extension -notin '.pdb', '.xml' } | Measure-Object -Property Length -Sum).Sum
 

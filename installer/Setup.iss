@@ -93,8 +93,10 @@ english.Video=Download video information automatically
 spanish.Video=Descargar información de vídeo automáticamente
 english.Launch=Open TinyTorrent
 spanish.Launch=Abrir TinyTorrent
-english.WhatsNew=View what's new
-spanish.WhatsNew=Ver las novedades
+english.WhatsNew=What's new
+spanish.WhatsNew=Novedades
+english.CloseNotes=Close
+spanish.CloseNotes=Cerrar
 english.DownloadTitle=Preparing TinyTorrent
 spanish.DownloadTitle=Preparando TinyTorrent
 english.DownloadDescription=Downloading required Microsoft components...
@@ -160,6 +162,7 @@ Name: "startup"; Description: "{cm:Startup}"; Flags: unchecked; Check: FirstInst
 ; archive, so Setup does not unpack the whole app to reach them.
 Source: "Requirements.ps1"; Flags: dontcopy
 Source: "{#RuntimeDir}\requirements.json"; Flags: dontcopy
+Source: "{#RuntimeDir}\WhatsNew.rtf"; Flags: dontcopy noencryption
 Source: "{#SourceDir}\{#EngineName}.exe"; Flags: dontcopy
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Components: app; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "*.pdb,*.xml"
 
@@ -171,9 +174,6 @@ Type: files; Name: "{app}\setup-choices.txt"
 
 [Run]
 Filename: "{app}\{#EngineName}.exe"; Description: "{cm:Launch}"; Flags: nowait postinstall skipifsilent; Check: OfferLaunch
-; Build.ps1 makes WhatsNew.txt from WhatsNew.md. A first installation has no
-; earlier version to compare with.
-Filename: "{app}\WhatsNew.txt"; Description: "{cm:WhatsNew}"; Flags: postinstall shellexec skipifsilent unchecked; Check: not FirstInstall
 
 [Code]
 var
@@ -187,6 +187,7 @@ var
   WasRunning: Boolean;
   RebootNeeded: Boolean;
   NewInstall: Boolean;
+  WhatsNewButton: TNewButton;
 
 const
   SQLITE_OK = 0;
@@ -212,6 +213,52 @@ function sqlite3_close(Db: INT_PTR): Integer;
 function FirstInstall: Boolean;
 begin
   Result := NewInstall;
+end;
+
+procedure ShowWhatsNew(Sender: TObject);
+var
+  Dialog: TSetupForm;
+  Notes: TRichEditViewer;
+  CloseButton: TNewButton;
+  NotesFile: String;
+  Content: AnsiString;
+begin
+  NotesFile := ExpandConstant('{tmp}\WhatsNew.rtf');
+  if not FileExists(NotesFile) then
+    ExtractTemporaryFile('WhatsNew.rtf');
+  if not LoadStringFromFile(NotesFile, Content) then exit;
+  Dialog := CreateCustomForm(720, 500, True, True);
+  try
+    Dialog.Caption := CustomMessage('WhatsNew');
+    Dialog.BorderStyle := bsSizeable;
+    Dialog.BorderIcons := [biSystemMenu, biMaximize];
+    Dialog.Constraints.MinWidth := ScaleX(360);
+    Dialog.Constraints.MinHeight := ScaleY(240);
+    Dialog.Position := poMainFormCenter;
+    CloseButton := TNewButton.Create(Dialog);
+    CloseButton.Parent := Dialog;
+    CloseButton.SetBounds(Dialog.ClientWidth - ScaleX(87), Dialog.ClientHeight - ScaleY(35),
+      ScaleX(75), ScaleY(23));
+    CloseButton.Anchors := [akRight, akBottom];
+    CloseButton.Caption := CustomMessage('CloseNotes');
+    CloseButton.ModalResult := mrOk;
+    CloseButton.Default := True;
+    CloseButton.Cancel := True;
+    Notes := TRichEditViewer.Create(Dialog);
+    Notes.UseRichEdit := True;
+    Notes.Parent := Dialog;
+    Notes.SetBounds(ScaleX(12), ScaleY(12), Dialog.ClientWidth - ScaleX(24),
+      CloseButton.Top - ScaleY(24));
+    Notes.Anchors := [akLeft, akTop, akRight, akBottom];
+    Notes.ReadOnly := True;
+    Notes.Font.Size := 11;
+    Notes.ScrollBars := ssVertical;
+    Notes.RTFText := Content;
+    Dialog.ActiveControl := Notes;
+    Dialog.ShowModal;
+  finally
+    Dialog.Free;
+  end;
 end;
 
 // Whether the app's downloaded data is on this computer: the file names of
@@ -684,6 +731,17 @@ end;
 
 procedure InitializeWizard;
 begin
+  if not WizardSilent and not FirstInstall then
+  begin
+    WhatsNewButton := TNewButton.Create(WizardForm);
+    WhatsNewButton.Parent := WizardForm;
+    WhatsNewButton.SetBounds(ScaleX(12), WizardForm.NextButton.Top,
+      ScaleX(92), WizardForm.NextButton.Height);
+    WhatsNewButton.Anchors := [akLeft, akBottom];
+    WhatsNewButton.Caption := CustomMessage('WhatsNew');
+    WhatsNewButton.OnClick := @ShowWhatsNew;
+    WhatsNewButton.Visible := False;
+  end;
   ExtractTemporaryFile('Requirements.ps1');
   ExtractTemporaryFile('requirements.json');
   StartWindowsCheck;
@@ -725,6 +783,8 @@ end;
 // and Inno leaves that caption to the script.
 procedure CurPageChanged(CurPageID: Integer);
 begin
+  if WhatsNewButton <> nil then
+    WhatsNewButton.Visible := (CurPageID = wpSelectComponents) or (CurPageID = wpFinished);
   if (CurPageID = wpSelectComponents) and not FirstInstall then
   begin
     ShowComponentsLabel;
